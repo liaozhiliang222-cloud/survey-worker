@@ -1,0 +1,1418 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#155e75" />
+    <title>调研工具箱</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">研</div>
+          <div>
+            <h1>调研工具箱</h1>
+            <p>研究员的项目效率台</p>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="工具导航">
+          <button class="nav-item active" data-view="overview">总览</button>
+          <div class="nav-group">
+            <div class="nav-phase">
+              <strong>01</strong>
+              <span>调研前</span>
+              <small>设计与上线准备</small>
+            </div>
+            <button class="nav-item" data-view="sample">样本量计算</button>
+            <button class="nav-item" data-view="quota">配额设计</button>
+            <button class="nav-item" data-view="link-test">上线质检</button>
+            <button class="nav-item" data-view="time-estimate">时长估算</button>
+          </div>
+          <div class="nav-group">
+            <div class="nav-phase">
+              <strong>02</strong>
+              <span>调研中</span>
+              <small>数据整理与分析准备</small>
+            </div>
+            <button class="nav-item" data-view="cleaning-rules">清洗规则</button>
+            <button class="nav-item" data-view="data-weighting">数据加权</button>
+            <button class="nav-item" data-view="table-header">表头设计</button>
+            <button class="nav-item" data-view="crosstab-analysis">交叉表分析</button>
+          </div>
+          <div class="nav-group">
+            <div class="nav-phase">
+              <strong>03</strong>
+              <span>调研后</span>
+              <small>模型分析与交付</small>
+            </div>
+            <button class="nav-item" data-view="models">专项模型</button>
+            <button class="nav-item" data-view="psm">PSM 分析</button>
+            <button class="nav-item" data-view="kano">KANO 分析</button>
+            <button class="nav-item" data-view="maxdiff">MaxDiff</button>
+            <button class="nav-item" data-view="abc-value">ABC 价值模型</button>
+          </div>
+          <div class="nav-group">
+            <div class="nav-phase">
+              <strong>AI</strong>
+              <span>AI 增值</span>
+              <small>跨流程辅助能力</small>
+            </div>
+            <button class="nav-item" data-view="ai-assistant">AI 助手（待开发）</button>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <section class="view active" id="overview">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">2.0 工作台</p>
+              <h2>围绕一个项目保存问卷、配额、质检与模型结果</h2>
+            </div>
+            <button class="install-btn hidden" id="installButton">安装应用</button>
+          </div>
+
+          <div class="project-workspace">
+            <input class="hidden" id="sharedQuestionnaireImportFile" type="file" accept=".docx,.xlsx,.md,.txt,.csv" />
+            <section class="panel project-panel">
+              <div class="section-heading compact">
+                <div>
+                  <h3>项目档案</h3>
+                  <p>先把项目信息和问卷稿保存下来，后续工具会逐步复用同一份项目材料。</p>
+                </div>
+                <span class="project-save-status" id="projectSaveStatus">未保存</span>
+              </div>
+              <div class="project-form">
+                <label>
+                  项目名称
+                  <input id="workspaceProjectName" type="text" placeholder="例如：新品概念测试" />
+                </label>
+                <label>
+                  研究类型
+                  <select id="workspaceStudyType">
+                    <option value="概念测试">概念测试</option>
+                    <option value="U&A 研究">U&A 研究</option>
+                    <option value="满意度/NPS">满意度/NPS</option>
+                    <option value="价格研究">价格研究</option>
+                    <option value="产品体验研究">产品体验研究</option>
+                    <option value="其他">其他</option>
+                  </select>
+                </label>
+                <label>
+                  当前阶段
+                  <select id="workspaceStage">
+                    <option value="调研前">调研前</option>
+                    <option value="调研中">调研中</option>
+                    <option value="调研后">调研后</option>
+                  </select>
+                </label>
+                <label>
+                  目标有效样本量
+                  <input id="workspaceSampleTarget" type="number" min="1" placeholder="例如：400" />
+                </label>
+                <label class="span-row">
+                  问卷稿
+                  <textarea id="workspaceQuestionnaire" placeholder="粘贴项目问卷稿。保存后可同步到上线质检、清洗规则、表头设计、时长估算、ABC 指标识别等工具。"></textarea>
+                </label>
+              </div>
+              <div class="button-row">
+                <button class="primary-btn" id="saveWorkspaceProject" type="button">保存项目</button>
+                <button class="secondary-btn" id="applyWorkspaceProject" type="button">同步到工具</button>
+                <button class="secondary-btn" id="clearWorkspaceProject" type="button">清空项目</button>
+              </div>
+
+              <div class="questionnaire-import">
+                <div class="section-heading compact">
+                  <div>
+                    <h3>导入问卷</h3>
+                    <p>直接导入问卷文档，确认后写入项目问卷稿并同步到后续工具。</p>
+                  </div>
+                </div>
+                <div class="import-flow">
+                  <section>
+                    <strong>选择问卷文件</strong>
+                    <p>支持 Word、Excel、Markdown、TXT 和 CSV，建议直接上传项目中的问卷稿。</p>
+                    <label class="file-drop" for="questionnaireImportFile">
+                      <input id="questionnaireImportFile" type="file" accept=".docx,.xlsx,.md,.txt,.csv" />
+                      <span>选择本地 DOCX / XLSX / Markdown / TXT / CSV 文件</span>
+                    </label>
+                  </section>
+                  <section class="import-note import-note-inline">
+                    <strong>导入流程说明</strong>
+                    <ul>
+                      <li>DOCX 会读取正文段落并转换为问卷文本，适合常规 Word 问卷稿。</li>
+                      <li>XLSX 会读取多个工作表，优先识别“题号、题干、选项、说明”等列。</li>
+                      <li>Markdown / TXT 会按原文导入，保留题号、选项和跳题说明。</li>
+                      <li>CSV 会优先识别“题号、题干、选项、说明”等列，也支持普通文本式 CSV。</li>
+                    </ul>
+                  </section>
+                </div>
+                <div class="import-preview" id="questionnaireImportPreview">
+                  <strong>等待导入</strong>
+                  <span>导入后这里会显示识别到的题量、选项行和文本预览。</span>
+                </div>
+                <button class="primary-btn" id="applyQuestionnaireImport" type="button" disabled>生成并使用</button>
+              </div>
+            </section>
+
+            <section class="panel project-status-panel">
+              <div class="section-heading compact">
+                <div>
+                  <h3>项目进度</h3>
+                  <p>根据当前已保存内容自动判断下一步。</p>
+                </div>
+                <strong id="projectCompletion">0%</strong>
+              </div>
+              <div class="project-summary-grid">
+                <div>
+                  <span>项目</span>
+                  <strong id="projectSummaryName">未命名项目</strong>
+                </div>
+                <div>
+                  <span>阶段</span>
+                  <strong id="projectSummaryStage">未设置</strong>
+                </div>
+                <div>
+                  <span>样本目标</span>
+                  <strong id="projectSummarySample">未设置</strong>
+                </div>
+              </div>
+              <div class="project-checklist" id="projectChecklist" aria-live="polite"></div>
+              <div class="next-action">
+                <span>建议下一步</span>
+                <strong id="projectNextAction">先保存项目档案。</strong>
+              </div>
+            </section>
+          </div>
+
+          <div class="workflow-grid">
+            <article class="tool-card ready" data-jump="sample">
+              <span>调研前</span>
+              <h3>样本量计算</h3>
+              <p>按置信水平、误差、用户规模、分群数量和回收率给出建议样本。</p>
+            </article>
+            <article class="tool-card ready" data-jump="quota">
+              <span>调研前</span>
+              <h3>配额设计</h3>
+              <p>支持单一配额和交叉配额，按比例快速换算目标样本量。</p>
+            </article>
+            <article class="tool-card ready" data-jump="link-test">
+              <span>调研前</span>
+              <h3>问卷上线质检</h3>
+              <p>粘贴问卷稿，检查跳题引用、随机轮换、选项遗漏和常见细节错误。</p>
+            </article>
+            <article class="tool-card ready" data-jump="time-estimate">
+              <span>调研前</span>
+              <h3>答题时间估算</h3>
+              <p>按题型、选项数量和开放题估算问卷完成时长，辅助控制问卷长度。</p>
+            </article>
+            <article class="tool-card ready" data-jump="cleaning-rules">
+              <span>调研中</span>
+              <h3>清洗规则生成</h3>
+              <p>根据问卷题型生成时长、陷阱题、直线题、开放题等清洗建议。</p>
+            </article>
+            <article class="tool-card ready" data-jump="table-header">
+              <span>调研中</span>
+              <h3>表头设计助手</h3>
+              <p>自动建议分群表头和不建议入表题，减少制表前沟通成本。</p>
+            </article>
+            <article class="tool-card planned" data-jump="models">
+              <span>调研后</span>
+              <h3>PSM / KANO / MaxDiff / ABC</h3>
+              <p>优先做小而专业的模型工具，形成区别于通用分析软件的卖点。</p>
+            </article>
+            <article class="tool-card ready" data-jump="psm">
+              <span>调研后</span>
+              <h3>PSM 价格敏感度</h3>
+              <p>粘贴四个价格问题数据，自动计算关键价格点和价格曲线表。</p>
+            </article>
+            <article class="tool-card ready" data-jump="kano">
+              <span>调研后</span>
+              <h3>KANO 模型</h3>
+              <p>导入属性分类人数，输出属性分类、Better-Worse 系数和优先级建议。</p>
+            </article>
+            <article class="tool-card ready" data-jump="maxdiff">
+              <span>调研后</span>
+              <h3>MaxDiff</h3>
+              <p>生成 MaxDiff 题组设计模板，并按 Best-Worst 次数做简单计分。</p>
+            </article>
+            <article class="tool-card ready" data-jump="abc-value">
+              <span>调研后</span>
+              <h3>ABC 用户价值模型</h3>
+              <p>从问卷中识别态度、行为、消费指数候选指标，辅助定位高价值用户。</p>
+            </article>
+            <article class="tool-card planned" data-jump="ai-assistant">
+              <span>AI 增值</span>
+              <h3>AI 调研助手（待开发）</h3>
+              <p>先预留跨流程 AI 入口，后续接入问卷审查、结果解释和报告段落生成。</p>
+            </article>
+          </div>
+
+        </section>
+
+        <section class="view" id="sample">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">样本量计算</p>
+              <h2>样本量计算器</h2>
+            </div>
+          </div>
+
+          <div class="split-layout">
+            <form class="panel" id="sampleForm">
+              <label class="field">
+                <span class="field-heading">
+                  <span>置信水平</span>
+                  <button class="help-btn" type="button" data-help="confidence" aria-expanded="false" aria-label="查看置信水平说明">?</button>
+                </span>
+                <span class="help-text" id="help-confidence">
+                  表示抽样结果的可靠程度。常用 95%，意思是如果用同样方法反复抽样，多数情况下结果会落在设定误差范围内。
+                </span>
+                <select id="confidence">
+                  <option value="1.645">90%</option>
+                  <option value="1.96" selected>95%</option>
+                  <option value="2.576">99%</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-heading">
+                  <span>允许误差</span>
+                  <button class="help-btn" type="button" data-help="margin" aria-expanded="false" aria-label="查看允许误差说明">?</button>
+                </span>
+                <span class="help-text" id="help-margin">
+                  表示你能接受的抽样误差范围。误差越小，需要的样本量越大；常规定量项目通常使用 3%-5%。
+                </span>
+                <span class="input-unit">
+                  <input id="margin" type="number" min="1" max="20" value="5" />
+                  <span>%</span>
+                </span>
+              </label>
+              <label class="field">
+                用户规模
+                <input id="population" type="number" min="0" value="0" />
+                <small>填 0 表示无限总体</small>
+              </label>
+              <label class="field">
+                分群数量
+                <input id="segments" type="number" min="1" value="1" />
+              </label>
+              <label class="field">
+                预计有效回收率
+                <span class="input-unit">
+                  <input id="responseRate" type="number" min="1" max="100" value="80" />
+                  <span>%</span>
+                </span>
+              </label>
+            </form>
+
+            <div class="result-panel">
+              <div>
+                <span>建议有效样本量</span>
+                <strong id="baseSample">385</strong>
+              </div>
+              <div>
+                <span>建议发放样本量</span>
+                <strong id="grossSample">482</strong>
+              </div>
+              <div>
+                <span>每个分群建议有效样本</span>
+                <strong id="segmentSample">385</strong>
+              </div>
+              <p id="sampleAdvice">95% 置信水平、5% 误差下，常规无限总体项目建议有效样本量约 385。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="quota">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">配额设计</p>
+              <h2 class="title-with-help">
+                <span>配额设计器</span>
+                <button class="model-help-btn" type="button" data-jump="quota-guide" aria-label="查看配额设计说明">?</button>
+              </h2>
+            </div>
+          </div>
+
+          <div class="split-layout">
+            <form class="panel" id="quotaForm">
+              <label class="field">
+                目标有效样本量
+                <input id="quotaTotal" type="number" min="1" value="400" />
+              </label>
+              <div class="segmented-control" aria-label="配额类型">
+                <button class="active" type="button" data-quota-mode="single">单一配额</button>
+                <button type="button" data-quota-mode="cross">交叉配额</button>
+              </div>
+
+              <div class="quota-mode active" id="singleQuotaFields">
+                <div class="field">
+                  <span>单一配额维度</span>
+                  <div class="quota-dimensions" id="singleQuotaDimensions"></div>
+                  <button class="secondary-btn" id="addQuotaDimension" type="button">添加配额维度</button>
+                  <div class="quota-template-row" aria-label="常用配额模板">
+                    <button class="ghost-btn" type="button" data-quota-template="gender">性别模板</button>
+                    <button class="ghost-btn" type="button" data-quota-template="age">年龄模板</button>
+                    <button class="ghost-btn" type="button" data-quota-template="city">城市级别</button>
+                    <button class="ghost-btn" type="button" data-quota-template="user">用户类型</button>
+                  </div>
+                  <small>每个维度下可添加多个配额选项，例如“性别”下的“男/女”。</small>
+                </div>
+              </div>
+
+              <div class="quota-mode" id="crossQuotaFields">
+                <label class="field">
+                  维度一
+                  <input id="quotaRows" type="text" value="男:50, 女:50" />
+                  <small>格式：名称:比例，用逗号分隔</small>
+                </label>
+                <label class="field">
+                  维度二
+                  <input id="quotaCols" type="text" value="18-29岁:35, 30-39岁:35, 40岁以上:30" />
+                  <small>可用于年龄、城市级别、用户类型等</small>
+                </label>
+                <div class="quota-template-row">
+                  <button class="ghost-btn" type="button" data-cross-quota-template="gender-age">性别 × 年龄</button>
+                  <button class="ghost-btn" type="button" data-cross-quota-template="city-user">城市级别 × 用户类型</button>
+                </div>
+              </div>
+
+              <p class="panel-note">单一配额用于控制一个维度；交叉配额用于控制两个维度的组合分布。</p>
+            </form>
+
+            <div class="quota-output">
+              <div class="section-heading compact">
+                <div>
+                  <h3 id="quotaTitle">单一配额表</h3>
+                  <p id="quotaSummary">目标有效样本量 400</p>
+                </div>
+                <button class="secondary-btn" id="saveQuotaProgress" type="button">保存到项目进度</button>
+              </div>
+              <div class="table-wrap">
+                <table id="quotaTable"></table>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        <section class="view" id="quota-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">术语说明</p>
+              <h2>配额设计帮助</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="quota">返回配额设计</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>配额</span>
+              <h3>控制样本结构，让回收更贴近研究目标</h3>
+              <p>配额用于限定不同人群、城市、年龄、用户类型等样本占比，避免某一类受访者过多或过少。</p>
+            </article>
+            <article class="guide-card">
+              <span>单一配额</span>
+              <h3>只控制一个维度</h3>
+              <p>例如只控制性别、年龄或城市级别。每个维度下所有选项比例通常应合计 100%。</p>
+            </article>
+            <article class="guide-card">
+              <span>交叉配额</span>
+              <h3>控制两个维度的组合分布</h3>
+              <p>例如“性别 × 年龄”。交叉配额更精细，但格子过多时容易出现单格样本量太小、执行困难的问题。</p>
+            </article>
+            <article class="guide-card">
+              <span>目标有效样本量</span>
+              <h3>最终可用于分析的样本数</h3>
+              <p>这是完成清洗后仍保留的有效样本目标，不等同于实际发放或邀请人数。</p>
+            </article>
+            <article class="guide-card">
+              <span>使用提醒</span>
+              <h3>配额不是越细越好</h3>
+              <p>建议优先控制对业务结论最关键的变量，避免配额维度过多导致回收成本高、单格样本不足。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="quota">返回配额设计</button>
+        </section>
+
+        <section class="view" id="link-test">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">问卷质检</p>
+              <h2 class="title-with-help">
+                <span>问卷上线质检助手</span>
+                <button class="model-help-btn" type="button" data-jump="link-test-guide" aria-label="查看上线质检说明">?</button>
+              </h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <label>
+                项目名称
+                <input id="projectName" type="text" placeholder="例如：新品概念测试" />
+              </label>
+              <label>
+                研究场景
+                <select id="auditScenario">
+                  <option value="general">通用上线质检</option>
+                  <option value="concept">概念测试</option>
+                  <option value="ua">U&A 使用与态度研究</option>
+                  <option value="satisfaction">满意度 / NPS</option>
+                  <option value="psm">价格研究 / PSM</option>
+                  <option value="kanoMaxdiff">KANO / MaxDiff</option>
+                </select>
+              </label>
+              <label>
+                <span class="label-action">
+                  <span>问卷稿</span>
+                  <button class="secondary-btn mini-import-btn" type="button" data-import-target="questionnaireText">导入问卷</button>
+                </span>
+                <textarea id="questionnaireText" placeholder="粘贴问卷题目、选项、跳题说明。支持 Q1、S1、题1、1. 等题号格式。例如：S1. 您是否购买过本品？&#10;A. 是 → 跳至 S3&#10;B. 否 → 结束"></textarea>
+              </label>
+              <label>
+                审查人员
+                <input id="testerName" type="text" placeholder="姓名或团队" />
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="runAudit" type="button">开始质检</button>
+                <button class="secondary-btn" id="loadExample" type="button">载入示例</button>
+                <button class="secondary-btn" id="exportAudit" type="button" disabled>导出 Markdown</button>
+                <button class="secondary-btn" id="exportAuditHtml" type="button" disabled>导出 HTML 报告</button>
+              </div>
+              <button class="secondary-btn" id="saveTest" type="button">保存质检记录</button>
+              <p class="panel-note">第三方问卷链接可作为人工复核对象；深层逻辑检查建议基于问卷稿或平台导出的题目表。</p>
+            </div>
+
+            <div class="audit-results" id="auditResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待质检</strong>
+                <span>粘贴问卷稿后点击“开始质检”，这里会显示阻塞问题、重要问题和建议优化。</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="report-strip">
+            <div>
+              <span>发现问题</span>
+              <strong id="issueCount">0</strong>
+            </div>
+            <div>
+              <span>阻塞问题</span>
+              <strong id="blockerCount">0</strong>
+            </div>
+            <div>
+              <span>最近保存</span>
+              <strong id="lastSaved">未保存</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="link-test-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">术语说明</p>
+              <h2>问卷上线质检帮助</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="link-test">返回上线质检</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>上线质检</span>
+              <h3>上线前发现问卷结构和细节风险</h3>
+              <p>上线质检用于在正式投放前检查题号、跳题、选项、随机轮换和措辞细节，减少真实回收后才发现问题的风险。</p>
+            </article>
+            <article class="guide-card">
+              <span>阻塞问题</span>
+              <h3>建议修改后再上线</h3>
+              <p>例如跳题目标不存在、题号重复、关键选项缺失。这类问题可能直接影响样本路径和数据可用性。</p>
+            </article>
+            <article class="guide-card">
+              <span>重要问题</span>
+              <h3>会影响理解或后续数据处理</h3>
+              <p>例如选项重复、“其他”缺少说明、排他项没有固定或互斥设置。</p>
+            </article>
+            <article class="guide-card">
+              <span>建议问题</span>
+              <h3>优化问卷体验和表达一致性</h3>
+              <p>例如疑似错别字、措辞不统一、随机轮换说明不够清楚。</p>
+            </article>
+            <article class="guide-card">
+              <span>使用提醒</span>
+              <h3>规则检查不替代真实试填</h3>
+              <p>工具适合先做文本层面的预检，正式上线前仍建议在问卷平台逐路径试填。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="link-test">返回上线质检</button>
+        </section>
+
+        <section class="view" id="time-estimate">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">时长估算</p>
+              <h2>答题时间估算</h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <label>
+                <span class="label-action">
+                  <span>问卷稿</span>
+                  <button class="secondary-btn mini-import-btn" type="button" data-import-target="timeText">导入问卷</button>
+                </span>
+                <textarea id="timeText" placeholder="粘贴问卷题目、选项、量表和开放题说明。工具会按题型估算整体答题时长。"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="estimateTime" type="button">估算时长</button>
+                <button class="secondary-btn" id="loadTimeExample" type="button">载入示例</button>
+              </div>
+              <p class="panel-note">这是上线前的经验估算，用于判断问卷是否过长；真实时长仍建议结合小样本试填校准。</p>
+            </div>
+
+            <div class="audit-results" id="timeResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待估算</strong>
+                <span>粘贴问卷稿后点击“估算时长”，这里会显示预计完成时长、题量和主要耗时来源。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="cleaning-rules">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">清洗规则</p>
+              <h2 class="title-with-help">
+                <span>清洗规则生成器</span>
+                <button class="model-help-btn" type="button" data-jump="cleaning-guide" aria-label="查看清洗规则说明">?</button>
+              </h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <label>
+                <span class="label-action">
+                  <span>问卷稿</span>
+                  <button class="secondary-btn mini-import-btn" type="button" data-import-target="cleaningText">导入问卷</button>
+                </span>
+                <textarea id="cleaningText" placeholder="粘贴问卷题目、选项、跳题说明。工具会根据题型和关键词生成清洗规则建议。"></textarea>
+              </label>
+              <label class="field">
+                最短有效时长
+                <span class="input-unit">
+                  <input id="cleanMinDuration" type="number" min="30" value="120" />
+                  <span>秒</span>
+                </span>
+              </label>
+              <label class="field">
+                开放题最少字数
+                <span class="input-unit">
+                  <input id="cleanOpenMinChars" type="number" min="1" value="5" />
+                  <span>字</span>
+                </span>
+              </label>
+              <label class="field">
+                直线题一致率阈值
+                <span class="input-unit">
+                  <input id="cleanStraightThreshold" type="number" min="50" max="100" value="90" />
+                  <span>%</span>
+                </span>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="generateCleaning" type="button">生成清洗规则</button>
+                <button class="secondary-btn" id="loadCleaningExample" type="button">载入示例</button>
+                <button class="secondary-btn span-row" id="exportCleaningRules" type="button" disabled>导出清洗规则 CSV</button>
+              </div>
+              <p class="panel-note">当前生成的是规则建议模板；后续可接入数据文件后自动执行清洗。</p>
+            </div>
+
+            <div class="audit-results" id="cleaningResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待生成</strong>
+                <span>粘贴问卷稿后点击“生成清洗规则”，这里会显示建议规则、适用题目和处理方式。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="cleaning-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">术语说明</p>
+              <h2>清洗规则帮助</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="cleaning-rules">返回清洗规则</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>清洗规则</span>
+              <h3>定义哪些样本需要剔除、标记或人工复核</h3>
+              <p>清洗规则用于把问卷质量标准提前写清楚，减少数据回收后临时争议。</p>
+            </article>
+            <article class="guide-card">
+              <span>答题时长</span>
+              <h3>识别过快完成的低质量样本</h3>
+              <p>答题时间过短通常意味着未认真阅读，但需要结合题量、设备、开放题内容一起判断。</p>
+            </article>
+            <article class="guide-card">
+              <span>陷阱题</span>
+              <h3>检查受访者是否按要求作答</h3>
+              <p>例如“为保证答题质量，请选择比较同意”。答错时通常进入剔除或复核。</p>
+            </article>
+            <article class="guide-card">
+              <span>直线题</span>
+              <h3>识别矩阵题中高度一致的机械作答</h3>
+              <p>如果多个量表项全部选择同一选项，可能需要标记为低质量样本。</p>
+            </article>
+            <article class="guide-card">
+              <span>开放题质量</span>
+              <h3>检查空泛、重复或无意义回答</h3>
+              <p>开放题可用最少字数、重复文本、无意义词和复制粘贴痕迹作为复核规则。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="cleaning-rules">返回清洗规则</button>
+        </section>
+
+        <section class="view" id="table-header">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">表头设计</p>
+              <h2 class="title-with-help">
+                <span>表头设计助手</span>
+                <button class="model-help-btn" type="button" data-jump="table-header-guide" aria-label="查看表头设计说明">?</button>
+              </h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <label>
+                <span class="label-action">
+                  <span>问卷稿</span>
+                  <button class="secondary-btn mini-import-btn" type="button" data-import-target="headerText">导入问卷</button>
+                </span>
+                <textarea id="headerText" placeholder="粘贴问卷题目、选项、跳题说明。工具会建议分群表头和不建议入表题。"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="generateHeader" type="button">生成表头建议</button>
+                <button class="secondary-btn" id="loadHeaderExample" type="button">载入示例</button>
+                <button class="secondary-btn span-row" id="exportHeaderPlan" type="button" disabled>导出表头方案 CSV</button>
+              </div>
+              <p class="panel-note">第一版输出制表规划建议；后续可导出 Excel 制表需求表。</p>
+            </div>
+
+            <div class="audit-results" id="headerResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待生成</strong>
+                <span>粘贴问卷稿后点击“生成表头建议”，这里会显示分群表头和不建议入表题。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="table-header-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">术语说明</p>
+              <h2>表头设计帮助</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="table-header">返回表头设计</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>表头设计</span>
+              <h3>提前规划交叉表要按哪些人群拆分</h3>
+              <p>表头设计用于在制表前明确横向分群变量，减少后期反复改表。</p>
+            </article>
+            <article class="guide-card">
+              <span>Banner 分群变量</span>
+              <h3>适合放在交叉表横向表头的变量</h3>
+              <p>常见包括性别、年龄、城市级别、用户类型、购买频率、品牌使用状态等。</p>
+            </article>
+            <article class="guide-card">
+              <span>不建议入表题</span>
+              <h3>不适合作为标准横向拆分的题目</h3>
+              <p>开放题、陷阱题、纯跳转题、样本量过小的细分题通常不建议作为主表头。</p>
+            </article>
+            <article class="guide-card">
+              <span>组合表头</span>
+              <h3>少量高解释力变量组合</h3>
+              <p>组合表头适合用来形成分析视角，但变量过多会导致表格过宽、单格样本不足。</p>
+            </article>
+            <article class="guide-card">
+              <span>使用提醒</span>
+              <h3>表头要服务分析故事线</h3>
+              <p>优先选择能解释业务差异的变量，而不是把所有人口属性都放进表头。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="table-header">返回表头设计</button>
+        </section>
+
+        <section class="view" id="crosstab-analysis">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">交叉表</p>
+              <h2 class="title-with-help">
+                <span>交叉表分析</span>
+                <button class="model-help-btn" type="button" data-jump="crosstab-guide" aria-label="查看交叉表分析说明">?</button>
+              </h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <input class="hidden" id="crosstabImportFile" type="file" accept=".sav,.xlsx,.csv,.txt" />
+              <label>
+                <span class="label-action">
+                  <span>数据表</span>
+                  <button class="secondary-btn mini-import-btn" id="importCrosstabHeader" type="button">导入表头</button>
+                  <button class="secondary-btn mini-import-btn" id="importCrosstabData" type="button">导入数据</button>
+                </span>
+                <textarea id="crosstabData" placeholder="粘贴 CSV / Excel 复制出的表格，或导入 SAV / Excel 数据文件。第一行需为字段名，例如：性别,是否购买,满意度"></textarea>
+              </label>
+              <div class="two-col-fields">
+                <label>
+                  行变量
+                  <select id="crosstabRowVar"></select>
+                </label>
+                <label>
+                  列变量
+                  <select id="crosstabColVar"></select>
+                </label>
+              </div>
+              <div class="button-row">
+                <button class="secondary-btn" id="detectCrosstabFields" type="button">识别字段</button>
+                <button class="primary-btn" id="runQuestionPivot" type="button">生成全部交叉表</button>
+                <button class="primary-btn" id="runCrosstab" type="button">生成交叉表</button>
+                <button class="secondary-btn" id="loadCrosstabExample" type="button">载入示例</button>
+                <button class="secondary-btn" id="exportCrosstab" type="button" disabled>导出 CSV</button>
+              </div>
+              <p class="panel-note">用于“填数字+算卡方”：支持 SAV、CSV/TXT，也支持 data + code 双 sheet Excel，导入时会自动套用题干和选项映射。</p>
+            </div>
+
+            <div class="audit-results" id="crosstabResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待分析</strong>
+                <span>粘贴数据后先识别字段，再选择行列变量生成交叉表。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="crosstab-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">术语说明</p>
+              <h2>交叉表分析帮助</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="crosstab-analysis">返回交叉表分析</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>交叉表分析</span>
+              <h3>把样本数据按两个变量交叉拆分</h3>
+              <p>交叉表分析既包括生成全部交叉表，也包括两个变量之间的交叉拆分，是定量报告中最常用的基础分析。</p>
+            </article>
+            <article class="guide-card">
+              <span>生成全部交叉表</span>
+              <h3>自动输出所有题目的数据分布</h3>
+              <p>工具会按字段结构和值类型识别单选、多选、量表、矩阵、排序和 NPS，并默认排除开放题后直接导出为 Excel。</p>
+            </article>
+            <article class="guide-card">
+              <span>列百分比</span>
+              <h3>看每个列群体内部的构成</h3>
+              <p>当列变量是人群分组时，列百分比更适合比较不同群体在同一选项上的差异。</p>
+            </article>
+            <article class="guide-card">
+              <span>卡方检验</span>
+              <h3>判断两个分类变量是否存在统计关联</h3>
+              <p>p 值小于 0.05 通常表示差异具有统计显著性，但仍需结合样本量和业务意义解释。</p>
+            </article>
+            <article class="guide-card">
+              <span>使用提醒</span>
+              <h3>小样本格需要谨慎解释</h3>
+              <p>若大量单元格期望频数过低，卡方检验会不稳定，建议合并选项或扩大样本。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="crosstab-analysis">返回交叉表分析</button>
+        </section>
+
+        <section class="view" id="data-weighting">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">数据加权</p>
+              <h2 class="title-with-help">
+                <span>数据加权</span>
+                <button class="model-help-btn" type="button" data-jump="weighting-guide" aria-label="查看数据加权说明">?</button>
+              </h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <label>
+                加权方式
+                <select id="weightingMode">
+                  <option value="rim">RIM 边际加权</option>
+                  <option value="cell">Cell 单元格加权</option>
+                </select>
+              </label>
+              <label>
+                原始样本数据 / Cell 样本结构
+                <textarea id="weightingSampleData" placeholder="RIM：粘贴原始样本数据，第一行字段名，如：性别,年龄段,城市级别&#10;Cell：粘贴 cell,sample,target，如：男_18-29,120,100"></textarea>
+              </label>
+              <label>
+                目标结构
+                <textarea id="weightingTargetData" placeholder="RIM：每行 variable,category,target%，如：性别,男,50&#10;性别,女,50&#10;年龄段,18-29,30"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="runWeighting" type="button">计算权重</button>
+                <button class="secondary-btn" id="loadWeightingExample" type="button">载入示例</button>
+                <button class="secondary-btn" id="exportWeighting" type="button" disabled>导出 CSV</button>
+              </div>
+              <p class="panel-note">RIM 用于多个边际变量同时校准；Cell 用于已知交叉单元格目标量时直接计算权重。</p>
+            </div>
+
+            <div class="audit-results" id="weightingResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待计算</strong>
+                <span>粘贴样本数据和目标结构后点击“计算权重”。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="weighting-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">术语说明</p>
+              <h2>数据加权帮助</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="data-weighting">返回数据加权</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>数据加权</span>
+              <h3>修正清洗后样本结构与目标总体的偏差</h3>
+              <p>当性别、年龄、城市等结构与目标总体不一致时，可通过权重让分析结果更接近目标结构。</p>
+            </article>
+            <article class="guide-card">
+              <span>RIM 加权</span>
+              <h3>按多个边际结构迭代校准</h3>
+              <p>适合同时校准性别、年龄、区域等变量，但不要求每个交叉单元格都有明确目标量。</p>
+            </article>
+            <article class="guide-card">
+              <span>Cell 加权</span>
+              <h3>按交叉单元格直接计算权重</h3>
+              <p>适合已经知道每个格子的目标样本或目标占比，例如“男_18-29”“女_30-39”。</p>
+            </article>
+            <article class="guide-card">
+              <span>权重检查</span>
+              <h3>避免极端权重影响稳定性</h3>
+              <p>权重过大或过小会放大个别样本影响，通常需要设置截尾规则或回到配额执行端修正。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="data-weighting">返回数据加权</button>
+        </section>
+
+        <section class="view" id="models">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">专项模型</p>
+              <h2>专项模型路线</h2>
+            </div>
+          </div>
+
+          <div class="model-grid">
+            <article>
+              <span>PSM</span>
+              <h3>PSM 价格敏感度</h3>
+              <p>导入四个价格问题，输出可接受价格区间、最优价格点和价格曲线。</p>
+              <button class="model-open" data-jump="psm">打开工具</button>
+            </article>
+            <article>
+              <span>KANO</span>
+              <h3>KANO 模型</h3>
+              <p>正向/反向题自动分类，生成 Better-Worse 系数和优先级图。</p>
+              <button class="model-open" data-jump="kano">打开工具</button>
+            </article>
+            <article>
+              <span>MaxDiff</span>
+              <h3>MaxDiff</h3>
+              <p>先支持设计模板和简单计分，再扩展 MNL/HB 等专业模型。</p>
+              <button class="model-open" data-jump="maxdiff">打开工具</button>
+            </article>
+            <article>
+              <span>众言模型</span>
+              <h3>ABC 用户价值模型</h3>
+              <p>按态度、行为、消费三类指标识别高价值用户分群。</p>
+              <button class="model-open" data-jump="abc-value">打开工具</button>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="psm">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">PSM 分析</p>
+              <h2 class="title-with-help">
+                <span>PSM 价格敏感度分析</span>
+                <button class="model-help-btn" type="button" data-jump="psm-guide" aria-label="查看 PSM 模型说明">?</button>
+              </h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <label>
+                价格数据
+                <textarea id="psmData" placeholder="每行一位受访者，四列依次为：太便宜、便宜、贵、太贵。支持逗号、制表符或空格分隔。&#10;例如：80,160,260,340"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="runPsm" type="button">计算 PSM</button>
+                <button class="secondary-btn" id="loadPsmExample" type="button">载入示例</button>
+                <button class="secondary-btn" id="exportPsm" type="button" disabled>导出 CSV</button>
+                <button class="secondary-btn" id="exportPsmPng" type="button" disabled>导出图表 PNG</button>
+              </div>
+              <p class="panel-note">请确保四列价格含义依次为“太便宜 / 便宜 / 贵 / 太贵”。第一版使用线性插值估算关键交点。</p>
+            </div>
+
+            <div class="audit-results" id="psmResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待计算</strong>
+                <span>粘贴 PSM 四列价格数据后点击“计算 PSM”，这里会显示可接受价格区间和关键价格点。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="psm-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">模型说明</p>
+              <h2>PSM 价格敏感度模型</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="psm">返回工具</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>适用场景</span>
+              <h3>用于找到用户能接受的价格范围</h3>
+              <p>PSM 适合早期定价探索，常用于新品、服务套餐、会员权益等还没有明确市场价格锚点的研究。它不是直接询问“你愿意付多少钱”，而是通过四个价格边界判断用户的价格心理区间。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>四个问题</span>
+              <h3>每位受访者需要回答四列价格</h3>
+              <p>依次填写：太便宜、比较便宜、比较贵、太贵。四个数值通常应从低到高排列，否则会影响曲线和关键点判断。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>四条曲线</span>
+              <h3>两条下降，两条上升</h3>
+              <p>“太便宜”和“比较便宜”随价格升高逐步下降；“比较贵”和“太贵”随价格升高逐步上升。曲线交点用于估算价格边界。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>关键点</span>
+              <h3>PMC / PME / IPP / OPP</h3>
+              <p>PMC 是可接受价格下限，PME 是可接受价格上限；IPP 表示便宜与贵的平衡点；OPP 通常被视为最优价格点。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>使用提醒</span>
+              <h3>建议结合业务判断使用</h3>
+              <p>PSM 输出的是价格感知结果，不等同于销量预测。正式定价时建议结合竞品价格、成本、品牌定位、转化测试或销量模拟一起判断。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="psm">返回 PSM 工具</button>
+        </section>
+
+        <section class="view" id="kano">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">KANO 模型</p>
+              <h2 class="title-with-help">
+                <span>KANO 模型分析</span>
+                <button class="model-help-btn" type="button" data-jump="kano-guide" aria-label="查看 KANO 模型说明">?</button>
+              </h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <label>
+                属性分类人数
+                <textarea id="kanoData" placeholder="每行一个属性，列顺序为：属性名, 魅力A, 期望O, 必备M, 无差异I, 反向R, 可疑Q&#10;例如：配送速度,42,38,16,20,3,1"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="runKano" type="button">计算 KANO</button>
+                <button class="secondary-btn" id="loadKanoExample" type="button">载入示例</button>
+                <button class="secondary-btn" id="exportKano" type="button" disabled>导出 CSV</button>
+                <button class="secondary-btn" id="exportKanoPng" type="button" disabled>导出图表 PNG</button>
+              </div>
+              <p class="panel-note">第一版按已汇总的 KANO 分类人数计算 Better-Worse 系数；适合从问卷平台或表格中复制结果。</p>
+            </div>
+
+            <div class="audit-results" id="kanoResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待计算</strong>
+                <span>粘贴属性分类人数后点击“计算 KANO”，这里会显示属性分类、优先级和 Better-Worse 图。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="kano-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">模型说明</p>
+              <h2>KANO 模型</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="kano">返回 KANO 工具</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>适用场景</span>
+              <h3>用于判断功能属性如何影响用户满意度</h3>
+              <p>KANO 适合评估产品功能、服务体验、权益配置等属性，帮助区分哪些是必须做好、哪些能显著提升满意度、哪些投入回报有限。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>问卷形式</span>
+              <h3>通常使用正反向成对提问</h3>
+              <p>同一个属性分别询问“具备该功能时的感受”和“不具备该功能时的感受”，再根据回答组合归入不同属性类型。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>属性分类</span>
+              <h3>魅力、期望、必备、无差异、反向、可疑</h3>
+              <p>魅力属性能制造惊喜；期望属性越好越满意；必备属性缺失会明显不满；无差异属性影响较小；反向和可疑结果需要复核题目或样本。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>Better-Worse</span>
+              <h3>衡量满意提升与不满风险</h3>
+              <p>Better 系数反映做好该属性带来的满意提升，Worse 系数反映没做好带来的不满风险。图上可用于判断优先改善、基础保障、高提升空间和高不满风险。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>使用提醒</span>
+              <h3>正式研究需先保证题目语义清楚</h3>
+              <p>当前工具按已汇总的分类人数计算，适合快速复核结果。正式上线前建议检查正反向题是否一一对应，避免双重否定或让用户难以理解的功能描述。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="kano">返回 KANO 工具</button>
+        </section>
+
+        <section class="view" id="maxdiff">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">MaxDiff</p>
+              <h2 class="title-with-help">
+                <span>MaxDiff 设计与简单计分</span>
+                <button class="model-help-btn" type="button" data-jump="maxdiff-guide" aria-label="查看 MaxDiff 模型说明">?</button>
+              </h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <label>
+                待测试项目
+                <textarea id="maxdiffItems" placeholder="每行一个待测试项目，例如：&#10;口味更好&#10;包装更高级&#10;价格更划算"></textarea>
+              </label>
+              <label class="field">
+                题组数量
+                <input id="maxdiffSetCount" type="number" min="2" value="6" />
+              </label>
+              <label class="field">
+                每题展示项目数
+                <input id="maxdiffItemsPerSet" type="number" min="2" value="4" />
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="generateMaxDiff" type="button">生成设计</button>
+                <button class="secondary-btn" id="loadMaxDiffExample" type="button">载入示例</button>
+                <button class="secondary-btn span-row" id="exportMaxDiffDesign" type="button" disabled>导出设计 CSV</button>
+              </div>
+              <p class="panel-note">第一版使用轻量均衡分配，适合快速生成问卷题组草案；正式大样本建议再做实验设计校验。</p>
+            </div>
+
+            <div class="audit-results" id="maxdiffDesignResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待生成设计</strong>
+                <span>输入待测试项目后点击“生成设计”，这里会显示每个 MaxDiff 题组。</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="link-tester secondary-tool">
+            <div class="panel">
+              <label>
+                计分数据
+                <textarea id="maxdiffScoreData" placeholder="每行一个项目，列顺序为：项目名, 最佳次数, 最差次数, 展示次数&#10;例如：口味更好,48,12,80"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="scoreMaxDiff" type="button">计算得分</button>
+                <button class="secondary-btn" id="loadMaxDiffScoreExample" type="button">载入计分示例</button>
+                <button class="secondary-btn" id="exportMaxDiffScore" type="button" disabled>导出计分 CSV</button>
+                <button class="secondary-btn" id="exportMaxDiffPng" type="button" disabled>导出图表 PNG</button>
+              </div>
+              <p class="panel-note">简单计分公式为 (最佳次数 - 最差次数) / 展示次数，用于快速排序，不替代 MNL/HB 模型估计。</p>
+            </div>
+
+            <div class="audit-results" id="maxdiffScoreResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待计分</strong>
+                <span>粘贴汇总次数后点击“计算得分”，这里会显示相对偏好排序。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="maxdiff-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">模型说明</p>
+              <h2>MaxDiff 模型</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="maxdiff">返回 MaxDiff 工具</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>适用场景</span>
+              <h3>用于识别多个项目之间的相对偏好强弱</h3>
+              <p>MaxDiff 适合评估卖点、权益、功能、购买因素、品牌触点等项目，比单纯打分更容易拉开差异，也能减少用户全部都打高分的问题。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>答题方式</span>
+              <h3>每组选择最重要和最不重要</h3>
+              <p>受访者在一组项目中选出“最喜欢/最重要”和“最不喜欢/最不重要”的项目，系统通过多组选择估算项目排序。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>设计原则</span>
+              <h3>项目需要尽量均衡展示</h3>
+              <p>每个项目出现次数应接近，项目之间共同出现的次数也应尽量均衡，避免某些项目因为出现更多或位置更显眼而被高估。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>简单计分</span>
+              <h3>Score = (最佳次数 - 最差次数) / 展示次数</h3>
+              <p>第一版使用简单计分，适合快速排序和草案判断；如果要做更正式的偏好份额或市场模拟，可进一步使用 MNL 或 HB 模型。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>使用提醒</span>
+              <h3>题组数量不要过少</h3>
+              <p>如果项目很多但题组太少，结果会不稳定。建议先用当前工具生成问卷草案，再根据正式样本量和项目数量做实验设计校验。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="maxdiff">返回 MaxDiff 工具</button>
+        </section>
+
+        <section class="view" id="abc-value">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">众言模型</p>
+              <h2 class="title-with-help">
+                <span>ABC 用户价值模型</span>
+                <button class="model-help-btn" type="button" data-jump="abc-guide" aria-label="查看 ABC 用户价值模型说明">?</button>
+              </h2>
+            </div>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>模型公式</span>
+              <h3>ABC 用户价值指数 = A态度指数 × 30% + B行为指数 × 30% + C消费指数 × 40%</h3>
+              <p>模型通过态度、行为、消费三类要素综合评估细分人群价值，用于定位高价值用户。1.0 版本先从问卷稿中自动识别三类指数可用指标。</p>
+            </article>
+            <article class="guide-card">
+              <span>A 态度指数</span>
+              <h3>推荐度、满意度、偏好与认同</h3>
+              <p>用于衡量用户对产品或品牌的主观评价，例如 NPS、满意度、购买意愿、品牌偏好。</p>
+            </article>
+            <article class="guide-card">
+              <span>B 行为指数</span>
+              <h3>频率、场景、活跃与使用深度</h3>
+              <p>用于衡量用户真实使用行为，例如使用频率、使用场景、最近使用、渠道和功能使用。</p>
+            </article>
+            <article class="guide-card">
+              <span>C 消费指数</span>
+              <h3>金额、规模、份额与价值贡献</h3>
+              <p>用于衡量用户消费规模，一般可结合该类人群消费金额和市场规模进行指数化。</p>
+            </article>
+          </div>
+
+          <div class="link-tester secondary-tool">
+            <div class="panel">
+              <label>
+                <span class="label-action">
+                  <span>问卷稿</span>
+                  <button class="secondary-btn mini-import-btn" type="button" data-import-target="abcText">导入问卷</button>
+                </span>
+                <textarea id="abcText" placeholder="粘贴问卷题目、选项、跳题说明。工具会识别适合进入 A态度 / B行为 / C消费 指数的候选题目。"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="generateAbc" type="button">识别指标</button>
+                <button class="primary-btn" id="confirmAbcCalculate" type="button" disabled>确认指标并计算</button>
+                <button class="secondary-btn" id="loadAbcExample" type="button">载入示例</button>
+                <button class="secondary-btn span-row" id="exportAbc" type="button" disabled>导出指标 CSV</button>
+              </div>
+              <div class="abc-data-input hidden" id="abcDataInputSection">
+                <label>
+                  <span class="label-action">
+                    <span>样本数据</span>
+                    <button class="secondary-btn mini-import-btn" type="button" id="importAbcDataFile">导入数据</button>
+                  </span>
+                  <textarea id="abcDataInput" placeholder="粘贴包含已选指标字段的数据（CSV / Excel 复制）。第一行需为字段名，例如：&#10;ID,满意度,推荐度,使用频率,月均消费&#10;1,8,9,5,3000&#10;2,6,7,3,1500"></textarea>
+                </label>
+                <div class="button-row">
+                  <button class="primary-btn" id="calculateAbcScore" type="button">计算 ABC 指数</button>
+                  <button class="secondary-btn" id="loadAbcDataExample" type="button">载入数据示例</button>
+                  <button class="secondary-btn span-row" id="exportAbcScore" type="button" disabled>导出 ABC 得分 CSV</button>
+                </div>
+              </div>
+              <p class="panel-note">第一步：识别指标 → 勾选确认入模题目 → 第二步：粘贴样本数据 → 计算 ABC 得分并分群。</p>
+            </div>
+
+            <div class="audit-results" id="abcResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待识别</strong>
+                <span>粘贴问卷稿后点击“识别指标”，这里会显示态度、行为、消费指数的建议指标。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="abc-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">模型说明</p>
+              <h2>ABC 用户价值模型</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="abc-value">返回 ABC 工具</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>模型定义</span>
+              <h3>通过态度、行为、消费三类指数评估用户价值</h3>
+              <p>ABC 用户价值模型用于对细分人群进行综合评价，定位高价值用户。模型由 A 态度指数、B 行为指数、C 消费指数三部分构成。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>计算方式</span>
+              <h3>ABC = A × 30% + B × 30% + C × 40%</h3>
+              <p>态度和行为各占 30%，消费占 40%。正式计算时通常需要先对不同量纲的指标做标准化，再按权重汇总。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>A 态度指数</span>
+              <h3>推荐度、满意度、偏好与购买意愿</h3>
+              <p>反映用户对产品或品牌的主观评价，例如 NPS、整体满意度、继续购买意愿、品牌偏好、产品认同等题目。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>B 行为指数</span>
+              <h3>使用频率、使用场景与活跃程度</h3>
+              <p>反映用户真实行为，例如使用频率、购买频次、使用场景数量、功能使用深度、最近一次使用或购买时间等题目。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>C 消费指数</span>
+              <h3>消费金额、市场规模与价值贡献</h3>
+              <p>反映用户的消费规模和商业贡献，常结合该类人群消费金额、市场规模、客单价、品类支出或份额类题目进行判断。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>使用提醒</span>
+              <h3>1.0 版本先输出候选指标建议</h3>
+              <p>当前工具会从问卷稿中识别适合进入 A/B/C 指数的题目。正式建模时还需要确认指标方向、缺失值处理、标准化方式和人群分层逻辑。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="abc-value">返回 ABC 工具</button>
+        </section>
+
+        <section class="view" id="ai-assistant">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">AI 增值 · 预留入口</p>
+              <h2>AI 调研助手（待开发）</h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <div class="planned-banner">
+                <strong>2.0 后续接入</strong>
+                <span>当前先保留入口，不作为正式功能使用。后续建议接入后端代理，再提供真正的 AI 审查和报告生成能力。</span>
+              </div>
+              <label>
+                <span class="label-action">
+                  <span>问卷稿或研究材料</span>
+                  <button class="secondary-btn mini-import-btn" type="button" data-import-target="aiInput">导入问卷</button>
+                </span>
+                <textarea id="aiInput" placeholder="可先粘贴项目材料，内容会同步到项目总览。正式 AI 能力待开发。"></textarea>
+              </label>
+              <label>
+                业务背景
+                <input id="aiContext" type="text" placeholder="例如：新品概念测试，上线前问卷审查" />
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="generateAiBrief" type="button" disabled>生成 AI 摘要</button>
+                <button class="secondary-btn" id="loadAiExample" type="button" disabled>载入示例</button>
+                <button class="secondary-btn" id="copyAiPrompt" type="button" disabled>复制提示词</button>
+                <button class="secondary-btn" id="exportAiPrompt" type="button" disabled>导出提示词</button>
+              </div>
+              <p class="panel-note">建议后续以侧栏方式嵌入问卷质检、清洗规则、表头设计和模型解释，而不是单独做一个孤立页面。</p>
+            </div>
+
+            <div class="audit-results" id="aiResults" aria-live="polite">
+              <article class="audit-issue">
+                <div class="issue-head">
+                  <strong>待开发能力</strong>
+                  <span class="issue-tag low">Roadmap</span>
+                </div>
+                <ul class="ai-risk-list">
+                  <li><strong>问卷措辞审查</strong><span>识别诱导性表述、过长题干、选项不互斥和语义不清。</span></li>
+                  <li><strong>逻辑风险解释</strong><span>把上线质检结果翻译成项目经理和客户都能理解的风险说明。</span></li>
+                  <li><strong>模型结果解读</strong><span>将 PSM、KANO、MaxDiff、ABC 结果转成报告结论和业务建议。</span></li>
+                  <li><strong>报告段落生成</strong><span>基于当前项目材料生成可复制进报告的摘要段落。</span></li>
+                </ul>
+              </article>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
