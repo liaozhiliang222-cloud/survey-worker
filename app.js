@@ -4811,6 +4811,35 @@ function findAbcField(headers, indicator) {
   return null;
 }
 
+function selectedAbcIndicatorIds() {
+  if (!lastAbcSelected) return ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7"];
+  return [
+    ...lastAbcSelected.attitude,
+    ...lastAbcSelected.behavior,
+    ...lastAbcSelected.consumption
+  ].map((item) => item.id).filter((id, index, ids) => id && ids.indexOf(id) === index);
+}
+
+function buildAbcExampleData() {
+  const baseRows = [
+    { ID: 1, Q1: 8, Q2: 9, Q3: 5, Q4: 3, Q5: 4, Q6: 2500, Q7: 5 },
+    { ID: 2, Q1: 6, Q2: 7, Q3: 3, Q4: 2, Q5: 3, Q6: 1500, Q7: 3 },
+    { ID: 3, Q1: 9, Q2: 10, Q3: 7, Q4: 5, Q5: 5, Q6: 4000, Q7: 7 },
+    { ID: 4, Q1: 5, Q2: 6, Q3: 2, Q4: 1, Q5: 2, Q6: 800, Q7: 2 },
+    { ID: 5, Q1: 7, Q2: 8, Q3: 4, Q4: 3, Q5: 4, Q6: 2000, Q7: 4 },
+    { ID: 6, Q1: 4, Q2: 5, Q3: 1, Q4: 1, Q5: 1, Q6: 500, Q7: 1 },
+    { ID: 7, Q1: 8, Q2: 9, Q3: 6, Q4: 4, Q5: 4, Q6: 3500, Q7: 6 },
+    { ID: 8, Q1: 6, Q2: 6, Q3: 3, Q4: 2, Q5: 3, Q6: 1200, Q7: 3 },
+    { ID: 9, Q1: 9, Q2: 9, Q3: 7, Q4: 5, Q5: 5, Q6: 4500, Q7: 7 },
+    { ID: 10, Q1: 5, Q2: 5, Q3: 2, Q4: 1, Q5: 2, Q6: 600, Q7: 1 }
+  ];
+  const headers = ["ID", ...selectedAbcIndicatorIds().filter((id) => id in baseRows[0])];
+  return [
+    headers.join(","),
+    ...baseRows.map((row) => headers.map((header) => row[header]).join(","))
+  ].join("\n");
+}
+
 function calculateAbcScore() {
   const text = document.querySelector("#abcDataInput").value.trim();
   const result = document.querySelector("#abcResults");
@@ -4892,15 +4921,9 @@ function calculateAbcScore() {
     const hasAll = dimScores.every((s) => s !== null);
     if (!hasAll) return null;
 
-    const maxScore = Math.max(...dimScores.filter((s) => s !== null), 1);
-    const normalized = dimScores.map((s) => (s !== null ? s / maxScore : 0));
-    const abcScore = normalized[0] * 0.3 + normalized[1] * 0.3 + normalized[2] * 0.4;
-
     return {
       index,
-      rawScores: dimScores,
-      normalized,
-      abcScore: Math.round(abcScore * 1000) / 1000
+      rawScores: dimScores
     };
   }).filter(Boolean);
 
@@ -4914,6 +4937,24 @@ function calculateAbcScore() {
     exportButton.disabled = true;
     return;
   }
+
+  const ranges = dimensionConfig.map((_, dimIndex) => {
+    const values = validRows.map((row) => row.rawScores[dimIndex]).filter((value) => value !== null);
+    return {
+      min: Math.min(...values),
+      max: Math.max(...values)
+    };
+  });
+
+  validRows.forEach((row) => {
+    row.normalized = row.rawScores.map((score, dimIndex) => {
+      const range = ranges[dimIndex];
+      if (!range || range.max === range.min) return 1;
+      return (score - range.min) / (range.max - range.min);
+    });
+    const abcScore = row.normalized.reduce((sum, value, dimIndex) => sum + value * dimensionConfig[dimIndex].weight, 0);
+    row.abcScore = Math.round(abcScore * 1000) / 1000;
+  });
 
   validRows.sort((a, b) => b.abcScore - a.abcScore);
   const scores = validRows.map((r) => r.abcScore);
@@ -4966,7 +5007,7 @@ function calculateAbcScore() {
         <div><span>中价值用户</span><strong>${segmentCounts["中价值"]} (${((segmentCounts["中价值"] / validRows.length) * 100).toFixed(1)}%)</strong></div>
         <div><span>低价值用户</span><strong>${segmentCounts["低价值"]} (${((segmentCounts["低价值"] / validRows.length) * 100).toFixed(1)}%)</strong></div>
       </div>
-      <p>模型公式：ABC 得分 = (A态度均值 ÷ 最大维度均值) × 30% + (B行为均值 ÷ 最大维度均值) × 30% + (C消费均值 ÷ 最大维度均值) × 40%。先按维度内均值归一化，再按权重汇总。</p>
+      <p>模型公式：ABC 得分 = A态度标准化得分 × 30% + B行为标准化得分 × 30% + C消费标准化得分 × 40%。当前按每个维度在全样本中的最小值和最大值做 0-1 标准化，再按权重汇总。</p>
     </article>
     <article class="audit-issue">
       <div class="issue-head"><strong>字段匹配情况</strong></div>
@@ -4995,7 +5036,7 @@ function exportAbcScoreResult() {
     ["ABC 用户价值指数得分"],
     ["导出时间", new Date().toLocaleString("zh-CN")],
     [],
-    ["模型公式", "ABC = (A态度均值 ÷ Max维度均值) × 30% + (B行为均值 ÷ Max维度均值) × 30% + (C消费均值 ÷ Max维度均值) × 40%"],
+    ["模型公式", "ABC = A态度标准化得分 × 30% + B行为标准化得分 × 30% + C消费标准化得分 × 40%；标准化方式为各维度在全样本内 Min-Max 归一化"],
     [],
     ["样本序号", "ABC 得分", "价值分群", "A 态度原始均值", "B 行为原始均值", "C 消费原始均值"]
   ];
@@ -5562,17 +5603,7 @@ document.querySelector("#confirmAbcCalculate").addEventListener("click", confirm
 document.querySelector("#calculateAbcScore").addEventListener("click", calculateAbcScore);
 document.querySelector("#exportAbcScore").addEventListener("click", exportAbcScoreResult);
 document.querySelector("#loadAbcDataExample").addEventListener("click", () => {
-  document.querySelector("#abcDataInput").value = `ID,Q1,Q2,Q3,Q4,Q5
-1,8,9,5,3,2500
-2,6,7,3,2,1500
-3,9,10,7,5,4000
-4,5,6,2,1,800
-5,7,8,4,3,2000
-6,4,5,1,1,500
-7,8,9,6,4,3500
-8,6,6,3,2,1200
-9,9,9,7,5,4500
-10,5,5,2,1,600`;
+  document.querySelector("#abcDataInput").value = buildAbcExampleData();
   calculateAbcScore();
 });
 
