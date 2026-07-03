@@ -1,4 +1,4 @@
-const CACHE_NAME = "research-toolbox-v4";
+const CACHE_NAME = "research-toolbox-v5";
 const ASSETS = [
   "./",
   "./index.html",

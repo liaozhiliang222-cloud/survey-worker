@@ -365,23 +365,20 @@
               </div>
 
               <div class="quota-mode" id="crossQuotaFields">
-                <label class="field">
-                  维度一
-                  <input id="quotaRows" type="text" value="男:50, 女:50" />
-                  <small>格式：名称:比例，用逗号分隔</small>
-                </label>
-                <label class="field">
-                  维度二
-                  <input id="quotaCols" type="text" value="18-29岁:35, 30-39岁:35, 40岁以上:30" />
-                  <small>可用于年龄、城市级别、用户类型等</small>
-                </label>
+                <div class="field">
+                  <span>交叉配额维度</span>
+                  <div class="cross-quota-dimensions" id="crossQuotaDimensions"></div>
+                  <button class="secondary-btn" id="addCrossQuotaDimension" type="button">添加交叉维度</button>
+                  <small>每个维度格式：名称:比例，用逗号分隔；支持 2 个及以上维度组合。</small>
+                </div>
                 <div class="quota-template-row">
                   <button class="ghost-btn" type="button" data-cross-quota-template="gender-age">性别 × 年龄</button>
                   <button class="ghost-btn" type="button" data-cross-quota-template="city-user">城市级别 × 用户类型</button>
+                  <button class="ghost-btn" type="button" data-cross-quota-template="gender-age-city">性别 × 年龄 × 城市</button>
                 </div>
               </div>
 
-              <p class="panel-note">单一配额用于控制一个维度；交叉配额用于控制两个维度的组合分布。</p>
+              <p class="panel-note">单一配额用于控制一个维度；交叉配额用于控制多个维度的组合分布。</p>
             </form>
 
             <div class="quota-output">

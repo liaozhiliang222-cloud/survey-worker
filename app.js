@@ -1407,6 +1407,37 @@ function addQuotaDimension(name = "性别", options = []) {
   initialOptions.forEach(([optionName, share]) => addQuotaOption(dimension, optionName, share));
 }
 
+function addCrossQuotaDimension(name = "新维度", value = "选项A:50, 选项B:50") {
+  const container = document.querySelector("#crossQuotaDimensions");
+  const dimension = document.createElement("div");
+  dimension.className = "cross-quota-dimension";
+  dimension.innerHTML = `
+    <span class="quota-dimension-title">交叉配额维度</span>
+    <div class="quota-dimension-head">
+      <input class="cross-quota-name" type="text" placeholder="维度名称" value="${escapeHtml(name)}" />
+      <button class="icon-btn" type="button" aria-label="删除交叉维度">×</button>
+    </div>
+    <textarea class="cross-quota-items" placeholder="选项A:50, 选项B:50">${escapeHtml(value)}</textarea>
+    <div class="quota-total-status">合计 0%</div>
+  `;
+  container.appendChild(dimension);
+
+  dimension.querySelectorAll("input, textarea").forEach((field) => {
+    field.addEventListener("input", calculateQuota);
+  });
+  dimension.querySelector("button").addEventListener("click", () => {
+    if (container.children.length <= 2) return;
+    dimension.remove();
+    calculateQuota();
+  });
+}
+
+function setCrossQuotaDimensions(dimensions) {
+  const container = document.querySelector("#crossQuotaDimensions");
+  container.innerHTML = "";
+  dimensions.forEach((dimension) => addCrossQuotaDimension(dimension.name, dimension.value));
+}
+
 function getSingleQuotaDimensions() {
   return Array.from(document.querySelectorAll(".quota-dimension"))
     .map((dimension) => {
@@ -1427,6 +1458,20 @@ function getSingleQuotaDimensions() {
     .filter((dimension) => dimension.name && dimension.items.length);
 }
 
+function getCrossQuotaDimensions() {
+  return Array.from(document.querySelectorAll(".cross-quota-dimension"))
+    .map((dimension) => {
+      const items = parseQuotaItems(dimension.querySelector(".cross-quota-items").value);
+      return {
+        element: dimension,
+        name: dimension.querySelector(".cross-quota-name").value.trim(),
+        items,
+        shareTotal: items.reduce((sum, item) => sum + item.share, 0)
+      };
+    })
+    .filter((dimension) => dimension.name && dimension.items.length);
+}
+
 function updateSingleQuotaValidation(dimensions) {
   document.querySelectorAll(".quota-dimension").forEach((dimensionElement) => {
     const status = dimensionElement.querySelector(".quota-total-status");
@@ -1437,6 +1482,21 @@ function updateSingleQuotaValidation(dimensions) {
     status.textContent = isValid
       ? "合计 100%，比例有效"
       : `合计 ${total}%，需调整为 100%`;
+    status.classList.toggle("valid", isValid);
+    status.classList.toggle("invalid", !isValid);
+  });
+}
+
+function updateCrossQuotaValidation(dimensions) {
+  document.querySelectorAll(".cross-quota-dimension").forEach((dimensionElement) => {
+    const status = dimensionElement.querySelector(".quota-total-status");
+    const dimension = dimensions.find((item) => item.element === dimensionElement);
+    const total = dimension ? dimension.shareTotal : 0;
+    const isValid = Math.abs(total - 100) < 0.001;
+
+    status.textContent = isValid
+      ? "合计 100%，比例有效"
+      : `合计 ${total}%，将自动归一到 100%`;
     status.classList.toggle("valid", isValid);
     status.classList.toggle("invalid", !isValid);
   });
@@ -1479,6 +1539,71 @@ function renderSingleQuota(total, dimensions) {
     : `${dimensions.length} 个单一维度，目标样本量 ${total.toLocaleString("zh-CN")}`;
 }
 
+function cartesianQuotaCombinations(dimensions) {
+  return dimensions.reduce((combinations, dimension) => {
+    const normalized = normalizeQuota(dimension.items);
+    return combinations.flatMap((combo) =>
+      normalized.map((item) => ({
+        labels: [...combo.labels, item.name],
+        shares: [...combo.shares, item.share],
+        weight: combo.weight * item.weight
+      }))
+    );
+  }, [{ labels: [], shares: [], weight: 1 }]);
+}
+
+function renderCrossQuota(total, dimensions) {
+  const table = document.querySelector("#quotaTable");
+  updateCrossQuotaValidation(dimensions);
+
+  if (dimensions.length < 2) {
+    table.innerHTML = `<tbody><tr><td>请至少添加两个有效交叉维度。</td></tr></tbody>`;
+    document.querySelector("#quotaSummary").textContent = "等待生成";
+    return;
+  }
+
+  if (dimensions.length === 2) {
+    const rows = normalizeQuota(dimensions[0].items);
+    const cols = normalizeQuota(dimensions[1].items);
+    const rawCells = rows.flatMap((row) => cols.map((col) => total * row.weight * col.weight));
+    const allocatedCells = allocateIntegers(rawCells, total);
+    const matrix = rows.map((_, rowIndex) =>
+      cols.map((__, colIndex) => allocatedCells[rowIndex * cols.length + colIndex])
+    );
+
+    const header = `<thead><tr><th>${escapeHtml(dimensions[0].name)} \\ ${escapeHtml(dimensions[1].name)}</th>${cols.map((col) => `<th>${escapeHtml(col.name)}</th>`).join("")}<th>小计</th></tr></thead>`;
+    const bodyRows = rows
+      .map((row, rowIndex) => {
+        const cells = matrix[rowIndex];
+        const rowTotal = cells.reduce((sum, value) => sum + value, 0);
+        return `<tr><td>${escapeHtml(row.name)}</td>${cells.map((cell) => `<td>${cell}</td>`).join("")}<td>${rowTotal}</td></tr>`;
+      })
+      .join("");
+    const colTotals = cols.map((_, colIndex) => matrix.reduce((sum, row) => sum + row[colIndex], 0));
+    const colTotalSum = colTotals.reduce((sum, value) => sum + value, 0);
+    const footer = `<tfoot><tr><td>小计</td>${colTotals.map((cell) => `<td>${cell}</td>`).join("")}<td>${colTotalSum}</td></tr></tfoot>`;
+    table.innerHTML = `${header}<tbody>${bodyRows}</tbody>${footer}`;
+  } else {
+    const combinations = cartesianQuotaCombinations(dimensions);
+    const counts = allocateIntegers(combinations.map((combo) => total * combo.weight), total);
+    const header = `<thead><tr>${dimensions.map((dimension) => `<th>${escapeHtml(dimension.name)}</th>`).join("")}<th>组合比例</th><th>目标样本量</th></tr></thead>`;
+    const bodyRows = combinations
+      .map((combo, index) => {
+        const comboShare = combo.shares.map((share) => `${share}%`).join(" × ");
+        return `<tr>${combo.labels.map((label) => `<td>${escapeHtml(label)}</td>`).join("")}<td>${escapeHtml(comboShare)}</td><td>${counts[index]}</td></tr>`;
+      })
+      .join("");
+    const footer = `<tfoot><tr><td colspan="${dimensions.length + 1}">合计</td><td>${counts.reduce((sum, value) => sum + value, 0)}</td></tr></tfoot>`;
+    table.innerHTML = `${header}<tbody>${bodyRows}</tbody>${footer}`;
+  }
+
+  const invalidCount = dimensions.filter((dimension) => Math.abs(dimension.shareTotal - 100) >= 0.001).length;
+  const comboCount = dimensions.reduce((count, dimension) => count * normalizeQuota(dimension.items).length, 1);
+  document.querySelector("#quotaSummary").textContent = invalidCount
+    ? `${dimensions.length} 个交叉维度，${comboCount} 个组合；${invalidCount} 个维度比例未合计 100%，已自动归一`
+    : `${dimensions.length} 个交叉维度，${comboCount} 个组合，目标样本量 ${total.toLocaleString("zh-CN")}`;
+}
+
 function calculateQuota() {
   const total = Math.max(1, Number(document.querySelector("#quotaTotal").value));
   const table = document.querySelector("#quotaTable");
@@ -1490,35 +1615,8 @@ function calculateQuota() {
     return;
   }
 
-  const rows = normalizeQuota(parseQuotaItems(document.querySelector("#quotaRows").value));
-  const cols = normalizeQuota(parseQuotaItems(document.querySelector("#quotaCols").value));
-
-  if (!rows.length || !cols.length) {
-    table.innerHTML = `<tbody><tr><td>请输入至少一个有效维度，格式如：男:50, 女:50</td></tr></tbody>`;
-    document.querySelector("#quotaSummary").textContent = "等待生成";
-    return;
-  }
-
-  const rawCells = rows.flatMap((row) => cols.map((col) => total * row.weight * col.weight));
-  const allocatedCells = allocateIntegers(rawCells, total);
-  const matrix = rows.map((_, rowIndex) =>
-    cols.map((__, colIndex) => allocatedCells[rowIndex * cols.length + colIndex])
-  );
-
-  const header = `<thead><tr><th>维度</th>${cols.map((col) => `<th>${escapeHtml(col.name)}</th>`).join("")}<th>小计</th></tr></thead>`;
-  const bodyRows = rows
-    .map((row, rowIndex) => {
-      const cells = matrix[rowIndex];
-      const rowTotal = cells.reduce((sum, value) => sum + value, 0);
-      return `<tr><td>${escapeHtml(row.name)}</td>${cells.map((cell) => `<td>${cell}</td>`).join("")}<td>${rowTotal}</td></tr>`;
-    })
-    .join("");
-  const colTotals = cols.map((_, colIndex) => matrix.reduce((sum, row) => sum + row[colIndex], 0));
-  const colTotalSum = colTotals.reduce((sum, value) => sum + value, 0);
-  const footer = `<tfoot><tr><td>小计</td>${colTotals.map((cell) => `<td>${cell}</td>`).join("")}<td>${colTotalSum}</td></tr></tfoot>`;
-
-  table.innerHTML = `${header}<tbody>${bodyRows}</tbody>${footer}`;
-  document.querySelector("#quotaSummary").textContent = `目标有效样本量 ${total.toLocaleString("zh-CN")}，比例自动归一`;
+  renderCrossQuota(total, getCrossQuotaDimensions());
+  return;
 }
 
 document.querySelectorAll("#quotaForm input").forEach((field) => {
@@ -1539,6 +1637,11 @@ document.querySelectorAll("[data-quota-mode]").forEach((button) => {
 
 document.querySelector("#addQuotaDimension").addEventListener("click", () => {
   addQuotaDimension("新维度", [["选项A", 50], ["选项B", 50]]);
+  calculateQuota();
+});
+
+document.querySelector("#addCrossQuotaDimension").addEventListener("click", () => {
+  addCrossQuotaDimension("新维度", "选项A:50, 选项B:50");
   calculateQuota();
 });
 
@@ -1563,12 +1666,23 @@ const quotaTemplates = {
 
 const crossQuotaTemplates = {
   "gender-age": {
-    rows: "男:50, 女:50",
-    cols: "18-29岁:35, 30-39岁:35, 40岁及以上:30"
+    dimensions: [
+      { name: "性别", value: "男:50, 女:50" },
+      { name: "年龄", value: "18-29岁:35, 30-39岁:35, 40岁及以上:30" }
+    ]
   },
   "city-user": {
-    rows: "一线城市:30, 新一线城市:35, 二线及以下城市:35",
-    cols: "新用户:40, 老用户:60"
+    dimensions: [
+      { name: "城市级别", value: "一线城市:30, 新一线城市:35, 二线及以下城市:35" },
+      { name: "用户类型", value: "新用户:40, 老用户:60" }
+    ]
+  },
+  "gender-age-city": {
+    dimensions: [
+      { name: "性别", value: "男:50, 女:50" },
+      { name: "年龄", value: "18-29岁:35, 30-39岁:35, 40岁及以上:30" },
+      { name: "城市级别", value: "一线城市:30, 新一线城市:35, 二线及以下城市:35" }
+    ]
   }
 };
 
@@ -1591,8 +1705,7 @@ document.querySelectorAll("[data-cross-quota-template]").forEach((button) => {
   button.addEventListener("click", () => {
     const template = crossQuotaTemplates[button.dataset.crossQuotaTemplate];
     if (!template) return;
-    document.querySelector("#quotaRows").value = template.rows;
-    document.querySelector("#quotaCols").value = template.cols;
+    setCrossQuotaDimensions(template.dimensions);
     quotaMode = "cross";
     document.querySelectorAll("[data-quota-mode]").forEach((item) => {
       item.classList.toggle("active", item.dataset.quotaMode === "cross");
@@ -5684,4 +5797,5 @@ renderWorkspaceProject();
 restoreTestRecord();
 calculateSample();
 addQuotaDimension("性别", [["男", 50], ["女", 50]]);
+setCrossQuotaDimensions(crossQuotaTemplates["gender-age"].dimensions);
 calculateQuota();
