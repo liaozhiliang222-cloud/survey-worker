@@ -1275,28 +1275,86 @@ tr:last-child td {
 
 @media (max-width: 900px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    display: block;
   }
 
   .sidebar {
-    padding: 18px;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: 10px 12px 8px;
+    box-shadow: 0 8px 24px rgba(18, 49, 58, 0.2);
+  }
+
+  .brand {
+    gap: 10px;
+    margin-bottom: 8px;
+    padding: 0 0 8px;
+  }
+
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .brand h1 {
+    font-size: 17px;
+  }
+
+  .brand p {
+    display: none;
   }
 
   .nav {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: stretch;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 4px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-group {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .nav-phase {
+    display: none;
   }
 
   .nav-item {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
     text-align: center;
+    white-space: nowrap;
+    scroll-snap-align: start;
+    font-size: 13px;
+    background: rgba(255, 255, 255, 0.04);
   }
 
   .nav > .nav-item {
-    grid-column: 1 / -1;
+    flex: 0 0 auto;
   }
 
   .content {
-    padding: 22px;
+    padding: 20px;
   }
 
   .workflow-grid,
@@ -1332,15 +1390,35 @@ tr:last-child td {
 
 @media (max-width: 560px) {
   .nav {
-    grid-template-columns: 1fr;
+    display: flex;
+    gap: 7px;
   }
 
   .nav-group {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    gap: 7px;
   }
 
   .nav-phase {
-    grid-column: 1 / -1;
+    display: none;
+  }
+
+  .sidebar {
+    padding: 8px 10px 7px;
+  }
+
+  .brand {
+    margin-bottom: 7px;
+  }
+
+  .content {
+    padding: 16px 12px 22px;
+  }
+
+  .nav-item {
+    min-height: 34px;
+    padding: 7px 11px;
+    font-size: 12px;
   }
 
   .workflow-grid {
