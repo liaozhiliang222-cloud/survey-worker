@@ -4840,8 +4840,43 @@ function buildAbcExampleData() {
   ].join("\n");
 }
 
+function looksLikeHeaderRow(cells) {
+  return cells.some((cell) => /[A-Za-z\u4e00-\u9fa5]/.test(String(cell || "")));
+}
+
+function normalizeAbcDataText(text) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return text;
+  const firstCells = splitDelimitedLine(lines[0]);
+  if (looksLikeHeaderRow(firstCells)) return text;
+
+  const legacyExampleRows = [
+    "1,8,9,5,3,2500",
+    "2,6,7,3,2,1500",
+    "3,9,10,7,5,4000",
+    "4,5,6,2,1,800",
+    "5,7,8,4,3,2000",
+    "6,4,5,1,1,500",
+    "7,8,9,6,4,3500",
+    "8,6,6,3,2,1200",
+    "9,9,9,7,5,4500",
+    "10,5,5,2,1,600"
+  ];
+  if (lines.length === legacyExampleRows.length && lines.every((line, index) => line === legacyExampleRows[index])) {
+    return buildAbcExampleData();
+  }
+
+  const headers = ["ID", ...selectedAbcIndicatorIds()].slice(0, firstCells.length);
+  if (headers.length === firstCells.length) {
+    return [headers.join(","), ...lines].join("\n");
+  }
+  return text;
+}
+
 function calculateAbcScore() {
-  const text = document.querySelector("#abcDataInput").value.trim();
+  const input = document.querySelector("#abcDataInput");
+  const text = normalizeAbcDataText(input.value.trim());
+  if (text !== input.value.trim()) input.value = text;
   const result = document.querySelector("#abcResults");
   const exportButton = document.querySelector("#exportAbcScore");
 
