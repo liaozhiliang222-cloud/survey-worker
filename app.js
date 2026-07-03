@@ -288,7 +288,7 @@ function applyWorkspaceProject(showStatus = true) {
   setValueIfBlank("#cleaningText", questionnaire);
   setValueIfBlank("#headerText", questionnaire);
   setValueIfBlank("#abcText", questionnaire);
-  setValueIfBlank("#aiInput", questionnaire);
+  if (document.querySelector("#aiInput")) setValueIfBlank("#aiInput", questionnaire);
   if (showStatus) {
     document.querySelector("#projectSaveStatus").textContent = "已同步到工具";
   }
