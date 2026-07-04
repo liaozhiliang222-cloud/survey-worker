@@ -202,7 +202,7 @@ let sharedImportTargetId = "";
 const aiProviderPresets = {
   deepseek: {
     name: "DeepSeek",
-    model: "deepseek-v4-flash",
+    model: "deepseek-chat",
     url: "https://api.deepseek.com/v1/chat/completions"
   },
   kimi: {
