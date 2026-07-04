@@ -203,32 +203,57 @@ const aiProviderPresets = {
   deepseek: {
     name: "DeepSeek",
     model: "deepseek-v4-flash",
-    url: "https://api.deepseek.com/v1/chat/completions"
+    url: "https://api.deepseek.com/v1/chat/completions",
+    tiers: [
+      { label: "V4 Flash", model: "deepseek-v4-flash" },
+      { label: "V4 Pro", model: "deepseek-v4-pro" }
+    ]
   },
   kimi: {
     name: "Kimi（月之暗面）",
     model: "kimi-k2.6",
-    url: "https://api.moonshot.cn/v1/chat/completions"
+    url: "https://api.moonshot.cn/v1/chat/completions",
+    tiers: [
+      { label: "K2.6 Flash", model: "kimi-k2.6-flash" },
+      { label: "K2.6", model: "kimi-k2.6" },
+      { label: "K2.6 Pro", model: "kimi-k2.6-pro" }
+    ]
   },
   zhipu: {
     name: "智谱 GLM",
     model: "glm-5.1",
-    url: "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+    url: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    tiers: [
+      { label: "GLM 5.1 Flash", model: "glm-5.1-flash" },
+      { label: "GLM 5.1", model: "glm-5.1" },
+      { label: "GLM 5.1 Pro", model: "glm-5.1-pro" }
+    ]
   },
   qwen: {
     name: "Qwen / 通义千问",
     model: "qwen3.7-max",
-    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+    tiers: [
+      { label: "Qwen 3.7 Flash", model: "qwen3.7-flash" },
+      { label: "Qwen 3.7 Plus", model: "qwen3.7-plus" },
+      { label: "Qwen 3.7 Max", model: "qwen3.7-max" }
+    ]
   },
   openai: {
     name: "OpenAI",
     model: "gpt-5.5-instant",
-    url: "https://api.openai.com/v1/chat/completions"
+    url: "https://api.openai.com/v1/chat/completions",
+    tiers: [
+      { label: "GPT 5.5 Instant", model: "gpt-5.5-instant" },
+      { label: "GPT 5.5", model: "gpt-5.5" },
+      { label: "GPT 5.5 Pro", model: "gpt-5.5-pro" }
+    ]
   },
   custom: {
     name: "自定义兼容接口",
     model: "",
-    url: ""
+    url: "",
+    tiers: [{ label: "自定义", model: "" }]
   }
 };
 
@@ -2448,6 +2473,123 @@ function generateHeaderSuggestions(text) {
   });
 
   return suggestions;
+}
+
+function cleanHeaderTitle(title) {
+  return String(title || "")
+    .replace(/^(Q|S|A|B|C|D|题)?\s*\d+[\.、\s]*/i, "")
+    .replace(/[？?]\s*$/, "")
+    .trim()
+    .slice(0, 18) || "分群变量";
+}
+
+function normalizeHeaderOptionCode(key) {
+  const value = String(key || "").trim();
+  if (/^\d+$/.test(value)) return value;
+  if (/^[A-Z]$/i.test(value)) return String(value.toUpperCase().charCodeAt(0) - 64);
+  return value;
+}
+
+function headerQuestionGroup(question) {
+  const text = questionText(question);
+  if (/性别|年龄|城市|地区|区域|省份|级别|收入|学历|职业|行业|婚育|家庭/.test(text)) return "人口属性";
+  if (/品牌|当前|首选|常用|购买过|使用过/.test(text)) return "品牌关系";
+  if (/购买频率|使用频率|渠道|平台|场景|用途|消费|价格段/.test(text)) return "行为分层";
+  if (/满意|NPS|推荐|意愿|偏好|态度|认知|吸引力/.test(text)) return "态度分层";
+  return "其他分层";
+}
+
+function buildStandardHeaderPlan(text) {
+  const questions = parseQuestions(text);
+  const candidates = questions.filter((question) =>
+    question.options.length >= 2 &&
+    question.options.length <= 12 &&
+    !isOpenQuestion(questionText(question)) &&
+    !isTrapQuestion(questionText(question)) &&
+    !/跳至|跳到|转至|进入|说明|注意力|陷阱/.test(questionText(question))
+  );
+  const scored = candidates.map((question) => {
+    const text = questionText(question);
+    let score = 0;
+    if (/性别|年龄|城市|地区|区域|省份|级别|收入|学历|职业|行业|用户类型|人群/.test(text)) score += 8;
+    if (/品牌|购买频率|使用频率|渠道|平台|场景|消费|满意|NPS|推荐|意愿/.test(text)) score += 6;
+    if (question.options.length > 6) score -= 2;
+    return { question, score };
+  }).sort((a, b) => b.score - a.score);
+
+  const selected = scored.slice(0, 8).map((item) => item.question);
+  const columns = [{ group: "总体", label: "总体", condition: "", source: "TOTAL", questionTitle: "全体样本" }];
+  selected.forEach((question) => {
+    const group = headerQuestionGroup(question);
+    const title = cleanHeaderTitle(question.title);
+    question.options.slice(0, 10).forEach((option) => {
+      const label = option.text.replace(/（.*?）|\(.*?\)/g, "").trim().slice(0, 14) || `选项${option.key}`;
+      columns.push({
+        group: title,
+        label,
+        condition: `${question.display}=${normalizeHeaderOptionCode(option.key)}`,
+        source: question.display,
+        questionTitle: question.title,
+        category: group
+      });
+    });
+  });
+
+  return {
+    columns,
+    excluded: questions.filter((question) => !selected.includes(question) && (isOpenQuestion(questionText(question)) || isTrapQuestion(questionText(question)) || /跳至|跳到|转至|进入/.test(questionText(question)))),
+    selected
+  };
+}
+
+function headerPlanRows(plan) {
+  return [
+    plan.columns.map((column) => column.group),
+    plan.columns.map((column) => column.label),
+    plan.columns.map((column) => column.condition)
+  ];
+}
+
+function renderHeaderPlan(plan, suggestions) {
+  const target = document.querySelector("#headerResults");
+  const exportButton = document.querySelector("#exportHeaderPlan");
+  if (!plan.columns.length) {
+    if (exportButton) exportButton.disabled = true;
+    target.innerHTML = `<div class="empty-state"><strong>未生成表头方案</strong><span>请检查问卷稿是否包含明确题号和选项。</span></div>`;
+    return;
+  }
+  if (exportButton) exportButton.disabled = false;
+  const rows = headerPlanRows(plan);
+  const previewRows = rows.map((row) => `<tr>${row.slice(0, 16).map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  const selectedList = plan.selected.map((question) => `<li><strong>${escapeHtml(question.display)}</strong><span>${escapeHtml(question.title)}</span></li>`).join("");
+  const excludedList = plan.excluded.length
+    ? plan.excluded.slice(0, 6).map((question) => `<li><strong>${escapeHtml(question.display)}</strong><span>${escapeHtml(question.title)}</span></li>`).join("")
+    : `<li><strong>暂无明显排除题</strong><span>开放题、陷阱题、纯跳转题会自动排除。</span></li>`;
+  target.innerHTML = `
+    <article class="audit-issue">
+      <div class="issue-head">
+        <strong>标准表头方案</strong>
+        <span class="issue-tag high">${plan.columns.length} 列</span>
+      </div>
+      <p>已生成类似参考文件的三行表头：第一行分组，第二行列标签，第三行筛选条件。导出后可作为交叉表顶部 Banner 表头。</p>
+      <div class="table-wrap">
+        <table class="compact-table">${previewRows}</table>
+      </div>
+      ${plan.columns.length > 16 ? `<p class="panel-note">预览仅显示前 16 列，导出文件包含完整表头。</p>` : ""}
+    </article>
+    <article class="audit-issue">
+      <div class="issue-head"><strong>入表变量</strong><span class="issue-tag medium">${plan.selected.length} 题</span></div>
+      <ul class="ai-risk-list">${selectedList || `<li><strong>未识别</strong><span>建议人工补充性别、年龄、城市级别、用户类型等变量。</span></li>`}</ul>
+    </article>
+    <article class="audit-issue">
+      <div class="issue-head"><strong>不建议入表题</strong><span class="issue-tag low">${plan.excluded.length} 题</span></div>
+      <ul class="ai-risk-list">${excludedList}</ul>
+    </article>
+    <article class="audit-issue">
+      <div class="issue-head"><strong>设计说明</strong><span class="issue-tag low">参考</span></div>
+      <div class="issue-evidence">${escapeHtml(suggestions.map((item) => `${item.title}：${item.detail}`).join("\n"))}</div>
+    </article>
+  `;
 }
 
 function parsePsmRows(text) {
@@ -5988,19 +6130,23 @@ function renderAiProgress(container, steps, activeIndex = 0, note = "", title = 
 
 function getDefaultAiSettings(provider = "deepseek") {
   const preset = aiProviderPresets[provider] || aiProviderPresets.deepseek;
+  const tier = preset.tiers?.[0] || { model: preset.model };
   return {
     provider,
     mode: "api",
-    model: preset.model,
+    modelTier: tier.model,
+    model: tier.model || preset.model,
     url: preset.url,
     apiKey: ""
   };
 }
 
 function readAiSettingsFromForm() {
+  const modelTier = document.querySelector("#aiModelTier")?.value || "";
   return {
     provider: document.querySelector("#aiProvider")?.value || "deepseek",
-    mode: document.querySelector("#aiGenerationMode")?.value || "api",
+    mode: "api",
+    modelTier,
     model: document.querySelector("#aiModelName")?.value.trim() || "",
     url: document.querySelector("#aiApiBaseUrl")?.value.trim() || "",
     apiKey: document.querySelector("#aiApiKey")?.value.trim() || ""
@@ -6022,7 +6168,6 @@ function validateAiSettings(settings) {
       errors.push("接口地址格式不正确。");
     }
   }
-  if (settings.mode === "api" && !settings.apiKey) errors.push("优先调用大模型时需要填写 API Key。");
   return errors;
 }
 
@@ -6034,39 +6179,52 @@ function renderAiSettingsStatus(settings = loadAiSettings()) {
   if (!status && !preview && !hint && !planHint) return;
   const preset = aiProviderPresets[settings.provider] || aiProviderPresets.deepseek;
   const errors = validateAiSettings(settings);
-  const ready = settings.mode === "local" || errors.length === 0;
+  const ready = errors.length === 0;
   if (status) {
-    status.textContent = settings.mode === "local" ? "本地规则" : ready ? "已配置" : "待完善";
+    status.textContent = ready && settings.apiKey ? "已配置" : ready ? "待填 Key" : "待完善";
   }
   if (preview) {
     preview.innerHTML = `
       <strong>${escapeHtml(preset.name)}</strong>
-      <span>${escapeHtml(settings.mode === "local" ? "当前设置为只使用本地规则。" : `模型：${settings.model || "-"}；接口：${settings.url || "-"}`)}</span>
-      ${errors.length ? `<span class="warning-text">${escapeHtml(errors.join("；"))}</span>` : `<span>设置校验通过，可以在 AI 问卷设计中调用。</span>`}
+      <span>${escapeHtml(`模型：${settings.model || "-"}；接口：${settings.url || "-"}`)}</span>
+      ${errors.length ? `<span class="warning-text">${escapeHtml(errors.join("；"))}</span>` : `<span>${escapeHtml(settings.apiKey ? "设置校验通过，可以在 AI 功能中调用。" : "模型与接口已就绪；未填写 Key 时 AI 功能会使用本地规则。")}</span>`}
     `;
   }
   if (hint) {
     hint.innerHTML = `
       <strong>生成方式</strong>
-      <span>${escapeHtml(settings.mode === "local" ? "当前使用本地规则生成。" : settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）。` : "未配置 API Key，将使用本地规则生成。")}</span>
+      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）。` : "未配置 API Key，将使用本地规则生成。")}</span>
     `;
   }
   if (planHint) {
     planHint.innerHTML = `
       <strong>生成方式</strong>
-      <span>${escapeHtml(settings.mode === "local" ? "当前使用本地方案框架生成。" : settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）生成调研方案。` : "未配置 API Key，将使用本地方案框架生成。")}</span>
+      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）生成调研方案。` : "未配置 API Key，将使用本地方案框架生成。")}</span>
     `;
   }
 }
 
+function updateAiModelTierOptions(provider = "deepseek", selectedModel = "") {
+  const tierSelect = document.querySelector("#aiModelTier");
+  if (!tierSelect) return;
+  const preset = aiProviderPresets[provider] || aiProviderPresets.deepseek;
+  const tiers = preset.tiers?.length ? preset.tiers : [{ label: preset.model || "默认模型", model: preset.model || "" }];
+  tierSelect.innerHTML = tiers.map((tier) => `<option value="${escapeHtml(tier.model)}">${escapeHtml(tier.label)}</option>`).join("");
+  const nextValue = tiers.some((tier) => tier.model === selectedModel) ? selectedModel : tiers[0].model;
+  tierSelect.value = nextValue;
+  const modelInput = document.querySelector("#aiModelName");
+  if (modelInput && provider !== "custom") modelInput.value = nextValue;
+}
+
 function fillAiSettingsForm(settings = loadAiSettings()) {
   const provider = document.querySelector("#aiProvider");
-  const mode = document.querySelector("#aiGenerationMode");
+  const tier = document.querySelector("#aiModelTier");
   const model = document.querySelector("#aiModelName");
   const url = document.querySelector("#aiApiBaseUrl");
   const key = document.querySelector("#aiApiKey");
   if (provider) provider.value = settings.provider;
-  if (mode) mode.value = settings.mode;
+  updateAiModelTierOptions(settings.provider, settings.modelTier || settings.model);
+  if (tier) tier.value = settings.modelTier || settings.model || tier.value;
   if (model) model.value = settings.model;
   if (url) url.value = settings.url;
   if (key) key.value = settings.apiKey;
@@ -6076,7 +6234,7 @@ function fillAiSettingsForm(settings = loadAiSettings()) {
 function loadAiSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem("surveyAiSettings") || "null");
-    if (saved) return { ...getDefaultAiSettings(saved.provider || "deepseek"), ...saved };
+    if (saved) return { ...getDefaultAiSettings(saved.provider || "deepseek"), ...saved, mode: "api" };
   } catch {}
   return getDefaultAiSettings("deepseek");
 }
@@ -6100,8 +6258,12 @@ function applyAiProviderPreset() {
   const model = document.querySelector("#aiModelName");
   const url = document.querySelector("#aiApiBaseUrl");
   if (provider !== "custom") {
-    if (model) model.value = preset.model;
+    updateAiModelTierOptions(provider);
+    const tierModel = document.querySelector("#aiModelTier")?.value || preset.model;
+    if (model) model.value = tierModel;
     if (url) url.value = preset.url;
+  } else {
+    updateAiModelTierOptions(provider);
   }
   renderAiSettingsStatus(readAiSettingsFromForm());
 }
@@ -6941,6 +7103,12 @@ async function testAiSettings() {
     }
     return;
   }
+  if (!settings.apiKey) {
+    if (preview) {
+      preview.innerHTML = `<strong>缺少 API Key</strong><span class="warning-text">测试连接需要先填写 API Key；未填写时 AI 功能会自动使用本地规则。</span>`;
+    }
+    return;
+  }
   if (preview) preview.innerHTML = `<strong>正在测试连接</strong><span>正在向 ${escapeHtml(aiProviderPresets[settings.provider]?.name || "模型接口")} 发送轻量请求。</span>`;
   try {
     const reply = await callAiChatCompletion(settings, [
@@ -7262,14 +7430,11 @@ document.querySelector("#loadCleaningExample").addEventListener("click", () => {
 });
 
 document.querySelector("#generateHeader").addEventListener("click", () => {
-  lastHeaderPlan = generateHeaderSuggestions(document.querySelector("#headerText").value);
-  renderEditableSuggestions(
-    "#headerResults",
-    lastHeaderPlan,
-    "未生成表头建议",
-    "请检查问卷稿是否包含明确题号和题目文本。",
-    "header"
-  );
+  const text = document.querySelector("#headerText").value;
+  const suggestions = generateHeaderSuggestions(text);
+  const plan = buildStandardHeaderPlan(text);
+  lastHeaderPlan = { suggestions, plan };
+  renderHeaderPlan(plan, suggestions);
   markWorkspaceStatus("header");
 });
 
@@ -7283,7 +7448,22 @@ document.querySelector("#exportCleaningRules").addEventListener("click", () => {
 });
 
 document.querySelector("#exportHeaderPlan").addEventListener("click", () => {
-  exportEditableSuggestions("header");
+  if (!lastHeaderPlan?.plan?.columns?.length) return;
+  const plan = lastHeaderPlan.plan;
+  downloadExcelWorkbookXml("表头设计方案.xls", [
+    { name: "表头方案", rows: headerPlanRows(plan) },
+    {
+      name: "变量说明",
+      rows: [
+        ["题号", "题干", "入表分组", "选项数"],
+        ...plan.selected.map((question) => [question.display, question.title, headerQuestionGroup(question), question.options.length]),
+        [],
+        ["不建议入表题"],
+        ["题号", "题干", "原因"],
+        ...plan.excluded.map((question) => [question.display, question.title, isOpenQuestion(questionText(question)) ? "开放题" : isTrapQuestion(questionText(question)) ? "陷阱/质控题" : "跳题/说明题"])
+      ]
+    }
+  ]);
 });
 
 document.querySelector("#detectCrosstabFields").addEventListener("click", detectCrosstabFields);
@@ -7415,7 +7595,12 @@ document.querySelector("#exportAiWord").addEventListener("click", exportAiWord);
 document.querySelector("#applyAiQuestionnaire").addEventListener("click", applyAiQuestionnaireToWorkspace);
 document.querySelector("#reviseAiQuestionnaire").addEventListener("click", reviseAiQuestionnaire);
 document.querySelector("#aiProvider").addEventListener("change", applyAiProviderPreset);
-document.querySelector("#aiGenerationMode").addEventListener("change", () => renderAiSettingsStatus(readAiSettingsFromForm()));
+document.querySelector("#aiModelTier").addEventListener("change", () => {
+  const tierModel = document.querySelector("#aiModelTier")?.value || "";
+  const modelInput = document.querySelector("#aiModelName");
+  if (modelInput && tierModel) modelInput.value = tierModel;
+  renderAiSettingsStatus(readAiSettingsFromForm());
+});
 document.querySelector("#aiModelName").addEventListener("input", () => renderAiSettingsStatus(readAiSettingsFromForm()));
 document.querySelector("#aiApiBaseUrl").addEventListener("input", () => renderAiSettingsStatus(readAiSettingsFromForm()));
 document.querySelector("#aiApiKey").addEventListener("input", () => renderAiSettingsStatus(readAiSettingsFromForm()));

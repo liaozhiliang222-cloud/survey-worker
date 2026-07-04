@@ -283,15 +283,15 @@
                   </select>
                 </label>
                 <label>
-                  生成模式
-                  <select id="aiGenerationMode">
-                    <option value="api">优先调用大模型</option>
-                    <option value="local">只使用本地规则</option>
+                  模型档位
+                  <select id="aiModelTier">
+                    <option value="deepseek-v4-flash">V4 Flash</option>
+                    <option value="deepseek-v4-pro">V4 Pro</option>
                   </select>
                 </label>
                 <label>
                   模型名称
-                  <input id="aiModelName" type="text" placeholder=例如：deepseek-v4-flash / kimi-k2.6 / glm-5.1 / qwen3.7-max / gpt-5.5-instant
+                  <input id="aiModelName" type="text" placeholder="例如：deepseek-v4-flash / kimi-k2.6 / glm-5.1 / qwen3.7-max / gpt-5.5-instant" />
                 </label>
                 <label>
                   接口地址
@@ -323,9 +323,9 @@
                 <span>选择供应商后会自动填入推荐接口和模型，也可以切换为自定义兼容接口。</span>
               </div>
               <ul class="ai-risk-list">
-                <li><strong>DeepSeek</strong><span>默认使用 deepseek-v4-flash（DeepSeek-V4），接口地址为 OpenAI 兼容格式 https://api.deepseek.com/v1/chat/completions。</span></li>
-                <li><strong>Kimi</strong><span>默认使用 kimi-k2.6（K2 系列通用模型，256K 上下文），旧版 moonshot-v1-8k 已下线。</span></li>
-                <li><strong>智谱 / Qwen</strong><span>智谱默认使用 glm-5.1（旗舰高速版），通义千问默认使用 qwen3.7-max（最新旗舰），均为 OpenAI 兼容接口。</span></li>
+                <li><strong>DeepSeek</strong><span>支持 V4 Flash / V4 Pro 档位，接口地址为 OpenAI 兼容格式 https://api.deepseek.com/v1/chat/completions。</span></li>
+                <li><strong>Kimi</strong><span>支持 K2.6 Flash / K2.6 / K2.6 Pro 档位，旧版 moonshot-v1-8k 已下线。</span></li>
+                <li><strong>智谱 / Qwen</strong><span>智谱、通义千问均提供高速、标准和增强档位，也可以手动修改模型名称。</span></li>
               </ul>
             </section>
           </div>
@@ -781,9 +781,9 @@
                 <textarea id="headerText" placeholder="粘贴问卷题目、选项、跳题说明。工具会建议分群表头和不建议入表题。"></textarea>
               </label>
               <div class="button-row">
-                <button class="primary-btn" id="generateHeader" type="button">生成表头建议</button>
+                <button class="primary-btn" id="generateHeader" type="button">生成表头方案</button>
                 <button class="secondary-btn" id="loadHeaderExample" type="button">载入示例</button>
-                <button class="secondary-btn span-row" id="exportHeaderPlan" type="button" disabled>导出表头方案 CSV</button>
+                <button class="secondary-btn span-row" id="exportHeaderPlan" type="button" disabled>导出表头方案 Excel</button>
                 <button class="secondary-btn span-row ai-inline-btn" type="button" data-ai-task="header-plan" data-ai-source="headerText">AI 生成表头解读</button>
               </div>
               <p class="panel-note">第一版输出制表规划建议；后续可导出 Excel 制表需求表。</p>
@@ -792,7 +792,7 @@
             <div class="audit-results" id="headerResults" aria-live="polite">
               <div class="empty-state">
                 <strong>等待生成</strong>
-                <span>粘贴问卷稿后点击“生成表头建议”，这里会显示分群表头和不建议入表题。</span>
+                <span>粘贴问卷稿后点击“生成表头方案”，这里会显示可直接用于交叉表的三行表头结构。</span>
               </div>
             </div>
           </div>

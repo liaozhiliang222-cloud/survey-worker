@@ -1488,6 +1488,37 @@ tr:last-child td {
   .import-flow {
     grid-template-columns: 1fr;
   }
+
+  #quota .panel,
+  #quota .quota-output {
+    min-width: 0;
+  }
+
+  #quota .quota-output {
+    padding: 18px;
+  }
+
+  #quota .quota-template-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #quota .quota-template-row .secondary-btn,
+  #quota .quota-template-row .ghost-btn {
+    width: 100%;
+    white-space: normal;
+  }
+
+  #quota .table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #quota table {
+    width: max-content;
+    min-width: 620px;
+  }
 }
 
 @media (max-width: 560px) {
@@ -1545,5 +1576,57 @@ tr:last-child td {
 
   .section-heading {
     display: block;
+  }
+
+  #quota .quota-output,
+  #quota .panel {
+    padding: 14px;
+  }
+
+  #quota .segmented-control button {
+    min-height: 42px;
+    padding: 9px 8px;
+  }
+
+  #quota .quota-dimension,
+  #quota .cross-quota-dimension {
+    padding: 10px;
+  }
+
+  #quota .quota-item-row {
+    grid-template-columns: minmax(0, 1fr) 76px 34px;
+    gap: 6px;
+  }
+
+  #quota .quota-item-row input {
+    min-width: 0;
+    padding: 10px 9px;
+  }
+
+  #quota .quota-item-row .icon-btn,
+  #quota .quota-dimension-head .icon-btn {
+    width: 34px;
+    height: 40px;
+  }
+
+  #quota .quota-dimension-head {
+    grid-template-columns: minmax(0, 1fr) 34px;
+    gap: 6px;
+  }
+
+  #quota .quota-template-row {
+    grid-template-columns: 1fr;
+  }
+
+  #quota .cross-quota-items {
+    min-height: 110px;
+  }
+
+  #quota .button-row {
+    grid-template-columns: 1fr;
+  }
+
+  #quota .metric-grid {
+    grid-template-columns: 1fr;
   }
 }
