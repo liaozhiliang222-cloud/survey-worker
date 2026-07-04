@@ -6294,13 +6294,44 @@ async function callAiChatCompletion(settings, messages, options = {}) {
     throw new Error("当前环境没有启用 AI 后端代理，请通过 npm run dev 本地服务或 Cloudflare Pages Functions 部署后再调用。");
   }
   const payload = await response.json().catch(() => ({}));
+  if (payload?.error) {
+    const message = payload.error.message || payload.error.code || JSON.stringify(payload.error);
+    throw new Error(message);
+  }
   if (!response.ok) {
     const message = payload?.error?.message || payload?.message || `接口返回 ${response.status}`;
     throw new Error(message);
   }
-  const content = payload?.choices?.[0]?.message?.content || payload?.choices?.[0]?.text || "";
-  if (!content.trim()) throw new Error("接口返回为空，请检查模型名称或供应商配置。");
+  const choice = payload?.choices?.[0] || {};
+  const message = choice.message || {};
+  const content = normalizeAiResponseContent(
+    message.content ||
+    message.reasoning_content ||
+    choice.text ||
+    choice.delta?.content ||
+    payload.output_text ||
+    payload.response ||
+    payload.content ||
+    ""
+  );
+  if (!content.trim()) {
+    const preview = JSON.stringify(payload).slice(0, 240);
+    throw new Error(`接口返回为空，请检查模型名称或供应商配置。返回摘要：${preview || "无内容"}`);
+  }
   return content.trim();
+}
+
+function normalizeAiResponseContent(content) {
+  if (Array.isArray(content)) {
+    return content.map((item) => {
+      if (typeof item === "string") return item;
+      return item?.text || item?.content || item?.value || "";
+    }).join("");
+  }
+  if (content && typeof content === "object") {
+    return content.text || content.content || content.value || JSON.stringify(content);
+  }
+  return String(content || "");
 }
 
 function buildAiQuestionnairePrompt() {

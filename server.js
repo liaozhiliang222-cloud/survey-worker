@@ -90,6 +90,14 @@ http
             body: JSON.stringify(requestBody)
           });
           const text = await upstream.text();
+          if (!text.trim()) {
+            sendJson(res, upstream.ok ? 502 : upstream.status, {
+              error: {
+                message: `Upstream returned empty response from ${new URL(targetUrl).hostname}. Please check model name, API key, account quota or provider status.`
+              }
+            });
+            return;
+          }
           res.writeHead(upstream.status, {
             "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
             "Access-Control-Allow-Origin": "*",

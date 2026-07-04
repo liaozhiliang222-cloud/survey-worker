@@ -76,6 +76,13 @@ export async function onRequestPost({ request, env }) {
     });
 
     const text = await upstream.text();
+    if (!text.trim()) {
+      return json({
+        error: {
+          message: `Upstream returned empty response from ${new URL(targetUrl).hostname}. Please check model name, API key, account quota or provider status.`
+        }
+      }, { status: upstream.ok ? 502 : upstream.status });
+    }
     return new Response(text, {
       status: upstream.status,
       headers: {
