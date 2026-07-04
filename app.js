@@ -5828,7 +5828,73 @@ async function generateAiPlan() {
   document.querySelector("#exportAiPlanMd").disabled = false;
   document.querySelector("#exportAiPlanWord").disabled = false;
   document.querySelector("#applyAiPlanToProject").disabled = false;
+  document.querySelector("#reviseAiPlan").disabled = false;
   renderAiPlanOutput(output, source);
+}
+
+function buildAiPlanRevisionPrompt(instruction, currentDraft) {
+  return [
+    {
+      role: "system",
+      content: "你是一名资深市场研究方案设计专家。请根据用户修改要求，直接输出修改后的完整调研方案。保留正式方案结构、研究模块、分析框架、质量控制和交付计划。不要只输出修改摘要。"
+    },
+    {
+      role: "user",
+      content: [
+        "用户修改要求：",
+        instruction,
+        "",
+        "当前调研方案：",
+        currentDraft
+      ].join("\n")
+    }
+  ];
+}
+
+async function reviseAiPlan() {
+  const instruction = document.querySelector("#aiPlanReviseInput").value.trim();
+  const result = document.querySelector("#aiPlanResults");
+  if (!lastAiPlan) {
+    result.innerHTML = `<div class="empty-state"><strong>暂无可修改方案</strong><span>请先生成调研方案。</span></div>`;
+    return;
+  }
+  if (!instruction) {
+    result.innerHTML = `<div class="empty-state"><strong>缺少修改要求</strong><span>请先写明希望如何修改方案。</span></div>`;
+    return;
+  }
+  const settings = loadAiSettings();
+  const steps = [
+    { title: "读取修改要求", detail: "整理当前方案和用户追加要求。" },
+    { title: "校验模型设置", detail: settings.mode === "local" || !settings.apiKey ? "未配置可用 API Key，将生成本地修改说明。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"} 修改方案。` },
+    { title: "重写调研方案", detail: "保留方案结构、研究模块、分析框架和交付计划。" },
+    { title: "更新可导出结果", detail: "启用复制、Word、Markdown 与同步项目档案。" }
+  ];
+  renderAiProgress(result, steps, 0, "", "正在修改调研方案");
+  let output = `${lastAiPlan}\n\n---\n\n# 待修改说明\n\n${instruction}\n\n> 当前未调用大模型，已先把修改要求附在方案末尾。配置 API Key 后可自动重写完整方案。`;
+  let source = "本地方案框架";
+  renderAiProgress(result, steps, 1, "", "正在修改调研方案");
+  if (settings.mode !== "local" && settings.apiKey) {
+    const errors = validateAiSettings(settings);
+    if (!errors.length) {
+      try {
+        renderAiProgress(result, steps, 2, "正在按你的要求重写方案，通常需要几十秒。", "正在修改调研方案");
+        output = await callAiChatCompletion(settings, buildAiPlanRevisionPrompt(instruction, lastAiPlan), { maxTokens: 12000 });
+        source = aiProviderPresets[settings.provider]?.name || "大模型";
+      } catch (error) {
+        output += `\n\n> 大模型修改失败：${error.message}`;
+        source = "本地方案框架（模型调用失败）";
+      }
+    } else {
+      output += `\n\n> 大模型设置未通过校验：${errors.join("；")}`;
+      source = "本地方案框架（设置未通过校验）";
+    }
+  }
+  renderAiProgress(result, steps, 3, "", "正在修改调研方案");
+  output = sanitizeAiPlanOutput(output);
+  lastAiPlan = output;
+  renderAiProgress(result, steps, 4, "", "正在修改调研方案");
+  renderAiPlanOutput(output, source);
+  document.querySelector("#aiPlanReviseInput").value = "";
 }
 
 async function copyAiPlan() {
@@ -7643,6 +7709,7 @@ document.querySelector("#copyAiPlan").addEventListener("click", copyAiPlan);
 document.querySelector("#exportAiPlanMd").addEventListener("click", exportAiPlanMd);
 document.querySelector("#exportAiPlanWord").addEventListener("click", exportAiPlanWord);
 document.querySelector("#applyAiPlanToProject").addEventListener("click", applyAiPlanToProject);
+document.querySelector("#reviseAiPlan").addEventListener("click", reviseAiPlan);
 document.querySelector("#loadAiPlanExample").addEventListener("click", () => {
   document.querySelector("#aiPlanInput").value = "调研目的：某品牌即将推出一款常温纯牛奶，主打常温短保、瞬时杀菌、自有牧场、双活性蛋白等卖点，对标18-45岁离线人群。当前已有初步新品概念，需要基于消费者调研，为新品开发方向、目标人群及营销卖点策略等提供数据支持。";
   document.querySelector("#aiPlanContext").value = "常温纯牛奶新品概念测试";

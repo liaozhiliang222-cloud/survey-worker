@@ -184,74 +184,6 @@
             </section>
           </div>
 
-          <div class="workflow-grid">
-            <article class="tool-card ready" data-jump="sample">
-              <span>调研前</span>
-              <h3>样本量计算</h3>
-              <p>按置信水平、误差、用户规模、分群数量和回收率给出建议样本。</p>
-            </article>
-            <article class="tool-card ready" data-jump="quota">
-              <span>调研前</span>
-              <h3>配额设计</h3>
-              <p>支持单一配额和交叉配额，按比例快速换算目标样本量。</p>
-            </article>
-            <article class="tool-card ready" data-jump="ai-plan">
-              <span>调研前</span>
-              <h3>AI 方案设计</h3>
-              <p>输入业务需求，生成研究目标、样本方案、方法路径、问卷模块和交付计划。</p>
-            </article>
-            <article class="tool-card ready" data-jump="ai-assistant">
-              <span>调研前</span>
-              <h3>AI 问卷设计</h3>
-              <p>输入研究目标和目标人群，自动生成问卷大纲、题目、编码、逻辑备注和质量自查清单。</p>
-            </article>
-            <article class="tool-card ready" data-jump="link-test">
-              <span>调研前</span>
-              <h3>问卷上线质检</h3>
-              <p>粘贴问卷稿，检查跳题引用、随机轮换、选项遗漏和常见细节错误。</p>
-            </article>
-            <article class="tool-card ready" data-jump="time-estimate">
-              <span>调研前</span>
-              <h3>答题时间估算</h3>
-              <p>按题型、选项数量和开放题估算问卷完成时长，辅助控制问卷长度。</p>
-            </article>
-            <article class="tool-card ready" data-jump="cleaning-rules">
-              <span>调研中</span>
-              <h3>清洗规则生成</h3>
-              <p>根据问卷题型生成时长、陷阱题、直线题、开放题等清洗建议。</p>
-            </article>
-            <article class="tool-card ready" data-jump="table-header">
-              <span>调研中</span>
-              <h3>表头设计助手</h3>
-              <p>自动建议分群表头和不建议入表题，减少制表前沟通成本。</p>
-            </article>
-            <article class="tool-card planned" data-jump="models">
-              <span>调研后</span>
-              <h3>PSM / KANO / MaxDiff / ABC</h3>
-              <p>优先做小而专业的模型工具，形成区别于通用分析软件的卖点。</p>
-            </article>
-            <article class="tool-card ready" data-jump="psm">
-              <span>调研后</span>
-              <h3>PSM 价格敏感度</h3>
-              <p>粘贴四个价格问题数据，自动计算关键价格点和价格曲线表。</p>
-            </article>
-            <article class="tool-card ready" data-jump="kano">
-              <span>调研后</span>
-              <h3>KANO 模型</h3>
-              <p>导入属性分类人数，输出属性分类、Better-Worse 系数和优先级建议。</p>
-            </article>
-            <article class="tool-card ready" data-jump="maxdiff">
-              <span>调研后</span>
-              <h3>MaxDiff</h3>
-              <p>生成 MaxDiff 题组设计模板，并按 Best-Worst 次数做简单计分。</p>
-            </article>
-            <article class="tool-card ready" data-jump="abc-value">
-              <span>调研后</span>
-              <h3>ABC 用户价值模型</h3>
-              <p>从问卷中识别态度、行为、消费指数候选指标，辅助定位高价值用户。</p>
-            </article>
-          </div>
-
         </section>
 
         <section class="view" id="settings">
@@ -1451,10 +1383,6 @@
 
           <div class="link-tester">
             <div class="panel">
-              <div class="planned-banner">
-                <strong>从需求到调研方案</strong>
-                <span>把业务背景、研究问题和限制条件转成可执行的调研方案，后续可继续进入样本量、配额、问卷设计和上线质检。</span>
-              </div>
               <label>
                 <span class="label-action">
                   <span>用户需求 / 业务背景</span>
@@ -1515,6 +1443,13 @@
                 <button class="secondary-btn" id="exportAiPlanWord" type="button" disabled>导出 Word</button>
                 <button class="secondary-btn" id="applyAiPlanToProject" type="button" disabled>同步到项目档案</button>
               </div>
+              <div class="ai-revise-panel">
+                <label>
+                  对话修改方案
+                  <textarea id="aiPlanReviseInput" placeholder="生成方案后，可以继续输入修改要求。例如：增加PSM模块；缩短为8分钟；加入竞品对比分析；补充质量控制细节。"></textarea>
+                </label>
+                <button class="secondary-btn" id="reviseAiPlan" type="button" disabled>按要求修改方案</button>
+              </div>
               <p class="panel-note">简要方案适合作为项目启动版 Word；详细方案按正式研究方案结构输出更完整文本，也可导出 Word，正式对客前建议结合预算、样本可达性和客户业务口径再做调整。</p>
             </div>
 
@@ -1545,10 +1480,6 @@
 
           <div class="link-tester">
             <div class="panel">
-              <div class="planned-banner">
-                <strong>本地智能生成</strong>
-                <span>基于专业问卷设计框架生成问卷初稿、编码表、逻辑备注和自查清单；后续可继续接入大模型接口增强表达与追问。</span>
-              </div>
               <label>
                 <span class="label-action">
                   <span>研究需求</span>
