@@ -202,27 +202,27 @@ let sharedImportTargetId = "";
 const aiProviderPresets = {
   deepseek: {
     name: "DeepSeek",
-    model: "deepseek-chat",
-    url: "https://api.deepseek.com/chat/completions"
+    model: "deepseek-v4-flash",
+    url: "https://api.deepseek.com/v1/chat/completions"
   },
   kimi: {
     name: "Kimi（月之暗面）",
-    model: "moonshot-v1-8k",
+    model: "kimi-k2.6",
     url: "https://api.moonshot.cn/v1/chat/completions"
   },
   zhipu: {
     name: "智谱 GLM",
-    model: "glm-4-plus",
+    model: "glm-5.1",
     url: "https://open.bigmodel.cn/api/paas/v4/chat/completions"
   },
   qwen: {
     name: "Qwen / 通义千问",
-    model: "qwen-max",
+    model: "qwen3.7-max",
     url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
   },
   openai: {
     name: "OpenAI",
-    model: "gpt-4o",
+    model: "gpt-5.5-instant",
     url: "https://api.openai.com/v1/chat/completions"
   },
   custom: {
