@@ -1,10 +1,11 @@
-const CACHE_NAME = "research-toolbox-v16";
+const CACHE_NAME = "research-toolbox-v17";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./manifest.webmanifest",
+  "./cloudflare-pages-verification.txt",
   "./icon.svg"
 ];
 

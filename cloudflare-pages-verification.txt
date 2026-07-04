@@ -1,0 +1,12 @@
+Site verification and appeal material
+
+Domain: survey-worker-711.pages.dev
+Project: Research Toolbox
+Purpose: A legitimate market research productivity PWA for questionnaire design, sample size estimation, quota design, survey QA, data cleaning rules, crosstab preparation, and research model analysis.
+
+This site is operated by the project owner for product development and internal testing. It does not intentionally provide phishing, credential collection, malware distribution, abusive scraping, spam, or other malicious content.
+
+If this page was flagged because of generated content, model output, exported files, or abuse of the hosting platform by others, please review and restore access. The owner is willing to remove or adjust any content that violates platform policy.
+
+Verification deployed at site root.
+Date: 2026-07-04
