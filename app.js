@@ -202,6 +202,55 @@ let sharedImportTargetId = "";
 const aiProviderPresets = {
   deepseek: {
     name: "DeepSeek",
+    model: "deepseek-chat",
+    url: "https://api.deepseek.com/v1/chat/completions",
+    tiers: [
+      { label: "DeepSeek-V3 (chat)", model: "deepseek-chat" },
+      { label: "DeepSeek-R1 (reasoner)", model: "deepseek-reasoner" }
+    ]
+  },
+  kimi: {
+    name: "Kimi（月之暗面）",
+    model: "moonshot-v1-8k",
+    url: "https://api.moonshot.cn/v1/chat/completions",
+    tiers: [
+      { label: "V1-8K", model: "moonshot-v1-8k" },
+      { label: "V1-32K", model: "moonshot-v1-32k" },
+      { label: "V1-128K", model: "moonshot-v1-128k" }
+    ]
+  },
+  zhipu: {
+    name: "智谱 GLM",
+    model: "glm-4-flash",
+    url: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    tiers: [
+      { label: "GLM-4-Flash", model: "glm-4-flash" },
+      { label: "GLM-4-Air", model: "glm-4-air" },
+      { label: "GLM-4-Plus", model: "glm-4-plus" }
+    ]
+  },
+  qwen: {
+    name: "Qwen / 通义千问",
+    model: "qwen-plus",
+    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+    tiers: [
+      { label: "Qwen-Turbo", model: "qwen-turbo" },
+      { label: "Qwen-Plus", model: "qwen-plus" },
+      { label: "Qwen-Max", model: "qwen-max" }
+    ]
+  },
+  openai: {
+    name: "OpenAI",
+    model: "gpt-4o",
+    url: "https://api.openai.com/v1/chat/completions",
+    tiers: [
+      { label: "GPT-4o", model: "gpt-4o" },
+      { label: "GPT-4o-mini", model: "gpt-4o-mini" },
+      { label: "GPT-4-Turbo", model: "gpt-4-turbo" }
+    ]
+  },
+  deepseek: {
+    name: "DeepSeek",
     model: "deepseek-v4-flash",
     url: "https://api.deepseek.com/v1/chat/completions",
     tiers: [
@@ -221,12 +270,12 @@ const aiProviderPresets = {
   },
   zhipu: {
     name: "智谱 GLM",
-    model: "glm-5.1",
+    model: "glm-4-flash",
     url: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
     tiers: [
-      { label: "GLM 5.1 Flash", model: "glm-5.1-flash" },
-      { label: "GLM 5.1", model: "glm-5.1" },
-      { label: "GLM 5.1 Pro", model: "glm-5.1-pro" }
+      { label: "GLM-4 Flash", model: "glm-4-flash" },
+      { label: "GLM-4 Air", model: "glm-4-air" },
+      { label: "GLM-4 Plus", model: "glm-4-plus" }
     ]
   },
   qwen: {

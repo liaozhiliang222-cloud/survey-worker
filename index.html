@@ -291,7 +291,7 @@
                 </label>
                 <label>
                   模型名称
-                  <input id="aiModelName" type="text" placeholder="例如：deepseek-v4-flash / kimi-k2.6 / glm-5.1 / qwen3.7-max / gpt-5.5-instant" />
+                  <input id="aiModelName" type="text" placeholder="例如：deepseek-v4-flash / kimi-k2.6 / glm-4-flash / qwen3.7-max / gpt-5.5-instant" />
                 </label>
                 <label>
                   接口地址
@@ -323,9 +323,9 @@
                 <span>选择供应商后会自动填入推荐接口和模型，也可以切换为自定义兼容接口。</span>
               </div>
               <ul class="ai-risk-list">
-                <li><strong>DeepSeek</strong><span>支持 V4 Flash / V4 Pro 档位，接口地址为 OpenAI 兼容格式 https://api.deepseek.com/v1/chat/completions。</span></li>
-                <li><strong>Kimi</strong><span>支持 K2.6 Flash / K2.6 / K2.6 Pro 档位，旧版 moonshot-v1-8k 已下线。</span></li>
-                <li><strong>智谱 / Qwen</strong><span>智谱、通义千问均提供高速、标准和增强档位，也可以手动修改模型名称。</span></li>
+                <li><strong>DeepSeek</strong><span>默认 deepseek-chat（V3）。如账户已开通 V4 权限，可手动切换为 deepseek-v4-flash / deepseek-reasoner。</span></li>
+                <li><strong>Kimi</strong><span>默认 moonshot-v1-8k，支持 8K / 32K / 128K 上下文档位。</span></li>
+                <li><strong>智谱 / Qwen</strong><span>智谱默认 glm-4-flash（免费轻量），可选 Air / Plus；通义千问默认 qwen-plus，可选 Turbo / Max。</span></li>
               </ul>
             </section>
           </div>
