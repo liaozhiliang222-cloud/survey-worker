@@ -5269,21 +5269,66 @@ function aiPlanStudyTypeName(type) {
 }
 
 function aiPlanModules(type) {
-  const common = ["样本甄别与配额确认", "品类使用/购买行为", "核心态度与决策因素", "人群画像与背景信息"];
+  const common = ["样本甄别与配额确认", "品类/场景使用行为", "需求痛点与选择驱动", "人群画像与背景信息"];
   const map = {
-    concept: ["概念理解与整体吸引力", "卖点偏好与购买驱动", "购买意愿与支付意愿", "价格敏感度/PSM 可选模块"],
-    ua: ["使用场景与频率", "渠道与触点", "需求痛点与未满足需求", "品牌/产品选择因素"],
-    brand: ["品牌认知与使用漏斗", "品牌形象与资产指标", "竞争品牌对比", "品牌驱动因素与机会点"],
-    nps: ["整体满意度与 NPS", "服务/体验环节评价", "推荐或流失原因", "改进优先级建议"],
-    pricing: ["价格锚点与当前支付水平", "PSM 四价格问题", "价格接受区间", "价格与购买意愿联动"],
-    kano: ["功能清单确认", "KANO 正反向题组", "Better-Worse 优先级", "功能落地建议"],
-    custom: ["业务现状诊断", "核心假设验证", "关键指标体系", "行动建议输出"]
+    concept: ["概念理解度", "概念独特性与相关性", "概念吸引力", "购买意愿与使用场景", "卖点/利益点偏好", "价格与上市建议"],
+    ua: ["品类渗透与使用频率", "使用场景与任务需求", "购买渠道与决策链路", "品牌组合与转换行为", "未满足需求与机会空间"],
+    brand: ["品牌认知漏斗", "品牌使用与偏好漏斗", "品牌形象与资产表现", "竞争品牌对标", "品牌驱动因素与提升杠杆"],
+    nps: ["整体满意度与 NPS/NSS", "关键体验触点评价", "推荐/贬损原因", "人群差异与服务短板", "体验改善优先级"],
+    pricing: ["价格认知与当前支付水平", "价格敏感度/PSM", "不同价格点购买意愿", "竞品价格锚点", "价格策略建议"],
+    kano: ["需求/功能清单梳理", "KANO 属性分类", "重要度与满意度联动", "功能优先级与资源投入建议"],
+    custom: ["市场与用户现状诊断", "核心业务假设验证", "关键指标体系", "策略机会与行动建议"]
   };
   return [...common, ...(map[type] || map.custom)];
 }
 
+function aiPlanPrimaryFramework(type) {
+  return {
+    concept: {
+      name: "概念测试与新品机会评估",
+      models: ["概念理解度-吸引力-购买意愿链路", "概念相关性/独特性/可信度评估", "卖点偏好与利益点排序", "价格接受与购买转化分析"],
+      output: "判断概念是否具备上市潜力、核心吸引点是什么、阻碍购买的原因在哪里，以及应如何优化产品表达和上市组合。"
+    },
+    ua: {
+      name: "U&A 使用习惯与态度研究",
+      models: ["品类渗透与使用频率", "场景/任务/痛点分析", "购买决策路径", "品牌转换与替代关系", "需求机会空间"],
+      output: "还原目标人群如何使用、为何选择、在哪里购买、被什么影响，以及品类增长机会和产品切入点。"
+    },
+    brand: {
+      name: "品牌健康度与品牌资产评估",
+      models: ["品牌认知漏斗", "品牌考虑/偏好/购买漏斗", "品牌形象与联想资产", "竞争品牌定位图", "品牌驱动因素分析"],
+      output: "识别品牌在认知、考虑、偏好、购买和忠诚各阶段的短板，明确品牌资产、差异化定位和传播机会。"
+    },
+    nps: {
+      name: "满意度/NPS 体验诊断",
+      models: ["满意度结构模型", "NPS/NSS 推荐体系", "体验触点旅程", "关键驱动因素分析", "改进优先级矩阵"],
+      output: "定位影响满意度和推荐意愿的关键体验触点，识别贬损原因和高优先级改善动作。"
+    },
+    pricing: {
+      name: "价格策略与价格敏感度研究",
+      models: ["PSM 价格敏感度", "价格-购买意愿曲线", "竞品价格锚点", "支付意愿分层", "价格包/规格组合评估"],
+      output: "输出可接受价格区间、价格风险点、目标价格建议，以及不同人群对价格和价值感知的差异。"
+    },
+    kano: {
+      name: "需求/功能优先级研究",
+      models: ["KANO 属性分类", "重要度-满意度分析", "Better-Worse 系数", "功能投入优先级", "资源配置建议"],
+      output: "区分必备、期望、魅力和无差异属性，帮助产品团队判断功能优先级和资源投入顺序。"
+    },
+    custom: {
+      name: "综合市场研究方案",
+      models: ["业务假设验证", "人群分层与需求诊断", "竞争对标", "转化路径分析", "策略机会识别"],
+      output: "围绕业务问题建立可验证的研究路径，输出对产品、品牌、渠道和传播有行动价值的建议。"
+    }
+  }[type] || {
+    name: "综合市场研究方案",
+    models: ["业务假设验证", "人群分层与需求诊断", "竞争对标", "转化路径分析", "策略机会识别"],
+    output: "围绕业务问题建立可验证的研究路径，输出对产品、品牌、渠道和传播有行动价值的建议。"
+  };
+}
+
 function buildDetailedAiResearchPlan(config) {
   const modules = aiPlanModules(config.studyType);
+  const framework = aiPlanPrimaryFramework(config.studyType);
   const recommendedSample = Math.max(300, config.sampleSize);
   return [
     `# ${config.project} 详细调研方案`,
@@ -5312,18 +5357,24 @@ function buildDetailedAiResearchPlan(config) {
     "",
     "## 02 研究设计及方法",
     "### 2.1 研究体系",
-    "- 现状诊断：知名度、熟悉度、满意度、购买考虑、购买意向、使用/购买行为。",
-    "- 形象与资产：品牌/产品形象、个性联想、忠诚度、推荐度、溢价能力。",
-    "- 传播与触点：信息来源、广告/活动/内容触达、信任度、行动转化。",
-    "- 机会识别：需求痛点、卖点偏好、功能优先级、价格接受度和高价值人群。",
+    `本项目建议采用「${framework.name}」作为主框架，围绕业务决策问题建立“市场/品类背景 - 用户行为 - 态度评价 - 竞争对标 - 策略机会”的证据链。`,
+    "",
+    "| 层级 | 研究问题 | 关键指标 | 输出价值 |",
+    "|---|---|---|---|",
+    "| 市场与品类 | 目标品类的用户基础、渗透和增长空间如何 | 品类使用率、购买频率、渠道、场景 | 判断目标市场基础和增长入口 |",
+    "| 用户行为 | 用户在什么场景下产生需求，如何选择和购买 | 使用场景、购买链路、决策角色、触点 | 还原真实行为路径和转化阻碍 |",
+    "| 态度认知 | 用户如何理解产品/品牌/概念，是否有吸引力 | 认知、相关性、独特性、可信度、满意度 | 判断沟通表达和产品价值是否成立 |",
+    "| 竞争对标 | 与主要竞品相比优势和短板在哪里 | 漏斗、形象、偏好、购买意向、价格感知 | 明确差异化定位和竞争策略 |",
+    "| 策略机会 | 哪些人群、卖点、价格或渠道最值得投入 | 关键驱动、分群画像、机会优先级 | 输出可落地的产品和营销动作 |",
     "",
     "### 2.2 研究框架设计",
     "| 研究模块 | 关键内容 | 输出价值 |",
     "|---|---|---|",
-    "| 用户与市场现状 | 人群画像、品类行为、竞争关系 | 判断市场基础与目标机会 |",
-    "| 品牌/产品表现 | 漏斗、形象、满意度、购买意愿 | 找到优势、短板和提升方向 |",
-    "| 核心模型分析 | PSM/KANO/MaxDiff/ABC/NPS 等 | 支撑定价、功能、卖点和用户价值判断 |",
-    "| 传播与行动建议 | 触点、内容、渠道、策略建议 | 指导后续营销和产品落地 |",
+    `| ${framework.name} | ${framework.models.join("、")} | ${framework.output} |`,
+    "| U&A 行为与态度 | 品类使用、购买习惯、场景需求、渠道触点、未满足需求 | 解释用户为什么买、如何用、为什么换 |",
+    "| 品牌/产品表现 | 认知漏斗、考虑/偏好/购买漏斗、形象联想、满意度、推荐意愿 | 找到优势、短板和提升方向 |",
+    "| 概念/卖点评估 | 概念理解、相关性、独特性、可信度、吸引力、购买意愿 | 判断新品概念和核心卖点是否值得推进 |",
+    "| 策略输出 | 目标人群、产品优化、价格建议、传播内容、渠道优先级 | 指导后续产品、营销和上市动作 |",
     "",
     "### 2.3 调查对象与样本条件",
     `- 目标人群：${config.audience}`,
@@ -5366,11 +5417,13 @@ function buildDetailedAiResearchPlan(config) {
     "- 分析传播内容是否准确传达核心卖点和品牌主张。",
     "- 对比看过/未看过传播内容人群在认知、态度和购买意向上的差异。",
     "",
-    "### 3.6 专项模型建议",
-    "- PSM：用于价格接受区间、最优价格点和价格风险判断。",
-    "- KANO：用于功能属性分类和投入优先级判断。",
-    "- MaxDiff：用于卖点、需求、功能或选择因素的相对偏好排序。",
-    "- NPS/NSS：用于推荐意愿、口碑风险和体验改善方向。",
+    "### 3.6 建议采用的主流分析框架",
+    ...framework.models.map((model) => `- ${model}`),
+    "- U&A：用于解释目标用户的品类行为、场景需求、购买链路和未满足需求。",
+    "- 品牌健康度：用于追踪品牌认知、熟悉、考虑、偏好、购买、忠诚和推荐等漏斗指标。",
+    "- 概念吸引力：用于评估新品概念的理解度、相关性、独特性、可信度、购买意愿和优化方向。",
+    "- 关键驱动分析：用于判断哪些体验、卖点或形象维度真正影响购买意愿、满意度或推荐意愿。",
+    "- 专项模型如 PSM、KANO、MaxDiff 仅在价格、功能优先级或相对偏好排序确有业务需要时加入，不作为默认堆叠模块。",
     "",
     "## 04 执行流程及控制",
     "### 4.1 项目启动",
@@ -5416,6 +5469,8 @@ function buildDetailedAiResearchPlan(config) {
 
 function buildBriefAiResearchPlan(config) {
   const recommendedSample = Math.max(300, config.sampleSize);
+  const framework = aiPlanPrimaryFramework(config.studyType);
+  const modules = aiPlanModules(config.studyType);
   const groups = recommendedSample >= 600 ? "建议按核心人群/城市级别/新老用户做交叉配额" : "建议控制 2-3 个关键配额维度，避免样本被切得过碎";
   return [
     `${config.project} 调研方案`,
@@ -5423,16 +5478,24 @@ function buildBriefAiResearchPlan(config) {
     "## 1. 项目背景与目的",
     config.brief || "当前尚未填写详细需求。建议补充业务背景、决策场景、目标产品/品牌、需要验证的假设和计划使用结果的业务动作。",
     "",
-    `本项目建议围绕${aiPlanStudyTypeName(config.studyType)}展开，核心目标是识别目标人群的认知、态度、行为和决策因素，为后续产品、品牌、传播或运营动作提供依据。`,
+    `本项目建议围绕「${framework.name}」展开，核心目标是识别目标人群的真实行为、态度认知、需求痛点、购买转化阻碍和策略机会，为后续产品、品牌、传播或运营动作提供依据。`,
     "",
     "## 2. 研究设计与方法",
     `- 目标人群：${config.audience}`,
     `- 建议有效样本量：N=${recommendedSample}`,
     `- 配额建议：${groups}。可优先考虑性别、年龄、城市级别、用户类型、购买/使用频率等维度。`,
     "- 研究方法：以线上定量问卷为主，必要时补充定性访谈/座谈，用于理解原因、语言表达和策略启发。",
-    "- 分析方法：频数/百分比、均值、Top Box、交叉分析、显著性检验，并按项目需要加入 PSM、KANO、MaxDiff、NPS 或 ABC 模型。",
+    `- 主分析框架：${framework.models.join("、")}。`,
+    "- 常规分析方法：频数/百分比、均值、Top Box、交叉分析、显著性检验、关键驱动分析、分群画像和竞争对标。",
+    "- 专项模型原则：PSM、KANO、MaxDiff、ABC 等仅在价格、功能优先级、相对偏好或用户价值分层确有业务需要时加入，不作为默认堆叠模块。",
     "",
-    "## 3. 执行流程与质量控制",
+    "## 3. 研究内容与分析框架",
+    "| 模块 | 关键内容 | 输出价值 |",
+    "|---|---|---|",
+    ...modules.slice(0, 7).map((module) => `| ${module} | 围绕用户行为、态度评价、竞争对标或决策因素设置问题 | 形成可用于业务判断的指标和行动建议 |`),
+    `| ${framework.name} | ${framework.models.join("、")} | ${framework.output} |`,
+    "",
+    "## 4. 执行流程与质量控制",
     "| 阶段 | 工作内容 | 质量控制 |",
     "|---|---|---|",
     "| 方案确认 | 明确研究目标、样本边界、核心指标和交付口径 | 与业务方确认研究问题和样本条件 |",
@@ -5446,10 +5509,10 @@ function buildBriefAiResearchPlan(config) {
     "- 如果样本结构与目标人群差异较大，建议使用 RIM 或 Cell 加权进行校准。",
     "- 特殊要求：" + config.constraints,
     "",
-    "## 4. 项目周期",
+    "## 5. 项目周期",
     `- 当前周期要求：${config.timeline}`,
     "- 建议排期：方案确认 1-2 天，问卷设计与质检 2-3 天，数据回收 3-7 天，清洗制表 1-2 天，报告分析 3-5 天。",
-    "- 下一步建议：确认研究目标、样本条件和核心分析模型后，进入样本量计算、配额设计和 AI 问卷设计。"
+    "- 下一步建议：确认研究目标、样本条件和核心分析框架后，进入样本量计算、配额设计和 AI 问卷设计。"
   ].join("\n");
 }
 function buildLocalAiResearchPlan(config = getAiPlanConfig()) {
@@ -5457,10 +5520,17 @@ function buildLocalAiResearchPlan(config = getAiPlanConfig()) {
 }
 
 function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = buildLocalAiResearchPlan(config)) {
+  const framework = aiPlanPrimaryFramework(config.studyType);
   return [
     {
       role: "system",
-      content: "你是一名资深市场研究方案设计专家。请把用户的业务需求转化为可执行的调研方案，输出中文 Markdown。方案要专业、具体、可落地，覆盖研究背景、目标、核心问题、样本方案、配额建议、问卷模块、分析框架、质量控制、项目排期和交付物。不要泛泛而谈。"
+      content: [
+        "你是一名资深市场研究方案设计专家。请把用户的业务需求转化为可执行的调研方案，输出中文 Markdown。",
+        "直接从方案标题开始输出，不要写“好的”“作为专家”“我将”“思考过程”“分析如下”等开场白或推理过程。",
+        "方案必须使用主流市场研究框架，例如 U&A、品牌健康度、概念吸引力、购买转化、满意度/NPS、价格策略、关键驱动分析、分群画像等。",
+        "不要机械套用当前工具已有的 PSM/KANO/MaxDiff/ABC；只有当业务问题明确需要价格、功能优先级、相对偏好或用户价值分层时，才把这些作为专项模块。",
+        "方案要专业、具体、可落地，覆盖研究背景、目标、核心问题、样本方案、配额建议、问卷模块、分析框架、质量控制、项目排期和交付物。不要泛泛而谈。"
+      ].join("")
     },
     {
       role: "user",
@@ -5468,6 +5538,8 @@ function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = build
         `项目名称/场景：${config.project}`,
         `方案模式：${config.mode === "detailed" ? "详细方案，需覆盖完整研究方案结构" : "简要方案，需适合导出Word"}`,
         `研究类型：${aiPlanStudyTypeName(config.studyType)}`,
+        `建议主框架：${framework.name}`,
+        `建议分析模型：${framework.models.join("、")}`,
         `目标人群：${config.audience}`,
         `建议样本量：${config.sampleSize}`,
         `项目周期：${config.timeline}`,
@@ -5476,11 +5548,39 @@ function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = build
         "用户需求：",
         config.brief || "用户暂未填写详细需求，请基于输入字段生成一版通用但可执行的方案。",
         "",
+        "详细方案必须细化到以下层级：",
+        "1. 项目背景与业务问题：说明为什么要做、要回答什么决策问题。",
+        "2. 研究目标与核心假设：每个目标对应可验证的问题和指标。",
+        "3. 研究设计：目标人群、样本条件、样本量、配额、研究方法、执行方式。",
+        "4. 研究内容：按问卷模块展开，说明每个模块的目的、关键题目方向和输出价值。",
+        "5. 分析框架：优先使用 U&A、品牌健康度、概念吸引力、购买转化、关键驱动、分群画像等主流框架。",
+        "6. 质量控制：上线前质检、回收监控、数据清洗、开放题编码、加权和交叉分析口径。",
+        "7. 交付物与时间计划：明确每个阶段产出。",
+        "",
         "可参考但不要机械照抄的本地方案框架：",
         localPlan
       ].join("\n")
     }
   ];
+}
+
+function sanitizeAiPlanOutput(output) {
+  let text = String(output || "").trim();
+  text = text.replace(/^好的[，,。\s\S]*?(?=\n#{1,3}\s+)/, "");
+  text = text.replace(/^作为[^\n]{0,80}(?:专家|顾问)[^\n]*\n+/, "");
+  text = text.replace(/^我将[^\n]*\n+/, "");
+  text = text.replace(/^\s*(?:思考过程|分析过程|方案思考过程|我的思路)[:：][\s\S]*?(?=\n#{1,3}\s+)/, "");
+
+  const firstHeading = text.search(/^#{1,3}\s+/m);
+  if (firstHeading > 0) {
+    const intro = text.slice(0, firstHeading).trim();
+    if (/^(好的|作为|我将|以下|下面|根据|首先|本方案|方案将)/.test(intro) || intro.length < 220) {
+      text = text.slice(firstHeading).trim();
+    }
+  }
+
+  text = text.replace(/\n{3,}/g, "\n\n").trim();
+  return text || output;
 }
 
 function renderAiPlanOutput(output, source) {
@@ -5516,7 +5616,7 @@ async function generateAiPlan() {
     if (!errors.length) {
       try {
         renderAiProgress(result, steps, 2, "正在让大模型把需求改写为完整调研方案。", "正在生成调研方案");
-        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config, localPlan), { maxTokens: 5000 });
+        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config, localPlan), { maxTokens: config.mode === "detailed" ? 8000 : 5000 });
         source = aiProviderPresets[settings.provider]?.name || "大模型";
       } catch (error) {
         output = `${localPlan}\n\n---\n\n> 大模型调用失败，已回退为本地方案框架。错误信息：${error.message}`;
@@ -5528,6 +5628,7 @@ async function generateAiPlan() {
     }
   }
   renderAiProgress(result, steps, 3, "", "正在生成调研方案");
+  output = sanitizeAiPlanOutput(output);
   lastAiPlan = output;
   document.querySelector("#copyAiPlan").disabled = false;
   document.querySelector("#exportAiPlanMd").disabled = false;
@@ -5589,6 +5690,15 @@ function getAiDesignerConfig() {
     sampleSize: Number(document.querySelector("#aiSampleSize")?.value) || 400,
     duration: Number(document.querySelector("#aiDuration")?.value) || 8
   };
+}
+
+function targetAiQuestionCount(duration) {
+  const minutes = Math.max(3, Math.min(30, Number(duration) || 8));
+  if (minutes <= 5) return { min: 10, max: 14, target: 12, level: "短问卷初稿" };
+  if (minutes <= 8) return { min: 16, max: 22, target: 19, level: "标准短问卷初稿" };
+  if (minutes <= 12) return { min: 24, max: 32, target: 28, level: "标准问卷初稿" };
+  if (minutes <= 18) return { min: 34, max: 45, target: 40, level: "深度问卷初稿" };
+  return { min: 46, max: 60, target: 52, level: "长问卷初稿" };
 }
 
 function aiStudyTypeName(type) {
@@ -5696,6 +5806,40 @@ function backgroundAiQuestions() {
   ];
 }
 
+function optionalAiQuestions(config) {
+  const common = [
+    aiQuestion("QX1", "矩阵量表", "请评价以下因素对您选择该品类产品的重要程度。", [["1", "产品效果", ""], ["2", "价格合理", ""], ["3", "品牌可信", ""], ["4", "购买便利", ""], ["5", "口碑推荐", ""]], "5点重要度量表，可用于关键驱动分析。"),
+    aiQuestion("QX2", "多选题", "您在购买或使用该品类时遇到过哪些问题？", [["1", "价格偏高", ""], ["2", "效果不稳定", ""], ["3", "选择困难", ""], ["4", "购买不方便", ""], ["5", "信息不透明", ""], ["99", "其他（请注明）", "置底"]], "痛点题，选项随机显示。"),
+    aiQuestion("QX3", "单选题", "未来3个月，您继续购买或尝试该品类产品的可能性是？", [["1", "非常可能", ""], ["2", "比较可能", ""], ["3", "不确定", ""], ["4", "不太可能", ""], ["5", "完全不可能", ""]], "购买转化指标，可看Top2 Box。"),
+    aiQuestion("QX4", "开放题", "请用一句话说明您选择该品类产品时最看重的因素。", [["文本", "开放填写，建议至少10字", ""]], "用于补充真实语言和卖点表达。")
+  ];
+  const map = {
+    concept: [
+      aiQuestion("CX1", "量表题", "请评价该概念是否容易理解。", [["1", "非常难理解", ""], ["2", "比较难理解", ""], ["3", "一般", ""], ["4", "比较容易理解", ""], ["5", "非常容易理解", ""]], "概念理解度。"),
+      aiQuestion("CX2", "量表题", "请评价该概念与您实际需求的相关程度。", [["1", "完全不相关", ""], ["2", "不太相关", ""], ["3", "一般", ""], ["4", "比较相关", ""], ["5", "非常相关", ""]], "概念相关性。"),
+      aiQuestion("CX3", "单选题", "与现有产品相比，您觉得该概念的独特性如何？", [["1", "非常独特", ""], ["2", "比较独特", ""], ["3", "一般", ""], ["4", "不太独特", ""], ["5", "完全不独特", ""]], "概念差异化判断。")
+    ],
+    ua: [
+      aiQuestion("UX1", "单选题", "您最近一次购买该品类产品是在什么时候？", [["1", "1周内", ""], ["2", "1个月内", ""], ["3", "3个月内", ""], ["4", "半年内", ""], ["5", "半年以前", ""]], "最近购买行为。"),
+      aiQuestion("UX2", "多选题", "哪些场景会触发您购买该品类产品？", [["1", "日常补充", ""], ["2", "促销活动", ""], ["3", "他人推荐", ""], ["4", "替换升级", ""], ["99", "其他", "置底"]], "触发场景。")
+    ],
+    brand: [
+      aiQuestion("BX1", "单选题", "请问您对主要品牌的熟悉程度如何？", [["1", "非常熟悉", ""], ["2", "比较熟悉", ""], ["3", "听说过但不了解", ""], ["4", "没有听说过", ""]], "品牌熟悉度。"),
+      aiQuestion("BX2", "矩阵量表", "请评价主要品牌给您的形象感受。", [["1", "专业可靠", ""], ["2", "年轻有活力", ""], ["3", "高性价比", ""], ["4", "品质高端", ""]], "品牌形象资产。")
+    ],
+    nps: [
+      aiQuestion("NX1", "多选题", "哪些体验会影响您推荐该品牌/产品？", [["1", "产品质量", ""], ["2", "服务响应", ""], ["3", "价格优惠", ""], ["4", "售后保障", ""], ["99", "其他", "置底"]], "推荐驱动因素。")
+    ],
+    pricing: [
+      aiQuestion("PX1", "单选题", "如果价格比当前水平高10%，您的购买意愿会如何变化？", [["1", "仍会购买", ""], ["2", "可能会购买", ""], ["3", "不确定", ""], ["4", "可能不会购买", ""], ["5", "一定不会购买", ""]], "价格弹性辅助判断。")
+    ],
+    kano: [
+      aiQuestion("KX1", "多选题", "以下哪些功能是您认为必须具备的？", [["1", "功能A", ""], ["2", "功能B", ""], ["3", "功能C", ""], ["4", "功能D", ""], ["99", "其他", "置底"]], "功能清单筛选。")
+    ]
+  };
+  return [...(map[config.studyType] || map.concept), ...common];
+}
+
 function renderAiQuestionTable(question) {
   const rows = question.options.map((row) => `| ${row[0]} | ${row[1]} | ${row[2] || question.note || ""} |`).join("\n");
   return [
@@ -5712,11 +5856,18 @@ function renderAiQuestionTable(question) {
 function buildAiQuestionnaireDesign() {
   const config = getAiDesignerConfig();
   const brief = config.brief || "用户暂未填写详细研究需求，以下基于研究类型和目标人群生成通用版问卷初稿。";
+  const target = targetAiQuestionCount(config.duration);
   const screener = baseAiQuestions(config);
-  const body = bodyAiQuestions(config);
-  const background = backgroundAiQuestions();
+  const baseBody = bodyAiQuestions(config);
+  const backgroundPool = backgroundAiQuestions();
+  const optional = optionalAiQuestions(config);
+  const reservedCount = screener.length + 1;
+  const backgroundCount = target.target <= 10 ? 2 : 3;
+  const bodyTarget = Math.max(2, target.target - reservedCount - backgroundCount);
+  const body = [...baseBody, ...optional].slice(0, bodyTarget);
+  const background = backgroundPool.slice(0, backgroundCount);
   const allQuestions = [...screener, ...body, ...background];
-  const estimatedMinutes = Math.max(5, Math.min(20, Math.ceil(allQuestions.length * 0.55 + body.length * 0.25)));
+  const estimatedMinutes = config.duration || Math.max(5, Math.min(20, Math.ceil((allQuestions.length + 1) * 0.55 + body.length * 0.25)));
   const questionnaireText = [
     `${config.project} 调研问卷`,
     "",
@@ -5724,7 +5875,8 @@ function buildAiQuestionnaireDesign() {
     `- 研究类型：${aiStudyTypeName(config.studyType)}`,
     `- 目标人群：${config.audience}`,
     `- 目标样本量：N=${config.sampleSize}`,
-    `- 期望/建议时长：约 ${config.duration || estimatedMinutes} 分钟`,
+    `- 期望/建议时长：约 ${estimatedMinutes} 分钟`,
+    `- 初稿题量建议：${target.level}，建议约 ${target.min}-${target.max} 题，本初稿含 ${allQuestions.length + 1} 题（含1道注意力检测题），后续可按上线时长删减`,
     "- 质量控件：建议保留1道注意力检测题，并记录答题时长用于清洗。",
     "",
     "二、问卷正文",
@@ -5955,41 +6107,29 @@ function applyAiProviderPreset() {
 }
 
 async function callAiChatCompletion(settings, messages, options = {}) {
+  if (window.location.protocol === "file:") {
+    throw new Error("AI 后端代理需要通过本地服务或线上地址访问，不能直接用 file:// 页面调用。请使用 npm run dev 打开本地服务，或访问已部署的网址。");
+  }
   const requestBody = {
     model: settings.model,
     messages,
     temperature: options.temperature ?? 0.35,
     max_tokens: options.maxTokens ?? 3500
   };
-  let response;
-  let proxyError = null;
-  if (window.location.protocol !== "file:") {
-    try {
-      response = await fetch("./api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: settings.url,
-          apiKey: settings.apiKey,
-          body: requestBody
-        })
-      });
-      if ([404, 405].includes(response.status)) response = null;
-    } catch (error) {
-      proxyError = error;
-    }
-  }
-  if (!response) {
-    response = await fetch(settings.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.apiKey}`
-      },
-      body: JSON.stringify(requestBody)
-    }).catch((error) => {
-      throw new Error(proxyError ? `代理和直连均失败：${proxyError.message}；${error.message}` : error.message);
-    });
+  const response = await fetch("./api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      provider: settings.provider,
+      url: settings.url,
+      apiKey: settings.apiKey,
+      body: requestBody
+    })
+  }).catch((error) => {
+    throw new Error(`AI 后端代理连接失败：${error.message}`);
+  });
+  if ([404, 405].includes(response.status)) {
+    throw new Error("当前环境没有启用 AI 后端代理，请通过 npm run dev 本地服务或 Cloudflare Pages Functions 部署后再调用。");
   }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -6003,11 +6143,18 @@ async function callAiChatCompletion(settings, messages, options = {}) {
 
 function buildAiQuestionnairePrompt() {
   const config = getAiDesignerConfig();
-  const localDraft = buildAiQuestionnaireDesign().questionnaireText;
+  const design = buildAiQuestionnaireDesign();
+  const target = targetAiQuestionCount(config.duration);
+  const localDraft = design.questionnaireText;
   return [
     {
       role: "system",
-      content: "你是一名资深市场研究问卷设计专家。请输出严谨、中立、可编程、便于后续统计分析的正式定量问卷。必须使用中文。每道选择题必须包含三列表格：编码、选项内容、逻辑与备注。必须标注跳题、随机、置底、质量控制和数据清洗提示。"
+      content: [
+        "你是一名资深市场研究问卷设计专家。请输出严谨、中立、可编程、便于后续统计分析的正式定量问卷。必须使用中文。",
+        "直接从问卷标题开始输出，不要写“好的”“作为专家”“我将”“思考过程”“设计思路如下”等开场白或推理过程。",
+        "每道选择题必须包含三列表格：编码、选项内容、逻辑与备注。必须标注跳题、随机、置底、质量控制和数据清洗提示。",
+        "必须根据用户期望答题时长控制题量，不要固定输出13题。当前生成的是研究问卷初稿/题库草案，应先尽可能完整覆盖研究模块，允许后续人工删减。"
+      ].join("")
     },
     {
       role: "user",
@@ -6017,6 +6164,8 @@ function buildAiQuestionnairePrompt() {
         `目标人群：${config.audience}`,
         `目标样本量：N=${config.sampleSize}`,
         `期望时长：约 ${config.duration} 分钟`,
+        `题量要求：${target.level}，总题数建议 ${target.min}-${target.max} 题，优先接近 ${target.target} 题。总题数包含甄别题、主体题、背景题和质量控制题。`,
+        "题量调整规则：即使是短问卷初稿，也要先覆盖核心研究模块；时长越长，越应增加U&A、品牌健康度、概念吸引力、购买转化、关键驱动、价格/功能、背景分层等模块。请把结果当作可删减的完整初稿，而不是最终上线精简版。不要无视时长字段。",
         "",
         "研究需求：",
         config.brief || "用户未填写详细需求，请基于研究类型生成通用版问卷。",
@@ -6031,6 +6180,25 @@ function buildAiQuestionnairePrompt() {
       ].join("\n")
     }
   ];
+}
+
+function sanitizeAiQuestionnaireOutput(output) {
+  let text = String(output || "").trim();
+  text = text.replace(/^好的[，,。\s\S]*?(?=\n(?:---\n)?\s*(?:#{1,5}\s+|\*\*|一、|[^\n]{2,40}调研问卷))/m, "");
+  text = text.replace(/^作为[^\n]{0,100}(?:专家|顾问)[^\n]*\n+/, "");
+  text = text.replace(/^我将[^\n]*\n+/, "");
+  text = text.replace(/^\s*(?:思考过程|设计思路|问卷思考过程|分析过程)[:：][\s\S]*?(?=\n(?:---\n)?\s*(?:#{1,5}\s+|\*\*|一、|[^\n]{2,40}调研问卷))/m, "");
+  text = text.replace(/^\s*---\s*/, "");
+
+  const firstBody = text.search(/^(?:#{1,5}\s+|\*\*[^*\n]{2,80}(?:问卷|测试)[^*\n]*\*\*|[^\n]{2,60}调研问卷|一、问卷说明)/m);
+  if (firstBody > 0) {
+    const intro = text.slice(0, firstBody).trim();
+    if (/^(好的|作为|我将|以下|下面|根据|本问卷|问卷将)/.test(intro) || intro.length < 260) {
+      text = text.slice(firstBody).trim();
+    }
+  }
+
+  return text.replace(/\n{3,}/g, "\n\n").trim() || output;
 }
 
 function buildAiResearchBrief(text, context) {
@@ -6097,10 +6265,11 @@ async function renderAiBrief() {
   const reviseButton = document.querySelector("#reviseAiQuestionnaire");
   const settings = loadAiSettings();
   const design = buildAiQuestionnaireDesign();
+  const target = targetAiQuestionCount(design.config.duration);
   const steps = [
     { title: "整理研究需求", detail: "读取研究类型、目标人群、样本量和期望时长。" },
     { title: "校验生成方式", detail: settings.mode === "local" || !settings.apiKey ? "未配置可用 API Key，将使用本地规则生成。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}（${settings.model}）。` },
-    { title: "生成问卷初稿", detail: "生成问卷说明、甄别题、主体题、背景题、编码和逻辑备注。" },
+    { title: "生成问卷初稿", detail: `按约 ${design.config.duration} 分钟生成偏完整初稿，目标 ${target.min}-${target.max} 题，先覆盖研究模块，后续再人工删减。` },
     { title: "执行逻辑校验", detail: "检查题号、跳题引用、选项设置和常见上线风险。" },
     { title: "整理可导出结果", detail: "启用复制、Markdown、Word 和同步到项目稿。" }
   ];
@@ -6125,6 +6294,7 @@ async function renderAiBrief() {
     }
   }
   renderAiProgress(result, steps, 3);
+  output = sanitizeAiQuestionnaireOutput(output);
   lastAiPrompt = output;
   lastAiQuestionnaireText = output;
   const logicIssues = auditQuestionnaire(output).filter((issue) => issue.title !== "缺少问卷稿");
@@ -6358,16 +6528,18 @@ function markdownToWordDocumentXml(text) {
       index = table.nextIndex - 1;
       continue;
     }
-    if (/^#{1,3}\s+/.test(line)) {
+    if (/^#{1,6}\s+/.test(line)) {
       const level = line.match(/^#+/)[0].length;
-      body.push(wordParagraph(line.replace(/^#{1,3}\s+/, ""), level === 1 ? "Heading1" : level === 2 ? "Heading2" : "Heading3"));
+      const cleanText = line.replace(/^#{1,6}\s+/, "").replace(/\*\*/g, "");
+      const style = level === 1 ? "Heading1" : level === 2 ? "Heading2" : "Heading3";
+      body.push(wordParagraph(cleanText, style));
       continue;
     }
     if (/^\*\*.+\*\*/.test(line)) {
       body.push(wordParagraph(line.replace(/\*\*/g, ""), "Heading3"));
       continue;
     }
-    body.push(wordParagraph(line.replace(/^[-*]\s+/, "• ").replace(/^>\s*/, "")));
+    body.push(wordParagraph(line.replace(/^[-*]\s+/, "• ").replace(/^>\s*/, "").replace(/\*\*/g, "")));
   }
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body.join("")}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1200" w:bottom="1440" w:left="1200" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`;
 }
@@ -6711,6 +6883,7 @@ async function reviseAiQuestionnaire() {
     }
   }
   renderAiProgress(result, steps, 3);
+  output = sanitizeAiQuestionnaireOutput(output);
   lastAiPrompt = output;
   lastAiQuestionnaireText = output;
   const design = buildAiQuestionnaireDesign();
@@ -7256,7 +7429,6 @@ document.querySelector("#loadAiExample").addEventListener("click", () => {
   document.querySelector("#aiAudience").value = "18-40岁，近3个月购买过即饮咖啡或咖啡相关产品的用户";
   document.querySelector("#aiSampleSize").value = 400;
   document.querySelector("#aiDuration").value = 8;
-  renderAiBrief();
 });
 document.querySelector("#generateAiWorkbench").addEventListener("click", generateAiWorkbench);
 document.querySelector("#loadAiWorkbenchProject").addEventListener("click", loadAiWorkbenchProject);

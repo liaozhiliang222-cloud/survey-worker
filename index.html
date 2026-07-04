@@ -299,7 +299,7 @@
                 </label>
                 <label class="span-row">
                   API Key
-                  <input id="aiApiKey" type="password" autocomplete="off" placeholder="填入自己的 API Key，仅保存在当前浏览器 localStorage" />
+                  <input id="aiApiKey" type="password" autocomplete="off" placeholder="填入自己的 API Key，仅保存在当前浏览器本地设置中" />
                 </label>
               </div>
               <div class="button-row">
@@ -307,7 +307,7 @@
                 <button class="secondary-btn" id="testAiSettings" type="button">测试连接</button>
                 <button class="secondary-btn" id="clearAiSettings" type="button">清空设置</button>
               </div>
-              <p class="panel-note">注意：第一版为浏览器直连模型接口，适合个人测试；正式多人使用建议改为后端代理，避免 API Key 出现在浏览器请求中。</p>
+              <p class="panel-note">注意：AI 调用会统一经过本站后端代理转发，用于减少跨域问题并集中校验接口；API Key 仍只保存在当前浏览器本地设置中。</p>
             </section>
 
             <section class="panel">
@@ -1528,7 +1528,7 @@
                 </div>
                 <ul class="ai-risk-list">
                   <li><strong>简要方案</strong><span>项目背景与目的、研究设计与方法、执行流程与质量控制、项目周期。</span></li>
-                  <li><strong>详细方案</strong><span>覆盖背景目的、研究体系、样本设计、研究内容演示、执行控制和时间进度。</span></li>
+                  <li><strong>详细方案</strong><span>按 U&A、品牌健康度、概念吸引力、购买转化、关键驱动等主流市场研究框架展开。</span></li>
                   <li><strong>导出交付</strong><span>简要方案可导出 Word；详细方案暂以 Markdown/文本形式导出，PPT 交付后续再完善。</span></li>
                   <li><strong>项目复用</strong><span>生成后可同步到项目档案，继续进入问卷设计和上线质检。</span></li>
                 </ul>
