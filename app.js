@@ -248,61 +248,6 @@ const aiProviderPresets = {
       { label: "GPT-4o-mini", model: "gpt-4o-mini" },
       { label: "GPT-4-Turbo", model: "gpt-4-turbo" }
     ]
-  },
-  deepseek: {
-    name: "DeepSeek",
-    model: "deepseek-v4-flash",
-    url: "https://api.deepseek.com/v1/chat/completions",
-    tiers: [
-      { label: "V4 Flash", model: "deepseek-v4-flash" },
-      { label: "V4 Pro", model: "deepseek-v4-pro" }
-    ]
-  },
-  kimi: {
-    name: "Kimi（月之暗面）",
-    model: "kimi-k2.6",
-    url: "https://api.moonshot.cn/v1/chat/completions",
-    tiers: [
-      { label: "K2.6 Flash", model: "kimi-k2.6-flash" },
-      { label: "K2.6", model: "kimi-k2.6" },
-      { label: "K2.6 Pro", model: "kimi-k2.6-pro" }
-    ]
-  },
-  zhipu: {
-    name: "智谱 GLM",
-    model: "glm-4-flash",
-    url: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-    tiers: [
-      { label: "GLM-4 Flash", model: "glm-4-flash" },
-      { label: "GLM-4 Air", model: "glm-4-air" },
-      { label: "GLM-4 Plus", model: "glm-4-plus" }
-    ]
-  },
-  qwen: {
-    name: "Qwen / 通义千问",
-    model: "qwen3.7-max",
-    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-    tiers: [
-      { label: "Qwen 3.7 Flash", model: "qwen3.7-flash" },
-      { label: "Qwen 3.7 Plus", model: "qwen3.7-plus" },
-      { label: "Qwen 3.7 Max", model: "qwen3.7-max" }
-    ]
-  },
-  openai: {
-    name: "OpenAI",
-    model: "gpt-5.5-instant",
-    url: "https://api.openai.com/v1/chat/completions",
-    tiers: [
-      { label: "GPT 5.5 Instant", model: "gpt-5.5-instant" },
-      { label: "GPT 5.5", model: "gpt-5.5" },
-      { label: "GPT 5.5 Pro", model: "gpt-5.5-pro" }
-    ]
-  },
-  custom: {
-    name: "自定义兼容接口",
-    model: "",
-    url: "",
-    tiers: [{ label: "自定义", model: "" }]
   }
 };
 
