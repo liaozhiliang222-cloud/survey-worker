@@ -221,12 +221,12 @@ const aiProviderPresets = {
   },
   zhipu: {
     name: "智谱 GLM",
-    model: "glm-4-flash",
+    model: "glm-5.1",
     url: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
     tiers: [
-      { label: "GLM-4-Flash", model: "glm-4-flash" },
-      { label: "GLM-4-Air", model: "glm-4-air" },
-      { label: "GLM-4-Plus", model: "glm-4-plus" }
+      { label: "GLM-4.7-Flash（免费）", model: "glm-4.7-flash" },
+      { label: "GLM-5.1（旗舰）", model: "glm-5.1" },
+      { label: "GLM-5.2（最新）", model: "glm-5.2" }
     ]
   },
   qwen: {
