@@ -182,7 +182,10 @@ let lastAuditReport = null;
 let lastKanoAnalysis = null;
 let lastMaxDiffDesign = null;
 let lastMaxDiffScore = null;
+let lastAiPlan = "";
 let lastAiPrompt = "";
+let lastAiQuestionnaireText = "";
+let lastAiWorkbenchOutput = "";
 let lastAbcSuggestions = null;
 let lastCrosstabAnalysis = null;
 let lastQuestionPivot = null;
@@ -195,6 +198,39 @@ let lastHeaderPlan = null;
 let workspaceProject = null;
 let pendingQuestionnaireImport = "";
 let sharedImportTargetId = "";
+
+const aiProviderPresets = {
+  deepseek: {
+    name: "DeepSeek",
+    model: "deepseek-chat",
+    url: "https://api.deepseek.com/chat/completions"
+  },
+  kimi: {
+    name: "Kimi（月之暗面）",
+    model: "moonshot-v1-8k",
+    url: "https://api.moonshot.cn/v1/chat/completions"
+  },
+  zhipu: {
+    name: "智谱 GLM",
+    model: "glm-4-plus",
+    url: "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+  },
+  qwen: {
+    name: "Qwen / 通义千问",
+    model: "qwen-max",
+    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+  },
+  openai: {
+    name: "OpenAI",
+    model: "gpt-4o",
+    url: "https://api.openai.com/v1/chat/completions"
+  },
+  custom: {
+    name: "自定义兼容接口",
+    model: "",
+    url: ""
+  }
+};
 
 function showView(id) {
   views.forEach((view) => view.classList.toggle("active", view.id === id));
@@ -5207,6 +5243,796 @@ function exportAbcScoreResult() {
   downloadCsv("ABC用户价值指数得分.csv", rows);
 }
 
+function getAiPlanConfig() {
+  return {
+    project: document.querySelector("#aiPlanContext")?.value.trim() || "未命名调研项目",
+    brief: document.querySelector("#aiPlanInput")?.value.trim() || "",
+    mode: document.querySelector("#aiPlanMode")?.value || "brief",
+    studyType: document.querySelector("#aiPlanStudyType")?.value || "concept",
+    audience: document.querySelector("#aiPlanAudience")?.value.trim() || "目标品类潜在或现有用户",
+    sampleSize: Number(document.querySelector("#aiPlanSampleSize")?.value) || Number(document.querySelector("#workspaceSampleTarget")?.value) || 400,
+    timeline: document.querySelector("#aiPlanTimeline")?.value.trim() || "建议 2-3 周完成",
+    constraints: document.querySelector("#aiPlanConstraints")?.value.trim() || "暂无特殊限制"
+  };
+}
+
+function aiPlanStudyTypeName(type) {
+  return {
+    concept: "概念/新品测试",
+    ua: "U&A 使用习惯与态度",
+    brand: "品牌健康度",
+    nps: "满意度 / NPS",
+    pricing: "价格研究 / PSM",
+    kano: "KANO 功能需求",
+    custom: "综合研究"
+  }[type] || "综合研究";
+}
+
+function aiPlanModules(type) {
+  const common = ["样本甄别与配额确认", "品类使用/购买行为", "核心态度与决策因素", "人群画像与背景信息"];
+  const map = {
+    concept: ["概念理解与整体吸引力", "卖点偏好与购买驱动", "购买意愿与支付意愿", "价格敏感度/PSM 可选模块"],
+    ua: ["使用场景与频率", "渠道与触点", "需求痛点与未满足需求", "品牌/产品选择因素"],
+    brand: ["品牌认知与使用漏斗", "品牌形象与资产指标", "竞争品牌对比", "品牌驱动因素与机会点"],
+    nps: ["整体满意度与 NPS", "服务/体验环节评价", "推荐或流失原因", "改进优先级建议"],
+    pricing: ["价格锚点与当前支付水平", "PSM 四价格问题", "价格接受区间", "价格与购买意愿联动"],
+    kano: ["功能清单确认", "KANO 正反向题组", "Better-Worse 优先级", "功能落地建议"],
+    custom: ["业务现状诊断", "核心假设验证", "关键指标体系", "行动建议输出"]
+  };
+  return [...common, ...(map[type] || map.custom)];
+}
+
+function buildDetailedAiResearchPlan(config) {
+  const modules = aiPlanModules(config.studyType);
+  const recommendedSample = Math.max(300, config.sampleSize);
+  return [
+    `# ${config.project} 详细调研方案`,
+    "",
+    "## 目录",
+    "1. 项目背景及目的",
+    "2. 研究设计及方法",
+    "3. 研究内容演示",
+    "4. 执行流程及控制",
+    "5. 项目时间进度",
+    "",
+    "## 01 项目背景及目的",
+    "### 1.1 项目背景",
+    config.brief || "当前尚未填写详细需求。建议补充品牌/产品背景、市场变化、业务决策场景和客户已知假设。",
+    "",
+    "### 1.2 业务问题",
+    "- 当前品牌/产品在目标市场中的位置、竞争关系和增长机会尚需验证。",
+    "- 用户对核心卖点、品牌价值或产品体验的真实感知需要通过研究确认。",
+    "- 业务方需要一套可以支撑后续策略、营销、产品优化或上市决策的证据体系。",
+    "",
+    "### 1.3 研究目的",
+    `- 围绕${aiPlanStudyTypeName(config.studyType)}建立可长期复用的指标框架。`,
+    "- 识别目标人群的认知、态度、行为、需求和转化阻碍。",
+    "- 评估自身与竞争对象的差异，明确优势、短板和可传播机会点。",
+    "- 输出后续产品、品牌、传播、渠道或运营动作建议。",
+    "",
+    "## 02 研究设计及方法",
+    "### 2.1 研究体系",
+    "- 现状诊断：知名度、熟悉度、满意度、购买考虑、购买意向、使用/购买行为。",
+    "- 形象与资产：品牌/产品形象、个性联想、忠诚度、推荐度、溢价能力。",
+    "- 传播与触点：信息来源、广告/活动/内容触达、信任度、行动转化。",
+    "- 机会识别：需求痛点、卖点偏好、功能优先级、价格接受度和高价值人群。",
+    "",
+    "### 2.2 研究框架设计",
+    "| 研究模块 | 关键内容 | 输出价值 |",
+    "|---|---|---|",
+    "| 用户与市场现状 | 人群画像、品类行为、竞争关系 | 判断市场基础与目标机会 |",
+    "| 品牌/产品表现 | 漏斗、形象、满意度、购买意愿 | 找到优势、短板和提升方向 |",
+    "| 核心模型分析 | PSM/KANO/MaxDiff/ABC/NPS 等 | 支撑定价、功能、卖点和用户价值判断 |",
+    "| 传播与行动建议 | 触点、内容、渠道、策略建议 | 指导后续营销和产品落地 |",
+    "",
+    "### 2.3 调查对象与样本条件",
+    `- 目标人群：${config.audience}`,
+    `- 建议有效样本量：N=${recommendedSample}`,
+    "- 样本条件：建议明确年龄、城市、品类购买/使用经历、决策角色和排除条件。",
+    "- 配额建议：按城市级别、年龄、性别、用户类型、品牌关系或购买频率设置关键配额。",
+    "",
+    "### 2.4 调查方法",
+    "- 定量问卷：用于获得稳定指标、分群差异、交叉分析和模型结果。",
+    "- 定性访谈/座谈：用于理解态度成因、语言表达、卖点理解和策略启发。",
+    "- 桌面研究：用于补充市场背景、竞品资料、传播素材和业务假设。",
+    "- 数据分析：频数/百分比、均值、Top Box、交叉检验、模型分析和关键驱动解释。",
+    "",
+    "### 2.5 样本量与配额设计",
+    `- 样本总量建议不低于 ${recommendedSample}，若需要多分群稳定对比，建议提高到 600-1000 或以上。`,
+    "- 单个关键分群建议不少于 80-100 个有效样本；复杂交叉配额需控制维度数量。",
+    "- 如实际回收结构偏离目标结构，建议使用 RIM 或 Cell 加权进行校准。",
+    "",
+    "## 03 研究内容演示",
+    "### 3.1 总体研究模块",
+    ...modules.map((module, index) => `${index + 1}. ${module}`),
+    "",
+    "### 3.2 漏斗模型/转化路径",
+    "- 识别从知晓、熟悉、考虑、偏好、购买意向到实际购买/推荐的递进关系。",
+    "- 分析各阶段流失原因，定位品牌、产品、价格、渠道或传播阻碍。",
+    "- 对比自身与竞品在不同漏斗层级的优势和短板。",
+    "",
+    "### 3.3 形象与认知分析",
+    "- 评估用户对品牌/产品的核心联想、个性标签和理想形象。",
+    "- 比较自身与竞品在形象维度上的距离，识别差异化资产。",
+    "- 分析形象认知对购买考虑、满意度和推荐意愿的影响。",
+    "",
+    "### 3.4 品牌力/产品力评估",
+    "- 建议建立综合指数：认知、满意、偏好、忠诚、推荐、溢价等指标。",
+    "- 通过横向竞品对比和纵向追踪，判断品牌/产品表现变化。",
+    "- 结合 ABC 用户价值模型识别高价值人群及其特征。",
+    "",
+    "### 3.5 传播监测与效果评估",
+    "- 监测信息获取渠道、广告/内容触达、信任度和行动感染力。",
+    "- 分析传播内容是否准确传达核心卖点和品牌主张。",
+    "- 对比看过/未看过传播内容人群在认知、态度和购买意向上的差异。",
+    "",
+    "### 3.6 专项模型建议",
+    "- PSM：用于价格接受区间、最优价格点和价格风险判断。",
+    "- KANO：用于功能属性分类和投入优先级判断。",
+    "- MaxDiff：用于卖点、需求、功能或选择因素的相对偏好排序。",
+    "- NPS/NSS：用于推荐意愿、口碑风险和体验改善方向。",
+    "",
+    "## 04 执行流程及控制",
+    "### 4.1 项目启动",
+    "- 明确项目组成员、工作范围、沟通机制、交付物和时间计划。",
+    "- 召开项目启动会，确认研究目标、样本条件、问卷方向和输出口径。",
+    "",
+    "### 4.2 问卷与材料准备",
+    "- 形成问卷初稿、访问大纲、示卡/概念/素材、配额和质检规则。",
+    "- 内部评审后与客户确认，试访后修订正式问卷。",
+    "",
+    "### 4.3 定量执行控制",
+    "- 访问前完成培训和测试，执行中监控样本结构、访问时长和异常答卷。",
+    "- 设置逻辑校验、注意力检测、开放题质量规则和必要回访复核。",
+    "",
+    "### 4.4 定性执行控制",
+    "- 严格甄别受访者资格，控制意见领袖和无效参与。",
+    "- 主持人需围绕关键假设追问原因、场景和表达语言。",
+    "",
+    "### 4.5 数据处理与分析",
+    "- 开放题编码、逻辑查错、缺失处理、异常样本剔除和必要加权。",
+    "- 输出频数、交叉表、显著性检验、模型结果和可写入报告的洞察。",
+    "",
+    "### 4.6 报告撰写与交付",
+    "- 先确认报告大纲，再注入数据、模型结果、核心洞察和策略建议。",
+    "- 输出完整报告、数据表、清洗规则、问卷和必要的附录材料。",
+    "",
+    "## 05 项目时间进度",
+    `- 当前周期要求：${config.timeline}`,
+    "| 阶段 | 建议周期 | 关键动作 |",
+    "|---|---|---|",
+    "| 项目启动 | 1-2 天 | 明确需求、样本、方法、交付物 |",
+    "| 方案与问卷设计 | 2-4 天 | 方案确认、问卷初稿、试访和修改 |",
+    "| 数据回收/定性执行 | 3-10 天 | 样本回收、访谈/座谈、过程质控 |",
+    "| 数据处理 | 1-3 天 | 清洗、编码、加权、交叉表 |",
+    "| 分析报告 | 3-7 天 | 洞察提炼、报告撰写、汇报材料 |",
+    "",
+    "## 06 风险与待确认事项",
+    `- 特殊要求：${config.constraints}`,
+    "- 需确认竞品/品牌/产品清单、样本可达性、预算限制和最终交付深度。",
+    "- 若详细方案用于对客提案，建议补充案例页、团队分工、报价或商务条款。"
+  ].join("\n");
+}
+
+function buildBriefAiResearchPlan(config) {
+  const recommendedSample = Math.max(300, config.sampleSize);
+  const groups = recommendedSample >= 600 ? "建议按核心人群/城市级别/新老用户做交叉配额" : "建议控制 2-3 个关键配额维度，避免样本被切得过碎";
+  return [
+    `${config.project} 调研方案`,
+    "",
+    "## 1. 项目背景与目的",
+    config.brief || "当前尚未填写详细需求。建议补充业务背景、决策场景、目标产品/品牌、需要验证的假设和计划使用结果的业务动作。",
+    "",
+    `本项目建议围绕${aiPlanStudyTypeName(config.studyType)}展开，核心目标是识别目标人群的认知、态度、行为和决策因素，为后续产品、品牌、传播或运营动作提供依据。`,
+    "",
+    "## 2. 研究设计与方法",
+    `- 目标人群：${config.audience}`,
+    `- 建议有效样本量：N=${recommendedSample}`,
+    `- 配额建议：${groups}。可优先考虑性别、年龄、城市级别、用户类型、购买/使用频率等维度。`,
+    "- 研究方法：以线上定量问卷为主，必要时补充定性访谈/座谈，用于理解原因、语言表达和策略启发。",
+    "- 分析方法：频数/百分比、均值、Top Box、交叉分析、显著性检验，并按项目需要加入 PSM、KANO、MaxDiff、NPS 或 ABC 模型。",
+    "",
+    "## 3. 执行流程与质量控制",
+    "| 阶段 | 工作内容 | 质量控制 |",
+    "|---|---|---|",
+    "| 方案确认 | 明确研究目标、样本边界、核心指标和交付口径 | 与业务方确认研究问题和样本条件 |",
+    "| 问卷设计 | 输出问卷初稿、编码表、跳题和随机规则 | 上线前检查题号、逻辑、排他项、开放题说明 |",
+    "| 数据回收 | 执行问卷发放并监控样本结构 | 控制答题时长、注意力检测、直线作答和异常样本 |",
+    "| 数据处理 | 清洗、编码、加权、生成交叉表 | 复核缺失值、逻辑矛盾、显著性和加权影响 |",
+    "| 分析交付 | 输出核心发现和业务建议 | 结论需由数据证据支撑，避免只做描述性罗列 |",
+    "",
+    "- 问卷上线前需检查跳题、排他项、随机/轮换、开放题说明和题号一致性。",
+    "- 数据清洗建议包含答题时长、直线作答、注意力检测、逻辑矛盾、开放题质量等规则。",
+    "- 如果样本结构与目标人群差异较大，建议使用 RIM 或 Cell 加权进行校准。",
+    "- 特殊要求：" + config.constraints,
+    "",
+    "## 4. 项目周期",
+    `- 当前周期要求：${config.timeline}`,
+    "- 建议排期：方案确认 1-2 天，问卷设计与质检 2-3 天，数据回收 3-7 天，清洗制表 1-2 天，报告分析 3-5 天。",
+    "- 下一步建议：确认研究目标、样本条件和核心分析模型后，进入样本量计算、配额设计和 AI 问卷设计。"
+  ].join("\n");
+}
+function buildLocalAiResearchPlan(config = getAiPlanConfig()) {
+  return config.mode === "detailed" ? buildDetailedAiResearchPlan(config) : buildBriefAiResearchPlan(config);
+}
+
+function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = buildLocalAiResearchPlan(config)) {
+  return [
+    {
+      role: "system",
+      content: "你是一名资深市场研究方案设计专家。请把用户的业务需求转化为可执行的调研方案，输出中文 Markdown。方案要专业、具体、可落地，覆盖研究背景、目标、核心问题、样本方案、配额建议、问卷模块、分析框架、质量控制、项目排期和交付物。不要泛泛而谈。"
+    },
+    {
+      role: "user",
+      content: [
+        `项目名称/场景：${config.project}`,
+        `方案模式：${config.mode === "detailed" ? "详细方案，需覆盖完整研究方案结构" : "简要方案，需适合导出Word"}`,
+        `研究类型：${aiPlanStudyTypeName(config.studyType)}`,
+        `目标人群：${config.audience}`,
+        `建议样本量：${config.sampleSize}`,
+        `项目周期：${config.timeline}`,
+        `特殊要求：${config.constraints}`,
+        "",
+        "用户需求：",
+        config.brief || "用户暂未填写详细需求，请基于输入字段生成一版通用但可执行的方案。",
+        "",
+        "可参考但不要机械照抄的本地方案框架：",
+        localPlan
+      ].join("\n")
+    }
+  ];
+}
+
+function renderAiPlanOutput(output, source) {
+  const result = document.querySelector("#aiPlanResults");
+  result.innerHTML = `
+    <article class="audit-issue">
+      <div class="issue-head">
+        <strong>调研方案</strong>
+        <span class="issue-tag low">${escapeHtml(source)}</span>
+      </div>
+      <textarea class="prompt-box" readonly>${escapeHtml(output)}</textarea>
+    </article>
+  `;
+}
+
+async function generateAiPlan() {
+  const result = document.querySelector("#aiPlanResults");
+  const settings = loadAiSettings();
+  const config = getAiPlanConfig();
+  const localPlan = buildLocalAiResearchPlan(config);
+  const steps = [
+    { title: "解析业务需求", detail: "整理项目背景、研究类型、目标人群、样本量和约束条件。" },
+    { title: "搭建方案框架", detail: "生成研究目标、核心问题、方法路径、方案章节与研究模块。" },
+    { title: "校验模型设置", detail: settings.mode === "local" || !settings.apiKey ? "未配置可用 API Key，将使用本地方案框架。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"} 优化方案。` },
+    { title: "生成可交付方案", detail: "输出可复制、可导出、可同步到项目档案的方案文本。" }
+  ];
+  renderAiProgress(result, steps, 0, "", "正在生成调研方案");
+  let output = localPlan;
+  let source = "本地方案框架";
+  renderAiProgress(result, steps, 1, "", "正在生成调研方案");
+  if (settings.mode !== "local" && settings.apiKey) {
+    const errors = validateAiSettings(settings);
+    if (!errors.length) {
+      try {
+        renderAiProgress(result, steps, 2, "正在让大模型把需求改写为完整调研方案。", "正在生成调研方案");
+        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config, localPlan), { maxTokens: 5000 });
+        source = aiProviderPresets[settings.provider]?.name || "大模型";
+      } catch (error) {
+        output = `${localPlan}\n\n---\n\n> 大模型调用失败，已回退为本地方案框架。错误信息：${error.message}`;
+        source = "本地方案框架（模型调用失败）";
+      }
+    } else {
+      output = `${localPlan}\n\n---\n\n> 大模型设置未通过校验，已回退为本地方案框架：${errors.join("；")}`;
+      source = "本地方案框架（设置未通过校验）";
+    }
+  }
+  renderAiProgress(result, steps, 3, "", "正在生成调研方案");
+  lastAiPlan = output;
+  document.querySelector("#copyAiPlan").disabled = false;
+  document.querySelector("#exportAiPlanMd").disabled = false;
+  document.querySelector("#exportAiPlanWord").disabled = config.mode !== "brief";
+  document.querySelector("#applyAiPlanToProject").disabled = false;
+  renderAiPlanOutput(output, source);
+}
+
+async function copyAiPlan() {
+  if (!lastAiPlan) return;
+  try {
+    await navigator.clipboard.writeText(lastAiPlan);
+    showButtonSaved(document.querySelector("#copyAiPlan"), "已复制");
+  } catch {
+    downloadTextFile("AI调研方案.md", lastAiPlan, "text/markdown;charset=utf-8");
+  }
+}
+
+function exportAiPlanMd() {
+  if (!lastAiPlan) return;
+  downloadTextFile("AI调研方案.md", lastAiPlan, "text/markdown;charset=utf-8");
+}
+
+function exportAiPlanWord() {
+  if (!lastAiPlan) return;
+  downloadBlob("AI调研方案.docx", createDocxBlob(lastAiPlan));
+}
+
+function exportAiPlanPpt() {
+  if (!lastAiPlan) return;
+  const config = getAiPlanConfig();
+  downloadBlob("AI详细调研方案.pptx", createPptxBlob(lastAiPlan, config.project));
+}
+
+function applyAiPlanToProject() {
+  if (!lastAiPlan) return;
+  const config = getAiPlanConfig();
+  const projectName = document.querySelector("#workspaceProjectName");
+  const studyType = document.querySelector("#workspaceStudyType");
+  const sampleTarget = document.querySelector("#workspaceSampleTarget");
+  const questionnaire = document.querySelector("#workspaceQuestionnaire");
+  if (projectName && (!projectName.value.trim() || projectName.value === "未命名调研项目")) projectName.value = config.project;
+  if (studyType) studyType.value = aiPlanStudyTypeName(config.studyType);
+  if (sampleTarget && config.sampleSize) sampleTarget.value = config.sampleSize;
+  if (questionnaire) {
+    const current = questionnaire.value.trim();
+    questionnaire.value = current ? `${current}\n\n---\n\n${lastAiPlan}` : lastAiPlan;
+  }
+  saveWorkspaceProject();
+  showButtonSaved(document.querySelector("#applyAiPlanToProject"), "已同步");
+}
+
+function getAiDesignerConfig() {
+  return {
+    project: document.querySelector("#aiContext")?.value.trim() || "未命名调研项目",
+    brief: document.querySelector("#aiInput")?.value.trim() || "",
+    studyType: document.querySelector("#aiStudyType")?.value || "concept",
+    audience: document.querySelector("#aiAudience")?.value.trim() || "目标品类潜在或现有用户",
+    sampleSize: Number(document.querySelector("#aiSampleSize")?.value) || 400,
+    duration: Number(document.querySelector("#aiDuration")?.value) || 8
+  };
+}
+
+function aiStudyTypeName(type) {
+  return {
+    concept: "概念/新品测试",
+    ua: "U&A 使用习惯与态度",
+    brand: "品牌健康度",
+    nps: "满意度 / NPS",
+    pricing: "价格研究 / PSM",
+    kano: "KANO 功能需求"
+  }[type] || "定量调研";
+}
+
+function aiQuestion(code, type, title, options, note = "") {
+  return { code, type, title, options, note };
+}
+
+function baseAiQuestions(config) {
+  return [
+    aiQuestion("S1", "单选题", "请问您的年龄是？", [
+      ["1", "18岁以下", "终止"],
+      ["2", "18-24岁", "继续"],
+      ["3", "25-34岁", "继续"],
+      ["4", "35-44岁", "继续"],
+      ["5", "45岁及以上", "按项目要求确认是否继续"]
+    ], "背景分层题，不随机。"),
+    aiQuestion("S2", "单选题", "请问您目前所在城市级别是？", [
+      ["1", "一线城市", ""],
+      ["2", "新一线城市", ""],
+      ["3", "二线城市", ""],
+      ["4", "三线及以下城市", ""]
+    ], "可作为配额或交叉分析表头，不随机。"),
+    aiQuestion("S3", "单选题", `请问您是否属于本次研究目标人群：${config.audience}？`, [
+      ["1", "是", "继续"],
+      ["2", "否", "终止"]
+    ], "用于样本准入，正式上线前应替换为更客观的行为判断题。")
+  ];
+}
+
+function bodyAiQuestions(config) {
+  const common = [
+    aiQuestion("Q1", "单选题", "过去3个月，您是否购买或使用过该品类产品？", [
+      ["1", "购买并使用过", ""],
+      ["2", "只购买未使用", ""],
+      ["3", "只使用未购买", ""],
+      ["4", "没有购买或使用过", "如项目仅看现有用户，可终止或跳至潜在用户模块"]
+    ], "行为准入与用户分层题，不随机。"),
+    aiQuestion("Q2", "多选题", "您通常通过哪些渠道了解或购买该品类产品？", [
+      ["1", "电商平台", ""],
+      ["2", "品牌官方渠道", ""],
+      ["3", "线下门店", ""],
+      ["4", "内容/社交平台", ""],
+      ["5", "亲友推荐", ""],
+      ["99", "其他（请注明）", "选项99置底"]
+    ], "选项随机显示；选项99置底。")
+  ];
+
+  const modules = {
+    concept: [
+      ...common,
+      aiQuestion("Q3", "单选题", "看完概念介绍后，您对该产品概念的整体吸引力如何？", [["1", "非常有吸引力", ""], ["2", "比较有吸引力", ""], ["3", "一般", ""], ["4", "不太有吸引力", ""], ["5", "完全没有吸引力", ""]], "5点量表，方向保持高分积极。"),
+      aiQuestion("Q4", "多选题", "这个概念中哪些卖点最吸引您？", [["1", "功能效果", ""], ["2", "使用便利性", ""], ["3", "价格/性价比", ""], ["4", "品牌可信度", ""], ["5", "包装或外观", ""], ["99", "其他（请注明）", "选项99置底"]], "选项随机显示；选项99置底。"),
+      aiQuestion("Q5", "单选题", "如果该产品上市，您的购买意愿是？", [["1", "一定会购买", ""], ["2", "可能会购买", ""], ["3", "不确定", ""], ["4", "可能不会购买", ""], ["5", "一定不会购买", ""]], "核心KPI题，可用于Top2 Box。"),
+      aiQuestion("OE1", "开放题", "请问您最希望这个概念进一步优化的地方是什么？", [["文本", "开放填写，建议至少10字", ""]], "开放题控制在2-3题以内。")
+    ],
+    ua: [
+      ...common,
+      aiQuestion("Q3", "单选题", "您使用该品类的频率是？", [["1", "每天", ""], ["2", "每周数次", ""], ["3", "每月数次", ""], ["4", "偶尔", ""]], "行为指数题，可作为ABC模型B指标。"),
+      aiQuestion("Q4", "多选题", "您主要在哪些场景下使用该品类？", [["1", "居家", ""], ["2", "工作/学习", ""], ["3", "外出/通勤", ""], ["4", "社交/聚会", ""], ["99", "其他（请注明）", "选项99置底"]], "选项随机显示；选项99置底。"),
+      aiQuestion("RS1", "量表题", "请评价您对该品类当前体验的满意度。", [["1", "非常不满意", ""], ["2", "不太满意", ""], ["3", "一般", ""], ["4", "比较满意", ""], ["5", "非常满意", ""]], "5点量表，方向统一。")
+    ],
+    brand: [
+      aiQuestion("Q1", "多选题", "提到该品类，您首先会想到哪些品牌？", [["1", "品牌A", ""], ["2", "品牌B", ""], ["3", "品牌C", ""], ["99", "其他（请注明）", "选项99置底"]], "品牌列表随机显示；选项99置底。"),
+      aiQuestion("Q2", "单选题", "以下哪个品牌是您最常购买或使用的品牌？", [["1", "品牌A", ""], ["2", "品牌B", ""], ["3", "品牌C", ""], ["99", "其他品牌", "置底"]], "品牌选项随机显示。"),
+      aiQuestion("RS1", "矩阵量表", "请评价您对主要品牌在以下方面的表现。", [["1", "产品质量", ""], ["2", "价格合理", ""], ["3", "服务体验", ""], ["4", "品牌信任", ""]], "品牌顺序建议随机；指标顺序可固定。")
+    ],
+    nps: [
+      ...common,
+      aiQuestion("NPS1", "NPS题", "您有多大可能把该品牌/产品推荐给朋友或同事？", [["0-10", "0=完全不可能，10=非常可能", "计算NPS/NSS"]], "NPS核心题，单独保留0-10分布。"),
+      aiQuestion("RS1", "量表题", "请评价您对以下服务环节的满意度。", [["1", "物流速度", ""], ["2", "客服响应", ""], ["3", "售后保障", ""], ["4", "价格优惠", ""]], "矩阵量表，建议检查直线作答。"),
+      aiQuestion("OE1", "开放题", "请说明您给出上述推荐分数的主要原因。", [["文本", "开放填写，建议至少10字", ""]], "用于解释NPS驱动因素。")
+    ],
+    pricing: [
+      ...common,
+      aiQuestion("N1", "数值题", "您觉得该产品价格低到多少，会让您担心质量问题？", [["数值", "填写金额", "设置合理上下限"]], "PSM：太便宜。"),
+      aiQuestion("N2", "数值题", "您觉得该产品价格多少算比较便宜、愿意购买？", [["数值", "填写金额", "设置合理上下限"]], "PSM：比较便宜。"),
+      aiQuestion("N3", "数值题", "您觉得该产品价格多少开始偏贵，但仍可以接受？", [["数值", "填写金额", "设置合理上下限"]], "PSM：比较贵。"),
+      aiQuestion("N4", "数值题", "您觉得该产品价格高到多少，您一定不会购买？", [["数值", "填写金额", "设置合理上下限"]], "PSM：太贵。")
+    ],
+    kano: [
+      ...common,
+      aiQuestion("K1", "KANO题组", "如果该产品具备【功能A】，您的感受是？", [["1", "我喜欢这样", ""], ["2", "理应如此", ""], ["3", "无所谓", ""], ["4", "勉强接受", ""], ["5", "我不喜欢这样", ""]], "正向题。每个功能需配套反向题。"),
+      aiQuestion("K2", "KANO题组", "如果该产品不具备【功能A】，您的感受是？", [["1", "我喜欢这样", ""], ["2", "理应如此", ""], ["3", "无所谓", ""], ["4", "勉强接受", ""], ["5", "我不喜欢这样", ""]], "反向题。功能顺序建议随机。")
+    ]
+  };
+
+  return modules[config.studyType] || modules.concept;
+}
+
+function backgroundAiQuestions() {
+  return [
+    aiQuestion("D1", "单选题", "请问您的性别是？", [["1", "男", ""], ["2", "女", ""], ["3", "不便透露", "可选"]], "人口属性题，通常放在问卷末尾。"),
+    aiQuestion("D2", "单选题", "请问您的最高学历是？", [["1", "高中/中专及以下", ""], ["2", "大专", ""], ["3", "本科", ""], ["4", "研究生及以上", ""]], "不随机，有自然顺序。"),
+    aiQuestion("D3", "单选题", "请问您的个人月收入是？", [["1", "5000元以下", ""], ["2", "5000-9999元", ""], ["3", "10000-19999元", ""], ["4", "20000元及以上", ""], ["99", "不便透露", "置底"]], "敏感题置后，可允许拒答。")
+  ];
+}
+
+function renderAiQuestionTable(question) {
+  const rows = question.options.map((row) => `| ${row[0]} | ${row[1]} | ${row[2] || question.note || ""} |`).join("\n");
+  return [
+    `**${question.code}. ${question.title}**`,
+    `题型：${question.type}`,
+    "",
+    "| 编码 | 选项内容 | 逻辑与备注 |",
+    "|---|---|---|",
+    rows,
+    question.note ? `> 设计思路：${question.note}` : ""
+  ].filter(Boolean).join("\n");
+}
+
+function buildAiQuestionnaireDesign() {
+  const config = getAiDesignerConfig();
+  const brief = config.brief || "用户暂未填写详细研究需求，以下基于研究类型和目标人群生成通用版问卷初稿。";
+  const screener = baseAiQuestions(config);
+  const body = bodyAiQuestions(config);
+  const background = backgroundAiQuestions();
+  const allQuestions = [...screener, ...body, ...background];
+  const estimatedMinutes = Math.max(5, Math.min(20, Math.ceil(allQuestions.length * 0.55 + body.length * 0.25)));
+  const questionnaireText = [
+    `${config.project} 调研问卷`,
+    "",
+    "一、问卷说明",
+    `- 研究类型：${aiStudyTypeName(config.studyType)}`,
+    `- 目标人群：${config.audience}`,
+    `- 目标样本量：N=${config.sampleSize}`,
+    `- 期望/建议时长：约 ${config.duration || estimatedMinutes} 分钟`,
+    "- 质量控件：建议保留1道注意力检测题，并记录答题时长用于清洗。",
+    "",
+    "二、问卷正文",
+    "",
+    "模块A：开场白与甄别",
+    "您好！我们正在开展一项市场研究，想了解您对相关产品/服务的真实看法。问卷仅用于统计分析，答案没有对错之分，请根据实际情况作答。",
+    "",
+    ...screener.map(renderAiQuestionTable),
+    "",
+    "模块B：问卷主体",
+    "",
+    ...body.map(renderAiQuestionTable),
+    "",
+    "QC1. 注意力检测题",
+    "题型：单选题",
+    "",
+    "| 编码 | 选项内容 | 逻辑与备注 |",
+    "|---|---|---|",
+    "| 1 | 非常同意 |  |",
+    "| 2 | 比较同意 | 正确答案 |",
+    "| 3 | 一般 |  |",
+    "| 4 | 不太同意 |  |",
+    "> 设计思路：请在题干中明确“本题是注意力检测，请选择比较同意”，用于识别无效样本。",
+    "",
+    "模块C：背景信息",
+    "",
+    ...background.map(renderAiQuestionTable),
+    "",
+    "模块D：结束语",
+    "问卷到此结束，感谢您的参与！",
+    "",
+    "三、质量自查清单",
+    "- ✅ 问卷结构完整：开场白、甄别、主体、背景信息、结束语齐全。",
+    "- ✅ 题目编码清晰：单选/多选/量表/数值/开放题使用不同编码前缀。",
+    "- ✅ 随机与置底规则明确：非顺序型选项建议随机，其他/拒答类选项置底。",
+    "- ✅ 数据清洗前置：包含注意力检测题，并建议记录答题时长。",
+    "- ⚠️ 需人工确认：品牌/功能/概念素材、价格上下限、配额条件和跳题逻辑需结合正式项目补充。",
+    "",
+    "四、原始研究需求",
+    brief
+  ].join("\n");
+
+  return { config, questions: allQuestions, questionnaireText, estimatedMinutes };
+}
+
+function renderAiQuestionnaireHtml(result) {
+  const logicIssues = result.logicIssues || [];
+  const logicHtml = logicIssues.length
+    ? logicIssues.slice(0, 6).map((issue) => `<li><strong>${escapeHtml(issue.title)}</strong><span>${escapeHtml(issue.detail)}</span></li>`).join("")
+    : `<li><strong>未发现明显结构风险</strong><span>仍建议上线前进入“上线质检”逐路径复核。</span></li>`;
+  return `
+    <article class="audit-issue">
+      <div class="issue-head">
+        <strong>问卷设计初稿</strong>
+        <span class="issue-tag low">${aiStudyTypeName(result.config.studyType)}</span>
+      </div>
+      <div class="metric-grid compact-metrics">
+        <div><span>题目数量</span><strong>${result.questions.length + 1}</strong></div>
+        <div><span>建议时长</span><strong>${result.estimatedMinutes} 分钟</strong></div>
+        <div><span>目标样本</span><strong>${result.config.sampleSize}</strong></div>
+        <div><span>生成来源</span><strong>${escapeHtml(result.source || "本地规则")}</strong></div>
+      </div>
+      <ul class="ai-risk-list">
+        <li><strong>结构</strong><span>开场白与甄别、问卷主体、背景信息、结束语已生成。</span></li>
+        <li><strong>编码</strong><span>已按 S/Q/M/RS/N/OE/KANO 等题型输出三列表格。</span></li>
+        <li><strong>逻辑</strong><span>已补充随机显示、其他置底、终止/继续、质量控制等备注。</span></li>
+      </ul>
+    </article>
+    <article class="audit-issue">
+      <div class="issue-head">
+        <strong>逻辑校验</strong>
+        <span class="issue-tag ${logicIssues.some((issue) => issue.severity === "high") ? "high" : "low"}">${logicIssues.length} 项</span>
+      </div>
+      <ul class="ai-risk-list">${logicHtml}</ul>
+    </article>
+    <article class="audit-issue">
+      <div class="issue-head">
+        <strong>可复制问卷 Markdown</strong>
+        <span class="issue-tag low">V1.0</span>
+      </div>
+      <textarea class="prompt-box" readonly>${escapeHtml(result.questionnaireText)}</textarea>
+    </article>
+  `;
+}
+
+function renderAiProgress(container, steps, activeIndex = 0, note = "", title = "正在生成问卷初稿") {
+  if (!container) return;
+  container.innerHTML = `
+    <article class="audit-issue ai-progress-card">
+      <div class="issue-head">
+        <strong>${escapeHtml(title)}</strong>
+        <span class="issue-tag low">请稍候</span>
+      </div>
+      <ol class="ai-progress-list">
+        ${steps.map((step, index) => `
+          <li class="${index < activeIndex ? "done" : index === activeIndex ? "active" : ""}">
+            <span>${index < activeIndex ? "✓" : index + 1}</span>
+            <div>
+              <strong>${escapeHtml(step.title)}</strong>
+              <p>${escapeHtml(step.detail)}</p>
+            </div>
+          </li>
+        `).join("")}
+      </ol>
+      ${note ? `<p class="panel-note">${escapeHtml(note)}</p>` : ""}
+    </article>
+  `;
+}
+
+function getDefaultAiSettings(provider = "deepseek") {
+  const preset = aiProviderPresets[provider] || aiProviderPresets.deepseek;
+  return {
+    provider,
+    mode: "api",
+    model: preset.model,
+    url: preset.url,
+    apiKey: ""
+  };
+}
+
+function readAiSettingsFromForm() {
+  return {
+    provider: document.querySelector("#aiProvider")?.value || "deepseek",
+    mode: document.querySelector("#aiGenerationMode")?.value || "api",
+    model: document.querySelector("#aiModelName")?.value.trim() || "",
+    url: document.querySelector("#aiApiBaseUrl")?.value.trim() || "",
+    apiKey: document.querySelector("#aiApiKey")?.value.trim() || ""
+  };
+}
+
+function validateAiSettings(settings) {
+  const errors = [];
+  if (!aiProviderPresets[settings.provider]) errors.push("请选择有效的大模型供应商。");
+  if (!settings.model) errors.push("请填写模型名称。");
+  if (!settings.url) {
+    errors.push("请填写接口地址。");
+  } else {
+    try {
+      const url = new URL(settings.url);
+      if (!/^https?:$/.test(url.protocol)) errors.push("接口地址必须以 http 或 https 开头。");
+      if (!/chat\/completions/i.test(url.pathname)) errors.push("接口地址建议使用 OpenAI 兼容的 /chat/completions 路径。");
+    } catch {
+      errors.push("接口地址格式不正确。");
+    }
+  }
+  if (settings.mode === "api" && !settings.apiKey) errors.push("优先调用大模型时需要填写 API Key。");
+  return errors;
+}
+
+function renderAiSettingsStatus(settings = loadAiSettings()) {
+  const status = document.querySelector("#aiSettingsStatus");
+  const preview = document.querySelector("#aiSettingsPreview");
+  const hint = document.querySelector("#aiProviderHint");
+  const planHint = document.querySelector("#aiPlanProviderHint");
+  if (!status && !preview && !hint && !planHint) return;
+  const preset = aiProviderPresets[settings.provider] || aiProviderPresets.deepseek;
+  const errors = validateAiSettings(settings);
+  const ready = settings.mode === "local" || errors.length === 0;
+  if (status) {
+    status.textContent = settings.mode === "local" ? "本地规则" : ready ? "已配置" : "待完善";
+  }
+  if (preview) {
+    preview.innerHTML = `
+      <strong>${escapeHtml(preset.name)}</strong>
+      <span>${escapeHtml(settings.mode === "local" ? "当前设置为只使用本地规则。" : `模型：${settings.model || "-"}；接口：${settings.url || "-"}`)}</span>
+      ${errors.length ? `<span class="warning-text">${escapeHtml(errors.join("；"))}</span>` : `<span>设置校验通过，可以在 AI 问卷设计中调用。</span>`}
+    `;
+  }
+  if (hint) {
+    hint.innerHTML = `
+      <strong>生成方式</strong>
+      <span>${escapeHtml(settings.mode === "local" ? "当前使用本地规则生成。" : settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）。` : "未配置 API Key，将使用本地规则生成。")}</span>
+    `;
+  }
+  if (planHint) {
+    planHint.innerHTML = `
+      <strong>生成方式</strong>
+      <span>${escapeHtml(settings.mode === "local" ? "当前使用本地方案框架生成。" : settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）生成调研方案。` : "未配置 API Key，将使用本地方案框架生成。")}</span>
+    `;
+  }
+}
+
+function fillAiSettingsForm(settings = loadAiSettings()) {
+  const provider = document.querySelector("#aiProvider");
+  const mode = document.querySelector("#aiGenerationMode");
+  const model = document.querySelector("#aiModelName");
+  const url = document.querySelector("#aiApiBaseUrl");
+  const key = document.querySelector("#aiApiKey");
+  if (provider) provider.value = settings.provider;
+  if (mode) mode.value = settings.mode;
+  if (model) model.value = settings.model;
+  if (url) url.value = settings.url;
+  if (key) key.value = settings.apiKey;
+  renderAiSettingsStatus(settings);
+}
+
+function loadAiSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("surveyAiSettings") || "null");
+    if (saved) return { ...getDefaultAiSettings(saved.provider || "deepseek"), ...saved };
+  } catch {}
+  return getDefaultAiSettings("deepseek");
+}
+
+function saveAiSettings() {
+  const settings = readAiSettingsFromForm();
+  const errors = validateAiSettings(settings);
+  if (errors.length && settings.mode !== "local") {
+    renderAiSettingsStatus(settings);
+    return errors;
+  }
+  localStorage.setItem("surveyAiSettings", JSON.stringify(settings));
+  renderAiSettingsStatus(settings);
+  showButtonSaved(document.querySelector("#saveAiSettings"), "已保存");
+  return [];
+}
+
+function applyAiProviderPreset() {
+  const provider = document.querySelector("#aiProvider")?.value || "deepseek";
+  const preset = aiProviderPresets[provider] || aiProviderPresets.deepseek;
+  const model = document.querySelector("#aiModelName");
+  const url = document.querySelector("#aiApiBaseUrl");
+  if (provider !== "custom") {
+    if (model) model.value = preset.model;
+    if (url) url.value = preset.url;
+  }
+  renderAiSettingsStatus(readAiSettingsFromForm());
+}
+
+async function callAiChatCompletion(settings, messages, options = {}) {
+  const requestBody = {
+    model: settings.model,
+    messages,
+    temperature: options.temperature ?? 0.35,
+    max_tokens: options.maxTokens ?? 3500
+  };
+  let response;
+  let proxyError = null;
+  if (window.location.protocol !== "file:") {
+    try {
+      response = await fetch("./api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: settings.url,
+          apiKey: settings.apiKey,
+          body: requestBody
+        })
+      });
+      if ([404, 405].includes(response.status)) response = null;
+    } catch (error) {
+      proxyError = error;
+    }
+  }
+  if (!response) {
+    response = await fetch(settings.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${settings.apiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    }).catch((error) => {
+      throw new Error(proxyError ? `代理和直连均失败：${proxyError.message}；${error.message}` : error.message);
+    });
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = payload?.error?.message || payload?.message || `接口返回 ${response.status}`;
+    throw new Error(message);
+  }
+  const content = payload?.choices?.[0]?.message?.content || payload?.choices?.[0]?.text || "";
+  if (!content.trim()) throw new Error("接口返回为空，请检查模型名称或供应商配置。");
+  return content.trim();
+}
+
+function buildAiQuestionnairePrompt() {
+  const config = getAiDesignerConfig();
+  const localDraft = buildAiQuestionnaireDesign().questionnaireText;
+  return [
+    {
+      role: "system",
+      content: "你是一名资深市场研究问卷设计专家。请输出严谨、中立、可编程、便于后续统计分析的正式定量问卷。必须使用中文。每道选择题必须包含三列表格：编码、选项内容、逻辑与备注。必须标注跳题、随机、置底、质量控制和数据清洗提示。"
+    },
+    {
+      role: "user",
+      content: [
+        `项目名称/背景：${config.project}`,
+        `研究类型：${aiStudyTypeName(config.studyType)}`,
+        `目标人群：${config.audience}`,
+        `目标样本量：N=${config.sampleSize}`,
+        `期望时长：约 ${config.duration} 分钟`,
+        "",
+        "研究需求：",
+        config.brief || "用户未填写详细需求，请基于研究类型生成通用版问卷。",
+        "",
+        "请输出以下结构：",
+        "一、问卷说明",
+        "二、问卷正文：模块A开场白与甄别、模块B问卷主体、模块C背景信息、模块D结束语",
+        "三、质量自查清单",
+        "",
+        "可参考但不要机械照抄的本地初稿：",
+        localDraft
+      ].join("\n")
+    }
+  ];
+}
+
 function buildAiResearchBrief(text, context) {
   const issues = auditQuestionnaire(text);
   const cleaningRules = generateCleaningRules(text, {
@@ -5261,7 +6087,56 @@ function buildAiResearchBrief(text, context) {
   return { brief, prompt };
 }
 
-function renderAiBrief() {
+async function renderAiBrief() {
+  {
+  const result = document.querySelector("#aiResults");
+  const copyButton = document.querySelector("#copyAiPrompt");
+  const exportButton = document.querySelector("#exportAiPrompt");
+  const wordButton = document.querySelector("#exportAiWord");
+  const applyButton = document.querySelector("#applyAiQuestionnaire");
+  const reviseButton = document.querySelector("#reviseAiQuestionnaire");
+  const settings = loadAiSettings();
+  const design = buildAiQuestionnaireDesign();
+  const steps = [
+    { title: "整理研究需求", detail: "读取研究类型、目标人群、样本量和期望时长。" },
+    { title: "校验生成方式", detail: settings.mode === "local" || !settings.apiKey ? "未配置可用 API Key，将使用本地规则生成。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}（${settings.model}）。` },
+    { title: "生成问卷初稿", detail: "生成问卷说明、甄别题、主体题、背景题、编码和逻辑备注。" },
+    { title: "执行逻辑校验", detail: "检查题号、跳题引用、选项设置和常见上线风险。" },
+    { title: "整理可导出结果", detail: "启用复制、Markdown、Word 和同步到项目稿。" }
+  ];
+  renderAiProgress(result, steps, 0);
+  let output = design.questionnaireText;
+  let source = "本地规则";
+  renderAiProgress(result, steps, 1);
+  if (settings.mode !== "local" && settings.apiKey) {
+    const errors = validateAiSettings(settings);
+    if (!errors.length) {
+      try {
+        renderAiProgress(result, steps, 2, "大模型生成可能需要几十秒，页面没有卡住。");
+        output = await callAiChatCompletion(settings, buildAiQuestionnairePrompt(), { maxTokens: 5000 });
+        source = aiProviderPresets[settings.provider]?.name || "大模型";
+      } catch (error) {
+        output = `${design.questionnaireText}\n\n---\n\n> 大模型调用失败，已回退为本地初稿。错误信息：${error.message}`;
+        source = "本地规则（模型调用失败）";
+      }
+    } else {
+      output = `${design.questionnaireText}\n\n---\n\n> 大模型设置未通过校验，已回退为本地初稿：${errors.join("；")}`;
+      source = "本地规则（设置未通过校验）";
+    }
+  }
+  renderAiProgress(result, steps, 3);
+  lastAiPrompt = output;
+  lastAiQuestionnaireText = output;
+  const logicIssues = auditQuestionnaire(output).filter((issue) => issue.title !== "缺少问卷稿");
+  renderAiProgress(result, steps, 4);
+  copyButton.disabled = false;
+  exportButton.disabled = false;
+  if (wordButton) wordButton.disabled = false;
+  if (applyButton) applyButton.disabled = false;
+  if (reviseButton) reviseButton.disabled = false;
+  result.innerHTML = renderAiQuestionnaireHtml({ ...design, questionnaireText: output, source, logicIssues });
+  return;
+  }
   const text = document.querySelector("#aiInput").value.trim();
   const context = document.querySelector("#aiContext").value.trim();
   const result = document.querySelector("#aiResults");
@@ -5318,16 +6193,604 @@ async function copyAiPrompt() {
     await navigator.clipboard.writeText(lastAiPrompt);
     document.querySelector("#copyAiPrompt").textContent = "已复制";
     window.setTimeout(() => {
-      document.querySelector("#copyAiPrompt").textContent = "复制提示词";
+      document.querySelector("#copyAiPrompt").textContent = "复制问卷";
     }, 1200);
   } catch {
-    downloadTextFile("AI调研提示词.txt", lastAiPrompt);
+    downloadTextFile("AI问卷设计初稿.md", lastAiPrompt, "text/markdown;charset=utf-8");
   }
 }
 
 function exportAiPrompt() {
   if (!lastAiPrompt) return;
-  downloadTextFile("AI调研提示词.txt", lastAiPrompt);
+  downloadTextFile("AI问卷设计初稿.md", lastAiPrompt, "text/markdown;charset=utf-8");
+}
+
+function markdownToWordHtml(text) {
+  const lines = text.split(/\r?\n/);
+  return lines.map((line) => {
+    const value = line.trim();
+    if (!value) return "<p>&nbsp;</p>";
+    if (/^#{1,3}\s+/.test(value)) {
+      const level = value.match(/^#+/)[0].length;
+      return `<h${Math.min(level, 3)}>${escapeHtml(value.replace(/^#{1,3}\s+/, ""))}</h${Math.min(level, 3)}>`;
+    }
+    if (/^\|/.test(value)) return `<p class="table-line">${escapeHtml(value)}</p>`;
+    if (/^[-*]\s+/.test(value)) return `<p class="bullet">• ${escapeHtml(value.replace(/^[-*]\s+/, ""))}</p>`;
+    if (/^>/.test(value)) return `<p class="note">${escapeHtml(value.replace(/^>\s*/, ""))}</p>`;
+    return `<p>${escapeHtml(value.replace(/\*\*/g, ""))}</p>`;
+  }).join("\n");
+}
+
+function xmlEscape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function makeCrcTable() {
+  const table = [];
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+}
+
+const crcTable = makeCrcTable();
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  bytes.forEach((byte) => {
+    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  });
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function dosDateTime(date = new Date()) {
+  const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const day = ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  return { time, day };
+}
+
+function pushUint16(bytes, value) {
+  bytes.push(value & 0xff, (value >>> 8) & 0xff);
+}
+
+function pushUint32(bytes, value) {
+  bytes.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+}
+
+function createZip(entries) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const { time, day } = dosDateTime();
+  entries.forEach((entry) => {
+    const nameBytes = encoder.encode(entry.name);
+    const dataBytes = encoder.encode(entry.content);
+    const crc = crc32(dataBytes);
+    const local = [];
+    pushUint32(local, 0x04034b50);
+    pushUint16(local, 20);
+    pushUint16(local, 0);
+    pushUint16(local, 0);
+    pushUint16(local, time);
+    pushUint16(local, day);
+    pushUint32(local, crc);
+    pushUint32(local, dataBytes.length);
+    pushUint32(local, dataBytes.length);
+    pushUint16(local, nameBytes.length);
+    pushUint16(local, 0);
+    localParts.push(new Uint8Array(local), nameBytes, dataBytes);
+
+    const central = [];
+    pushUint32(central, 0x02014b50);
+    pushUint16(central, 20);
+    pushUint16(central, 20);
+    pushUint16(central, 0);
+    pushUint16(central, 0);
+    pushUint16(central, time);
+    pushUint16(central, day);
+    pushUint32(central, crc);
+    pushUint32(central, dataBytes.length);
+    pushUint32(central, dataBytes.length);
+    pushUint16(central, nameBytes.length);
+    pushUint16(central, 0);
+    pushUint16(central, 0);
+    pushUint16(central, 0);
+    pushUint16(central, 0);
+    pushUint32(central, 0);
+    pushUint32(central, offset);
+    centralParts.push(new Uint8Array(central), nameBytes);
+    offset += local.length + nameBytes.length + dataBytes.length;
+  });
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = [];
+  pushUint32(end, 0x06054b50);
+  pushUint16(end, 0);
+  pushUint16(end, 0);
+  pushUint16(end, entries.length);
+  pushUint16(end, entries.length);
+  pushUint32(end, centralSize);
+  pushUint32(end, offset);
+  pushUint16(end, 0);
+  return new Blob([...localParts, ...centralParts, new Uint8Array(end)], { type: "application/zip" });
+}
+
+function wordParagraph(text, style = "") {
+  const styleXml = style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : "";
+  return `<w:p>${styleXml}<w:r><w:t xml:space="preserve">${xmlEscape(text)}</w:t></w:r></w:p>`;
+}
+
+function wordTable(rows) {
+  const cellWidth = Math.max(1800, Math.floor(9000 / Math.max(1, rows[0]?.length || 3)));
+  return `<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="6" w:color="000000"/><w:left w:val="single" w:sz="6" w:color="000000"/><w:bottom w:val="single" w:sz="6" w:color="000000"/><w:right w:val="single" w:sz="6" w:color="000000"/><w:insideH w:val="single" w:sz="6" w:color="000000"/><w:insideV w:val="single" w:sz="6" w:color="000000"/></w:tblBorders></w:tblPr>${rows.map((row) => `<w:tr>${row.map((cell) => `<w:tc><w:tcPr><w:tcW w:w="${cellWidth}" w:type="dxa"/>${row === rows[0] ? '<w:shd w:fill="1F497D"/>' : ""}</w:tcPr><w:p><w:r>${row === rows[0] ? '<w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr>' : ""}<w:t xml:space="preserve">${xmlEscape(cell)}</w:t></w:r></w:p></w:tc>`).join("")}</w:tr>`).join("")}</w:tbl>`;
+}
+
+function parseMarkdownTable(lines, start) {
+  const rows = [];
+  let index = start;
+  while (index < lines.length && /^\s*\|/.test(lines[index])) {
+    const cells = lines[index].trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+    const isDivider = cells.every((cell) => /^:?-{2,}:?$/.test(cell));
+    if (!isDivider) rows.push(cells);
+    index += 1;
+  }
+  return { rows, nextIndex: index };
+}
+
+function markdownToWordDocumentXml(text) {
+  const lines = text.split(/\r?\n/);
+  const body = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (!line) {
+      body.push(wordParagraph(""));
+      continue;
+    }
+    if (/^\|/.test(line)) {
+      const table = parseMarkdownTable(lines, index);
+      if (table.rows.length) body.push(wordTable(table.rows));
+      index = table.nextIndex - 1;
+      continue;
+    }
+    if (/^#{1,3}\s+/.test(line)) {
+      const level = line.match(/^#+/)[0].length;
+      body.push(wordParagraph(line.replace(/^#{1,3}\s+/, ""), level === 1 ? "Heading1" : level === 2 ? "Heading2" : "Heading3"));
+      continue;
+    }
+    if (/^\*\*.+\*\*/.test(line)) {
+      body.push(wordParagraph(line.replace(/\*\*/g, ""), "Heading3"));
+      continue;
+    }
+    body.push(wordParagraph(line.replace(/^[-*]\s+/, "• ").replace(/^>\s*/, "")));
+  }
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body.join("")}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1200" w:bottom="1440" w:left="1200" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+}
+
+function createDocxBlob(markdown) {
+  return createZip([
+    { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>` },
+    { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>` },
+    { name: "word/_rels/document.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>` },
+    { name: "word/styles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:spacing w:before="220" w:after="100"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:pPr><w:spacing w:before="180" w:after="80"/></w:pPr><w:rPr><w:b/><w:sz w:val="24"/></w:rPr></w:style><w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:color="auto"/><w:left w:val="single" w:sz="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:color="auto"/><w:right w:val="single" w:sz="4" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:color="auto"/></w:tblBorders></w:tblPr></w:style></w:styles>` },
+    { name: "word/document.xml", content: markdownToWordDocumentXml(markdown) }
+  ]);
+}
+
+function markdownToPptSlides(markdown, fallbackTitle = "调研方案") {
+  const lines = markdown.split(/\r?\n/);
+  const slides = [];
+  let current = null;
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) return;
+    const h1 = line.match(/^#\s+(.+)/);
+    const h2 = line.match(/^##\s+(.+)/);
+    const h3 = line.match(/^###\s+(.+)/);
+    if (h1) {
+      if (!slides.length) slides.push({ title: h1[1], bullets: ["研究方案", "由 AI 方案设计生成"] });
+      return;
+    }
+    if (h2) {
+      current = { title: h2[1], bullets: [] };
+      slides.push(current);
+      return;
+    }
+    if (!current) {
+      current = { title: fallbackTitle, bullets: [] };
+      slides.push(current);
+    }
+    if (h3) {
+      current.bullets.push(h3[1]);
+      return;
+    }
+    if (/^\|/.test(line) || /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line)) {
+      const text = line
+        .replace(/^\|/, "")
+        .replace(/\|$/, "")
+        .replace(/\|/g, " / ")
+        .replace(/^[-*]\s+/, "")
+        .replace(/^\d+\.\s+/, "")
+        .replace(/---/g, "")
+        .trim();
+      if (text && !/^\/+$/.test(text)) current.bullets.push(text);
+      return;
+    }
+    if (line.length > 0) current.bullets.push(line);
+  });
+  const expanded = [];
+  slides.forEach((slide) => {
+    const bullets = slide.bullets.filter(Boolean);
+    if (bullets.length <= 7) {
+      expanded.push({ title: slide.title, bullets });
+      return;
+    }
+    for (let i = 0; i < bullets.length; i += 7) {
+      expanded.push({
+        title: i === 0 ? slide.title : `${slide.title}（续）`,
+        bullets: bullets.slice(i, i + 7)
+      });
+    }
+  });
+  return expanded.slice(0, 40);
+}
+
+function pptTextRun(text, size = 2200, bold = false, color = "1F2937") {
+  return `<a:r><a:rPr lang="zh-CN" sz="${size}"${bold ? " b=\"1\"" : ""}><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/></a:rPr><a:t>${xmlEscape(text)}</a:t></a:r>`;
+}
+
+function pptShape(id, name, x, y, w, h, paragraphs, fill = "FFFFFF", line = "D8E2EA") {
+  const paraXml = paragraphs.map((paragraph) => {
+    const level = paragraph.level || 0;
+    return `<a:p><a:pPr marL="${level ? 342900 : 0}" indent="${level ? -171450 : 0}">${paragraph.bullet ? '<a:buChar char="•"/>' : "<a:buNone/>"}</a:pPr>${pptTextRun(paragraph.text, paragraph.size, paragraph.bold, paragraph.color)}<a:endParaRPr lang="zh-CN"/></a:p>`;
+  }).join("");
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${xmlEscape(name)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="${fill}"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="${line}"/></a:solidFill></a:ln></p:spPr><p:txBody><a:bodyPr wrap="square" lIns="120000" tIns="90000" rIns="120000" bIns="90000"/><a:lstStyle/>${paraXml}</p:txBody></p:sp>`;
+}
+
+function pptSlideXml(slide, index, total) {
+  const title = pptShape(2, "Title", 550000, 420000, 11200000, 850000, [{ text: slide.title, size: 3000, bold: true, color: "0F2530" }], "FFFFFF", "FFFFFF");
+  const bullets = slide.bullets.length ? slide.bullets : ["请结合业务背景继续补充本页内容。"];
+  const bodyParagraphs = bullets.slice(0, 8).map((text) => ({
+    text: text.length > 86 ? `${text.slice(0, 84)}...` : text,
+    size: 1900,
+    bullet: true,
+    color: "334155"
+  }));
+  const body = pptShape(3, "Body", 700000, 1450000, 11250000, 4800000, bodyParagraphs, "F8FAFC", "D8E2EA");
+  const footer = pptShape(4, "Footer", 700000, 6450000, 11250000, 320000, [{ text: `AI 调研方案设计 · ${index + 1}/${total}`, size: 1200, color: "64748B" }], "FFFFFF", "FFFFFF");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:effectLst/></p:bgPr></p:bg><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${title}${body}${footer}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
+}
+
+function createPptxBlob(markdown, title = "AI调研方案") {
+  const slides = markdownToPptSlides(markdown, title);
+  const slideEntries = slides.map((slide, index) => ({
+    name: `ppt/slides/slide${index + 1}.xml`,
+    content: pptSlideXml(slide, index, slides.length)
+  }));
+  const slideRelEntries = slides.map((_, index) => ({
+    name: `ppt/slides/_rels/slide${index + 1}.xml.rels`,
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/></Relationships>`
+  }));
+  const slideOverrides = slides.map((_, index) => `<Override PartName="/ppt/slides/slide${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("");
+  const slideIds = slides.map((_, index) => `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`).join("");
+  const slideRels = slides.map((_, index) => `<Relationship Id="rId${index + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${index + 1}.xml"/>`).join("");
+  return createZip([
+    { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${slideOverrides}</Types>` },
+    { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>` },
+    { name: "ppt/presentation.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slideIds}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000" type="wide"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>` },
+    { name: "ppt/_rels/presentation.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>${slideRels}</Relationships>` },
+    { name: "ppt/slideMasters/slideMaster1.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/><p:sldLayoutIdLst><p:sldLayoutId id="1" r:id="rId1"/></p:sldLayoutIdLst><p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles></p:sldMaster>` },
+    { name: "ppt/slideMasters/_rels/slideMaster1.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/></Relationships>` },
+    { name: "ppt/slideLayouts/slideLayout1.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank" preserve="1"><p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>` },
+    { name: "ppt/slideLayouts/_rels/slideLayout1.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>` },
+    { name: "ppt/theme/theme1.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Survey Theme"><a:themeElements><a:clrScheme name="Survey"><a:dk1><a:srgbClr val="0F2530"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="334155"/></a:dk2><a:lt2><a:srgbClr val="F8FAFC"/></a:lt2><a:accent1><a:srgbClr val="155E75"/></a:accent1><a:accent2><a:srgbClr val="2E7D5B"/></a:accent2><a:accent3><a:srgbClr val="D99A2B"/></a:accent3><a:accent4><a:srgbClr val="B03024"/></a:accent4><a:accent5><a:srgbClr val="2E6FBA"/></a:accent5><a:accent6><a:srgbClr val="6B7280"/></a:accent6><a:hlink><a:srgbClr val="155E75"/></a:hlink><a:folHlink><a:srgbClr val="6B7280"/></a:folHlink></a:clrScheme><a:fontScheme name="Survey"><a:majorFont><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/></a:majorFont><a:minorFont><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/></a:minorFont></a:fontScheme><a:fmtScheme name="Survey"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>` },
+    ...slideEntries,
+    ...slideRelEntries
+  ]);
+}
+
+function exportAiWord() {
+  if (!lastAiPrompt) return;
+  downloadBlob("AI问卷设计初稿.docx", createDocxBlob(lastAiPrompt));
+}
+
+function aiWorkbenchTaskName(task) {
+  return {
+    "questionnaire-review": "问卷审查说明",
+    "cleaning-rules": "清洗规则建议",
+    "header-plan": "表头/交叉分析建议",
+    "model-interpretation": "模型结果解读",
+    "report-summary": "报告摘要草稿"
+  }[task] || "AI 建议";
+}
+
+function buildLocalAiWorkbenchOutput(task, text) {
+  const material = text || "用户暂未输入材料。";
+  if (!text.trim()) {
+    return `# ${aiWorkbenchTaskName(task)}\n\n请先粘贴问卷稿、质检结果、模型结果或点击“使用项目问卷稿”。`;
+  }
+  if (task === "questionnaire-review") {
+    const issues = auditQuestionnaire(text);
+    const counts = auditSeverityCounts(issues);
+    return [
+      "# 问卷审查说明",
+      "",
+      `## 总体判断`,
+      `当前规则审查共发现 ${issues.length} 项风险，其中阻塞 ${counts.high} 项、重要 ${counts.medium} 项、建议 ${counts.low} 项。`,
+      "",
+      "## 主要风险",
+      ...(issues.length ? issues.slice(0, 10).map((issue, index) => `${index + 1}. 【${issue.severity}】${issue.title}：${issue.detail}`) : ["未发现明显规则风险。"]),
+      "",
+      "## 上线建议",
+      "- 对跳题路径、随机轮换、排他项和开放题说明进行人工复核。",
+      "- 正式上线前建议至少完成 3-5 人全路径试填。"
+    ].join("\n");
+  }
+  if (task === "cleaning-rules") {
+    const rules = generateCleaningRules(text, { minDuration: 120, openMinChars: 5, straightThreshold: 90 });
+    return [
+      "# 清洗规则建议",
+      "",
+      ...rules.map((rule, index) => `## ${index + 1}. ${rule.title}\n- 优先级：${rule.level}\n- 规则说明：${rule.detail}\n- 依据：${rule.evidence || "基于问卷题型和常规清洗标准。"}`)
+    ].join("\n");
+  }
+  if (task === "header-plan") {
+    const suggestions = generateHeaderSuggestions(text);
+    return [
+      "# 表头/交叉分析建议",
+      "",
+      ...suggestions.map((item, index) => `## ${index + 1}. ${item.title}\n- 类型：${item.level}\n- 建议：${item.detail}\n- 证据：${item.evidence || "需结合实际问卷确认。"}`)
+    ].join("\n");
+  }
+  if (task === "report-summary") {
+    const brief = buildAiResearchBrief(text, "项目材料摘要").brief;
+    return [
+      "# 报告摘要草稿",
+      "",
+      `本项目材料共识别到 ${brief.questionCount} 道题，预计问卷时长约 ${brief.estimatedMinutes || "-"} 分钟。`,
+      `上线前规则审查发现 ${brief.issueCount} 项风险，其中 ${brief.blockerCount} 项可能影响上线路径或数据质量。`,
+      "",
+      "建议优先处理跳题引用、题号一致性、排他项说明和开放题质量规则，再进入正式上线或数据处理阶段。"
+    ].join("\n");
+  }
+  return [
+    "# 模型结果解读",
+    "",
+    "请结合模型输出的关键指标、异常提示和业务背景进行解释。",
+    "",
+    "## 可解读方向",
+    "- PSM：重点解释可接受价格区间、最优价格点和价格风险。",
+    "- KANO：重点解释必备、期望、魅力和无差异属性的优先级。",
+    "- MaxDiff：重点解释偏好排序、领先项和低偏好项。",
+    "- ABC：重点解释高价值人群特征、A/B/C 指标贡献和运营建议。",
+    "",
+    "## 原始材料",
+    material
+  ].join("\n");
+}
+
+function buildAiWorkbenchPrompt(task, text) {
+  return [
+    {
+      role: "system",
+      content: "你是一名资深市场研究项目负责人，擅长问卷质检、清洗规则、表头设计、模型解读和报告写作。请用专业但可交付的中文输出，避免空泛表述。"
+    },
+    {
+      role: "user",
+      content: [
+        `任务类型：${aiWorkbenchTaskName(task)}`,
+        "",
+        "请基于以下材料输出结构化建议，包含：总体判断、关键发现、风险/注意事项、下一步动作。若是模型解读，请给出可写入报告的结论表达。",
+        "",
+        "材料：",
+        text || "用户未提供材料。"
+      ].join("\n")
+    }
+  ];
+}
+
+async function generateAiWorkbench() {
+  const task = document.querySelector("#aiWorkbenchTask").value;
+  const text = document.querySelector("#aiWorkbenchInput").value.trim();
+  const result = document.querySelector("#aiWorkbenchResults");
+  const settings = loadAiSettings();
+  result.innerHTML = `<div class="empty-state"><strong>正在生成 AI 建议</strong><span>${escapeHtml(settings.mode === "local" || !settings.apiKey ? "正在使用本地规则。" : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}。`)}</span></div>`;
+  let output = buildLocalAiWorkbenchOutput(task, text);
+  let source = "本地规则";
+  if (settings.mode !== "local" && settings.apiKey) {
+    const errors = validateAiSettings(settings);
+    if (!errors.length) {
+      try {
+        output = await callAiChatCompletion(settings, buildAiWorkbenchPrompt(task, text), { maxTokens: 3500 });
+        source = aiProviderPresets[settings.provider]?.name || "大模型";
+      } catch (error) {
+        output += `\n\n---\n\n> 大模型调用失败，已回退为本地建议。错误信息：${error.message}`;
+        source = "本地规则（模型调用失败）";
+      }
+    } else {
+      output += `\n\n---\n\n> 大模型设置未通过校验，已回退为本地建议：${errors.join("；")}`;
+      source = "本地规则（设置未通过校验）";
+    }
+  }
+  lastAiWorkbenchOutput = output;
+  document.querySelector("#copyAiWorkbench").disabled = false;
+  document.querySelector("#exportAiWorkbenchMd").disabled = false;
+  document.querySelector("#exportAiWorkbenchWord").disabled = false;
+  result.innerHTML = `
+    <article class="audit-issue">
+      <div class="issue-head">
+        <strong>${escapeHtml(aiWorkbenchTaskName(task))}</strong>
+        <span class="issue-tag low">${escapeHtml(source)}</span>
+      </div>
+      <textarea class="prompt-box" readonly>${escapeHtml(output)}</textarea>
+    </article>
+  `;
+}
+
+async function copyAiWorkbench() {
+  if (!lastAiWorkbenchOutput) return;
+  try {
+    await navigator.clipboard.writeText(lastAiWorkbenchOutput);
+    showButtonSaved(document.querySelector("#copyAiWorkbench"), "已复制");
+  } catch {
+    downloadTextFile("AI助手建议.md", lastAiWorkbenchOutput, "text/markdown;charset=utf-8");
+  }
+}
+
+function exportAiWorkbenchMd() {
+  if (!lastAiWorkbenchOutput) return;
+  downloadTextFile("AI助手建议.md", lastAiWorkbenchOutput, "text/markdown;charset=utf-8");
+}
+
+function exportAiWorkbenchWord() {
+  if (!lastAiWorkbenchOutput) return;
+  downloadBlob("AI助手建议.docx", createDocxBlob(lastAiWorkbenchOutput));
+}
+
+function buildAiRevisionPrompt(instruction, currentDraft) {
+  return [
+    {
+      role: "system",
+      content: "你是一名资深市场研究问卷设计专家。请根据用户修改要求，直接输出修改后的完整问卷初稿。保留正式问卷结构、题目编码、三列表格、逻辑备注、随机/置底规则和质量自查清单。不要只输出修改摘要。"
+    },
+    {
+      role: "user",
+      content: [
+        "用户修改要求：",
+        instruction,
+        "",
+        "当前问卷初稿：",
+        currentDraft
+      ].join("\n")
+    }
+  ];
+}
+
+async function reviseAiQuestionnaire() {
+  const instruction = document.querySelector("#aiReviseInput").value.trim();
+  const result = document.querySelector("#aiResults");
+  if (!lastAiQuestionnaireText) {
+    result.innerHTML = `<div class="empty-state"><strong>暂无可修改问卷</strong><span>请先生成问卷初稿。</span></div>`;
+    return;
+  }
+  if (!instruction) {
+    result.innerHTML = `<div class="empty-state"><strong>缺少修改要求</strong><span>请先写明希望如何修改问卷。</span></div>`;
+    return;
+  }
+  const settings = loadAiSettings();
+  const steps = [
+    { title: "读取修改要求", detail: "整理当前问卷初稿和用户追加要求。" },
+    { title: "校验模型设置", detail: settings.mode === "local" || !settings.apiKey ? "未配置可用 API Key，将生成本地修改说明。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"} 修改问卷。` },
+    { title: "重写问卷初稿", detail: "保留编码、表格、逻辑备注和自查清单。" },
+    { title: "重新执行逻辑校验", detail: "检查修改后的题号、跳题和选项风险。" },
+    { title: "更新可导出结果", detail: "启用复制、Word、Markdown 与同步项目稿。" }
+  ];
+  renderAiProgress(result, steps, 0);
+  let output = `${lastAiQuestionnaireText}\n\n---\n\n# 待修改说明\n\n${instruction}\n\n> 当前未调用大模型，已先把修改要求附在问卷末尾。配置 API Key 后可自动重写完整问卷。`;
+  let source = "本地规则";
+  renderAiProgress(result, steps, 1);
+  if (settings.mode !== "local" && settings.apiKey) {
+    const errors = validateAiSettings(settings);
+    if (!errors.length) {
+      try {
+        renderAiProgress(result, steps, 2, "正在按你的要求重写问卷，通常需要几十秒。");
+        output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 6000 });
+        source = aiProviderPresets[settings.provider]?.name || "大模型";
+      } catch (error) {
+        output += `\n\n> 大模型修改失败：${error.message}`;
+        source = "本地规则（模型调用失败）";
+      }
+    } else {
+      output += `\n\n> 大模型设置未通过校验：${errors.join("；")}`;
+      source = "本地规则（设置未通过校验）";
+    }
+  }
+  renderAiProgress(result, steps, 3);
+  lastAiPrompt = output;
+  lastAiQuestionnaireText = output;
+  const design = buildAiQuestionnaireDesign();
+  const logicIssues = auditQuestionnaire(output).filter((issue) => issue.title !== "缺少问卷稿");
+  renderAiProgress(result, steps, 4);
+  result.innerHTML = renderAiQuestionnaireHtml({ ...design, questionnaireText: output, source, logicIssues });
+  document.querySelector("#aiReviseInput").value = "";
+}
+
+function loadAiWorkbenchProject() {
+  const text = document.querySelector("#workspaceQuestionnaire")?.value.trim() || workspaceProject?.questionnaireText || "";
+  document.querySelector("#aiWorkbenchInput").value = text;
+  showButtonSaved(document.querySelector("#loadAiWorkbenchProject"), text ? "已载入" : "暂无问卷");
+}
+
+function openAiInlineAssistant(button) {
+  const task = button.dataset.aiTask || "report-summary";
+  const sourceId = button.dataset.aiSource || "";
+  const sourceField = sourceId ? document.querySelector(`#${sourceId}`) : null;
+  const sourceText = sourceField?.value?.trim() || document.querySelector("#workspaceQuestionnaire")?.value.trim() || workspaceProject?.questionnaireText || "";
+  const taskSelect = document.querySelector("#aiWorkbenchTask");
+  const input = document.querySelector("#aiWorkbenchInput");
+  if (taskSelect) taskSelect.value = task;
+  if (input) input.value = sourceText;
+  showView("ai-workbench");
+  const results = document.querySelector("#aiWorkbenchResults");
+  if (results) {
+    results.innerHTML = `
+      <div class="empty-state">
+        <strong>已载入材料</strong>
+        <span>已切换到 ${escapeHtml(aiWorkbenchTaskName(task))}。确认材料后点击“生成 AI 建议”。</span>
+      </div>
+    `;
+  }
+}
+
+function applyAiQuestionnaireToWorkspace() {
+  if (!lastAiQuestionnaireText) return;
+  const workspaceField = document.querySelector("#workspaceQuestionnaire");
+  if (workspaceField) workspaceField.value = lastAiQuestionnaireText;
+  syncQuestionnaireToWorkspace(lastAiQuestionnaireText);
+  markWorkspaceStatus("questionnaire");
+  const button = document.querySelector("#applyAiQuestionnaire");
+  if (button) showButtonSaved(button, "已同步");
+}
+
+async function testAiSettings() {
+  const settings = readAiSettingsFromForm();
+  const errors = validateAiSettings(settings);
+  renderAiSettingsStatus(settings);
+  const preview = document.querySelector("#aiSettingsPreview");
+  if (errors.length) {
+    if (preview) {
+      preview.innerHTML = `<strong>校验未通过</strong><span class="warning-text">${escapeHtml(errors.join("；"))}</span>`;
+    }
+    return;
+  }
+  if (preview) preview.innerHTML = `<strong>正在测试连接</strong><span>正在向 ${escapeHtml(aiProviderPresets[settings.provider]?.name || "模型接口")} 发送轻量请求。</span>`;
+  try {
+    const reply = await callAiChatCompletion(settings, [
+      { role: "system", content: "你是接口连通性测试助手。" },
+      { role: "user", content: "请只回复：连接成功" }
+    ], { maxTokens: 20, temperature: 0 });
+    localStorage.setItem("surveyAiSettings", JSON.stringify(settings));
+    renderAiSettingsStatus(settings);
+    if (preview) {
+      preview.innerHTML = `<strong>连接成功</strong><span>${escapeHtml(reply.slice(0, 80))}</span>`;
+    }
+    showButtonSaved(document.querySelector("#testAiSettings"), "测试通过");
+  } catch (error) {
+    if (preview) {
+      preview.innerHTML = `<strong>连接失败</strong><span class="warning-text">${escapeHtml(error.message)}</span>`;
+    }
+  }
+}
+
+function clearAiSettings() {
+  localStorage.removeItem("surveyAiSettings");
+  fillAiSettingsForm(getDefaultAiSettings("deepseek"));
+  showButtonSaved(document.querySelector("#clearAiSettings"), "已清空");
 }
 
 function runAudit() {
@@ -5586,7 +7049,7 @@ document
   .querySelectorAll("#workspaceProjectName, #workspaceStudyType, #workspaceStage, #workspaceSampleTarget, #workspaceQuestionnaire")
   .forEach((field) => field.addEventListener("input", renderWorkspaceProject));
 document
-  .querySelectorAll("#questionnaireText, #timeText, #cleaningText, #headerText, #abcText, #aiInput")
+  .querySelectorAll("#questionnaireText, #timeText, #cleaningText, #headerText, #abcText, #aiPlanInput, #aiInput")
   .forEach((field) => field.addEventListener("input", () => syncQuestionnaireToWorkspace(field.value)));
 
 document.querySelector("#runAudit").addEventListener("click", runAudit);
@@ -5755,13 +7218,53 @@ document.querySelector("#loadAbcDataExample").addEventListener("click", () => {
   calculateAbcScore();
 });
 
+document.querySelector("#generateAiPlan").addEventListener("click", generateAiPlan);
+document.querySelector("#copyAiPlan").addEventListener("click", copyAiPlan);
+document.querySelector("#exportAiPlanMd").addEventListener("click", exportAiPlanMd);
+document.querySelector("#exportAiPlanWord").addEventListener("click", exportAiPlanWord);
+document.querySelector("#applyAiPlanToProject").addEventListener("click", applyAiPlanToProject);
+document.querySelector("#loadAiPlanExample").addEventListener("click", () => {
+  document.querySelector("#aiPlanInput").value = "调研目的：某品牌即将推出一款常温纯牛奶，主打常温短保、瞬时杀菌、自有牧场、双活性蛋白等卖点，对标18-45岁离线人群。当前已有初步新品概念，需要基于消费者调研，为新品开发方向、目标人群及营销卖点策略等提供数据支持。";
+  document.querySelector("#aiPlanContext").value = "常温纯牛奶新品概念测试";
+  document.querySelector("#aiPlanMode").value = "detailed";
+  document.querySelector("#aiPlanStudyType").value = "concept";
+  document.querySelector("#aiPlanAudience").value = "18-45岁，近3个月购买过牛奶/乳制品的消费者";
+  document.querySelector("#aiPlanSampleSize").value = 1000;
+  document.querySelector("#aiPlanTimeline").value = "2周内完成问卷、回收、清洗和初步报告";
+  document.querySelector("#aiPlanConstraints").value = "需要包含概念吸引力、卖点偏好、购买意愿、价格接受度、目标人群分层和营销建议。";
+  generateAiPlan();
+});
+
 document.querySelector("#generateAiBrief").addEventListener("click", renderAiBrief);
 document.querySelector("#copyAiPrompt").addEventListener("click", copyAiPrompt);
 document.querySelector("#exportAiPrompt").addEventListener("click", exportAiPrompt);
+document.querySelector("#exportAiWord").addEventListener("click", exportAiWord);
+document.querySelector("#applyAiQuestionnaire").addEventListener("click", applyAiQuestionnaireToWorkspace);
+document.querySelector("#reviseAiQuestionnaire").addEventListener("click", reviseAiQuestionnaire);
+document.querySelector("#aiProvider").addEventListener("change", applyAiProviderPreset);
+document.querySelector("#aiGenerationMode").addEventListener("change", () => renderAiSettingsStatus(readAiSettingsFromForm()));
+document.querySelector("#aiModelName").addEventListener("input", () => renderAiSettingsStatus(readAiSettingsFromForm()));
+document.querySelector("#aiApiBaseUrl").addEventListener("input", () => renderAiSettingsStatus(readAiSettingsFromForm()));
+document.querySelector("#aiApiKey").addEventListener("input", () => renderAiSettingsStatus(readAiSettingsFromForm()));
+document.querySelector("#saveAiSettings").addEventListener("click", saveAiSettings);
+document.querySelector("#testAiSettings").addEventListener("click", testAiSettings);
+document.querySelector("#clearAiSettings").addEventListener("click", clearAiSettings);
 document.querySelector("#loadAiExample").addEventListener("click", () => {
-  document.querySelector("#aiInput").value = exampleQuestionnaire;
-  document.querySelector("#aiContext").value = "新品概念测试，上线前问卷审查";
+  document.querySelector("#aiInput").value = "希望了解18-40岁用户对一款新型便携咖啡产品的概念接受度、核心卖点吸引力、购买意愿、价格接受区间，以及不同城市级别和使用场景下的差异。";
+  document.querySelector("#aiContext").value = "便携咖啡新品概念测试";
+  document.querySelector("#aiStudyType").value = "concept";
+  document.querySelector("#aiAudience").value = "18-40岁，近3个月购买过即饮咖啡或咖啡相关产品的用户";
+  document.querySelector("#aiSampleSize").value = 400;
+  document.querySelector("#aiDuration").value = 8;
   renderAiBrief();
+});
+document.querySelector("#generateAiWorkbench").addEventListener("click", generateAiWorkbench);
+document.querySelector("#loadAiWorkbenchProject").addEventListener("click", loadAiWorkbenchProject);
+document.querySelector("#copyAiWorkbench").addEventListener("click", copyAiWorkbench);
+document.querySelector("#exportAiWorkbenchMd").addEventListener("click", exportAiWorkbenchMd);
+document.querySelector("#exportAiWorkbenchWord").addEventListener("click", exportAiWorkbenchWord);
+document.querySelectorAll(".ai-inline-btn").forEach((button) => {
+  button.addEventListener("click", () => openAiInlineAssistant(button));
 });
 
 let deferredInstallPrompt;
@@ -5794,8 +7297,10 @@ if ("serviceWorker" in navigator) {
 workspaceProject = loadWorkspaceProject();
 if (workspaceProject) fillWorkspaceProject(workspaceProject);
 renderWorkspaceProject();
+fillAiSettingsForm();
 restoreTestRecord();
 calculateSample();
 addQuotaDimension("性别", [["男", 50], ["女", 50]]);
 setCrossQuotaDimensions(crossQuotaTemplates["gender-age"].dimensions);
 calculateQuota();
+

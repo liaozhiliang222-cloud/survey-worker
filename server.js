@@ -16,6 +16,44 @@ const types = {
 
 http
   .createServer((req, res) => {
+    if (req.url === "/api/ai" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", async () => {
+        try {
+          const payload = JSON.parse(body || "{}");
+          const targetUrl = payload.url;
+          const apiKey = payload.apiKey;
+          const requestBody = payload.body;
+          if (!targetUrl || !apiKey || !requestBody) {
+            res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ error: { message: "Missing url, apiKey or body" } }));
+            return;
+          }
+          const upstream = await fetch(targetUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(requestBody)
+          });
+          const text = await upstream.text();
+          res.writeHead(upstream.status, {
+            "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
+            "Access-Control-Allow-Origin": "*"
+          });
+          res.end(text);
+        } catch (error) {
+          res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ error: { message: error.message } }));
+        }
+      });
+      return;
+    }
+
     const urlPath = decodeURIComponent(new URL(req.url, `http://${req.headers.host}`).pathname);
     const requestedPath = urlPath === "/" ? "/index.html" : urlPath;
     const filePath = path.resolve(root, `.${requestedPath}`);

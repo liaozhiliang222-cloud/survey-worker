@@ -21,6 +21,7 @@
 
         <nav class="nav" aria-label="工具导航">
           <button class="nav-item active" data-view="overview">总览</button>
+          <button class="nav-item" data-view="settings">设置</button>
           <div class="nav-group">
             <div class="nav-phase">
               <strong>01</strong>
@@ -29,6 +30,8 @@
             </div>
             <button class="nav-item" data-view="sample">样本量计算</button>
             <button class="nav-item" data-view="quota">配额设计</button>
+            <button class="nav-item" data-view="ai-plan">AI 方案设计</button>
+            <button class="nav-item" data-view="ai-assistant">AI 问卷设计</button>
             <button class="nav-item" data-view="link-test">上线质检</button>
             <button class="nav-item" data-view="time-estimate">时长估算</button>
           </div>
@@ -54,14 +57,6 @@
             <button class="nav-item" data-view="kano">KANO 分析</button>
             <button class="nav-item" data-view="maxdiff">MaxDiff</button>
             <button class="nav-item" data-view="abc-value">ABC 价值模型</button>
-          </div>
-          <div class="nav-group hidden">
-            <div class="nav-phase">
-              <strong>AI</strong>
-              <span>AI 增值</span>
-              <small>跨流程辅助能力</small>
-            </div>
-            <button class="nav-item" data-view="ai-assistant">AI 助手（待开发）</button>
           </div>
         </nav>
       </aside>
@@ -200,6 +195,16 @@
               <h3>配额设计</h3>
               <p>支持单一配额和交叉配额，按比例快速换算目标样本量。</p>
             </article>
+            <article class="tool-card ready" data-jump="ai-plan">
+              <span>调研前</span>
+              <h3>AI 方案设计</h3>
+              <p>输入业务需求，生成研究目标、样本方案、方法路径、问卷模块和交付计划。</p>
+            </article>
+            <article class="tool-card ready" data-jump="ai-assistant">
+              <span>调研前</span>
+              <h3>AI 问卷设计</h3>
+              <p>输入研究目标和目标人群，自动生成问卷大纲、题目、编码、逻辑备注和质量自查清单。</p>
+            </article>
             <article class="tool-card ready" data-jump="link-test">
               <span>调研前</span>
               <h3>问卷上线质检</h3>
@@ -245,13 +250,85 @@
               <h3>ABC 用户价值模型</h3>
               <p>从问卷中识别态度、行为、消费指数候选指标，辅助定位高价值用户。</p>
             </article>
-            <article class="tool-card planned hidden" data-jump="ai-assistant">
-              <span>AI 增值</span>
-              <h3>AI 调研助手（待开发）</h3>
-              <p>先预留跨流程 AI 入口，后续接入问卷审查、结果解释和报告段落生成。</p>
-            </article>
           </div>
 
+        </section>
+
+        <section class="view" id="settings">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">系统设置</p>
+              <h2>AI 大模型接口设置</h2>
+            </div>
+          </div>
+
+          <div class="split-layout">
+            <section class="panel">
+              <div class="section-heading compact">
+                <div>
+                  <h3>模型供应商</h3>
+                  <p>选择常用大模型并填写自己的 API Key。未配置时，AI 问卷设计会自动使用本地规则生成。</p>
+                </div>
+              </div>
+              <div class="form-grid two">
+                <label>
+                  供应商
+                  <select id="aiProvider">
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="kimi">Kimi（月之暗面）</option>
+                    <option value="zhipu">智谱 GLM</option>
+                    <option value="qwen">Qwen / 通义千问</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="custom">自定义兼容接口</option>
+                  </select>
+                </label>
+                <label>
+                  生成模式
+                  <select id="aiGenerationMode">
+                    <option value="api">优先调用大模型</option>
+                    <option value="local">只使用本地规则</option>
+                  </select>
+                </label>
+                <label>
+                  模型名称
+                  <input id="aiModelName" type="text" placeholder="例如：deepseek-chat / moonshot-v1-8k / glm-4-plus / qwen-max / gpt-4o" />
+                </label>
+                <label>
+                  接口地址
+                  <input id="aiApiBaseUrl" type="url" placeholder="OpenAI 兼容 chat/completions 地址" />
+                </label>
+                <label class="span-row">
+                  API Key
+                  <input id="aiApiKey" type="password" autocomplete="off" placeholder="填入自己的 API Key，仅保存在当前浏览器 localStorage" />
+                </label>
+              </div>
+              <div class="button-row">
+                <button class="primary-btn" id="saveAiSettings" type="button">保存设置</button>
+                <button class="secondary-btn" id="testAiSettings" type="button">测试连接</button>
+                <button class="secondary-btn" id="clearAiSettings" type="button">清空设置</button>
+              </div>
+              <p class="panel-note">注意：第一版为浏览器直连模型接口，适合个人测试；正式多人使用建议改为后端代理，避免 API Key 出现在浏览器请求中。</p>
+            </section>
+
+            <section class="panel">
+              <div class="section-heading compact">
+                <div>
+                  <h3>接口校验</h3>
+                  <p>保存或测试时会检查供应商、接口地址、模型名和 Key 是否完整。</p>
+                </div>
+                <span class="project-save-status" id="aiSettingsStatus">未配置</span>
+              </div>
+              <div class="import-preview" id="aiSettingsPreview">
+                <strong>等待设置</strong>
+                <span>选择供应商后会自动填入推荐接口和模型，也可以切换为自定义兼容接口。</span>
+              </div>
+              <ul class="ai-risk-list">
+                <li><strong>DeepSeek</strong><span>默认使用 deepseek-chat（DeepSeek-V3），接口为 OpenAI 兼容格式。</span></li>
+                <li><strong>Kimi</strong><span>默认使用 moonshot-v1-8k（Kimi-V1），支持 8K 上下文。</span></li>
+                <li><strong>智谱 / Qwen</strong><span>智谱默认使用 glm-4-plus，通义千问默认使用 qwen-max，均为 OpenAI 兼容接口。</span></li>
+              </ul>
+            </section>
+          </div>
         </section>
 
         <section class="view" id="sample">
@@ -481,6 +558,7 @@
                 <button class="secondary-btn" id="loadExample" type="button">载入示例</button>
                 <button class="secondary-btn" id="exportAudit" type="button" disabled>导出 Markdown</button>
                 <button class="secondary-btn" id="exportAuditHtml" type="button" disabled>导出 HTML 报告</button>
+                <button class="secondary-btn ai-inline-btn" type="button" data-ai-task="questionnaire-review" data-ai-source="questionnaireText">AI 解释质检风险</button>
               </div>
               <button class="secondary-btn" id="saveTest" type="button">保存质检记录</button>
               <p class="panel-note">第三方问卷链接可作为人工复核对象；深层逻辑检查建议基于问卷稿或平台导出的题目表。</p>
@@ -628,6 +706,7 @@
                 <button class="primary-btn" id="generateCleaning" type="button">生成清洗规则</button>
                 <button class="secondary-btn" id="loadCleaningExample" type="button">载入示例</button>
                 <button class="secondary-btn span-row" id="exportCleaningRules" type="button" disabled>导出清洗规则 CSV</button>
+                <button class="secondary-btn span-row ai-inline-btn" type="button" data-ai-task="cleaning-rules" data-ai-source="cleaningText">AI 优化清洗说明</button>
               </div>
               <p class="panel-note">当前生成的是规则建议模板；后续可接入数据文件后自动执行清洗。</p>
             </div>
@@ -705,6 +784,7 @@
                 <button class="primary-btn" id="generateHeader" type="button">生成表头建议</button>
                 <button class="secondary-btn" id="loadHeaderExample" type="button">载入示例</button>
                 <button class="secondary-btn span-row" id="exportHeaderPlan" type="button" disabled>导出表头方案 CSV</button>
+                <button class="secondary-btn span-row ai-inline-btn" type="button" data-ai-task="header-plan" data-ai-source="headerText">AI 生成表头解读</button>
               </div>
               <p class="panel-note">第一版输出制表规划建议；后续可导出 Excel 制表需求表。</p>
             </div>
@@ -943,24 +1023,28 @@
               <h3>PSM 价格敏感度</h3>
               <p>导入四个价格问题，输出可接受价格区间、最优价格点和价格曲线。</p>
               <button class="model-open" data-jump="psm">打开工具</button>
+              <button class="model-open ai-inline-btn" data-ai-task="model-interpretation" data-ai-source="psmData">AI 解读结果</button>
             </article>
             <article>
               <span>KANO</span>
               <h3>KANO 模型</h3>
               <p>正向/反向题自动分类，生成 Better-Worse 系数和优先级图。</p>
               <button class="model-open" data-jump="kano">打开工具</button>
+              <button class="model-open ai-inline-btn" data-ai-task="model-interpretation" data-ai-source="kanoData">AI 解读结果</button>
             </article>
             <article>
               <span>MaxDiff</span>
               <h3>MaxDiff</h3>
               <p>先支持设计模板和简单计分，再扩展 MNL/HB 等专业模型。</p>
               <button class="model-open" data-jump="maxdiff">打开工具</button>
+              <button class="model-open ai-inline-btn" data-ai-task="model-interpretation" data-ai-source="maxdiffScoreData">AI 解读结果</button>
             </article>
             <article>
               <span>众言模型</span>
               <h3>ABC 用户价值模型</h3>
               <p>按态度、行为、消费三类指标识别高价值用户分群。</p>
               <button class="model-open" data-jump="abc-value">打开工具</button>
+              <button class="model-open ai-inline-btn" data-ai-task="model-interpretation" data-ai-source="abcText">AI 解读结果</button>
             </article>
           </div>
         </section>
@@ -1357,51 +1441,237 @@
           <button class="secondary-btn guide-back" type="button" data-jump="abc-value">返回 ABC 工具</button>
         </section>
 
-        <section class="view" id="ai-assistant">
+        <section class="view" id="ai-plan">
           <div class="page-title">
             <div>
-              <p class="eyebrow">AI 增值 · 预留入口</p>
-              <h2>AI 调研助手（待开发）</h2>
+              <p class="eyebrow">AI 增值 · 方案设计</p>
+              <h2>AI 方案设计</h2>
             </div>
           </div>
 
           <div class="link-tester">
             <div class="panel">
               <div class="planned-banner">
-                <strong>2.0 后续接入</strong>
-                <span>当前先保留入口，不作为正式功能使用。后续建议接入后端代理，再提供真正的 AI 审查和报告生成能力。</span>
+                <strong>从需求到调研方案</strong>
+                <span>把业务背景、研究问题和限制条件转成可执行的调研方案，后续可继续进入样本量、配额、问卷设计和上线质检。</span>
               </div>
               <label>
                 <span class="label-action">
-                  <span>问卷稿或研究材料</span>
-                  <button class="secondary-btn mini-import-btn" type="button" data-import-target="aiInput">导入问卷</button>
+                  <span>用户需求 / 业务背景</span>
+                  <button class="secondary-btn mini-import-btn" type="button" data-import-target="aiPlanInput">导入需求文档</button>
                 </span>
-                <textarea id="aiInput" placeholder="可先粘贴项目材料，内容会同步到项目总览。正式 AI 能力待开发。"></textarea>
+                <textarea id="aiPlanInput" placeholder="粘贴客户需求、业务问题、产品背景、目标人群、已有假设、预算/周期限制等。例如：某即饮咖啡新品计划上市，希望评估18-40岁消费者对概念、卖点、价格和购买意愿的反馈。"></textarea>
               </label>
               <label>
-                业务背景
-                <input id="aiContext" type="text" placeholder="例如：新品概念测试，上线前问卷审查" />
+                项目名称 / 业务场景
+                <input id="aiPlanContext" type="text" placeholder="例如：新品概念测试、品牌健康度追踪、电商NPS诊断" />
               </label>
-              <div class="button-row">
-                <button class="primary-btn" id="generateAiBrief" type="button" disabled>生成 AI 摘要</button>
-                <button class="secondary-btn" id="loadAiExample" type="button" disabled>载入示例</button>
-                <button class="secondary-btn" id="copyAiPrompt" type="button" disabled>复制提示词</button>
-                <button class="secondary-btn" id="exportAiPrompt" type="button" disabled>导出提示词</button>
+              <div class="form-grid two">
+                <label>
+                  方案模式
+                  <select id="aiPlanMode">
+                    <option value="brief">简要方案（Word）</option>
+                    <option value="detailed">详细方案</option>
+                  </select>
+                </label>
+                <label>
+                  研究类型
+                  <select id="aiPlanStudyType">
+                    <option value="concept">概念/新品测试</option>
+                    <option value="ua">U&A 使用习惯与态度</option>
+                    <option value="brand">品牌健康度</option>
+                    <option value="nps">满意度 / NPS</option>
+                    <option value="pricing">价格研究 / PSM</option>
+                    <option value="kano">KANO 功能需求</option>
+                    <option value="custom">综合研究</option>
+                  </select>
+                </label>
+                <label>
+                  目标人群
+                  <input id="aiPlanAudience" type="text" placeholder="例如：18-40岁，近3个月购买过该品类的用户" />
+                </label>
+                <label>
+                  建议样本量
+                  <input id="aiPlanSampleSize" type="number" min="1" placeholder="例如：400" />
+                </label>
+                <label>
+                  项目周期
+                  <input id="aiPlanTimeline" type="text" placeholder="例如：2周、10个工作日、月底前交付" />
+                </label>
               </div>
-              <p class="panel-note">建议后续以侧栏方式嵌入问卷质检、清洗规则、表头设计和模型解释，而不是单独做一个孤立页面。</p>
+              <label>
+                特殊要求
+                <textarea id="aiPlanConstraints" placeholder="例如：需要输出配额建议；必须包含PSM/KANO/NPS；预算有限；需要区分新老用户；需要适合线上问卷执行。"></textarea>
+              </label>
+              <div class="import-preview compact-import-preview" id="aiPlanProviderHint">
+                <strong>生成方式</strong>
+                <span>未配置 API Key 时使用本地方案框架；配置后会优先调用设置页选择的大模型。</span>
+              </div>
+              <div class="button-row">
+                <button class="primary-btn" id="generateAiPlan" type="button">生成调研方案</button>
+                <button class="secondary-btn" id="loadAiPlanExample" type="button">载入示例</button>
+                <button class="secondary-btn" id="copyAiPlan" type="button" disabled>复制方案</button>
+                <button class="secondary-btn" id="exportAiPlanMd" type="button" disabled>导出 Markdown</button>
+                <button class="secondary-btn" id="exportAiPlanWord" type="button" disabled>导出 Word</button>
+                <button class="secondary-btn" id="applyAiPlanToProject" type="button" disabled>同步到项目档案</button>
+              </div>
+              <p class="panel-note">简要方案适合作为项目启动版 Word；详细方案按正式研究方案结构输出完整文本，正式对客前建议结合预算、样本可达性和客户业务口径再做调整。</p>
+            </div>
+
+            <div class="audit-results" id="aiPlanResults" aria-live="polite">
+              <article class="audit-issue">
+                <div class="issue-head">
+                  <strong>等待生成</strong>
+                  <span class="issue-tag low">Planner</span>
+                </div>
+                <ul class="ai-risk-list">
+                  <li><strong>简要方案</strong><span>项目背景与目的、研究设计与方法、执行流程与质量控制、项目周期。</span></li>
+                  <li><strong>详细方案</strong><span>覆盖背景目的、研究体系、样本设计、研究内容演示、执行控制和时间进度。</span></li>
+                  <li><strong>导出交付</strong><span>简要方案可导出 Word；详细方案暂以 Markdown/文本形式导出，PPT 交付后续再完善。</span></li>
+                  <li><strong>项目复用</strong><span>生成后可同步到项目档案，继续进入问卷设计和上线质检。</span></li>
+                </ul>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="ai-assistant">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">AI 增值 · 问卷设计</p>
+              <h2>AI 问卷设计</h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <div class="planned-banner">
+                <strong>本地智能生成</strong>
+                <span>基于专业问卷设计框架生成问卷初稿、编码表、逻辑备注和自查清单；后续可继续接入大模型接口增强表达与追问。</span>
+              </div>
+              <label>
+                <span class="label-action">
+                  <span>研究需求</span>
+                  <button class="secondary-btn mini-import-btn" type="button" data-import-target="aiInput">导入需求文档</button>
+                </span>
+                <textarea id="aiInput" placeholder="粘贴研究背景、业务问题、需要验证的假设、产品/品牌信息或已有问卷片段。例如：想了解18-40岁用户对新品概念的接受度、购买意愿、价格敏感度和核心卖点偏好。"></textarea>
+              </label>
+              <label>
+                项目名称 / 业务背景
+                <input id="aiContext" type="text" placeholder="例如：新品概念测试、品牌健康度追踪、电商NPS诊断" />
+              </label>
+              <div class="form-grid two">
+                <label>
+                  研究类型
+                  <select id="aiStudyType">
+                    <option value="concept">概念/新品测试</option>
+                    <option value="ua">U&A 使用习惯与态度</option>
+                    <option value="brand">品牌健康度</option>
+                    <option value="nps">满意度 / NPS</option>
+                    <option value="pricing">价格研究 / PSM</option>
+                    <option value="kano">KANO 功能需求</option>
+                  </select>
+                </label>
+                <label>
+                  目标人群
+                  <input id="aiAudience" type="text" placeholder="例如：18-40岁，近3个月购买过该品类的用户" />
+                </label>
+                <label>
+                  目标样本量
+                  <input id="aiSampleSize" type="number" min="1" placeholder="例如：400" />
+                </label>
+                <label>
+                  期望时长（分钟）
+                  <input id="aiDuration" type="number" min="3" max="30" placeholder="例如：8" />
+                </label>
+              </div>
+              <div class="import-preview compact-import-preview" id="aiProviderHint">
+                <strong>生成方式</strong>
+                <span>未配置 API Key 时使用本地规则生成；如需调用 DeepSeek、Kimi、智谱、Qwen 等大模型，请先到“设置”中填写接口。</span>
+              </div>
+              <div class="button-row">
+                <button class="primary-btn" id="generateAiBrief" type="button">生成问卷初稿</button>
+                <button class="secondary-btn" id="loadAiExample" type="button">载入示例</button>
+                <button class="secondary-btn" id="copyAiPrompt" type="button" disabled>复制问卷</button>
+                <button class="secondary-btn" id="exportAiPrompt" type="button" disabled>导出 Markdown</button>
+                <button class="secondary-btn" id="exportAiWord" type="button" disabled>导出 Word</button>
+                <button class="secondary-btn" id="applyAiQuestionnaire" type="button" disabled>同步到项目稿</button>
+              </div>
+              <div class="ai-revise-panel">
+                <label>
+                  对话修改问卷
+                  <textarea id="aiReviseInput" placeholder="生成初稿后，可以继续输入修改要求。例如：增加NPS题；把年龄筛选改为18-45岁；减少开放题；把购买渠道改成多选并随机。"></textarea>
+                </label>
+                <button class="secondary-btn" id="reviseAiQuestionnaire" type="button" disabled>按要求修改问卷</button>
+              </div>
+              <p class="panel-note">生成结果适合作为 V1.0 问卷初稿，正式上线前建议继续用“上线质检、时长估算、清洗规则、表头设计”做复核。</p>
             </div>
 
             <div class="audit-results" id="aiResults" aria-live="polite">
               <article class="audit-issue">
                 <div class="issue-head">
-                  <strong>待开发能力</strong>
-                  <span class="issue-tag low">Roadmap</span>
+                  <strong>等待生成</strong>
+                  <span class="issue-tag low">Designer</span>
                 </div>
                 <ul class="ai-risk-list">
-                  <li><strong>问卷措辞审查</strong><span>识别诱导性表述、过长题干、选项不互斥和语义不清。</span></li>
-                  <li><strong>逻辑风险解释</strong><span>把上线质检结果翻译成项目经理和客户都能理解的风险说明。</span></li>
-                  <li><strong>模型结果解读</strong><span>将 PSM、KANO、MaxDiff、ABC 结果转成报告结论和业务建议。</span></li>
-                  <li><strong>报告段落生成</strong><span>基于当前项目材料生成可复制进报告的摘要段落。</span></li>
+                  <li><strong>问卷结构</strong><span>自动生成开场白、甄别、主体、背景信息和结束语。</span></li>
+                  <li><strong>编码体系</strong><span>按 Q / M / RS / N / OE 等变量前缀输出可编程题目。</span></li>
+                  <li><strong>逻辑备注</strong><span>补充跳题、选项随机、其他置底、质量控制和数据清洗提示。</span></li>
+                  <li><strong>质量自查</strong><span>生成偏差控制、互斥穷尽、时长、随机化和开放题数量检查。</span></li>
+                </ul>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="ai-workbench">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">AI 增值 · 流程辅助</p>
+              <h2>AI 辅助面板</h2>
+            </div>
+          </div>
+
+          <div class="link-tester">
+            <div class="panel">
+              <div class="planned-banner">
+                <strong>项目材料驱动</strong>
+                <span>复用同一套大模型设置，可把问卷稿、质检结果、清洗规则、表头建议和模型结果转成更易交付的文字。</span>
+              </div>
+              <label>
+                任务类型
+                <select id="aiWorkbenchTask">
+                  <option value="questionnaire-review">问卷审查说明</option>
+                  <option value="cleaning-rules">清洗规则建议</option>
+                  <option value="header-plan">表头/交叉分析建议</option>
+                  <option value="model-interpretation">模型结果解读</option>
+                  <option value="report-summary">报告摘要草稿</option>
+                </select>
+              </label>
+              <label>
+                项目材料
+                <textarea id="aiWorkbenchInput" placeholder="粘贴问卷稿、质检结果、清洗规则、表头方案、PSM/KANO/MaxDiff/ABC 结果，或点击下方按钮使用项目问卷稿。"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="generateAiWorkbench" type="button">生成 AI 建议</button>
+                <button class="secondary-btn" id="loadAiWorkbenchProject" type="button">使用项目问卷稿</button>
+                <button class="secondary-btn" id="copyAiWorkbench" type="button" disabled>复制结果</button>
+                <button class="secondary-btn" id="exportAiWorkbenchMd" type="button" disabled>导出 Markdown</button>
+                <button class="secondary-btn" id="exportAiWorkbenchWord" type="button" disabled>导出 Word</button>
+              </div>
+              <p class="panel-note">未配置 API Key 时会使用本地规则生成基础建议；配置后会优先调用设置页选择的大模型。</p>
+            </div>
+
+            <div class="audit-results" id="aiWorkbenchResults" aria-live="polite">
+              <article class="audit-issue">
+                <div class="issue-head">
+                  <strong>等待生成</strong>
+                  <span class="issue-tag low">流程辅助</span>
+                </div>
+                <ul class="ai-risk-list">
+                  <li><strong>问卷审查说明</strong><span>把规则检查结果转成项目经理/客户可读的上线风险说明。</span></li>
+                  <li><strong>清洗与表头</strong><span>基于问卷稿生成清洗规则、分群表头和交叉分析方向。</span></li>
+                  <li><strong>模型解读</strong><span>把 PSM、KANO、MaxDiff、ABC 等结果转成报告语言。</span></li>
                 </ul>
               </article>
             </div>
