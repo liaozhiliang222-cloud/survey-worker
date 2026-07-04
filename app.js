@@ -202,7 +202,7 @@ let sharedImportTargetId = "";
 const aiProviderPresets = {
   deepseek: {
     name: "DeepSeek",
-    model: "deepseek-chat",
+    model: "deepseek-v4-flash",
     url: "https://api.deepseek.com/v1/chat/completions"
   },
   kimi: {
@@ -7462,7 +7462,18 @@ installButton.addEventListener("click", async () => {
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.register("./sw.js").then((registration) => {
+      registration.update().catch(() => {});
+      registration.addEventListener("updatefound", () => {
+        const worker = registration.installing;
+        if (!worker) return;
+        worker.addEventListener("statechange", () => {
+          if (worker.state === "activated" && navigator.serviceWorker.controller) {
+            window.location.reload();
+          }
+        });
+      });
+    }).catch(() => {});
   });
 }
 
