@@ -5472,6 +5472,53 @@ function buildDetailedAiResearchPlan(config) {
   const modules = aiPlanModules(config.studyType);
   const framework = aiPlanPrimaryFramework(config.studyType);
   const recommendedSample = Math.max(300, config.sampleSize);
+  const moduleRows = modules.map((module) => {
+    const purpose = /甄别|配额/.test(module)
+      ? "确认受访者资格与关键分群口径"
+      : /品牌|认知|漏斗|形象/.test(module)
+        ? "评估品牌/产品在认知、态度和竞争关系中的表现"
+        : /概念|卖点|吸引/.test(module)
+          ? "判断概念表达、核心卖点和购买转化是否成立"
+          : /价格|PSM|支付/.test(module)
+            ? "识别价格接受区间、价格风险和价值感知差异"
+            : /场景|行为|渠道|频率|购买/.test(module)
+              ? "还原真实使用/购买行为和决策链路"
+              : "为后续策略建议提供可量化证据";
+    const indicators = /甄别|配额/.test(module)
+      ? "资格条件、城市/年龄/性别/用户类型、品牌关系"
+      : /品牌|认知|漏斗|形象/.test(module)
+        ? "知晓、熟悉、考虑、偏好、形象联想、推荐意愿"
+        : /概念|卖点|吸引/.test(module)
+          ? "理解度、相关性、独特性、可信度、吸引力、购买意愿"
+          : /价格|PSM|支付/.test(module)
+            ? "当前价格、可接受价格、购买意愿、价格敏感度"
+            : /场景|行为|渠道|频率|购买/.test(module)
+              ? "使用频率、场景、渠道、触点、决策因素、转化阻碍"
+              : "满意度、重要度、偏好、分群差异、关键驱动";
+    const questions = /甄别|配额/.test(module)
+      ? "S题：年龄、城市、品类经历、决策角色；配额题：用户类型/购买频率"
+      : /品牌|认知|漏斗|形象/.test(module)
+        ? "品牌知晓/熟悉/考虑/偏好/购买漏斗；品牌形象矩阵；竞品对比"
+        : /概念|卖点|吸引/.test(module)
+          ? "概念阅读后理解度、吸引力、购买意愿、卖点排序、顾虑原因"
+          : /价格|PSM|支付/.test(module)
+            ? "价格认知、PSM四问、不同价格点购买意愿、价值感知原因"
+            : /场景|行为|渠道|频率|购买/.test(module)
+              ? "最近购买、使用场景、渠道来源、触点影响、选择原因"
+              : "满意度/重要度矩阵、开放原因、分群背景和行动建议题";
+    const output = /甄别|配额/.test(module)
+      ? "样本结构表、配额完成情况、可用交叉分群"
+      : /品牌|认知|漏斗|形象/.test(module)
+        ? "品牌漏斗、形象雷达/矩阵、竞品定位和提升短板"
+        : /概念|卖点|吸引/.test(module)
+          ? "概念吸引力评分、购买转化链路、卖点优先级、优化方向"
+          : /价格|PSM|支付/.test(module)
+            ? "价格敏感曲线、可接受区间、目标价格建议、人群差异"
+            : /场景|行为|渠道|频率|购买/.test(module)
+              ? "行为路径、场景机会、渠道优先级、转化阻碍"
+              : "关键发现、分群差异、驱动因素和策略建议";
+    return `| ${module} | ${purpose} | ${indicators} | ${questions} | ${output} |`;
+  });
   return [
     `# ${config.project} 详细调研方案`,
     "",
@@ -5538,6 +5585,11 @@ function buildDetailedAiResearchPlan(config) {
     "## 03 研究内容演示",
     "### 3.1 总体研究模块",
     ...modules.map((module, index) => `${index + 1}. ${module}`),
+    "",
+    "### 3.1.1 模块颗粒度设计",
+    "| 研究模块 | 模块目的 | 核心指标 | 建议题目方向 | 主要分析输出 |",
+    "|---|---|---|---|---|",
+    ...moduleRows,
     "",
     "### 3.2 漏斗模型/转化路径",
     "- 识别从知晓、熟悉、考虑、偏好、购买意向到实际购买/推荐的递进关系。",
@@ -5694,10 +5746,16 @@ function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = build
         "1. 项目背景与业务问题：说明为什么要做、要回答什么决策问题。",
         "2. 研究目标与核心假设：每个目标对应可验证的问题和指标。",
         "3. 研究设计：目标人群、样本条件、样本量、配额、研究方法、执行方式。",
-        "4. 研究内容：按问卷模块展开，说明每个模块的目的、关键题目方向和输出价值。",
-        "5. 分析框架：优先使用 U&A、品牌健康度、概念吸引力、购买转化、关键驱动、分群画像等主流框架。",
+        "4. 研究内容：按问卷模块展开，必须逐模块写清模块目的、核心指标、建议题目方向、样本/配额注意点、预期图表或输出价值。",
+        "5. 分析框架：优先使用 U&A、品牌健康度、概念吸引力、购买转化、关键驱动、分群画像等主流框架，并说明每个框架用于回答哪个业务问题。",
         "6. 质量控制：上线前质检、回收监控、数据清洗、开放题编码、加权和交叉分析口径。",
         "7. 交付物与时间计划：明确每个阶段产出。",
+        "",
+        "详细方案输出要求：",
+        "- 不能只输出目录或原则性描述，每个核心模块至少包含 3-5 条具体研究问题或题目方向。",
+        "- 需要包含至少 1 张“研究模块 x 指标 x 输出”的 Markdown 表格。",
+        "- 需要包含样本配额建议、问卷模块建议、分析模型建议、质量控制规则和最终交付清单。",
+        "- 不要把 PSM/KANO/MaxDiff/ABC 作为默认堆叠模型；除非用户明确需要，否则优先使用 U&A、品牌健康度、概念吸引力、购买转化、关键驱动等主流模型。",
         "",
         "可参考但不要机械照抄的本地方案框架：",
         localPlan
@@ -5758,7 +5816,7 @@ async function generateAiPlan() {
     if (!errors.length) {
       try {
         renderAiProgress(result, steps, 2, "正在让大模型把需求改写为完整调研方案。", "正在生成调研方案");
-        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config, localPlan), { maxTokens: config.mode === "detailed" ? 8000 : 5000 });
+        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config, localPlan), { maxTokens: config.mode === "detailed" ? 12000 : 5000 });
         source = aiProviderPresets[settings.provider]?.name || "大模型";
       } catch (error) {
         output = `${localPlan}\n\n---\n\n> 大模型调用失败，已回退为本地方案框架。错误信息：${error.message}`;
@@ -5774,7 +5832,7 @@ async function generateAiPlan() {
   lastAiPlan = output;
   document.querySelector("#copyAiPlan").disabled = false;
   document.querySelector("#exportAiPlanMd").disabled = false;
-  document.querySelector("#exportAiPlanWord").disabled = config.mode !== "brief";
+  document.querySelector("#exportAiPlanWord").disabled = false;
   document.querySelector("#applyAiPlanToProject").disabled = false;
   renderAiPlanOutput(output, source);
 }
@@ -6018,7 +6076,6 @@ function buildAiQuestionnaireDesign() {
     `- 目标人群：${config.audience}`,
     `- 目标样本量：N=${config.sampleSize}`,
     `- 期望/建议时长：约 ${estimatedMinutes} 分钟`,
-    `- 初稿题量建议：${target.level}，建议约 ${target.min}-${target.max} 题，本初稿含 ${allQuestions.length + 1} 题（含1道注意力检测题），后续可按上线时长删减`,
     "- 质量控件：建议保留1道注意力检测题，并记录答题时长用于清洗。",
     "",
     "二、问卷正文",
@@ -6065,10 +6122,6 @@ function buildAiQuestionnaireDesign() {
 }
 
 function renderAiQuestionnaireHtml(result) {
-  const logicIssues = result.logicIssues || [];
-  const logicHtml = logicIssues.length
-    ? logicIssues.slice(0, 6).map((issue) => `<li><strong>${escapeHtml(issue.title)}</strong><span>${escapeHtml(issue.detail)}</span></li>`).join("")
-    : `<li><strong>未发现明显结构风险</strong><span>仍建议上线前进入“上线质检”逐路径复核。</span></li>`;
   return `
     <article class="audit-issue">
       <div class="issue-head">
@@ -6076,7 +6129,6 @@ function renderAiQuestionnaireHtml(result) {
         <span class="issue-tag low">${aiStudyTypeName(result.config.studyType)}</span>
       </div>
       <div class="metric-grid compact-metrics">
-        <div><span>题目数量</span><strong>${result.questions.length + 1}</strong></div>
         <div><span>建议时长</span><strong>${result.estimatedMinutes} 分钟</strong></div>
         <div><span>目标样本</span><strong>${result.config.sampleSize}</strong></div>
         <div><span>生成来源</span><strong>${escapeHtml(result.source || "本地规则")}</strong></div>
@@ -6086,13 +6138,6 @@ function renderAiQuestionnaireHtml(result) {
         <li><strong>编码</strong><span>已按 S/Q/M/RS/N/OE/KANO 等题型输出三列表格。</span></li>
         <li><strong>逻辑</strong><span>已补充随机显示、其他置底、终止/继续、质量控制等备注。</span></li>
       </ul>
-    </article>
-    <article class="audit-issue">
-      <div class="issue-head">
-        <strong>逻辑校验</strong>
-        <span class="issue-tag ${logicIssues.some((issue) => issue.severity === "high") ? "high" : "low"}">${logicIssues.length} 项</span>
-      </div>
-      <ul class="ai-risk-list">${logicHtml}</ul>
     </article>
     <article class="audit-issue">
       <div class="issue-head">
@@ -6458,12 +6503,10 @@ async function renderAiBrief() {
   const reviseButton = document.querySelector("#reviseAiQuestionnaire");
   const settings = loadAiSettings();
   const design = buildAiQuestionnaireDesign();
-  const target = targetAiQuestionCount(design.config.duration);
   const steps = [
     { title: "整理研究需求", detail: "读取研究类型、目标人群、样本量和期望时长。" },
     { title: "校验生成方式", detail: settings.mode === "local" || !settings.apiKey ? "未配置可用 API Key，将使用本地规则生成。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}（${settings.model}）。` },
-    { title: "生成问卷初稿", detail: `按约 ${design.config.duration} 分钟生成偏完整初稿，目标 ${target.min}-${target.max} 题，先覆盖研究模块，后续再人工删减。` },
-    { title: "执行逻辑校验", detail: "检查题号、跳题引用、选项设置和常见上线风险。" },
+    { title: "生成问卷初稿", detail: `按约 ${design.config.duration} 分钟生成偏完整初稿，先覆盖研究模块，后续再人工删减。` },
     { title: "整理可导出结果", detail: "启用复制、Markdown、Word 和同步到项目稿。" }
   ];
   renderAiProgress(result, steps, 0);
@@ -6490,14 +6533,13 @@ async function renderAiBrief() {
   output = sanitizeAiQuestionnaireOutput(output);
   lastAiPrompt = output;
   lastAiQuestionnaireText = output;
-  const logicIssues = auditQuestionnaire(output).filter((issue) => issue.title !== "缺少问卷稿");
   renderAiProgress(result, steps, 4);
   copyButton.disabled = false;
   exportButton.disabled = false;
   if (wordButton) wordButton.disabled = false;
   if (applyButton) applyButton.disabled = false;
   if (reviseButton) reviseButton.disabled = false;
-  result.innerHTML = renderAiQuestionnaireHtml({ ...design, questionnaireText: output, source, logicIssues });
+  result.innerHTML = renderAiQuestionnaireHtml({ ...design, questionnaireText: output, source });
   return;
   }
   const text = document.querySelector("#aiInput").value.trim();
@@ -7142,14 +7184,14 @@ async function testAiSettings() {
   }
   if (preview) preview.innerHTML = `<strong>正在测试连接</strong><span>正在向 ${escapeHtml(aiProviderPresets[settings.provider]?.name || "模型接口")} 发送轻量请求。</span>`;
   try {
-    const reply = await callAiChatCompletion(settings, [
+    await callAiChatCompletion(settings, [
       { role: "system", content: "你是接口连通性测试助手。" },
       { role: "user", content: "请只回复：连接成功" }
     ], { maxTokens: 20, temperature: 0 });
     localStorage.setItem("surveyAiSettings", JSON.stringify(settings));
     renderAiSettingsStatus(settings);
     if (preview) {
-      preview.innerHTML = `<strong>连接成功</strong><span>${escapeHtml(reply.slice(0, 80))}</span>`;
+      preview.innerHTML = `<strong>连接成功</strong><span>连接成功</span>`;
     }
     showButtonSaved(document.querySelector("#testAiSettings"), "测试通过");
   } catch (error) {
