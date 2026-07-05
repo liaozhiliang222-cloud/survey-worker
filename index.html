@@ -56,7 +56,8 @@
             <button class="nav-item" data-view="psm">PSM 分析</button>
             <button class="nav-item" data-view="kano">KANO 分析</button>
             <button class="nav-item" data-view="maxdiff">MaxDiff</button>
-            <button class="nav-item" data-view="abc-value">ABC 价值模型</button>
+            <!-- ABC 价值模型入口已隐藏 -->
+            <button class="nav-item" data-view="abc-value" style="display:none">ABC 价值模型</button>
           </div>
         </nav>
       </aside>
@@ -971,7 +972,7 @@
               <button class="model-open" data-jump="maxdiff">打开工具</button>
               <button class="model-open ai-inline-btn" data-ai-task="model-interpretation" data-ai-source="maxdiffScoreData">AI 解读结果</button>
             </article>
-            <article>
+            <article style="display:none">
               <span>众言模型</span>
               <h3>ABC 用户价值模型</h3>
               <p>按态度、行为、消费三类指标识别高价值用户分群。</p>
@@ -1248,7 +1249,7 @@
           <button class="secondary-btn guide-back" type="button" data-jump="maxdiff">返回 MaxDiff 工具</button>
         </section>
 
-        <section class="view" id="abc-value">
+        <section class="view" id="abc-value" style="display:none">
           <div class="page-title">
             <div>
               <p class="eyebrow">众言模型</p>
@@ -1329,7 +1330,7 @@
               <p class="eyebrow">模型说明</p>
               <h2>ABC 用户价值模型</h2>
             </div>
-            <button class="secondary-btn" type="button" data-jump="abc-value">返回 ABC 工具</button>
+            <button class="secondary-btn" type="button" data-jump="abc-value" style="display:none">返回 ABC 工具</button>
           </div>
 
           <div class="guide-layout">
