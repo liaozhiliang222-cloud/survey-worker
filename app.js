@@ -190,6 +190,7 @@ let lastAbcSuggestions = null;
 let lastCrosstabAnalysis = null;
 let lastQuestionPivot = null;
 let lastCrosstabHeaderPlan = null;
+let lastAiActualModel = "";
 let crosstabImportMode = "data";
 let lastCrosstabDataContext = null;
 let lastWeightingResult = null;
@@ -5779,6 +5780,7 @@ function sanitizeAiPlanOutput(output) {
 
 function renderAiPlanOutput(output, source) {
   const result = document.querySelector("#aiPlanResults");
+  const modelNote = lastAiActualModel ? `<p class="panel-note" style="margin-top:12px">当前使用模型：${escapeHtml(lastAiActualModel)}</p>` : "";
   result.innerHTML = `
     <article class="audit-issue">
       <div class="issue-head">
@@ -5787,8 +5789,10 @@ function renderAiPlanOutput(output, source) {
       </div>
       <textarea class="prompt-box" readonly>${escapeHtml(output)}</textarea>
     </article>
+    ${modelNote}
   `;
 }
+
 
 async function generateAiPlan() {
   const result = document.querySelector("#aiPlanResults");
@@ -5805,7 +5809,7 @@ async function generateAiPlan() {
   let output = localPlan;
   let source = "本地方案框架";
   renderAiProgress(result, steps, 1, "", "正在生成调研方案");
-  if (settings.mode !== "local" && settings.apiKey) {
+  if (settings.mode !== "local") {
     const errors = validateAiSettings(settings);
     if (!errors.length) {
       try {
@@ -5873,7 +5877,7 @@ async function reviseAiPlan() {
   let output = `${lastAiPlan}\n\n---\n\n# 待修改说明\n\n${instruction}\n\n> 当前未调用大模型，已先把修改要求附在方案末尾。配置 API Key 后可自动重写完整方案。`;
   let source = "本地方案框架";
   renderAiProgress(result, steps, 1, "", "正在修改调研方案");
-  if (settings.mode !== "local" && settings.apiKey) {
+  if (settings.mode !== "local") {
     const errors = validateAiSettings(settings);
     if (!errors.length) {
       try {
@@ -6182,6 +6186,7 @@ function buildAiQuestionnaireDesign() {
 }
 
 function renderAiQuestionnaireHtml(result) {
+  const modelNote = lastAiActualModel ? `<p class="panel-note" style="margin-top:12px">当前使用模型：${escapeHtml(lastAiActualModel)}</p>` : "";
   return `
     <article class="audit-issue">
       <div class="issue-head">
@@ -6206,8 +6211,10 @@ function renderAiQuestionnaireHtml(result) {
       </div>
       <textarea class="prompt-box" readonly>${escapeHtml(result.questionnaireText)}</textarea>
     </article>
+    ${modelNote}
   `;
 }
+
 
 function renderAiProgress(container, steps, activeIndex = 0, note = "", title = "正在生成问卷初稿") {
   if (!container) return;
@@ -6286,7 +6293,7 @@ function renderAiSettingsStatus(settings = loadAiSettings()) {
   const errors = validateAiSettings(settings);
   const ready = errors.length === 0;
   if (status) {
-    status.textContent = ready && settings.apiKey ? "已配置" : ready ? "待填 Key" : "待完善";
+    status.textContent = ready ? "已就绪" : "待完善";
   }
   if (preview) {
     preview.innerHTML = `
@@ -6398,6 +6405,8 @@ async function callAiChatCompletion(settings, messages, options = {}) {
   if ([404, 405].includes(response.status)) {
     throw new Error("当前环境没有启用 AI 后端代理，请通过 npm run dev 本地服务或 Cloudflare Pages Functions 部署后再调用。");
   }
+  // 记录后端实际使用的模型名
+  lastAiActualModel = response.headers.get("X-Actual-Model") || "";
   const payload = await response.json().catch(() => ({}));
   if (payload?.error) {
     const message = payload.error.message || payload.error.code || JSON.stringify(payload.error);
@@ -6425,7 +6434,9 @@ async function callAiChatCompletion(settings, messages, options = {}) {
   }
   return content.trim();
 }
-
+  if (window.location.protocol === "file:") {
+    throw new Error("AI 后端代理需要通过本地服务或线上地址访问，不能直接用 file:// 页面调用。请使用 npm run dev 打开本地服务，或访问已部署的网址。");
+  }
 function normalizeAiResponseContent(content) {
   if (Array.isArray(content)) {
     return content.map((item) => {
@@ -6573,7 +6584,7 @@ async function renderAiBrief() {
   let output = design.questionnaireText;
   let source = "本地规则";
   renderAiProgress(result, steps, 1);
-  if (settings.mode !== "local" && settings.apiKey) {
+  if (settings.mode !== "local") {
     const errors = validateAiSettings(settings);
     if (!errors.length) {
       try {
@@ -7069,7 +7080,7 @@ async function generateAiWorkbench() {
   result.innerHTML = `<div class="empty-state"><strong>正在生成 AI 建议</strong><span>${escapeHtml(settings.mode === "local" || !settings.apiKey ? "正在使用本地规则。" : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}。`)}</span></div>`;
   let output = buildLocalAiWorkbenchOutput(task, text);
   let source = "本地规则";
-  if (settings.mode !== "local" && settings.apiKey) {
+  if (settings.mode !== "local") {
     const errors = validateAiSettings(settings);
     if (!errors.length) {
       try {
@@ -7161,7 +7172,7 @@ async function reviseAiQuestionnaire() {
   let output = `${lastAiQuestionnaireText}\n\n---\n\n# 待修改说明\n\n${instruction}\n\n> 当前未调用大模型，已先把修改要求附在问卷末尾。配置 API Key 后可自动重写完整问卷。`;
   let source = "本地规则";
   renderAiProgress(result, steps, 1);
-  if (settings.mode !== "local" && settings.apiKey) {
+  if (settings.mode !== "local") {
     const errors = validateAiSettings(settings);
     if (!errors.length) {
       try {

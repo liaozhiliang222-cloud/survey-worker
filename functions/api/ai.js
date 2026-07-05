@@ -6,6 +6,9 @@ const PROVIDER_HOSTS = {
   openai: ["api.openai.com"]
 };
 
+const BAIYAN_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const BAIYAN_FALLBACK_MODELS = ["qwen-plus", "glm-4-plus", "qwen-turbo", "glm-4-flash"];
+
 const MAX_BODY_BYTES = 1024 * 1024;
 
 function json(data, init = {}) {
@@ -45,6 +48,23 @@ function validateTarget(provider, rawUrl, env) {
   return url.toString();
 }
 
+function shouldRetryModel(errorText) {
+  const msg = String(errorText || "").toLowerCase();
+  return (
+    msg.includes("insufficient") ||
+    msg.includes("quota") ||
+    msg.includes("rate_limit") ||
+    msg.includes("limit") ||
+    msg.includes("not found") ||
+    msg.includes("不存在") ||
+    msg.includes("额度") ||
+    msg.includes("限流") ||
+    msg.includes("unavailable") ||
+    msg.includes("deprecated") ||
+    msg.includes("not supported")
+  );
+}
+
 export async function onRequestOptions() {
   return json({ ok: true });
 }
@@ -58,39 +78,106 @@ export async function onRequestPost({ request, env }) {
 
     const payload = await request.json();
     const provider = payload.provider || "custom";
-    const targetUrl = validateTarget(provider, payload.url, env);
-    const apiKey = String(payload.apiKey || "").trim();
     const requestBody = payload.body;
+    let targetUrl, apiKey, isBuiltIn = false;
 
-    if (!apiKey || !requestBody || !requestBody.model || !Array.isArray(requestBody.messages)) {
-      return json({ error: { message: "Missing apiKey, model or messages." } }, { status: 400 });
-    }
+    const userApiKey = String(payload.apiKey || "").trim();
 
-    const upstream = await fetch(targetUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    const text = await upstream.text();
-    if (!text.trim()) {
-      return json({
-        error: {
-          message: `Upstream returned empty response from ${new URL(targetUrl).hostname}. Please check model name, API key, account quota or provider status.`
-        }
-      }, { status: upstream.ok ? 502 : upstream.status });
-    }
-    return new Response(text, {
-      status: upstream.status,
-      headers: {
-        "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-store"
+    if (!userApiKey) {
+      // 用户未配置 API Key → 使用内置百炼 Key
+      apiKey = env.BAIYAN_API_KEY;
+      if (!apiKey) {
+        return json({
+          error: {
+            message: "平台内置模型未配置，请先在 AI 设置中配置 API Key，或联系管理员。"
+          }
+        }, { status: 503 });
       }
-    });
+      targetUrl = BAIYAN_URL;
+      isBuiltIn = true;
+    } else {
+      // 用户配置了 API Key → 按原有逻辑
+      targetUrl = validateTarget(provider, payload.url, env);
+      apiKey = userApiKey;
+    }
+
+    if (!requestBody || !requestBody.model || !Array.isArray(requestBody.messages)) {
+      return json({ error: { message: "Missing model or messages." } }, { status: 400 });
+    }
+
+    // 构建模型尝试列表
+    const modelsToTry = isBuiltIn
+      ? [requestBody.model, ...BAIYAN_FALLBACK_MODELS.filter((m) => m !== requestBody.model)]
+      : [requestBody.model];
+
+    let lastError = null;
+
+    for (const model of modelsToTry) {
+      const body = { ...requestBody, model };
+      const upstream = await fetch(targetUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(body)
+      });
+
+      const text = await upstream.text();
+
+      if (upstream.ok && text.trim()) {
+        // 尝试解析，确保返回有效内容
+        try {
+          const parsed = JSON.parse(text);
+          const content = parsed?.choices?.[0]?.message?.content || parsed?.choices?.[0]?.text || parsed?.output_text || parsed?.content || "";
+          if (content.trim()) {
+            return new Response(text, {
+              status: upstream.status,
+              headers: {
+                "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "no-store",
+                "X-Actual-Model": model
+              }
+            });
+          }
+        } catch {
+          // 解析失败但返回成功，仍然返回
+        }
+        return new Response(text, {
+          status: upstream.status,
+          headers: {
+            "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store",
+            "X-Actual-Model": model
+          }
+        });
+      }
+
+      // 检查是否可重试
+      if (!shouldRetryModel(text)) {
+        // 不可重试的错误，直接返回
+        return new Response(text || JSON.stringify({ error: { message: "Upstream error." } }), {
+          status: upstream.status,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store"
+          }
+        });
+      }
+
+      lastError = text;
+    }
+
+    // 所有模型都失败了
+    return json({
+      error: {
+        message: `所有内置模型均不可用，请稍后重试或配置自己的 API Key。错误: ${lastError || "未知错误"}`
+      }
+    }, { status: 502 });
+
   } catch (error) {
     const message = error.message || "AI proxy request failed.";
     const status = /missing|only|not allowed|invalid/i.test(message) ? 400 : 500;

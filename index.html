@@ -199,7 +199,7 @@
               <div class="section-heading compact">
                 <div>
                   <h3>模型供应商</h3>
-                  <p>选择常用大模型并填写自己的 API Key。未配置时，AI 问卷设计会自动使用本地规则生成。</p>
+                  <p>选择常用大模型并填写自己的 API Key（可选）。未配置时自动使用平台内置免费模型（阿里云百炼）；配置自己的 Key 后可使用更高质量的大模型。</p>
                 </div>
               </div>
               <div class="form-grid two">
@@ -231,7 +231,7 @@
                 </label>
                 <label class="span-row">
                   API Key
-                  <input id="aiApiKey" type="password" autocomplete="off" placeholder="填入自己的 API Key，仅保存在当前浏览器本地设置中" />
+                  <input id="aiApiKey" type="password" autocomplete="off" placeholder="（可选）填入自己的 API Key，未配置时自动使用平台内置免费模型" />
                 </label>
               </div>
               <div class="button-row">
@@ -239,7 +239,7 @@
                 <button class="secondary-btn" id="testAiSettings" type="button">测试连接</button>
                 <button class="secondary-btn" id="clearAiSettings" type="button">清空设置</button>
               </div>
-              <p class="panel-note">注意：AI 调用会统一经过本站后端代理转发，用于减少跨域问题并集中校验接口；API Key 仍只保存在当前浏览器本地设置中。</p>
+              <p class="panel-note">注意：未配置 API Key 时自动使用平台内置免费模型（阿里云百炼）；配置自己的 Key 后可使用更高质量的大模型。API Key 仅保存在浏览器本地。</p>
             </section>
 
             <section class="panel">
@@ -1433,7 +1433,7 @@
               </label>
               <div class="import-preview compact-import-preview" id="aiPlanProviderHint">
                 <strong>生成方式</strong>
-                <span>未配置 API Key 时使用本地方案框架；配置后会优先调用设置页选择的大模型。</span>
+                <span>未配置 API Key 时自动使用平台内置免费模型（阿里云百炼）；配置自己的 Key 后可使用更高质量的大模型。</span>
               </div>
               <div class="button-row">
                 <button class="primary-btn" id="generateAiPlan" type="button">生成调研方案</button>
@@ -1518,7 +1518,7 @@
               </div>
               <div class="import-preview compact-import-preview" id="aiProviderHint">
                 <strong>生成方式</strong>
-                <span>未配置 API Key 时使用本地规则生成；如需调用 DeepSeek、Kimi、智谱、Qwen 等大模型，请先到“设置”中填写接口。</span>
+                <span>未配置 API Key 时自动使用平台内置免费模型（阿里云百炼）；配置自己的 Key 后可使用更高质量的大模型。</span>
               </div>
               <div class="button-row">
                 <button class="primary-btn" id="generateAiBrief" type="button">生成问卷初稿</button>
@@ -1590,7 +1590,7 @@
                 <button class="secondary-btn" id="exportAiWorkbenchMd" type="button" disabled>导出 Markdown</button>
                 <button class="secondary-btn" id="exportAiWorkbenchWord" type="button" disabled>导出 Word</button>
               </div>
-              <p class="panel-note">未配置 API Key 时会使用本地规则生成基础建议；配置后会优先调用设置页选择的大模型。</p>
+              <p class="panel-note">未配置 API Key 时自动使用平台内置免费模型（阿里云百炼）；配置自己的 Key 后可使用更高质量的大模型。AI 调用经过本站后端代理转发，API Key 仅保存在浏览器本地。</p>
             </div>
 
             <div class="audit-results" id="aiWorkbenchResults" aria-live="polite">
