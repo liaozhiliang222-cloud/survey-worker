@@ -2994,7 +2994,14 @@ function splitMultiValues(value) {
     .filter(Boolean);
 }
 
+function isOpenEndedHeader(header) {
+  const text = String(header || "").trim();
+  return /填空|开放|意见|建议|描述|原因|理由|备注|详细|具体|感想|反馈|补充|其他.*说明|说明.*其他/i.test(text);
+}
+
 function inferSingleColumnType(header, values) {
+  if (isOpenEndedHeader(header)) return "open";
+
   const validValues = values.filter(Boolean);
   const numericValues = validValues.map(toNumberOrNull).filter((value) => value !== null);
   const uniqueNumbers = [...new Set(numericValues)];
@@ -3067,6 +3074,7 @@ function buildSingleQuestionPivot(parsed) {
   const total = parsed.rows.length;
   return groupQuestionHeaders(parsed.headers, parsed.rows).flatMap((group) => {
     if (group.headers.length > 1) {
+      if (isOpenEndedHeader(group.title) || group.headers.some((h) => isOpenEndedHeader(h))) return [];
       const type = inferMultiColumnType(group, parsed.rows);
       if (type === "multi_columns" || group.multiResponse) {
         const validBase = parsed.rows.filter((row) =>
