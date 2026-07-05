@@ -5815,10 +5815,10 @@ async function generateAiPlan() {
       try {
         renderAiProgress(result, steps, 2, "正在让大模型把需求改写为完整调研方案。", "正在生成调研方案");
         output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config, localPlan), { maxTokens: config.mode === "detailed" ? 12000 : 5000 });
-        source = aiProviderPresets[settings.provider]?.name || "大模型";
+        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "阿里云百炼（内置免费模型）";
       } catch (error) {
         output = `${localPlan}\n\n---\n\n> 大模型调用失败，已回退为本地方案框架。错误信息：${error.message}`;
-        source = "本地方案框架（模型调用失败）";
+        source = settings.apiKey ? "本地方案框架（模型调用失败）" : "阿里云百炼（内置免费模型，调用失败）";
       }
     } else {
       output = `${localPlan}\n\n---\n\n> 大模型设置未通过校验，已回退为本地方案框架：${errors.join("；")}`;
@@ -5883,10 +5883,10 @@ async function reviseAiPlan() {
       try {
         renderAiProgress(result, steps, 2, "正在按你的要求重写方案，通常需要几十秒。", "正在修改调研方案");
         output = await callAiChatCompletion(settings, buildAiPlanRevisionPrompt(instruction, lastAiPlan), { maxTokens: 12000 });
-        source = aiProviderPresets[settings.provider]?.name || "大模型";
+        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "阿里云百炼（内置免费模型）";
       } catch (error) {
         output += `\n\n> 大模型修改失败：${error.message}`;
-        source = "本地方案框架（模型调用失败）";
+        source = settings.apiKey ? "本地方案框架（模型调用失败）" : "阿里云百炼（内置免费模型，调用失败）";
       }
     } else {
       output += `\n\n> 大模型设置未通过校验：${errors.join("；")}`;
@@ -6305,13 +6305,13 @@ function renderAiSettingsStatus(settings = loadAiSettings()) {
   if (hint) {
     hint.innerHTML = `
       <strong>生成方式</strong>
-      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）。` : "未配置 API Key，将使用本地规则生成。")}</span>
+      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）。` : "已自动使用平台内置免费模型（阿里云百炼）。")}</span>
     `;
   }
   if (planHint) {
     planHint.innerHTML = `
       <strong>生成方式</strong>
-      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）生成调研方案。` : "未配置 API Key，将使用本地方案框架生成。")}</span>
+      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）生成调研方案。` : "已自动使用平台内置免费模型（阿里云百炼）。")}</span>
     `;
   }
 }
@@ -6576,7 +6576,7 @@ async function renderAiBrief() {
   const design = buildAiQuestionnaireDesign();
   const steps = [
     { title: "整理研究需求", detail: "读取研究类型、目标人群、样本量和期望时长。" },
-    { title: "校验生成方式", detail: settings.mode === "local" || !settings.apiKey ? "未配置可用 API Key，将使用本地规则生成。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}（${settings.model}）。` },
+    { title: "校验生成方式", detail: settings.mode === "local" || !settings.apiKey ? "已自动使用平台内置免费模型（阿里云百炼）。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}（${settings.model}）。` },
     { title: "生成问卷初稿", detail: `按约 ${design.config.duration} 分钟生成偏完整初稿，先覆盖研究模块，后续再人工删减。` },
     { title: "整理可导出结果", detail: "启用复制、Markdown、Word 和同步到项目稿。" }
   ];
@@ -7178,10 +7178,10 @@ async function reviseAiQuestionnaire() {
       try {
         renderAiProgress(result, steps, 2, "正在按你的要求重写问卷，通常需要几十秒。");
         output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 6000 });
-        source = aiProviderPresets[settings.provider]?.name || "大模型";
+        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "阿里云百炼（内置免费模型）";
       } catch (error) {
         output += `\n\n> 大模型修改失败：${error.message}`;
-        source = "本地规则（模型调用失败）";
+        source = settings.apiKey ? "本地规则（模型调用失败）" : "阿里云百炼（内置免费模型，调用失败）";
       }
     } else {
       output += `\n\n> 大模型设置未通过校验：${errors.join("；")}`;
