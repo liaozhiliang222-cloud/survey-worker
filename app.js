@@ -7748,7 +7748,6 @@ document.querySelector("#loadAiPlanExample").addEventListener("click", () => {
   document.querySelector("#aiPlanSampleSize").value = 1000;
   document.querySelector("#aiPlanTimeline").value = "2周内完成问卷、回收、清洗和初步报告";
   document.querySelector("#aiPlanConstraints").value = "需要包含概念吸引力、卖点偏好、购买意愿、价格接受度、目标人群分层和营销建议。";
-  generateAiPlan();
 });
 
 document.querySelector("#generateAiBrief").addEventListener("click", renderAiBrief);
