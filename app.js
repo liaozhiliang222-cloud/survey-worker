@@ -1852,6 +1852,86 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function renderMarkdownPreview(markdown) {
+  if (window.marked?.parse) return window.marked.parse(markdown);
+
+  const lines = String(markdown || "").split(/\r?\n/);
+  const html = [];
+  let inList = false;
+  let inTable = false;
+
+  const closeList = () => {
+    if (inList) {
+      html.push("</ul>");
+      inList = false;
+    }
+  };
+  const closeTable = () => {
+    if (inTable) {
+      html.push("</tbody></table>");
+      inTable = false;
+    }
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const raw = lines[i];
+    const line = raw.trim();
+
+    if (!line) {
+      closeList();
+      closeTable();
+      continue;
+    }
+
+    if (/^\|.+\|$/.test(line)) {
+      closeList();
+      const cells = line.split("|").slice(1, -1).map((cell) => escapeHtml(cell.trim()));
+      const isDivider = cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+      if (isDivider) continue;
+      if (!inTable) {
+        html.push("<table><tbody>");
+        inTable = true;
+      }
+      html.push(`<tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`);
+      continue;
+    }
+
+    closeTable();
+
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      closeList();
+      const level = Math.min(heading[1].length + 1, 5);
+      html.push(`<h${level}>${escapeHtml(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      if (!inList) {
+        html.push("<ul>");
+        inList = true;
+      }
+      html.push(`<li>${escapeHtml(bullet[1])}</li>`);
+      continue;
+    }
+
+    const quote = line.match(/^>\s*(.+)$/);
+    if (quote) {
+      closeList();
+      html.push(`<blockquote>${escapeHtml(quote[1])}</blockquote>`);
+      continue;
+    }
+
+    closeList();
+    html.push(`<p>${escapeHtml(line)}</p>`);
+  }
+
+  closeList();
+  closeTable();
+  return html.join("");
+}
+
 function addScenarioTemplateIssues(issues, questions, text, scenario) {
   if (!scenario || scenario === "general" || !text.trim()) return;
   const fullText = text.replace(/\s+/g, "");
@@ -7351,7 +7431,7 @@ async function generateAiReport() {
   mdButton.disabled = false;
   wordButton.disabled = false;
 
-  const html = marked.parse(output);
+  const html = renderMarkdownPreview(output);
   result.innerHTML = `
     <article class="audit-issue">
       <div class="issue-head">
