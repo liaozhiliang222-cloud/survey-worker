@@ -3141,7 +3141,8 @@ function completeScaleRows(rows, values) {
 
 function questionPrefix(header) {
   const text = String(header || "").trim();
-  const match = text.match(/^([A-Za-z]+\d+(?:_\d+)?)(?:__\d+|[_a-zA-Z0-9-]*|\s|$)/);
+  // 匹配变量名+数字前缀，支持 Q15_2、Q15__1 等格式，后面跟中文或特殊字符也能正确提取
+  const match = text.match(/^([A-Za-z]+\d+)(?:_\d+|__\d+)?(?:[^A-Za-z0-9]|$)/);
   return match ? match[1] : "";
 }
 
@@ -3171,7 +3172,7 @@ function groupQuestionHeaders(headers, rows = []) {
       // 仅当所有相关字段的值看起来是二元值（0/1/选中/未选/是/否）时才判定为多选题
       const isMultiResponse = rows.length > 0 && related.every((candidate) => {
         const allValues = rows.map((row) => row[candidate]).filter((v) => v !== undefined && v !== "");
-        return allValues.length > 0 && allValues.every((value) => /^(0|1|2|选中|未选|是|否)$/i.test(String(value).trim()));
+        return allValues.length > 0 && allValues.every((value) => /^(0|1|选中|未选|是|否)$/i.test(String(value).trim()));
       });
       if (isMultiResponse) {
         related.forEach((candidate) => used.add(candidate));
@@ -3241,12 +3242,15 @@ function inferMultiColumnType(group, rows) {
   const values = group.headers.flatMap((header) => rows.map((row) => row[header]).filter(Boolean));
   const numericValues = values.map(toNumberOrNull).filter((value) => value !== null);
   const uniqueNumbers = [...new Set(numericValues)];
-  const allBinary = values.length && values.every((value) => /^(0|1|2|选中|未选|是|否)$/i.test(String(value).trim()));
+  const allBinary = values.length && values.every((value) => /^(0|1|选中|未选|是|否)$/i.test(String(value).trim()));
   const minNumber = Math.min(...uniqueNumbers, 0);
   const maxNumber = Math.max(...uniqueNumbers, 0);
   if (allBinary) return "multi_columns";
   if (numericValues.length / Math.max(values.length, 1) > 0.8 && minNumber >= 1 && maxNumber <= group.headers.length && group.headers.length >= 3) return "ranking";
-  if (numericValues.length / Math.max(values.length, 1) > 0.8 && [5, 7, 10].includes(maxNumber)) return "matrix_scale";
+  // 矩阵量表：放宽数值比例要求（矩阵常有大量缺失），改用非空值中数值占比判断
+  const nonEmptyValues = values.filter(Boolean);
+  const nonEmptyNumeric = nonEmptyValues.map(toNumberOrNull).filter((v) => v !== null);
+  if (nonEmptyValues.length > 0 && nonEmptyNumeric.length / nonEmptyValues.length >= 0.9 && maxNumber > 0 && [5, 7, 10].includes(maxNumber) && minNumber >= 0 && group.headers.length >= 2) return "matrix_scale";
   return "matrix_single";
 }
 
