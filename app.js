@@ -194,6 +194,9 @@ let lastAiActualModel = "";
 let lastAiReport = "";
 let crosstabImportMode = "data";
 
+// === Excluded variables tracker for debugging ===
+let excludedPivotItems = [];
+
 // === Crosstab Questionnaire Map for missing labels ===
 // Format: { "Q4": "请问您的个人月收入大约是多少？", "Q5": "...", ... }
 let crosstabQuestionnaireMap = {};
@@ -3168,7 +3171,7 @@ function groupQuestionHeaders(headers, rows = []) {
       // 仅当所有相关字段的值看起来是二元值（0/1/选中/未选/是/否）时才判定为多选题
       const isMultiResponse = rows.length > 0 && related.every((candidate) => {
         const allValues = rows.map((row) => row[candidate]).filter((v) => v !== undefined && v !== "");
-        return allValues.length > 0 && allValues.every((value) => /^(0|1|选中|未选|是|否)$/i.test(String(value).trim()));
+        return allValues.length > 0 && allValues.every((value) => /^(0|1|2|选中|未选|是|否)$/i.test(String(value).trim()));
       });
       if (isMultiResponse) {
         related.forEach((candidate) => used.add(candidate));
@@ -3238,7 +3241,7 @@ function inferMultiColumnType(group, rows) {
   const values = group.headers.flatMap((header) => rows.map((row) => row[header]).filter(Boolean));
   const numericValues = values.map(toNumberOrNull).filter((value) => value !== null);
   const uniqueNumbers = [...new Set(numericValues)];
-  const allBinary = values.length && values.every((value) => /^(0|1|选中|未选|是|否)$/i.test(String(value).trim()));
+  const allBinary = values.length && values.every((value) => /^(0|1|2|选中|未选|是|否)$/i.test(String(value).trim()));
   const minNumber = Math.min(...uniqueNumbers, 0);
   const maxNumber = Math.max(...uniqueNumbers, 0);
   if (allBinary) return "multi_columns";
@@ -3288,9 +3291,13 @@ function openTextSummary(values) {
 
 function buildSingleQuestionPivot(parsed) {
   const total = parsed.rows.length;
+  excludedPivotItems = [];
   return groupQuestionHeaders(parsed.headers, parsed.rows).flatMap((group) => {
     if (group.headers.length > 1) {
-      if (isOpenEndedHeader(group.title) || group.headers.some((h) => isOpenEndedHeader(h))) return [];
+      if (isOpenEndedHeader(group.title) || group.headers.some((h) => isOpenEndedHeader(h))) {
+        excludedPivotItems.push({ title: group.title, headers: group.headers, reason: "开放题过滤" });
+        return [];
+      }
       const type = inferMultiColumnType(group, parsed.rows);
       if (type === "multi_columns" || group.multiResponse) {
         const validBase = parsed.rows.filter((row) =>
@@ -3464,6 +3471,7 @@ function buildSingleQuestionPivot(parsed) {
       return [{ title: header, type: "多选题", total, validBase, rows: optionRows }];
     }
     if (type === "open") {
+      excludedPivotItems.push({ title: header, headers: [header], reason: "开放题过滤" });
       return [];
     }
     const validValues = values.filter(Boolean);
@@ -3664,6 +3672,7 @@ function generateQuestionPivot() {
         <div class="issue-head"><strong>全部交叉表已生成</strong><span class="issue-tag high">${lastQuestionPivot.length} 题</span></div>
         <p>已直接导出 Excel 文件，包含“目录、频数、百分比、显著性检验”四个工作表，页面不再展开全部结果，避免输出区过长。</p>
         <div class="issue-evidence">${escapeHtml(`${typeSummary || "未识别到可统计题型"}${lastCrosstabHeaderPlan?.length ? `\n已按表头条件逐列筛选并计算：${lastCrosstabHeaderPlan.length} 列` : "\n未带入表头方案；如需顶部 Banner 表头，请先点击“导入表头”。"}\n多选拆列已按多重响应集输出选项提及，不再输出“选中/未选中”。矩阵量表已按子题拆分为独立量表题。`)}</div>
+        ${excludedPivotItems.length ? `<div class="panel-note" style="margin-top:0.5rem;"><strong>已排除 ${excludedPivotItems.length} 个变量（开放题/填空题）：</strong> ${excludedPivotItems.slice(0, 20).map((e) => escapeHtml(e.title || e.headers[0])).join("、")}${excludedPivotItems.length > 20 ? ` 等共 ${excludedPivotItems.length} 个` : ""}</div>` : ""}
       </article>
     `;
   }, 300);
