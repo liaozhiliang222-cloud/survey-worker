@@ -3253,7 +3253,8 @@ function buildSingleQuestionPivot(parsed) {
           const avgRank = mean(values) || 0;
           const firstRate = values.filter((value) => value === 1).length / Math.max(values.length, 1);
           const secondRate = values.filter((value) => value === 2).length / Math.max(values.length, 1);
-          return { label: header, score: values.length ? group.headers.length + 1 - avgRank : 0, firstRate, secondRate, avgRank };
+          const top3Rate = values.filter((value) => value >= 1 && value <= 3).length / Math.max(values.length, 1);
+          return { label: header, score: values.length ? group.headers.length + 1 - avgRank : 0, firstRate, secondRate, top3Rate, avgRank };
         });
         return [{ title: group.title, type: "排序题", total, validBase: Math.max(...group.headers.map((header) => parsed.rows.map((row) => toNumberOrNull(row[header])).filter((value) => value !== null).length), 0), rows }];
       }
@@ -3507,8 +3508,8 @@ function renderQuestionPivotItem(item) {
     return item.rows.map((row) => `<h4>${escapeHtml(row.label)}</h4>${renderFrequencyTable(row.frequencies, false)}`).join("");
   }
   if (item.type === "排序题") {
-    return `<div class="table-wrap"><table><thead><tr><th>项目</th><th>加权得分</th><th>首选率</th><th>次选率</th><th>平均排名</th></tr></thead><tbody>
-      ${item.rows.map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${row.score.toFixed(2)}</td><td>${formatPercent(row.firstRate)}</td><td>${formatPercent(row.secondRate)}</td><td>${row.avgRank.toFixed(2)}</td></tr>`).join("")}
+    return `<div class="table-wrap"><table><thead><tr><th>项目</th><th>加权得分</th><th>首选率</th><th>次选率</th><th>TOP3 率</th><th>平均排名</th></tr></thead><tbody>
+      ${item.rows.map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${row.score.toFixed(2)}</td><td>${formatPercent(row.firstRate)}</td><td>${formatPercent(row.secondRate)}</td><td>${formatPercent(row.top3Rate)}</td><td>${row.avgRank.toFixed(2)}</td></tr>`).join("")}
     </tbody></table></div>`;
   }
   if (item.type === "开放题") {
@@ -3655,7 +3656,7 @@ function appendBannerFormatRows(rows, item, bannerItems) {
       const row = bannerResultRow(option.label, index === 0 ? item.title : "");
       bannerItems.forEach((bannerItem, bannerIndex) => {
         const matched = bannerItem.rows?.find((candidate) => candidate.label === option.label);
-        setBannerPair(row, bannerIndex, matched?.score?.toFixed(2) || "-", matched ? `首选率 ${formatPercent(matched.firstRate)}` : "-");
+        setBannerPair(row, bannerIndex, matched?.score?.toFixed(2) || "-", matched ? `首选率 ${formatPercent(matched.firstRate)} / TOP3 ${formatPercent(matched.top3Rate)}` : "-");
       });
       rows.push(row);
     });
@@ -3723,8 +3724,8 @@ function questionPivotRows(items) {
       rows.push(["属性", "均值", "标准差", "Top2 Box"]);
       item.rows.forEach((row) => rows.push([row.label, row.stats[0]?.[1] || "", row.stats[1]?.[1] || "", row.stats.find((stat) => stat[0] === "Top2 Box")?.[1] || ""]));
     } else if (item.type === "排序题") {
-      rows.push(["项目", "加权得分", "首选率", "次选率", "平均排名"]);
-      item.rows.forEach((row) => rows.push([row.label, row.score.toFixed(2), formatPercent(row.firstRate), formatPercent(row.secondRate), row.avgRank.toFixed(2)]));
+      rows.push(["项目", "加权得分", "首选率", "次选率", "TOP3 率", "平均排名"]);
+      item.rows.forEach((row) => rows.push([row.label, row.score.toFixed(2), formatPercent(row.firstRate), formatPercent(row.secondRate), formatPercent(row.top3Rate), row.avgRank.toFixed(2)]));
     } else if (item.type === "开放题") {
       rows.push(["平均字数", item.avgLength.toFixed(1)], ["高频词", "次数"]);
       item.topWords.forEach(([word, count]) => rows.push([word, count]));
