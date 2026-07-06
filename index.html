@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#155e75" />
+    <meta name="theme-color" content="#102a56" />
     <title>调研工具箱</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="stylesheet" href="./styles.css" />
@@ -817,6 +817,31 @@
               <div class="empty-state">
                 <strong>等待分析</strong>
                 <span>粘贴数据后先识别字段，再选择行列变量生成交叉表。</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="link-tester secondary-tool">
+            <div class="panel">
+              <label>
+                <span class="label-action">
+                  <span>项目背景（可选）</span>
+                </span>
+                <textarea id="aiReportContext" placeholder="填写项目背景、研究目的、目标人群等，帮助 AI 生成更精准的报告。例如：某品牌即将推出常温纯牛奶新品，需要评估概念吸引力和目标人群分层。"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="generateAiReport" type="button" disabled>AI 生成定量报告</button>
+                <button class="secondary-btn" id="copyAiReport" type="button" disabled>复制报告</button>
+                <button class="secondary-btn" id="exportAiReportMd" type="button" disabled>导出 Markdown</button>
+                <button class="secondary-btn" id="exportAiReportWord" type="button" disabled>导出 Word</button>
+              </div>
+              <p class="panel-note">基于已导入的数据自动生成统计摘要，调用 AI 生成包含数据洞察、结论建议和 PPT 脚本的完整定量分析报告。</p>
+            </div>
+
+            <div class="audit-results" id="aiReportResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待生成</strong>
+                <span>导入数据并点击"AI 生成定量报告"，将自动生成 Markdown 格式的分析报告与 PPT 脚本。</span>
               </div>
             </div>
           </div>
