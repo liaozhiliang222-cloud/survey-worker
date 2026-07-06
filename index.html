@@ -74,7 +74,7 @@
           </div>
 
           <div class="project-workspace">
-            <input class="hidden" id="sharedQuestionnaireImportFile" type="file" accept=".docx,.xlsx,.md,.txt,.csv" />
+            <input class="hidden" id="sharedQuestionnaireImportFile" type="file" accept=".docx,.doc,.xlsx,.xls,.md,.txt,.csv" />
             <section class="panel project-panel">
               <div class="section-heading compact">
                 <div>
@@ -134,8 +134,8 @@
                     <strong>选择问卷文件</strong>
                     <p>支持 Word、Excel、Markdown、TXT 和 CSV，建议直接上传项目中的问卷稿。</p>
                     <label class="file-drop" for="questionnaireImportFile">
-                      <input id="questionnaireImportFile" type="file" accept=".docx,.xlsx,.md,.txt,.csv" />
-                      <span>选择本地 DOCX / XLSX / Markdown / TXT / CSV 文件</span>
+                      <input id="questionnaireImportFile" type="file" accept=".docx,.doc,.xlsx,.xls,.md,.txt,.csv" />
+                      <span>选择本地 DOCX / DOC / XLSX / XLS / Markdown / TXT / CSV 文件</span>
                     </label>
                   </section>
                   <section class="import-note import-note-inline">
@@ -785,14 +785,14 @@
 
           <div class="link-tester">
             <div class="panel">
-              <input class="hidden" id="crosstabImportFile" type="file" accept=".sav,.xlsx,.csv,.txt" />
+              <input class="hidden" id="crosstabImportFile" type="file" accept=".sav,.xlsx,.xls,.csv,.txt" />
               <label>
                 <span class="label-action">
                   <span>数据表</span>
                   <button class="secondary-btn mini-import-btn" id="importCrosstabHeader" type="button">导入表头</button>
                   <button class="secondary-btn mini-import-btn" id="importCrosstabData" type="button">导入数据</button>
                 </span>
-                <textarea id="crosstabData" placeholder="粘贴 CSV / Excel 复制出的表格，或导入 SAV / Excel 数据文件。第一行需为字段名，例如：性别,是否购买,满意度"></textarea>
+                <textarea id="crosstabData" placeholder="粘贴 CSV / Excel 复制出的表格，或导入 SAV / Excel（XLSX/XLS）数据文件。第一行需为字段名，例如：性别,是否购买,满意度"></textarea>
               </label>
               <div class="two-col-fields">
                 <label>
@@ -875,12 +875,12 @@
 
           <div class="link-tester">
             <div class="panel">
-              <input class="hidden" id="aiReportImportFile" type="file" accept=".sav,.xlsx,.csv,.txt" />
+              <input class="hidden" id="aiReportImportFile" type="file" accept=".sav,.xlsx,.xls,.csv,.txt" />
               <div class="ai-report-import-box">
                 <div>
                   <span class="section-pill">数据表</span>
                   <h3>导入交叉表数据</h3>
-                  <p>支持 CSV、TXT、Excel 和 SAV 数据文件。导入后系统会自动识别题目字段、分群字段和数据预览。</p>
+                  <p>支持 CSV、TXT、Excel（XLSX/XLS）和 SAV 数据文件。导入后系统会自动识别题目字段、分群字段和数据预览。</p>
                 </div>
                 <button class="secondary-btn" id="importAiReportData" type="button">导入数据</button>
               </div>
