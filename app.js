@@ -665,7 +665,7 @@ async function xlsxToQuestionnaireText(arrayBuffer) {
     if (!sheetXml) continue;
     const rows = xlsxSheetXmlToRows(sheetXml, sharedStrings);
     const text = rowsToQuestionnaireText(rows);
-    if (text) sheetTexts.push(`【Sheet ${index + 1}】\n${text}`);
+    if (text) sheetTexts.push(text);
   }
   return sheetTexts.join("\n\n");
 }
@@ -1188,9 +1188,23 @@ async function xlsxToCrosstabHeaderPlan(arrayBuffer) {
 
 function rowsToQuestionnaireText(rows) {
   if (!rows.length) return "";
-  const header = rows[0].map((cell) => String(cell || "").replace(/^\ufeff/, "").trim());
-  const hasHeader = header.some((cell) => /题号|编号|题干|题目|文本|问题|选项|说明|备注|跳题/i.test(cell));
+  // Find the first row that looks like a questionnaire header (within first 15 rows)
+  let headerRowIndex = 0;
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const header = rows[i].map((cell) => String(cell || "").replace(/^\ufeff/, "").trim());
+    if (header.some((cell) => /题号|编号|题干|题目|文本|问题|选项|答案|说明|备注|跳题|题型|question|options?/i.test(cell))) {
+      headerRowIndex = i;
+      break;
+    }
+  }
+  const header = rows[headerRowIndex].map((cell) => String(cell || "").replace(/^\ufeff/, "").trim());
+  const hasHeader = header.some((cell) => /题号|编号|题干|题目|文本|问题|选项|答案|说明|备注|跳题|题型|question|options?/i.test(cell));
   if (!hasHeader) {
+    // Check if this sheet contains any question-like patterns; if not, skip it
+    const hasQuestions = rows.some((row) =>
+      row.some((cell) => /^(Q|S|A|B|C|D)\s*\d+[.\-]\d*|^\d+[.．]\s+.*[？?]/.test(String(cell || "").trim()))
+    );
+    if (!hasQuestions) return "";
     return normalizeImportedText(rows.map((row) => row.filter(Boolean).join(" ")).join("\n"));
   }
   const findIndex = (patterns, fallback) => {
@@ -1198,13 +1212,12 @@ function rowsToQuestionnaireText(rows) {
     return index >= 0 ? index : fallback;
   };
   const idIndex = findIndex([/题号|编号|question/i], 0);
-  const titleIndex = findIndex([/题干|题目|文本|问题|title/i], 1);
+  const titleIndex = findIndex([/题干|题目|文本|问题|title|内容/i], 1);
   const optionIndex = findIndex([/选项|答案|options?/i], 2);
-  const noteIndex = findIndex([/说明|备注|跳题|note/i], 3);
-
-  return rows.slice(1)
+  const noteIndex = findIndex([/说明|备注|跳题|note|逻辑/i], 3);
+  return rows.slice(headerRowIndex + 1)
     .map((row, index) => {
-      const id = row[idIndex] || `Q${index + 1}`;
+      const id = row[idIndex] || "";
       const title = row[titleIndex] || "";
       const options = String(row[optionIndex] || "")
         .split(/\s*\|\s*|；|;/)
