@@ -191,6 +191,7 @@ let lastCrosstabAnalysis = null;
 let lastQuestionPivot = null;
 let lastCrosstabHeaderPlan = null;
 let lastAiActualModel = "";
+let lastAiReport = "";
 let crosstabImportMode = "data";
 let lastCrosstabDataContext = null;
 let lastWeightingResult = null;
@@ -7148,6 +7149,242 @@ function exportAiWorkbenchWord() {
   downloadBlob("AI助手建议.docx", createDocxBlob(lastAiWorkbenchOutput));
 }
 
+function summarizeCrosstabForAiReport(dataContext) {
+  if (!dataContext || !dataContext.headerInfos || !dataContext.rawRows || !dataContext.rawRows.length) {
+    return null;
+  }
+  const { headerInfos, rawRows, displayHeaders } = dataContext;
+  const totalN = rawRows.length;
+  const lines = [];
+  lines.push(`## 数据概览`);
+  lines.push(`- 有效样本量：${totalN}`);
+  lines.push(`- 分析字段数：${headerInfos.filter(h => h.type === "question").length}`);
+  lines.push(`- 分群/背景字段数：${headerInfos.filter(h => h.type === "group").length}`);
+  lines.push("");
+
+  // 单题频率分布（取前8题，避免过长）
+  const questionHeaders = headerInfos.filter(h => h.type === "question").slice(0, 12);
+  if (questionHeaders.length) {
+    lines.push(`## 各题频率分布（前${Math.min(questionHeaders.length, 12)}题）`);
+    for (const h of questionHeaders) {
+      const idx = h.index;
+      const values = rawRows.map(r => r[idx]).filter(v => v !== "" && v != null);
+      const freq = {};
+      for (const v of values) {
+        const key = String(v).trim();
+        freq[key] = (freq[key] || 0) + 1;
+      }
+      const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+      lines.push(`### ${displayHeaders[idx] || h.header}`);
+      lines.push(`基数：${values.length}（${(values.length / totalN * 100).toFixed(1)}%）`);
+      for (const [k, c] of sorted.slice(0, 8)) {
+        lines.push(`- ${k}：${c}人（${(c / values.length * 100).toFixed(1)}%）`);
+      }
+      if (sorted.length > 8) lines.push(`- … 其他${sorted.length - 8}项省略`);
+      lines.push("");
+    }
+  }
+
+  // 分群字段分布
+  const groupHeaders = headerInfos.filter(h => h.type === "group");
+  if (groupHeaders.length) {
+    lines.push(`## 分群/背景变量分布`);
+    for (const h of groupHeaders) {
+      const idx = h.index;
+      const values = rawRows.map(r => r[idx]).filter(v => v !== "" && v != null);
+      const freq = {};
+      for (const v of values) {
+        const key = String(v).trim();
+        freq[key] = (freq[key] || 0) + 1;
+      }
+      const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+      lines.push(`### ${displayHeaders[idx] || h.header}`);
+      for (const [k, c] of sorted) {
+        lines.push(`- ${k}：${c}人（${(c / values.length * 100).toFixed(1)}%）`);
+      }
+      lines.push("");
+    }
+  }
+
+  // 简单交叉洞察：取第一个分群字段与第一个题目做交叉
+  if (groupHeaders.length && questionHeaders.length) {
+    const g = groupHeaders[0];
+    const q = questionHeaders[0];
+    const gIdx = g.index;
+    const qIdx = q.index;
+    const groups = {};
+    for (const r of rawRows) {
+      const gVal = String(r[gIdx] || "未填").trim();
+      const qVal = String(r[qIdx] || "未填").trim();
+      if (!groups[gVal]) groups[gVal] = {};
+      groups[gVal][qVal] = (groups[gVal][qVal] || 0) + 1;
+    }
+    lines.push(`## 交叉洞察示例（${displayHeaders[gIdx] || g.header} × ${displayHeaders[qIdx] || q.header}）`);
+    for (const [gVal, qFreq] of Object.entries(groups)) {
+      const total = Object.values(qFreq).reduce((a, b) => a + b, 0);
+      lines.push(`### ${gVal}（n=${total}）`);
+      const sorted = Object.entries(qFreq).sort((a, b) => b[1] - a[1]);
+      for (const [k, c] of sorted.slice(0, 5)) {
+        lines.push(`- ${k}：${(c / total * 100).toFixed(1)}%`);
+      }
+      lines.push("");
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function buildAiReportPrompt(context, summary) {
+  return [
+    {
+      role: "system",
+      content: "你是一名资深市场研究定量报告撰写专家。请基于用户提供的项目背景和数据摘要，撰写一份专业的Markdown格式定量分析报告，并在报告中包含可直接用于PPT汇报的脚本内容。报告需使用中文。"
+    },
+    {
+      role: "user",
+      content: [
+        `项目背景：${context || "未填写具体背景，请基于数据摘要推断研究主题。"}`,
+        "",
+        "【数据摘要】",
+        summary,
+        "",
+        "请输出以下结构的报告：",
+        "",
+        "# 定量调研报告",
+        "",
+        "## 一、研究背景与目的",
+        "简要说明研究背景、目标人群、样本量和核心研究问题。",
+        "",
+        "## 二、样本结构",
+        "基于背景变量/分群字段，描述样本的人口统计特征或行为特征分布。",
+        "",
+        "## 三、核心发现",
+        "### 3.1 关键指标总览",
+        "列出各核心问题的Top2结论，用数据支撑。",
+        "### 3.2 群体差异洞察",
+        "基于交叉数据，指出不同群体间的显著差异（如有）。",
+        "### 3.3 关键驱动因素（如适用）",
+        "如数据包含量表或重要性评分，分析核心驱动因素。",
+        "",
+        "## 四、结论与建议",
+        "用 bullet points 给出 3-5 条可落地的业务建议。",
+        "",
+        "---",
+        "",
+        "## PPT汇报脚本",
+        "",
+        "为上述报告内容设计一份可直接用于PPT汇报的脚本，要求：",
+        "1. 按页给出每页PPT的标题、核心要点（3-5条）和演讲者备注（讲什么、怎么讲）。",
+        "2. 总页数控制在 10-15 页。",
+        "3. 用 Markdown 表格或列表格式输出，便于直接复制到PPT大纲。",
+        "",
+        "格式示例：",
+        "| 页码 | PPT标题 | 核心要点 | 演讲者备注 |",
+        "|------|---------|----------|------------|",
+        "| 1 | 研究背景 | ... | ... |",
+        ""
+      ].join("\n")
+    }
+  ];
+}
+
+async function generateAiReport() {
+  const context = document.querySelector("#aiReportContext").value.trim();
+  const result = document.querySelector("#aiReportResults");
+  const genButton = document.querySelector("#generateAiReport");
+  const copyButton = document.querySelector("#copyAiReport");
+  const mdButton = document.querySelector("#exportAiReportMd");
+  const wordButton = document.querySelector("#exportAiReportWord");
+  const settings = loadAiSettings();
+
+  if (!lastCrosstabDataContext || !lastCrosstabDataContext.rawRows || !lastCrosstabDataContext.rawRows.length) {
+    result.innerHTML = `
+      <div class="empty-state">
+        <strong>缺少数据</strong>
+        <span>请先在交叉表分析中导入并确认数据，再生成报告。</span>
+      </div>
+    `;
+    return;
+  }
+
+  result.innerHTML = `<div class="empty-state"><strong>正在生成定量报告</strong><span>${escapeHtml(settings.mode === "local" || !settings.apiKey ? "正在使用本地规则..." : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}...`)}</span></div>`;
+  genButton.disabled = true;
+  copyButton.disabled = true;
+  mdButton.disabled = true;
+  wordButton.disabled = true;
+
+  const summary = summarizeCrosstabForAiReport(lastCrosstabDataContext);
+  if (!summary) {
+    result.innerHTML = `
+      <div class="empty-state">
+        <strong>数据摘要失败</strong>
+        <span>无法从当前数据生成有效统计摘要，请检查数据格式。</span>
+      </div>
+    `;
+    genButton.disabled = false;
+    return;
+  }
+
+  let output = summary;
+  let source = "本地统计摘要";
+
+  if (settings.mode !== "local") {
+    const errors = validateAiSettings(settings);
+    if (!errors.length) {
+      try {
+        const prompt = buildAiReportPrompt(context, summary);
+        output = await callAiChatCompletion(settings, prompt, { maxTokens: 8000 });
+        source = aiProviderPresets[settings.provider]?.name || "大模型";
+      } catch (error) {
+        output = `## 数据摘要（本地生成）\n\n${summary}\n\n---\n\n> 大模型调用失败，已回退为本地统计摘要。错误信息：${error.message}`;
+        source = "本地统计摘要（模型调用失败）";
+      }
+    } else {
+      output = `## 数据摘要（本地生成）\n\n${summary}\n\n---\n\n> 大模型设置未通过校验，已回退为本地统计摘要：${errors.join("；")}`;
+      source = "本地统计摘要（设置未通过校验）";
+    }
+  }
+
+  lastAiReport = output;
+  genButton.disabled = false;
+  copyButton.disabled = false;
+  mdButton.disabled = false;
+  wordButton.disabled = false;
+
+  const html = marked.parse(output);
+  result.innerHTML = `
+    <article class="audit-issue">
+      <div class="issue-head">
+        <strong>AI 定量报告</strong>
+        <span class="issue-tag low">${escapeHtml(source)}</span>
+      </div>
+      <div class="markdown-body">${html}</div>
+    </article>
+  `;
+}
+
+async function copyAiReport() {
+  if (!lastAiReport) return;
+  try {
+    await navigator.clipboard.writeText(lastAiReport);
+    const btn = document.querySelector("#copyAiReport");
+    btn.textContent = "已复制";
+    window.setTimeout(() => { btn.textContent = "复制报告"; }, 1200);
+  } catch {
+    downloadTextFile("AI定量报告.md", lastAiReport, "text/markdown;charset=utf-8");
+  }
+}
+
+function exportAiReportMd() {
+  if (!lastAiReport) return;
+  downloadTextFile("AI定量报告.md", lastAiReport, "text/markdown;charset=utf-8");
+}
+
+function exportAiReportWord() {
+  if (!lastAiReport) return;
+  downloadBlob("AI定量报告.docx", createDocxBlob(lastAiReport));
+}
+
 function buildAiRevisionPrompt(instruction, currentDraft) {
   return [
     {
@@ -7782,6 +8019,12 @@ document.querySelector("#loadAiWorkbenchProject").addEventListener("click", load
 document.querySelector("#copyAiWorkbench").addEventListener("click", copyAiWorkbench);
 document.querySelector("#exportAiWorkbenchMd").addEventListener("click", exportAiWorkbenchMd);
 document.querySelector("#exportAiWorkbenchWord").addEventListener("click", exportAiWorkbenchWord);
+
+document.querySelector("#generateAiReport").addEventListener("click", generateAiReport);
+document.querySelector("#copyAiReport").addEventListener("click", copyAiReport);
+document.querySelector("#exportAiReportMd").addEventListener("click", exportAiReportMd);
+document.querySelector("#exportAiReportWord").addEventListener("click", exportAiReportWord);
+
 document.querySelectorAll(".ai-inline-btn").forEach((button) => {
   button.addEventListener("click", () => openAiInlineAssistant(button));
 });
