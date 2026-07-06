@@ -194,8 +194,6 @@ let lastAiActualModel = "";
 let lastAiReport = "";
 let crosstabImportMode = "data";
 
-let crosstabImportMode = "data";
-
 // === NET Group Config for multi-choice questions ===
 // Format: { questionKey: [ { name: "NET - 手机产品", optionLabels: ["R1", "R2", "R3"], optionHeaders: ["Q8_R1", "Q8_R2", "Q8_R3"] }, ... ] }
 let netGroupConfig = loadNetGroupConfig() || {};
