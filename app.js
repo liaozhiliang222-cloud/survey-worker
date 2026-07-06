@@ -3400,12 +3400,23 @@ function parseHeaderCondition(condition) {
     .map((part) => part.trim())
     .filter(Boolean)
     .map((part) => {
-      const match = part.match(new RegExp("^(.+?)(?:=|" + "\\uff1d" + ")(.+)$"));
-      if (!match) return null;
-      return {
-        variable: normalizeConditionVariable(match[1]),
-        value: normalizeConditionValue(match[2])
-      };
+      const eqMatch = part.match(new RegExp("^(.+?)(?:=|" + "\\uff1d" + ")(.+)$"));
+      if (eqMatch) {
+        return {
+          variable: normalizeConditionVariable(eqMatch[1]),
+          value: normalizeConditionValue(eqMatch[2]),
+          operator: "eq"
+        };
+      }
+      const neMatch = part.match(new RegExp("^(.+?)(?:≠|" + "\\u2260" + ")(.+)$"));
+      if (neMatch) {
+        return {
+          variable: normalizeConditionVariable(neMatch[1]),
+          value: normalizeConditionValue(neMatch[2]),
+          operator: "ne"
+        };
+      }
+      return null;
     })
     .filter(Boolean);
 }
@@ -3419,13 +3430,22 @@ function rawValueMatches(actual, expected) {
 function conditionPartMatches(rawRow, rawHeaders, part) {
   if (!part.variable) return true;
   const directHeader = rawHeaders.find((header) => normalizeConditionVariable(header) === part.variable);
-  if (directHeader && rawValueMatches(rawRow[directHeader], part.value)) return true;
+  if (directHeader) {
+    const matches = rawValueMatches(rawRow[directHeader], part.value);
+    return part.operator === "ne" ? !matches : matches;
+  }
 
   const multiHeader = rawHeaders.find((header) => normalizeConditionVariable(header) === `${part.variable}__${part.value}`);
-  if (multiHeader) return isBinaryMentionValue(rawRow[multiHeader]);
+  if (multiHeader) {
+    const matches = isBinaryMentionValue(rawRow[multiHeader]);
+    return part.operator === "ne" ? !matches : matches;
+  }
 
   const singleUnderscoreHeader = rawHeaders.find((header) => normalizeConditionVariable(header) === `${part.variable}_${part.value}`);
-  if (singleUnderscoreHeader) return isBinaryMentionValue(rawRow[singleUnderscoreHeader]);
+  if (singleUnderscoreHeader) {
+    const matches = isBinaryMentionValue(rawRow[singleUnderscoreHeader]);
+    return part.operator === "ne" ? !matches : matches;
+  }
 
   return false;
 }
@@ -3544,7 +3564,7 @@ function generateQuestionPivot() {
         <div class="issue-evidence">${escapeHtml(`${typeSummary || "未识别到可统计题型"}${lastCrosstabHeaderPlan?.length ? `\n已按表头条件逐列筛选并计算：${lastCrosstabHeaderPlan.length} 列` : "\n未带入表头方案；如需顶部 Banner 表头，请先点击“导入表头”。"}\n多选拆列已按多重响应集输出选项提及，不再输出“选中/未选中”。矩阵量表已按子题拆分为独立量表题。`)}</div>
       </article>
     `;
-  }, 50);
+  }, 300);
 }
 
 function renderQuestionPivot() {
