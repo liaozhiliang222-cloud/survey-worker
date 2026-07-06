@@ -2512,7 +2512,7 @@ function exportEditableSuggestions(type) {
   const isCleaning = type === "cleaning";
   const rows = collectEditableSuggestions(isCleaning ? "#cleaningResults" : "#headerResults");
   if (!rows.length) return;
-  downloadExcelFromRows(isCleaning ? "清洗规则配置.xls" : "表头设计方案.xls", [
+  downloadExcelFromRows(isCleaning ? "清洗规则配置.xlsx" : "表头设计方案.xlsx", [
     ["是否启用", "优先级", "标题", "说明", "适用题目/证据", "备注"],
     ...rows.map((row) => [
       row.enabled ? "启用" : "停用",
@@ -2913,7 +2913,7 @@ function downloadExcelXml(filename, sheetName, rows) {
     <Table>${rowXml}</Table>
   </Worksheet>
 </Workbook>`;
-  downloadTextFile(filename, xml, "application/vnd.ms-excel;charset=utf-8");
+  downloadTextFile(filename, xml, "application/octet-stream;charset=utf-8");
 }
 
 function excelSafeSheetName(name, fallback = "Sheet1") {
@@ -2935,7 +2935,7 @@ function downloadExcelWorkbookXml(filename, sheets) {
 ${excelWorkbookStylesXml()}
 ${worksheets}
 </Workbook>`;
-  downloadTextFile(filename, xml, "application/vnd.ms-excel;charset=utf-8");
+  downloadTextFile(filename, xml, "application/octet-stream;charset=utf-8");
 }
 
 function splitDelimitedLine(line) {
@@ -4132,7 +4132,7 @@ function exportQuestionPivotWorkbook() {
   const countSheet = buildCrosstabWorkbookSheet(lastQuestionPivot, plan, bannerPivotIndexes, "count");
   const percentSheet = buildCrosstabWorkbookSheet(lastQuestionPivot, plan, bannerPivotIndexes, "percent");
   const sigSheet = buildCrosstabWorkbookSheet(lastQuestionPivot, plan, bannerPivotIndexes, "significance");
-  downloadExcelWorkbookXml("全部交叉表.xls", [
+  downloadExcelWorkbookXml("全部交叉表.xlsx", [
     { name: "目录", rows: buildCrosstabDirectoryRows(countSheet.positions, plan) },
     { name: "频数", rows: countSheet.rows },
     { name: "百分比", rows: percentSheet.rows },
@@ -4269,7 +4269,7 @@ function exportCrosstabAnalysis() {
     rows.push([rowLabel, ...lastCrosstabAnalysis.matrix[rowIndex], lastCrosstabAnalysis.rowTotals[rowIndex]]);
   });
   rows.push(["合计", ...lastCrosstabAnalysis.colTotals, lastCrosstabAnalysis.total]);
-  downloadExcelFromRows("交叉表分析.xls", rows, "交叉表");
+  downloadExcelFromRows("交叉表分析.xlsx", rows, "交叉表");
 }
 
 function parseWeightTargets(text) {
@@ -4418,14 +4418,14 @@ function renderWeighting() {
 function exportWeightingResult() {
   if (!lastWeightingResult) return;
   if (lastWeightingResult.mode === "cell") {
-    downloadExcelFromRows("Cell加权结果.xls", [["单元格", "当前样本", "目标样本", "权重"], ...lastWeightingResult.rows.map((row) => [row.cell, row.sample, row.target, row.weight.toFixed(6)])]);
+    downloadExcelFromRows("Cell加权结果.xlsx", [["单元格", "当前样本", "目标样本", "权重"], ...lastWeightingResult.rows.map((row) => [row.cell, row.sample, row.target, row.weight.toFixed(6)])]);
     return;
   }
   const rows = [["记录ID", ...lastWeightingResult.headers, "weight"]];
   lastWeightingResult.records.forEach((record) => {
     rows.push([record.__id, ...lastWeightingResult.headers.map((header) => record[header]), record.__weight.toFixed(6)]);
   });
-  downloadExcelFromRows("RIM加权样本权重.xls", rows);
+  downloadExcelFromRows("RIM加权样本权重.xlsx", rows);
 }
 
 function downloadTextFile(filename, content, type = "text/plain;charset=utf-8") {
@@ -4738,7 +4738,7 @@ function exportPsmAnalysis() {
     ]);
   });
 
-  downloadExcelFromRows("PSM价格敏感度分析.xls", rows);
+  downloadExcelFromRows("PSM价格敏感度分析.xlsx", rows);
 }
 
 function parseKanoRows(text) {
@@ -4945,7 +4945,7 @@ function exportKanoAnalysis() {
     ]);
   });
 
-  downloadExcelFromRows("KANO模型分析.xls", rows);
+  downloadExcelFromRows("KANO模型分析.xlsx", rows);
 }
 
 function parseLineItems(text) {
@@ -5043,7 +5043,7 @@ function exportMaxDiffDesign() {
   });
   rows.push([], ["项目展示次数"], ["项目", "展示次数"]);
   lastMaxDiffDesign.items.forEach((item) => rows.push([item, lastMaxDiffDesign.counts.get(item)]));
-  downloadExcelFromRows("MaxDiff设计模板.xls", rows);
+  downloadExcelFromRows("MaxDiff设计模板.xlsx", rows);
 }
 
 function parseMaxDiffScores(text) {
@@ -5197,7 +5197,7 @@ function exportMaxDiffScore() {
   lastMaxDiffScore.forEach((row, index) => {
     rows.push([index + 1, row.item, row.best, row.worst, row.shown, row.score.toFixed(3)]);
   });
-  downloadExcelFromRows("MaxDiff简单计分.xls", rows);
+  downloadExcelFromRows("MaxDiff简单计分.xlsx", rows);
 }
 
 function scoreAbcQuestion(question) {
@@ -5348,7 +5348,7 @@ function exportAbcSuggestions() {
       rows.push([dimension, weight, item.id, item.title, item.type, item.priority, item.reason]);
     });
   });
-  downloadExcelFromRows("ABC用户价值模型指标建议.xls", rows);
+  downloadExcelFromRows("ABC用户价值模型指标建议.xlsx", rows);
 }
 
 let lastAbcSelected = null;
@@ -5683,7 +5683,7 @@ function exportAbcScoreResult() {
   lastAbcScoreResult.matchedFields.forEach((f) => {
     rows.push([f.indicator.id, f.indicator.title, f.field || "-", f.matched ? "已匹配" : "未匹配"]);
   });
-  downloadExcelFromRows("ABC用户价值指数得分.xls", rows);
+  downloadExcelFromRows("ABC用户价值指数得分.xlsx", rows);
 }
 
 function getAiPlanConfig() {
@@ -8146,7 +8146,7 @@ document.querySelector("#exportCleaningRules").addEventListener("click", () => {
 document.querySelector("#exportHeaderPlan").addEventListener("click", () => {
   if (!lastHeaderPlan?.plan?.columns?.length) return;
   const plan = lastHeaderPlan.plan;
-  downloadExcelWorkbookXml("表头设计方案.xls", [
+  downloadExcelWorkbookXml("表头设计方案.xlsx", [
     { name: "表头方案", rows: headerPlanRows(plan) },
     {
       name: "变量说明",
