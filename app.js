@@ -7899,6 +7899,144 @@ document.querySelector("#loadWeightingExample").addEventListener("click", () => 
   renderWeighting();
 });
 
+// AI 报告生成页面（独立入口）
+function handleAiReportImport(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const raw = reader.result;
+      const text = /\.sav$/i.test(file.name)
+        ? savToDelimitedTableText(raw)
+        : /\.xlsx$/i.test(file.name)
+          ? await xlsxToDelimitedTableText(raw)
+          : String(raw || "");
+      if (!normalizeImportedText(text)) throw new Error("未识别到有效数据。");
+      renderAiReportImportState(text, file.name);
+      showButtonSaved(document.querySelector("#importAiReportData"), "已导入");
+    } catch (error) {
+      document.querySelector("#aiReportDataPreview").innerHTML = `
+        <div class="empty-state">
+          <strong>导入失败</strong>
+          <span>${escapeHtml(error.message || "文件解析失败，请尝试另存为 CSV 后导入。")}</span>
+        </div>
+      `;
+      showButtonSaved(document.querySelector("#importAiReportData"), "导入失败");
+    }
+  };
+  if (/\.(xlsx|sav)$/i.test(file.name)) {
+    reader.readAsArrayBuffer(file);
+  } else {
+    reader.readAsText(file, "utf-8");
+  }
+}
+
+function renderAiReportImportState(text, filename) {
+  const dataField = document.querySelector("#aiReportData");
+  dataField.value = normalizeImportedText(text);
+  detectAiReportFields();
+  document.querySelector("#aiReportDataPreview").innerHTML = `
+    <div class="empty-state">
+      <strong>${escapeHtml(filename)}</strong>
+      <span>已导入数据，识别字段完成。可点击“AI 生成定量报告”生成分析报告。</span>
+    </div>
+  `;
+}
+
+function detectAiReportFields() {
+  const parsed = parseDelimitedTable(document.querySelector("#aiReportData").value);
+  if (!parsed.headers.length) {
+    document.querySelector("#aiReportFieldInfo").textContent = "未识别到有效字段，请检查数据格式。";
+    return parsed;
+  }
+  // 复用交叉表的字段识别逻辑
+  const headerInfos = parsed.headers.map((header, index) => {
+    const values = parsed.rows.map((row) => row[header]).filter((v) => v !== "" && v != null);
+    const isLikelyGroup = /性别|年龄|城市|级别|收入|学历|职业|地区|类型|用户|人群|样本|受访者|背景|分群|banner|group|demographic|segment|region|city|gender|age|education|income/i.test(header);
+    const type = isLikelyGroup ? "group" : "question";
+    return {
+      index,
+      header,
+      title: header,
+      sourceHeader: header,
+      type,
+      uniqueValues: [...new Set(values)].length,
+      totalValues: values.length
+    };
+  });
+  const groupHeaders = headerInfos.filter((h) => h.type === "group");
+  const questionHeaders = headerInfos.filter((h) => h.type === "question");
+  // 构建 lastCrosstabDataContext 供 generateAiReport 使用
+  lastCrosstabDataContext = {
+    rawHeaders: parsed.headers,
+    displayHeaders: parsed.headers,
+    headerInfos,
+    rawRows: parsed.rows.map((row) => parsed.headers.map((h) => row[h] || "")),
+    displayRows: parsed.rows.map((row) => parsed.headers.map((h) => row[h] || ""))
+  };
+  document.querySelector("#aiReportFieldInfo").innerHTML = `
+    已识别 ${parsed.headers.length} 个字段：${questionHeaders.length} 个题目字段，${groupHeaders.length} 个分群/背景字段。
+    ${groupHeaders.length > 0 ? "分群变量：" + groupHeaders.map((h) => h.header).join("、") : "未识别到明显分群变量，AI 将按全部字段生成报告。"}
+  `;
+  document.querySelector("#generateAiReport").disabled = false;
+  return parsed;
+}
+
+const exampleAiReportData = `性别,年龄段,城市级别,是否购买,满意度,推荐意愿
+男,18-29,一线城市,是,满意,9
+男,18-29,二线城市,否,一般,6
+男,30-39,一线城市,是,满意,10
+男,30-39,三线城市,否,不满意,4
+女,18-29,一线城市,是,满意,8
+女,18-29,二线城市,是,一般,7
+女,30-39,一线城市,否,一般,5
+女,30-39,三线城市,否,不满意,3
+男,40-50,一线城市,是,满意,9
+女,40-50,二线城市,否,一般,6
+男,18-29,三线城市,是,满意,8
+女,30-39,二线城市,是,满意,9`;
+
+document.querySelector("#importAiReportData").addEventListener("click", () => {
+  const input = document.querySelector("#aiReportImportFile");
+  input.value = "";
+  input.click();
+});
+document.querySelector("#aiReportImportFile").addEventListener("change", (event) => {
+  handleAiReportImport(event.target.files?.[0]);
+});
+document.querySelector("#detectAiReportFields").addEventListener("click", detectAiReportFields);
+document.querySelector("#loadAiReportExample").addEventListener("click", () => {
+  document.querySelector("#aiReportData").value = exampleAiReportData;
+  detectAiReportFields();
+});
+document.querySelector("#clearAiReportData").addEventListener("click", () => {
+  document.querySelector("#aiReportData").value = "";
+  document.querySelector("#aiReportFieldInfo").textContent = "粘贴数据后点击\"识别字段\"，将自动区分题目字段与分群/背景字段。";
+  document.querySelector("#aiReportDataPreview").innerHTML = `
+    <div class="empty-state">
+      <strong>等待数据</strong>
+      <span>粘贴或导入数据后，这里会显示字段识别结果与数据预览。</span>
+    </div>
+  `;
+  document.querySelector("#generateAiReport").disabled = true;
+  lastCrosstabDataContext = null;
+});
+
+// AI 报告按钮（交叉表页面和独立页面共用）
+document.querySelectorAll("#generateAiReport").forEach((btn) => btn.addEventListener("click", generateAiReport));
+document.querySelectorAll("#copyAiReport").forEach((btn) => btn.addEventListener("click", copyAiReport));
+document.querySelectorAll("#exportAiReportMd").forEach((btn) => btn.addEventListener("click", exportAiReportMd));
+document.querySelectorAll("#exportAiReportWord").forEach((btn) => btn.addEventListener("click", exportAiReportWord));
+
+document.querySelector("#runWeighting").addEventListener("click", renderWeighting);
+document.querySelector("#exportWeighting").addEventListener("click", exportWeightingResult);
+document.querySelector("#loadWeightingExample").addEventListener("click", () => {
+  document.querySelector("#weightingMode").value = "rim";
+  document.querySelector("#weightingSampleData").value = exampleWeightingSampleData;
+  document.querySelector("#weightingTargetData").value = exampleWeightingTargetData;
+  renderWeighting();
+});
+
 document.querySelector("#runPsm").addEventListener("click", () => {
   runPsmAnalysis();
   if (lastPsmAnalysis) markWorkspaceStatus("models");
@@ -8019,11 +8157,6 @@ document.querySelector("#loadAiWorkbenchProject").addEventListener("click", load
 document.querySelector("#copyAiWorkbench").addEventListener("click", copyAiWorkbench);
 document.querySelector("#exportAiWorkbenchMd").addEventListener("click", exportAiWorkbenchMd);
 document.querySelector("#exportAiWorkbenchWord").addEventListener("click", exportAiWorkbenchWord);
-
-document.querySelector("#generateAiReport").addEventListener("click", generateAiReport);
-document.querySelector("#copyAiReport").addEventListener("click", copyAiReport);
-document.querySelector("#exportAiReportMd").addEventListener("click", exportAiReportMd);
-document.querySelector("#exportAiReportWord").addEventListener("click", exportAiReportWord);
 
 document.querySelectorAll(".ai-inline-btn").forEach((button) => {
   button.addEventListener("click", () => openAiInlineAssistant(button));
