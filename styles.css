@@ -2043,3 +2043,15 @@ tr:last-child td {
     margin-inline: -2px;
   }
 }
+
+/* === NET Group Configuration Styles === */
+.net-group-panel { margin-top: 1rem; }
+.net-group-panel .section-heading { display: flex; justify-content: space-between; align-items: center; }
+.net-group-item { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem; background: #fafafa; }
+.net-group-item .group-header { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+.net-group-item input[type="text"] { flex: 1; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem; }
+.net-group-options { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.net-group-options label { display: flex; align-items: center; gap: 0.25rem; font-size: 0.8rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; background: white; }
+.net-group-options label input { margin: 0; }
+.net-group-options label.selected { background: var(--primary); color: white; border-color: var(--primary); }
+.net-row { font-weight: 600; background: #f0f4ff; }

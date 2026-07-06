@@ -814,6 +814,28 @@
               <p class="panel-note">用于“填数字+算卡方”：支持 SAV、CSV/TXT，也支持 data + code 双 sheet Excel，导入时会自动套用题干和选项映射。</p>
             </div>
 
+            <div class="panel net-group-panel" id="netGroupPanel" style="display:none;">
+              <div class="section-heading compact">
+                <h4>多选题 NET 分组配置</h4>
+                <button class="secondary-btn mini" id="toggleNetGroupPanel" type="button">收起</button>
+              </div>
+              <div id="netGroupConfigContent">
+                <p class="panel-note">为多选题配置分组 NET 统计。分组 NET = 选中该组内任意选项的样本比例。配置后会自动保存。</p>
+                <div class="two-col-fields">
+                  <label>
+                    选择多选题
+                    <select id="netGroupQuestionSelect"></select>
+                  </label>
+                </div>
+                <div id="netGroupEditor"></div>
+                <div class="button-row">
+                  <button class="secondary-btn" id="addNetGroup" type="button">+ 添加分组</button>
+                  <button class="primary-btn" id="applyNetGroups" type="button">应用并重新计算</button>
+                  <button class="secondary-btn" id="clearNetGroups" type="button">清除配置</button>
+                </div>
+              </div>
+            </div>
+
             <div class="audit-results" id="crosstabResults" aria-live="polite">
               <div class="empty-state">
                 <strong>等待分析</strong>

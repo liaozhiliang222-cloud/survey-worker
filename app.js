@@ -193,6 +193,37 @@ let lastCrosstabHeaderPlan = null;
 let lastAiActualModel = "";
 let lastAiReport = "";
 let crosstabImportMode = "data";
+
+let crosstabImportMode = "data";
+
+// === NET Group Config for multi-choice questions ===
+// Format: { questionKey: [ { name: "NET - 手机产品", optionLabels: ["R1", "R2", "R3"], optionHeaders: ["Q8_R1", "Q8_R2", "Q8_R3"] }, ... ] }
+let netGroupConfig = loadNetGroupConfig() || {};
+
+function loadNetGroupConfig() {
+  try {
+    return JSON.parse(localStorage.getItem("surveyNetGroupConfig") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveNetGroupConfig() {
+  localStorage.setItem("surveyNetGroupConfig", JSON.stringify(netGroupConfig));
+}
+
+function getNetGroupsForQuestion(questionKey) {
+  return netGroupConfig[questionKey] || [];
+}
+
+function setNetGroupsForQuestion(questionKey, groups) {
+  if (!groups || groups.length === 0) {
+    delete netGroupConfig[questionKey];
+  } else {
+    netGroupConfig[questionKey] = groups;
+  }
+  saveNetGroupConfig();
+}
 let lastCrosstabDataContext = null;
 let lastWeightingResult = null;
 let lastCleaningRules = null;
@@ -1279,6 +1310,7 @@ function renderCrosstabImportState(text, filename) {
       <span>已导入 ${parsed.rows.length} 行数据，识别字段 ${parsed.headers.length} 个。请选择行变量和列变量后生成交叉表。</span>
     </div>
   `;
+  renderNetGroupPanel();
 }
 
 function renderCrosstabHeaderImportState(definitions, filename) {
@@ -3166,6 +3198,7 @@ function buildSingleQuestionPivot(parsed) {
           const info = getHeaderInfo(header);
           return {
             label: info?.optionLabel || header.replace(new RegExp(`^${group.key}(?:__\\d+)?\\s*`), "").trim() || header,
+            header: header,
             count: mentions,
             mentionPercent: 0,
             countPercent: validBase ? mentions / validBase : 0
@@ -3173,6 +3206,44 @@ function buildSingleQuestionPivot(parsed) {
         });
         const totalMentions = optionRows.reduce((sum, row) => sum + row.count, 0);
         optionRows.forEach((row) => { row.mentionPercent = totalMentions ? row.count / totalMentions : 0; });
+        // Apply NET group configuration
+        const netGroups = getNetGroupsForQuestion(group.key);
+        if (netGroups.length > 0) {
+          const finalRows = [];
+          const usedHeaders = new Set();
+          netGroups.forEach((netGroup) => {
+            const groupHeaders = netGroup.optionHeaders || netGroup.optionLabels || [];
+            const matchedHeaders = [];
+            groupHeaders.forEach((gh) => {
+              const match = optionRows.find((or) => or.header === gh || or.label === gh);
+              if (match && !usedHeaders.has(match.header)) {
+                matchedHeaders.push(match.header);
+                usedHeaders.add(match.header);
+              }
+            });
+            if (matchedHeaders.length > 0) {
+              const netCount = parsed.rows.filter((row) =>
+                matchedHeaders.some((mh) => isBinaryMentionValue(row[mh]))
+              ).length;
+              finalRows.push({
+                label: netGroup.name || "NET",
+                header: null,
+                count: netCount,
+                mentionPercent: 0,
+                countPercent: validBase ? netCount / validBase : 0,
+                isNetGroup: true
+              });
+            }
+          });
+          optionRows.forEach((row) => {
+            if (!usedHeaders.has(row.header)) {
+              finalRows.push(row);
+            }
+          });
+          const totalMentions2 = finalRows.reduce((sum, row) => sum + row.count, 0);
+          finalRows.forEach((row) => { row.mentionPercent = totalMentions2 ? row.count / totalMentions2 : 0; });
+          return [{ title: group.title, type: "多选题", total, validBase, rows: finalRows }];
+        }
         return [{ title: group.title, type: "多选题", total, validBase, rows: optionRows }];
       }
 
@@ -3245,13 +3316,52 @@ function buildSingleQuestionPivot(parsed) {
       const mentions = new Map();
       values.forEach((value) => splitMultiValues(value).forEach((item) => mentions.set(item, (mentions.get(item) || 0) + 1)));
       const totalMentions = [...mentions.values()].reduce((sum, count) => sum + count, 0);
-      const rows = [...mentions.entries()].map(([label, count]) => ({
+      const validBase = values.filter((value) => splitMultiValues(value).length > 0).length;
+      const optionRows = [...mentions.entries()].map(([label, count]) => ({
         label,
         count,
         mentionPercent: totalMentions ? count / totalMentions : 0,
-        countPercent: values.filter((value) => splitMultiValues(value).length > 0).length ? count / values.filter((value) => splitMultiValues(value).length > 0).length : 0
+        countPercent: validBase ? count / validBase : 0
       }));
-      return [{ title: header, type: "多选题", total, validBase: values.filter((value) => splitMultiValues(value).length > 0).length, rows }];
+      // Apply NET group configuration
+      const netGroups = getNetGroupsForQuestion(header);
+      if (netGroups.length > 0) {
+        const finalRows = [];
+        const usedLabels = new Set();
+        netGroups.forEach((netGroup) => {
+          const groupLabels = netGroup.optionLabels || netGroup.optionHeaders || [];
+          const matchedLabels = [];
+          groupLabels.forEach((gl) => {
+            const match = optionRows.find((or) => or.label === gl);
+            if (match && !usedLabels.has(match.label)) {
+              matchedLabels.push(match.label);
+              usedLabels.add(match.label);
+            }
+          });
+          if (matchedLabels.length > 0) {
+            const netCount = values.filter((value) => {
+              const items = splitMultiValues(value);
+              return items.some((item) => matchedLabels.includes(item));
+            }).length;
+            finalRows.push({
+              label: netGroup.name || "NET",
+              count: netCount,
+              mentionPercent: 0,
+              countPercent: validBase ? netCount / validBase : 0,
+              isNetGroup: true
+            });
+          }
+        });
+        optionRows.forEach((row) => {
+          if (!usedLabels.has(row.label)) {
+            finalRows.push(row);
+          }
+        });
+        const totalMentions2 = finalRows.reduce((sum, row) => sum + row.count, 0);
+        finalRows.forEach((row) => { row.mentionPercent = totalMentions2 ? row.count / totalMentions2 : 0; });
+        return [{ title: header, type: "多选题", total, validBase, rows: finalRows }];
+      }
+      return [{ title: header, type: "多选题", total, validBase, rows: optionRows }];
     }
     if (type === "open") {
       return [];
@@ -3371,7 +3481,7 @@ function renderQuestionPivotItem(item) {
   if (item.type === "多选题") {
     return `
       <div class="table-wrap"><table><thead><tr><th>选项</th><th>响应数</th><th>响应率</th><th>普及率</th></tr></thead><tbody>
-        ${item.rows.map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${formatPercent(row.mentionPercent)}</td><td>${formatPercent(row.countPercent)}</td></tr>`).join("")}
+        ${item.rows.map((row) => `<tr class="${row.isNetGroup ? "net-row" : ""}"><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${formatPercent(row.mentionPercent)}</td><td>${formatPercent(row.countPercent)}</td></tr>`).join("")}
       </tbody></table></div>
     `;
   }
@@ -8289,4 +8399,188 @@ calculateSample();
 addQuotaDimension("性别", [["男", 50], ["女", 50]]);
 setCrossQuotaDimensions(crossQuotaTemplates["gender-age"].dimensions);
 calculateQuota();
+
+
+
+// === NET Group Configuration Panel Functions ===
+
+function renderNetGroupPanel() {
+  const panel = document.querySelector("#netGroupPanel");
+  const select = document.querySelector("#netGroupQuestionSelect");
+  if (!panel || !select) return;
+  
+  // Only show if we have parsed data with multi-choice questions
+  const parsed = parseDelimitedTable(document.querySelector("#crosstabData").value);
+  if (!parsed || !parsed.headers.length) {
+    panel.style.display = "none";
+    return;
+  }
+  
+  const groups = groupQuestionHeaders(parsed.headers, parsed.rows);
+  const multiQuestions = groups.filter((g) => {
+    if (g.headers.length === 1) {
+      const type = inferSingleColumnType(g.headers[0], parsed.rows.map((r) => r[g.headers[0]]));
+      return type === "multi_single_cell";
+    }
+    const type = inferMultiColumnType(g, parsed.rows);
+    return type === "multi_columns" || g.multiResponse;
+  });
+  
+  if (multiQuestions.length === 0) {
+    panel.style.display = "none";
+    return;
+  }
+  
+  panel.style.display = "";
+  
+  // Build select options
+  select.innerHTML = multiQuestions.map((q, i) => {
+    const key = q.headers.length > 1 ? q.key : q.headers[0];
+    return `<option value="${escapeHtml(key)}"${i === 0 ? " selected" : ""}>${escapeHtml(q.title || key)}</option>`;
+  }).join("");
+  
+  select.onchange = () => buildNetGroupEditor();
+  buildNetGroupEditor();
+}
+
+function buildNetGroupEditor() {
+  const select = document.querySelector("#netGroupQuestionSelect");
+  const editor = document.querySelector("#netGroupEditor");
+  if (!select || !editor) return;
+  
+  const questionKey = select.value;
+  const parsed = parseDelimitedTable(document.querySelector("#crosstabData").value);
+  const groups = groupQuestionHeaders(parsed.headers, parsed.rows);
+  const question = groups.find((g) => (g.headers.length > 1 ? g.key : g.headers[0]) === questionKey);
+  if (!question) return;
+  
+  // Get options for this question
+  let options = [];
+  if (question.headers.length > 1) {
+    options = question.headers.map((h) => {
+      const info = getHeaderInfo(h);
+      return { label: info?.optionLabel || h.replace(new RegExp(`^${question.key}(?:__\\d+)?\\s*`), "").trim() || h, header: h };
+    });
+  } else {
+    const values = parsed.rows.map((r) => r[question.headers[0]]);
+    const mentions = new Map();
+    values.forEach((v) => splitMultiValues(v).forEach((item) => mentions.set(item, (mentions.get(item) || 0) + 1)));
+    options = [...mentions.keys()].map((k) => ({ label: k, header: k }));
+  }
+  
+  const netGroups = getNetGroupsForQuestion(questionKey);
+  
+  editor.innerHTML = netGroups.map((group, index) => {
+    return `
+      <div class="net-group-item" data-index="${index}">
+        <div class="group-header">
+          <input type="text" placeholder="分组名称，如：NET - 手机产品" value="${escapeHtml(group.name || "")}" data-field="name" data-index="${index}">
+          <button class="secondary-btn mini" type="button" onclick="removeNetGroup(${index})">删除</button>
+        </div>
+        <div class="net-group-options">
+          ${options.map((opt) => {
+            const isSelected = (group.optionLabels || group.optionHeaders || []).includes(opt.label) || (group.optionLabels || group.optionHeaders || []).includes(opt.header);
+            return `<label class="${isSelected ? 'selected' : ''}"><input type="checkbox" data-opt="${escapeHtml(opt.label)}" data-index="${index}" ${isSelected ? 'checked' : ''}> ${escapeHtml(opt.label)}</label>`;
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }).join("");
+  
+  // Attach change listeners to checkboxes
+  editor.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    cb.onchange = () => {
+      const label = cb.closest('label');
+      if (cb.checked) label.classList.add('selected');
+      else label.classList.remove('selected');
+    };
+  });
+  
+  // Attach input listeners to name fields
+  editor.querySelectorAll('input[data-field="name"]').forEach((inp) => {
+    inp.oninput = () => {
+      const idx = Number(inp.dataset.index);
+      const groups = getNetGroupsForQuestion(questionKey);
+      if (groups[idx]) groups[idx].name = inp.value;
+    };
+  });
+}
+
+function addNetGroup() {
+  const select = document.querySelector("#netGroupQuestionSelect");
+  if (!select) return;
+  const questionKey = select.value;
+  const groups = getNetGroupsForQuestion(questionKey);
+  groups.push({ name: "", optionLabels: [], optionHeaders: [] });
+  setNetGroupsForQuestion(questionKey, groups);
+  buildNetGroupEditor();
+}
+
+function removeNetGroup(index) {
+  const select = document.querySelector("#netGroupQuestionSelect");
+  if (!select) return;
+  const questionKey = select.value;
+  const groups = getNetGroupsForQuestion(questionKey);
+  groups.splice(index, 1);
+  setNetGroupsForQuestion(questionKey, groups);
+  buildNetGroupEditor();
+}
+
+function applyNetGroups() {
+  const select = document.querySelector("#netGroupQuestionSelect");
+  if (!select) return;
+  const questionKey = select.value;
+  
+  // Collect current editor state
+  const editor = document.querySelector("#netGroupEditor");
+  const items = editor.querySelectorAll(".net-group-item");
+  const groups = [];
+  
+  items.forEach((item) => {
+    const name = item.querySelector('input[data-field="name"]')?.value || "";
+    const selectedOpts = [...item.querySelectorAll('input[type="checkbox"]:checked')].map((cb) => cb.dataset.opt);
+    if (name.trim() && selectedOpts.length > 0) {
+      groups.push({ name: name.trim(), optionLabels: selectedOpts, optionHeaders: selectedOpts });
+    }
+  });
+  
+  setNetGroupsForQuestion(questionKey, groups);
+  
+  // Re-run the question pivot to apply changes
+  if (typeof renderQuestionPivot === "function") renderQuestionPivot();
+  
+  showButtonSaved(document.querySelector("#applyNetGroups"), "已应用");
+}
+
+function clearNetGroups() {
+  const select = document.querySelector("#netGroupQuestionSelect");
+  if (!select) return;
+  const questionKey = select.value;
+  setNetGroupsForQuestion(questionKey, []);
+  buildNetGroupEditor();
+  if (typeof renderQuestionPivot === "function") renderQuestionPivot();
+}
+
+// Bind NET group panel events
+document.addEventListener("DOMContentLoaded", () => {
+  const addBtn = document.querySelector("#addNetGroup");
+  const applyBtn = document.querySelector("#applyNetGroups");
+  const clearBtn = document.querySelector("#clearNetGroups");
+  const toggleBtn = document.querySelector("#toggleNetGroupPanel");
+  
+  if (addBtn) addBtn.addEventListener("click", addNetGroup);
+  if (applyBtn) applyBtn.addEventListener("click", applyNetGroups);
+  if (clearBtn) clearBtn.addEventListener("click", clearNetGroups);
+  
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      const content = document.querySelector("#netGroupConfigContent");
+      if (content) {
+        const isHidden = content.style.display === "none";
+        content.style.display = isHidden ? "" : "none";
+        toggleBtn.textContent = isHidden ? "收起" : "展开";
+      }
+    });
+  }
+});
 
