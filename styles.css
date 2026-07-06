@@ -985,6 +985,41 @@ textarea {
   line-height: 1.6;
 }
 
+.ai-report-import-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px;
+  border: 1px dashed #93c5fd;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+}
+
+.ai-report-import-box h3 {
+  margin: 8px 0 6px;
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.ai-report-import-box p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.section-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: var(--blue);
+  background: #eaf3ff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .input-unit {
   position: relative;
   display: block;
@@ -1861,6 +1896,16 @@ tr:last-child td {
   .empty-state,
   .guide-card {
     padding: 14px;
+  }
+
+  .ai-report-import-box {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .ai-report-import-box .secondary-btn {
+    width: 100%;
   }
 
   .nav-item {

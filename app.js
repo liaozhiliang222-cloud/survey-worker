@@ -7289,7 +7289,7 @@ function buildAiReportPrompt(context, summary) {
 }
 
 async function generateAiReport() {
-  const context = document.querySelector("#aiReportContext").value.trim();
+  const context = document.querySelector("#aiReportContext")?.value.trim() || "";
   const result = document.querySelector("#aiReportResults");
   const genButton = document.querySelector("#generateAiReport");
   const copyButton = document.querySelector("#copyAiReport");
@@ -7938,7 +7938,7 @@ function renderAiReportImportState(text, filename) {
   document.querySelector("#aiReportDataPreview").innerHTML = `
     <div class="empty-state">
       <strong>${escapeHtml(filename)}</strong>
-      <span>已导入数据，识别字段完成。可点击“AI 生成定量报告”生成分析报告。</span>
+      <span>已导入并识别交叉表数据，可点击“AI 生成定量研究报告”生成分析报告。</span>
     </div>
   `;
 }
@@ -8004,12 +8004,12 @@ document.querySelector("#importAiReportData").addEventListener("click", () => {
 document.querySelector("#aiReportImportFile").addEventListener("change", (event) => {
   handleAiReportImport(event.target.files?.[0]);
 });
-document.querySelector("#detectAiReportFields").addEventListener("click", detectAiReportFields);
-document.querySelector("#loadAiReportExample").addEventListener("click", () => {
+document.querySelector("#detectAiReportFields")?.addEventListener("click", detectAiReportFields);
+document.querySelector("#loadAiReportExample")?.addEventListener("click", () => {
   document.querySelector("#aiReportData").value = exampleAiReportData;
   detectAiReportFields();
 });
-document.querySelector("#clearAiReportData").addEventListener("click", () => {
+document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
   document.querySelector("#aiReportData").value = "";
   document.querySelector("#aiReportFieldInfo").textContent = "粘贴数据后点击\"识别字段\"，将自动区分题目字段与分群/背景字段。";
   document.querySelector("#aiReportDataPreview").innerHTML = `

@@ -822,30 +822,6 @@
             </div>
           </div>
 
-          <div class="link-tester secondary-tool">
-            <div class="panel">
-              <label>
-                <span class="label-action">
-                  <span>项目背景（可选）</span>
-                </span>
-                <textarea id="aiReportContext" placeholder="填写项目背景、研究目的、目标人群等，帮助 AI 生成更精准的报告。例如：某品牌即将推出常温纯牛奶新品，需要评估概念吸引力和目标人群分层。"></textarea>
-              </label>
-              <div class="button-row">
-                <button class="primary-btn" id="generateAiReport" type="button" disabled>AI 生成定量报告</button>
-                <button class="secondary-btn" id="copyAiReport" type="button" disabled>复制报告</button>
-                <button class="secondary-btn" id="exportAiReportMd" type="button" disabled>导出 Markdown</button>
-                <button class="secondary-btn" id="exportAiReportWord" type="button" disabled>导出 Word</button>
-              </div>
-              <p class="panel-note">基于已导入的数据自动生成统计摘要，调用 AI 生成包含数据洞察、结论建议和 PPT 脚本的完整定量分析报告。</p>
-            </div>
-
-            <div class="audit-results" id="aiReportResults" aria-live="polite">
-              <div class="empty-state">
-                <strong>等待生成</strong>
-                <span>导入数据并点击"AI 生成定量报告"，将自动生成 Markdown 格式的分析报告与 PPT 脚本。</span>
-              </div>
-            </div>
-          </div>
         </section>
 
         <section class="view" id="crosstab-guide">
@@ -900,53 +876,43 @@
           <div class="link-tester">
             <div class="panel">
               <input class="hidden" id="aiReportImportFile" type="file" accept=".sav,.xlsx,.csv,.txt" />
-              <label>
-                <span class="label-action">
-                  <span>数据表</span>
-                  <button class="secondary-btn mini-import-btn" id="importAiReportData" type="button">导入数据</button>
-                </span>
-                <textarea id="aiReportData" placeholder="粘贴 CSV / Excel 复制出的表格，或导入数据文件。第一行需为字段名，例如：性别,年龄段,满意度,购买意愿。支持从交叉表分析页面同步过来的数据。"></textarea>
-              </label>
-              <div class="button-row">
-                <button class="secondary-btn" id="detectAiReportFields" type="button">识别字段</button>
-                <button class="secondary-btn" id="loadAiReportExample" type="button">载入示例</button>
-                <button class="secondary-btn" id="clearAiReportData" type="button">清空数据</button>
+              <div class="ai-report-import-box">
+                <div>
+                  <span class="section-pill">数据表</span>
+                  <h3>导入交叉表数据</h3>
+                  <p>支持 CSV、TXT、Excel 和 SAV 数据文件。导入后系统会自动识别题目字段、分群字段和数据预览。</p>
+                </div>
+                <button class="secondary-btn" id="importAiReportData" type="button">导入数据</button>
               </div>
+              <textarea class="hidden" id="aiReportData" aria-hidden="true"></textarea>
               <div id="aiReportFieldInfo" class="panel-note" style="margin-top:12px;">
-                粘贴数据后点击"识别字段"，将自动区分题目字段与分群/背景字段。
+                导入数据后，系统会自动识别字段并准备生成报告。
               </div>
-              <p class="panel-note">支持 CSV、TXT、Excel 粘贴，以及 SAV 数据文件导入。字段会自动识别为"题目"或"分群变量"。</p>
             </div>
 
             <div class="audit-results" id="aiReportDataPreview" aria-live="polite">
               <div class="empty-state">
                 <strong>等待数据</strong>
-                <span>粘贴或导入数据后，这里会显示字段识别结果与数据预览。</span>
+                <span>导入数据后，这里会显示字段识别结果与数据预览。</span>
               </div>
             </div>
           </div>
 
           <div class="link-tester secondary-tool">
             <div class="panel">
-              <label>
-                <span class="label-action">
-                  <span>项目背景（可选）</span>
-                </span>
-                <textarea id="aiReportContext" placeholder="填写项目背景、研究目的、目标人群等，帮助 AI 生成更精准的报告。例如：某品牌即将推出常温纯牛奶新品，需要评估概念吸引力和目标人群分层。"></textarea>
-              </label>
               <div class="button-row">
-                <button class="primary-btn" id="generateAiReport" type="button" disabled>AI 生成定量报告</button>
+                <button class="primary-btn" id="generateAiReport" type="button" disabled>AI 生成定量研究报告</button>
                 <button class="secondary-btn" id="copyAiReport" type="button" disabled>复制报告</button>
                 <button class="secondary-btn" id="exportAiReportMd" type="button" disabled>导出 Markdown</button>
                 <button class="secondary-btn" id="exportAiReportWord" type="button" disabled>导出 Word</button>
               </div>
-              <p class="panel-note">基于已导入的数据自动生成统计摘要，调用 AI 生成包含数据洞察、结论建议和 PPT 脚本的完整定量分析报告。</p>
+              <p class="panel-note">基于已导入的交叉表数据自动生成统计摘要，调用 AI 输出包含数据洞察、结论建议和 PPT 脚本的定量研究报告。</p>
             </div>
 
             <div class="audit-results" id="aiReportResults" aria-live="polite">
               <div class="empty-state">
                 <strong>等待生成</strong>
-                <span>导入数据并点击"AI 生成定量报告"，将自动生成 Markdown 格式的分析报告与 PPT 脚本。</span>
+                <span>导入并识别交叉表数据后，点击“AI 生成定量研究报告”即可生成 Markdown 报告与 PPT 脚本。</span>
               </div>
             </div>
           </div>
