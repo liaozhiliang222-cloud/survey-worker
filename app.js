@@ -194,6 +194,10 @@ let lastAiActualModel = "";
 let lastAiReport = "";
 let crosstabImportMode = "data";
 
+// === Crosstab Questionnaire Map for missing labels ===
+// Format: { "Q4": "请问您的个人月收入大约是多少？", "Q5": "...", ... }
+let crosstabQuestionnaireMap = {};
+
 // === NET Group Config for multi-choice questions ===
 // Format: { questionKey: [ { name: "NET - 手机产品", optionLabels: ["R1", "R2", "R3"], optionHeaders: ["Q8_R1", "Q8_R2", "Q8_R3"] }, ... ] }
 let netGroupConfig = loadNetGroupConfig() || {};
@@ -990,9 +994,15 @@ function savToDelimitedTableText(arrayBuffer) {
   const displayHeaders = [];
   const headerInfos = [];
   activeVariables.forEach((variable) => {
-    const title = savUniqueHeader(displayHeaders, variable.label ? `${variable.name} ${variable.label}` : variable.name);
+    // If label is empty, try to resolve from questionnaire map
+    let resolvedLabel = variable.label || "";
+    if (!resolvedLabel && Object.keys(crosstabQuestionnaireMap).length > 0) {
+      const mapped = resolveQuestionTitleFromMap(variable.name);
+      if (mapped) resolvedLabel = mapped;
+    }
+    const title = savUniqueHeader(displayHeaders, resolvedLabel ? `${variable.name} ${resolvedLabel}` : variable.name);
     displayHeaders.push(title);
-    const fullLabel = variable.label || "";
+    const fullLabel = resolvedLabel || "";
     const optionMatch = fullLabel.match(/[:：]([^:：]+)$/);
     const parentTitle = optionMatch ? fullLabel.replace(/[:：][^:：]+$/, "").trim() : fullLabel;
     const optionLabel = optionMatch ? optionMatch[1].trim() : null;
@@ -1292,6 +1302,75 @@ function applyQuestionnaireImport() {
   syncQuestionnaireToWorkspace(pendingQuestionnaireImport);
   applyWorkspaceProject(true);
   showButtonSaved(document.querySelector("#applyQuestionnaireImport"), "已生成并同步");
+}
+
+function buildCrosstabQuestionnaireMap(text) {
+  const questions = parseQuestions(text);
+  const map = {};
+  questions.forEach((q) => {
+    if (q.id) {
+      map[q.id] = q.title;
+    }
+  });
+  return map;
+}
+
+function resolveQuestionTitleFromMap(variableName) {
+  if (!variableName || !crosstabQuestionnaireMap || Object.keys(crosstabQuestionnaireMap).length === 0) return null;
+  // Try exact match first
+  if (crosstabQuestionnaireMap[variableName]) return crosstabQuestionnaireMap[variableName];
+  // Try prefix match: Q4_1 → Q4, FZ_Q5__1 → Q5, Q8_1 → Q8
+  const prefixMatch = String(variableName).match(/^([A-Za-z]+\d+)(?:[_\-].*)?$/);
+  if (prefixMatch && crosstabQuestionnaireMap[prefixMatch[1]]) {
+    return crosstabQuestionnaireMap[prefixMatch[1]];
+  }
+  // Try stripping FZ_ prefix: FZ_Q5 → Q5
+  const fzMatch = String(variableName).match(/^FZ_([A-Za-z]+\d+)(?:[_\-].*)?$/);
+  if (fzMatch && crosstabQuestionnaireMap[fzMatch[1]]) {
+    return crosstabQuestionnaireMap[fzMatch[1]];
+  }
+  return null;
+}
+
+function handleCrosstabQuestionnaireImport(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const raw = reader.result;
+      let text = "";
+      if (/\.(docx|doc)$/i.test(file.name)) {
+        try {
+          text = await docxToQuestionnaireText(raw);
+        } catch {
+          text = String(raw || "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+        }
+      } else {
+        text = String(raw || "");
+      }
+      if (!text.trim()) throw new Error("文件内容为空。");
+      crosstabQuestionnaireMap = buildCrosstabQuestionnaireMap(text);
+      const matchedCount = Object.keys(crosstabQuestionnaireMap).length;
+      const preview = document.querySelector("#crosstabQuestionnairePreview");
+      if (preview) {
+        preview.style.display = "";
+        preview.innerHTML = `已导入问卷 <strong>${escapeHtml(file.name)}</strong>，识别到 ${matchedCount} 道题，变量名与题干已自动关联。数据中没有题干的变量会优先使用问卷中的标题。`;
+      }
+      showButtonSaved(document.querySelector("#importCrosstabQuestionnaire"), `已导入 ${matchedCount} 题`);
+    } catch (error) {
+      const preview = document.querySelector("#crosstabQuestionnairePreview");
+      if (preview) {
+        preview.style.display = "";
+        preview.innerHTML = `<span style="color: #c0392b">导入失败：${escapeHtml(error.message || "文件解析失败")}</span>`;
+      }
+      showButtonSaved(document.querySelector("#importCrosstabQuestionnaire"), "导入失败");
+    }
+  };
+  if (/\.(docx|doc)$/i.test(file.name)) {
+    reader.readAsArrayBuffer(file);
+  } else {
+    reader.readAsText(file, "utf-8");
+  }
 }
 
 function renderCrosstabImportState(text, filename) {
@@ -8088,6 +8167,14 @@ document.querySelector("#importCrosstabData").addEventListener("click", () => {
 });
 document.querySelector("#crosstabImportFile").addEventListener("change", (event) => {
   handleCrosstabImport(event.target.files?.[0]);
+});
+document.querySelector("#importCrosstabQuestionnaire").addEventListener("click", () => {
+  const input = document.querySelector("#crosstabQuestionnaireImportFile");
+  input.value = "";
+  input.click();
+});
+document.querySelector("#crosstabQuestionnaireImportFile").addEventListener("change", (event) => {
+  handleCrosstabQuestionnaireImport(event.target.files?.[0]);
 });
 document.querySelector("#runQuestionPivot").addEventListener("click", renderQuestionPivot);
 document.querySelector("#runCrosstab").addEventListener("click", renderCrosstabAnalysis);

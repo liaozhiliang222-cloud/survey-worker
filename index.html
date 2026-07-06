@@ -786,6 +786,7 @@
           <div class="link-tester">
             <div class="panel">
               <input class="hidden" id="crosstabImportFile" type="file" accept=".sav,.xlsx,.xls,.csv,.txt" />
+              <input class="hidden" id="crosstabQuestionnaireImportFile" type="file" accept=".docx,.doc,.md,.txt" />
               <label>
                 <span class="label-action">
                   <span>数据表</span>
@@ -794,6 +795,10 @@
                 </span>
                 <textarea id="crosstabData" placeholder="粘贴 CSV / Excel 复制出的表格，或导入 SAV / Excel（XLSX/XLS）数据文件。第一行需为字段名，例如：性别,是否购买,满意度"></textarea>
               </label>
+              <div id="crosstabQuestionnairePreview" class="panel-note" style="display:none; margin-top: 0.5rem;"></div>
+              <div class="button-row" style="margin-top: 0.5rem;">
+                <button class="secondary-btn mini-import-btn" id="importCrosstabQuestionnaire" type="button">📋 导入问卷（匹配题干）</button>
+              </div>
               <div class="two-col-fields">
                 <label>
                   行变量
