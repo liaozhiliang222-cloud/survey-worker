@@ -639,7 +639,7 @@
               <div class="button-row">
                 <button class="primary-btn" id="generateCleaning" type="button">生成清洗规则</button>
                 <button class="secondary-btn" id="loadCleaningExample" type="button">载入示例</button>
-                <button class="secondary-btn span-row" id="exportCleaningRules" type="button" disabled>导出清洗规则 CSV</button>
+                <button class="secondary-btn span-row" id="exportCleaningRules" type="button" disabled>导出清洗规则 Excel</button>
                 <button class="secondary-btn span-row ai-inline-btn" type="button" data-ai-task="cleaning-rules" data-ai-source="cleaningText">AI 优化清洗说明</button>
               </div>
               <p class="panel-note">当前生成的是规则建议模板；后续可接入数据文件后自动执行清洗。</p>
@@ -786,7 +786,7 @@
           <div class="link-tester">
             <div class="panel">
               <input class="hidden" id="crosstabImportFile" type="file" accept=".sav,.xlsx,.xls,.csv,.txt" />
-              <input class="hidden" id="crosstabQuestionnaireImportFile" type="file" accept=".docx,.doc,.md,.txt" />
+              <input class="hidden" id="crosstabQuestionnaireImportFile" type="file" accept=".docx,.doc,.xlsx,.xls,.md,.txt" />
               <label>
                 <span class="label-action">
                   <span>数据表</span>
@@ -814,7 +814,7 @@
                 <button class="primary-btn" id="runQuestionPivot" type="button">生成全部交叉表</button>
                 <button class="primary-btn" id="runCrosstab" type="button">生成交叉表</button>
                 <button class="secondary-btn" id="loadCrosstabExample" type="button">载入示例</button>
-                <button class="secondary-btn" id="exportCrosstab" type="button" disabled>导出 CSV</button>
+                <button class="secondary-btn" id="exportCrosstab" type="button" disabled>导出 Excel</button>
               </div>
               <p class="panel-note">用于“填数字+算卡方”：支持 SAV、CSV/TXT，也支持 data + code 双 sheet Excel，导入时会自动套用题干和选项映射。</p>
             </div>
@@ -976,7 +976,7 @@
               <div class="button-row">
                 <button class="primary-btn" id="runWeighting" type="button">计算权重</button>
                 <button class="secondary-btn" id="loadWeightingExample" type="button">载入示例</button>
-                <button class="secondary-btn" id="exportWeighting" type="button" disabled>导出 CSV</button>
+                <button class="secondary-btn" id="exportWeighting" type="button" disabled>导出 Excel</button>
               </div>
               <p class="panel-note">RIM 用于多个边际变量同时校准；Cell 用于已知交叉单元格目标量时直接计算权重。</p>
             </div>
@@ -1085,7 +1085,7 @@
               <div class="button-row">
                 <button class="primary-btn" id="runPsm" type="button">计算 PSM</button>
                 <button class="secondary-btn" id="loadPsmExample" type="button">载入示例</button>
-                <button class="secondary-btn" id="exportPsm" type="button" disabled>导出 CSV</button>
+                <button class="secondary-btn" id="exportPsm" type="button" disabled>导出 Excel</button>
                 <button class="secondary-btn" id="exportPsmPng" type="button" disabled>导出图表 PNG</button>
               </div>
               <p class="panel-note">请确保四列价格含义依次为“太便宜 / 便宜 / 贵 / 太贵”。第一版使用线性插值估算关键交点。</p>
@@ -1164,7 +1164,7 @@
               <div class="button-row">
                 <button class="primary-btn" id="runKano" type="button">计算 KANO</button>
                 <button class="secondary-btn" id="loadKanoExample" type="button">载入示例</button>
-                <button class="secondary-btn" id="exportKano" type="button" disabled>导出 CSV</button>
+                <button class="secondary-btn" id="exportKano" type="button" disabled>导出 Excel</button>
                 <button class="secondary-btn" id="exportKanoPng" type="button" disabled>导出图表 PNG</button>
               </div>
               <p class="panel-note">第一版按已汇总的 KANO 分类人数计算 Better-Worse 系数；适合从问卷平台或表格中复制结果。</p>
@@ -1251,7 +1251,7 @@
               <div class="button-row">
                 <button class="primary-btn" id="generateMaxDiff" type="button">生成设计</button>
                 <button class="secondary-btn" id="loadMaxDiffExample" type="button">载入示例</button>
-                <button class="secondary-btn span-row" id="exportMaxDiffDesign" type="button" disabled>导出设计 CSV</button>
+                <button class="secondary-btn span-row" id="exportMaxDiffDesign" type="button" disabled>导出设计 Excel</button>
               </div>
               <p class="panel-note">第一版使用轻量均衡分配，适合快速生成问卷题组草案；正式大样本建议再做实验设计校验。</p>
             </div>
@@ -1273,7 +1273,7 @@
               <div class="button-row">
                 <button class="primary-btn" id="scoreMaxDiff" type="button">计算得分</button>
                 <button class="secondary-btn" id="loadMaxDiffScoreExample" type="button">载入计分示例</button>
-                <button class="secondary-btn" id="exportMaxDiffScore" type="button" disabled>导出计分 CSV</button>
+                <button class="secondary-btn" id="exportMaxDiffScore" type="button" disabled>导出计分 Excel</button>
                 <button class="secondary-btn" id="exportMaxDiffPng" type="button" disabled>导出图表 PNG</button>
               </div>
               <p class="panel-note">简单计分公式为 (最佳次数 - 最差次数) / 展示次数，用于快速排序，不替代 MNL/HB 模型估计。</p>
@@ -1379,7 +1379,7 @@
                 <button class="primary-btn" id="generateAbc" type="button">识别指标</button>
                 <button class="primary-btn" id="confirmAbcCalculate" type="button" disabled>确认指标并计算</button>
                 <button class="secondary-btn" id="loadAbcExample" type="button">载入示例</button>
-                <button class="secondary-btn span-row" id="exportAbc" type="button" disabled>导出指标 CSV</button>
+                <button class="secondary-btn span-row" id="exportAbc" type="button" disabled>导出指标 Excel</button>
               </div>
               <div class="abc-data-input hidden" id="abcDataInputSection">
                 <label>
@@ -1392,7 +1392,7 @@
                 <div class="button-row">
                   <button class="primary-btn" id="calculateAbcScore" type="button">计算 ABC 指数</button>
                   <button class="secondary-btn" id="loadAbcDataExample" type="button">载入数据示例</button>
-                  <button class="secondary-btn span-row" id="exportAbcScore" type="button" disabled>导出 ABC 得分 CSV</button>
+                  <button class="secondary-btn span-row" id="exportAbcScore" type="button" disabled>导出 ABC 得分 Excel</button>
                 </div>
               </div>
               <p class="panel-note">第一步：识别指标 → 勾选确认入模题目 → 第二步：粘贴样本数据 → 计算 ABC 得分并分群。</p>
