@@ -2783,7 +2783,7 @@ function excelXmlCell(value) {
   const cell = value && typeof value === "object" && !Array.isArray(value)
     ? value
     : { value };
-  const styleId = cell.format === "percent" ? ` ss:StyleID="Percent1"` : "";
+  const styleId = cell.format === "percent" ? ` ss:StyleID="Percent1"` : cell.format === "bold" ? ` ss:StyleID="Bold"` : "";
   if (cell.type === "number") {
     const href = cell.href ? ` ss:HRef="${escapeHtml(cell.href)}"` : "";
     return `<Cell${href}${styleId}><Data ss:Type="Number">${cell.value ?? 0}</Data></Cell>`;
@@ -2803,6 +2803,9 @@ function excelWorkbookStylesXml() {
     </Style>
     <Style ss:ID="Percent1">
       <NumberFormat ss:Format="0.0%"/>
+    </Style>
+    <Style ss:ID="Bold">
+      <Font ss:FontName="Arial" ss:Size="11" ss:Bold="1"/>
     </Style>
   </Styles>`;
 }
@@ -3234,9 +3237,7 @@ function buildSingleQuestionPivot(parsed) {
             }
           });
           optionRows.forEach((row) => {
-            if (!usedHeaders.has(row.header)) {
-              finalRows.push(row);
-            }
+            finalRows.push(row);
           });
           const totalMentions2 = finalRows.reduce((sum, row) => sum + row.count, 0);
           finalRows.forEach((row) => { row.mentionPercent = totalMentions2 ? row.count / totalMentions2 : 0; });
@@ -3352,9 +3353,7 @@ function buildSingleQuestionPivot(parsed) {
           }
         });
         optionRows.forEach((row) => {
-          if (!usedLabels.has(row.label)) {
-            finalRows.push(row);
-          }
+          finalRows.push(row);
         });
         const totalMentions2 = finalRows.reduce((sum, row) => sum + row.count, 0);
         finalRows.forEach((row) => { row.mentionPercent = totalMentions2 ? row.count / totalMentions2 : 0; });
@@ -3892,7 +3891,7 @@ function buildWorkbookLineDescriptors(item) {
     return descriptors;
   }
 
-  item.rows?.forEach((row) => descriptors.push({ label: row.label, kind: type === "多选题" ? "multi" : "row" }));
+  item.rows?.forEach((row) => descriptors.push({ label: row.label, kind: type === "多选题" ? "multi" : "row", isNetGroup: row.isNetGroup }));
   return descriptors;
 }
 
@@ -3982,7 +3981,7 @@ function buildCrosstabWorkbookSheet(items, plan, bannerPivotIndexes, mode) {
     buildWorkbookLineDescriptors(item).forEach((descriptor) => {
       rows.push([
         "",
-        descriptor.label,
+        descriptor.isNetGroup ? { value: descriptor.label, format: "bold" } : descriptor.label,
         ...bannerItems.map((bannerItem) => workbookValueForDescriptor(bannerItem, bannerItems[0], descriptor, mode))
       ]);
     });

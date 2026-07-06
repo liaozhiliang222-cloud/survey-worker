@@ -2054,4 +2054,5 @@ tr:last-child td {
 .net-group-options label { display: flex; align-items: center; gap: 0.25rem; font-size: 0.8rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; background: white; }
 .net-group-options label input { margin: 0; }
 .net-group-options label.selected { background: var(--primary); color: white; border-color: var(--primary); }
-.net-row { font-weight: 600; background: #f0f4ff; }
+.net-row { font-weight: 600 !important; background: #f0f4ff !important; }
+.table-wrap tbody tr.net-row td:first-child { color: #1a56db; }
