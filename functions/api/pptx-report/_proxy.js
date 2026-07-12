@@ -3,9 +3,9 @@
 // 不暴露公网 IP，也避免浏览器跨域问题。
 
 const BACKEND_ENV = "PPTX_BACKEND_URL";
-// Cloudflare Pages 后台必须配置 PPTX_BACKEND_URL。
-// 不再兜底写公网 IP:8000，避免 Cloudflare 边缘节点触发 1003 / 403。
-const BACKEND_DEFAULT = "";
+// 兜底默认值：阿里云 ECS 上的 FastAPI 服务
+// 如果 Cloudflare 环境变量未配置，使用此默认值
+const BACKEND_DEFAULT = "http://8.138.201.60:8000";
 
 function jsonResponse(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
