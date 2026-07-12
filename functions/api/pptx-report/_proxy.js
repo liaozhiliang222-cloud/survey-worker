@@ -3,9 +3,9 @@
 // 不暴露公网 IP，也避免浏览器跨域问题。
 
 const BACKEND_ENV = "PPTX_BACKEND_URL";
-// 兜底默认值：阿里云 ECS 上的 FastAPI 服务
-// 如果 Cloudflare 环境变量未配置，使用此默认值
-const BACKEND_DEFAULT = "http://8.138.201.60:8000";
+// 兜底默认值：阿里云 ECS 通过 Cloudflare 代理的域名
+// 使用标准 443 端口，避免 Cloudflare 对非常见端口的限制
+const BACKEND_DEFAULT = "https://api.surveykit.cc";
 
 function jsonResponse(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
