@@ -3,8 +3,78 @@
 // 不暴露公网 IP，也避免浏览器跨域问题。
 
 const BACKEND_ENV = "PPTX_BACKEND_URL";
-// 兜底默认值：阿里云 ECS 上的 FastAPI 服务（如需换机器改这里或设 Cloudflare 变量 PPTX_BACKEND_URL）
-const BACKEND_DEFAULT = "http://8.138.201.60:8000";
+// Cloudflare Pages 后台必须配置 PPTX_BACKEND_URL。
+// 不再兜底写公网 IP:8000，避免 Cloudflare 边缘节点触发 1003 / 403。
+const BACKEND_DEFAULT = "";
+
+function jsonResponse(payload, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": "*",
+      ...extraHeaders,
+    },
+  });
+}
+
+function resolveBackend(env) {
+  const fromEnv = env && typeof env[BACKEND_ENV] === "string" ? env[BACKEND_ENV].trim() : "";
+  return (fromEnv || BACKEND_DEFAULT || "").replace(/\/+$/, "");
+}
+
+function buildForwardHeaders(request) {
+  const blocked = new Set([
+    "host",
+    "origin",
+    "referer",
+    "content-length",
+    "accept-encoding",
+    "connection",
+    "cf-connecting-ip",
+    "cf-ipcountry",
+    "cf-ray",
+    "cf-visitor",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+  ]);
+  const headers = new Headers();
+  request.headers.forEach((value, key) => {
+    const lower = key.toLowerCase();
+    if (!blocked.has(lower) && !lower.startsWith("cf-")) {
+      headers.set(key, value);
+    }
+  });
+  const url = new URL(request.url);
+  headers.set("X-SurveyKit-Proxy", "cloudflare-pages");
+  headers.set("X-Forwarded-Host", url.host);
+  headers.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
+  return headers;
+}
+
+async function upstreamError(upstream) {
+  const text = await upstream.text().catch(() => "");
+  let message = `PPTX 后端返回 ${upstream.status}`;
+  try {
+    const data = JSON.parse(text);
+    message = data?.error?.message || data?.message || message;
+  } catch (_) {
+    if (text) message = text.slice(0, 400);
+  }
+  if (upstream.status === 403 && /1003/.test(message)) {
+    message = "Cloudflare 无法访问当前 PPTX 后端地址（1003）。请不要使用公网 IP:8000 作为后端地址，建议将阿里云 API 绑定到域名并通过 80/443/8080/8443 端口访问，然后在 Cloudflare Pages 变量 PPTX_BACKEND_URL 中填写该域名地址。";
+  }
+  return jsonResponse(
+    {
+      error: {
+        message,
+        status: upstream.status,
+      },
+    },
+    upstream.status,
+  );
+}
 
 export async function proxyToBackend(request, env) {
   // 处理 OPTIONS 预检请求（CORS）
@@ -20,28 +90,16 @@ export async function proxyToBackend(request, env) {
     });
   }
   
-  // 直接使用硬编码的后端 URL，不依赖环境变量
-  const backend = BACKEND_DEFAULT;
+  const backend = resolveBackend(env);
   if (!backend) {
-    return new Response(
-      JSON.stringify({ error: { message: "PPTX 后端未配置（Cloudflare 变量缺少 PPTX_BACKEND_URL）。" } }),
-      { 
-        status: 500, 
-        headers: { 
-          "Content-Type": "application/json; charset=utf-8",
-          "Access-Control-Allow-Origin": "*",
-        }
-      }
-    );
+    return jsonResponse({ error: { message: "PPTX 后端未配置（Cloudflare 变量缺少 PPTX_BACKEND_URL）。" } }, 500);
   }
 
   const url = new URL(request.url);
-  const target = backend.replace(/\/+$/, "") + url.pathname + url.search;
+  const backendPath = url.pathname.endsWith("/healthz") ? "/healthz" : url.pathname;
+  const target = backend.replace(/\/+$/, "") + backendPath + url.search;
 
-  // 转发请求头，但去掉 host/content-length（由运行时重新计算）
-  const headers = new Headers(request.headers);
-  headers.delete("host");
-  headers.delete("content-length");
+  const headers = buildForwardHeaders(request);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
@@ -56,6 +114,9 @@ export async function proxyToBackend(request, env) {
       redirect: "manual",
     });
     clearTimeout(timeout);
+    if (!upstream.ok) {
+      return upstreamError(upstream);
+    }
     // 透传上游响应（含 .pptx 二进制流与 Content-Disposition）
     return new Response(upstream.body, {
       status: upstream.status,
@@ -70,15 +131,6 @@ export async function proxyToBackend(request, env) {
       e.name === "AbortError"
         ? "后端响应超时（120s），报告可能过大或后端不可用。"
         : "代理到 PPTX 后端失败：" + (e.message || String(e));
-    return new Response(
-      JSON.stringify({ error: { message: msg } }),
-      { 
-        status: 502, 
-        headers: { 
-          "Content-Type": "application/json; charset=utf-8",
-          "Access-Control-Allow-Origin": "*",
-        } 
-      }
-    );
+    return jsonResponse({ error: { message: msg } }, 502);
   }
 }
