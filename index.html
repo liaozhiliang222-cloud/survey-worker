@@ -2012,13 +2012,12 @@
     </div>
 
     <script>
-    // 运行时拦截 fetch，将 /api/pptx-report/* 请求保持同源路径
-    // Cloudflare Pages Functions 会自动处理 /api/* 路由，代理到阿里云后端
+    // 运行时拦截 fetch，保持 /pptx-api/* 请求同源路径
+    // Cloudflare Pages Functions 处理 /pptx-api/* 路由，代理到阿里云后端
     (function () {
       var _origFetch = window.fetch.bind(window);
       window.fetch = function (input, init) {
-        if (typeof input === "string" && input.indexOf("/api/pptx-report") === 0) {
-          // 保持同源路径，不重定向到 Worker
+        if (typeof input === "string" && input.indexOf("/pptx-api") === 0) {
           return _origFetch(input, init);
         }
         return _origFetch(input, init);

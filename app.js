@@ -11852,21 +11852,33 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       }
     }
 
+    async function readPptxApiError(resp, fallback) {
+      let msg = fallback || `请求失败（${resp.status}）`;
+      try {
+        const data = await resp.json();
+        msg = data?.error?.message || data?.message || msg;
+      } catch (_) {
+        try {
+          const text = await resp.text();
+          if (text) msg = text.slice(0, 300);
+        } catch (_) {}
+      }
+      return msg;
+    }
+
     parseBtn.addEventListener("click", async () => {
       if (!selectedFile) return;
       parseBtn.disabled = true;
       parseStatus.textContent = "解析中…";
       try {
         const buf = await selectedFile.arrayBuffer();
-        const resp = await fetch("/api/pptx-report/parse", {
+        const resp = await fetch("/pptx-api/parse", {
           method: "POST",
           headers: { "Content-Type": "application/octet-stream" },
           body: buf,
         });
         if (!resp.ok) {
-          let msg = "解析失败";
-          try { msg = (await resp.json()).error?.message || msg; } catch (_) {}
-          throw new Error(msg);
+          throw new Error(await readPptxApiError(resp, "解析失败"));
         }
         const data = await resp.json();
         const segs = data.segments || [];
@@ -11910,15 +11922,13 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         const buf = await selectedFile.arrayBuffer();
         const qs = "segments=" + encodeURIComponent(JSON.stringify(checked)) + "&title=" + encodeURIComponent(title) +
           (currentDimension ? "&dimension=" + encodeURIComponent(currentDimension) : "");
-        const resp = await fetch("/api/pptx-report/preview?" + qs, {
+        const resp = await fetch("/pptx-api/preview?" + qs, {
           method: "POST",
           headers: { "Content-Type": "application/octet-stream" },
           body: buf,
         });
         if (!resp.ok) {
-          let msg = "预览失败";
-          try { msg = (await resp.json()).error?.message || msg; } catch (_) {}
-          throw new Error(msg);
+          throw new Error(await readPptxApiError(resp, "预览失败"));
         }
         pagePlan = await resp.json();
         editedPagePlan = JSON.parse(JSON.stringify(pagePlan));  // deep copy for editing
@@ -12105,15 +12115,13 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         if (editedPagePlan) {
           qs += "&page_config=" + encodeURIComponent(JSON.stringify(editedPagePlan));
         }
-        const resp = await fetch("/api/pptx-report?" + qs, {
+        const resp = await fetch("/pptx-api?" + qs, {
           method: "POST",
           headers: { "Content-Type": "application/octet-stream" },
           body: buf,
         });
         if (!resp.ok) {
-          let msg = "生成失败";
-          try { msg = (await resp.json()).error?.message || msg; } catch (_) {}
-          throw new Error(msg);
+          throw new Error(await readPptxApiError(resp, "生成失败"));
         }
         progressFill.style.width = "85%";
         const blob = await resp.blob();
