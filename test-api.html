@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API 测试</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .result { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 4px; }
+    .success { background: #d4edda; }
+    .error { background: #f8d7da; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Cloudflare Functions 测试</h1>
+  
+  <h2>测试 1：后端健康检查</h2>
+  <button onclick="testBackend()">测试后端</button>
+  <div id="test1" class="result">等待测试...</div>
+  
+  <h2>测试 2：Cloudflare Function 调用</h2>
+  <button onclick="testFunction()">测试 Function</button>
+  <div id="test2" class="result">等待测试...</div>
+  
+  <h2>测试 3：完整解析流程</h2>
+  <button onclick="testParse()">测试解析</button>
+  <div id="test3" class="result">等待测试...</div>
+  
+  <script>
+    async function testBackend() {
+      const result = document.getElementById('test1');
+      result.className = 'result';
+      result.textContent = '测试中...';
+      
+      try {
+        const resp = await fetch('http://8.138.201.60:8000/healthz');
+        const data = await resp.json();
+        result.className = 'result success';
+        result.textContent = `✅ 后端正常：${JSON.stringify(data)}`;
+      } catch (err) {
+        result.className = 'result error';
+        result.textContent = `❌ 后端错误：${err.message}`;
+      }
+    }
+    
+    async function testFunction() {
+      const result = document.getElementById('test2');
+      result.className = 'result';
+      result.textContent = '测试中...';
+      
+      try {
+        const resp = await fetch('/api/pptx-report/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: new Blob(['test'])
+        });
+        const text = await resp.text();
+        result.className = `result ${resp.ok ? 'success' : 'error'}`;
+        result.textContent = `状态码：${resp.status}\n响应：${text}`;
+      } catch (err) {
+        result.className = 'result error';
+        result.textContent = `❌ Function 错误：${err.message}`;
+      }
+    }
+    
+    async function testParse() {
+      const result = document.getElementById('test3');
+      result.className = 'result';
+      result.textContent = '测试中...';
+      
+      // 创建一个简单的测试 Excel 文件（base64 编码的空 Excel）
+      const testFile = new Uint8Array([
+        0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+      ]);
+      
+      try {
+        const resp = await fetch('/api/pptx-report/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: testFile
+        });
+        const data = await resp.json();
+        result.className = `result ${resp.ok ? 'success' : 'error'}`;
+        result.textContent = `状态码：${resp.status}\n响应：${JSON.stringify(data, null, 2)}`;
+      } catch (err) {
+        result.className = 'result error';
+        result.textContent = `❌ 解析错误：${err.message}`;
+      }
+    }
+  </script>
+</body>
+</html>

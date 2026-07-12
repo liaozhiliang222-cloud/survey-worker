@@ -20,7 +20,8 @@ export async function proxyToBackend(request, env) {
     });
   }
   
-  const backend = env[BACKEND_ENV] || BACKEND_DEFAULT;
+  // 直接使用硬编码的后端 URL，不依赖环境变量
+  const backend = BACKEND_DEFAULT;
   if (!backend) {
     return new Response(
       JSON.stringify({ error: { message: "PPTX 后端未配置（Cloudflare 变量缺少 PPTX_BACKEND_URL）。" } }),
