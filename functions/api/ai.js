@@ -7,7 +7,7 @@ const PROVIDER_HOSTS = {
 };
 
 const BAIYAN_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
-const BAIYAN_FALLBACK_MODELS = ["qwen-plus", "glm-4-plus", "qwen-turbo", "glm-4-flash"];
+const BAIYAN_FALLBACK_MODELS = ["qwen-plus", "qwen-turbo", "qwen-max", "glm-4-plus", "glm-4-flash"];
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -34,15 +34,19 @@ function allowedHostsFromEnv(env) {
 function validateTarget(provider, rawUrl, env) {
   if (!rawUrl) throw new Error("Missing provider API URL.");
   const url = new URL(rawUrl);
-  if (url.protocol !== "https:") throw new Error("Only HTTPS model APIs are allowed.");
+  const host = url.hostname.toLowerCase();
+  const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(host);
+  const isPrivateHost = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(host);
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && (isLocalHost || isPrivateHost))) {
+    throw new Error("Only HTTPS model APIs are allowed, except local/private model endpoints.");
+  }
   if (!/\/chat\/completions\/?$/i.test(url.pathname)) {
     throw new Error("Only OpenAI-compatible /chat/completions APIs are supported.");
   }
 
-  const host = url.hostname.toLowerCase();
   const allowedHosts = allowedHostsFromEnv(env);
   const presetHosts = PROVIDER_HOSTS[provider] || [];
-  if (!allowedHosts.has(host) && !presetHosts.includes(host)) {
+  if (!isLocalHost && !isPrivateHost && !allowedHosts.has(host) && !presetHosts.includes(host)) {
     throw new Error(`Model API host is not allowed: ${host}`);
   }
   return url.toString();
@@ -56,12 +60,20 @@ function shouldRetryModel(errorText) {
     msg.includes("rate_limit") ||
     msg.includes("limit") ||
     msg.includes("not found") ||
+    msg.includes("not exist") ||
+    msg.includes("invalid model") ||
+    msg.includes("model.*not") ||
     msg.includes("不存在") ||
+    msg.includes("不支持") ||
+    msg.includes("无法识别") ||
     msg.includes("额度") ||
     msg.includes("限流") ||
     msg.includes("unavailable") ||
     msg.includes("deprecated") ||
-    msg.includes("not supported")
+    msg.includes("not supported") ||
+    msg.includes("access denied") ||
+    msg.includes("permission") ||
+    msg.includes("no permission")
   );
 }
 
@@ -106,22 +118,42 @@ export async function onRequestPost({ request, env }) {
     }
 
     // 构建模型尝试列表
+    // 内置百炼模式：百炼只支持 qwen/glm 系列模型
+    // 如果前端发送的 model 是百炼支持的（qwen/glm 开头），先尝试它
+    // 否则直接使用百炼回退模型列表
+    const isBaiyanModel = (m) => /^(qwen|glm)/i.test(m);
     const modelsToTry = isBuiltIn
-      ? [requestBody.model, ...BAIYAN_FALLBACK_MODELS.filter((m) => m !== requestBody.model)]
+      ? [...new Set([
+          ...(isBaiyanModel(requestBody.model) ? [requestBody.model] : []),
+          ...BAIYAN_FALLBACK_MODELS
+        ])]
       : [requestBody.model];
 
     let lastError = null;
 
     for (const model of modelsToTry) {
       const body = { ...requestBody, model };
-      const upstream = await fetch(targetUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`
-        },
-        body: JSON.stringify(body)
-      });
+      // 内置百炼模式：限制 max_tokens 不超过 8192（百炼模型输出上限）
+      if (isBuiltIn && body.max_tokens && body.max_tokens > 8192) {
+        body.max_tokens = 8192;
+      }
+      // 设置超时控制，防止大报告生成时524超时
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 300000);
+      let upstream;
+      try {
+        upstream = await fetch(targetUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
       const text = await upstream.text();
 
@@ -179,7 +211,10 @@ export async function onRequestPost({ request, env }) {
     }, { status: 502 });
 
   } catch (error) {
-    const message = error.message || "AI proxy request failed.";
+    let message = error.message || "AI proxy request failed.";
+    if (error.name === "AbortError") {
+      message = "模型响应超时（5分钟），可能因数据量过大。建议减少数据量后重试，或选择更快的模型档位。";
+    }
     const status = /missing|only|not allowed|invalid/i.test(message) ? 400 : 500;
     return json({ error: { message } }, { status });
   }

@@ -1,6 +1,5 @@
 const views = document.querySelectorAll(".view");
 const navItems = document.querySelectorAll(".nav-item");
-const jumpCards = document.querySelectorAll("[data-jump]");
 
 const typoRules = [
   ["请选则", "疑似错字：请选则", "建议改为“请选择”。"],
@@ -183,6 +182,8 @@ let lastKanoAnalysis = null;
 let lastMaxDiffDesign = null;
 let lastMaxDiffScore = null;
 let lastAiPlan = "";
+let aiPlanTemplates = [];
+let aiQuestionnaireTemplates = [];
 let lastAiPrompt = "";
 let lastAiQuestionnaireText = "";
 let lastAiWorkbenchOutput = "";
@@ -192,6 +193,7 @@ let lastQuestionPivot = null;
 let lastCrosstabHeaderPlan = null;
 let lastAiActualModel = "";
 let lastAiReport = "";
+let lastAiReportMode = "markdown";
 let crosstabImportMode = "data";
 
 // === Excluded variables tracker for debugging ===
@@ -214,7 +216,9 @@ function loadNetGroupConfig() {
 }
 
 function saveNetGroupConfig() {
-  localStorage.setItem("surveyNetGroupConfig", JSON.stringify(netGroupConfig));
+  try {
+    localStorage.setItem("surveyNetGroupConfig", JSON.stringify(netGroupConfig));
+  } catch { /* 隐私模式忽略写入 */ }
 }
 
 function getNetGroupsForQuestion(questionKey) {
@@ -232,6 +236,12 @@ function setNetGroupsForQuestion(questionKey, groups) {
 let lastCrosstabDataContext = null;
 let lastWeightingResult = null;
 let lastCleaningRules = null;
+let cleaningCenterState = {
+  parsed: null,
+  rules: [],
+  result: null,
+  fileName: ""
+};
 let lastHeaderPlan = null;
 let workspaceProject = null;
 let pendingQuestionnaireImport = "";
@@ -240,11 +250,11 @@ let sharedImportTargetId = "";
 const aiProviderPresets = {
   deepseek: {
     name: "DeepSeek",
-    model: "deepseek-v4-flash",
+    model: "deepseek-v4-pro",
     url: "https://api.deepseek.com/v1/chat/completions",
     tiers: [
-      { label: "V4 Flash", model: "deepseek-v4-flash" },
-      { label: "V4 Pro", model: "deepseek-v4-pro" }
+      { label: "V4 Pro（默认）", model: "deepseek-v4-pro" },
+      { label: "V4 Flash（快速/低成本）", model: "deepseek-v4-flash" }
     ]
   },
   kimi: {
@@ -269,12 +279,17 @@ const aiProviderPresets = {
   },
   qwen: {
     name: "Qwen / 通义千问",
-    model: "qwen-plus",
+    model: "qwen3.7-max",
     url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
     tiers: [
-      { label: "Qwen-Turbo", model: "qwen-turbo" },
-      { label: "Qwen-Plus", model: "qwen-plus" },
-      { label: "Qwen-Max", model: "qwen-max" }
+      { label: "Qwen3.7 Max（最新旗舰）", model: "qwen3.7-max" },
+      { label: "Qwen3.7 Plus", model: "qwen3.7-plus" },
+      { label: "Qwen3.6 Max Preview", model: "qwen3.6-max-preview" },
+      { label: "Qwen3.6 Plus", model: "qwen3.6-plus" },
+      { label: "Qwen3.6 Flash（免费）", model: "qwen3.6-flash" },
+      { label: "Qwen-Max（经典）", model: "qwen-max" },
+      { label: "Qwen-Plus（经典）", model: "qwen-plus" },
+      { label: "Qwen-Turbo（经典）", model: "qwen-turbo" }
     ]
   },
   openai: {
@@ -289,9 +304,24 @@ const aiProviderPresets = {
   }
 };
 
+function normalizeViewId(id) {
+  return {
+    weighting: "data-weighting",
+    crosstab: "crosstab-analysis",
+    "ai-questionnaire": "ai-assistant",
+    audit: "link-test"
+  }[id] || id;
+}
+
 function showView(id) {
-  views.forEach((view) => view.classList.toggle("active", view.id === id));
-  navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === id));
+  const targetId = normalizeViewId(id);
+  if (!targetId) return;
+  const activeView = document.querySelector(`#${targetId}`);
+  if (!activeView) return;
+  if (activeView.style.display === "none" || activeView.hidden) return;
+  views.forEach((view) => view.classList.toggle("active", view.id === targetId));
+  navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === targetId));
+  activeView.scrollIntoView({ block: "start" });
 }
 
 navItems.forEach((item) => {
@@ -301,8 +331,60 @@ navItems.forEach((item) => {
   });
 });
 
-jumpCards.forEach((card) => {
-  card.addEventListener("click", () => showView(card.dataset.jump));
+function handleDashboardJumpAction(button) {
+  const action = button.dataset.action;
+  const target = button.dataset.jump;
+  if (action === "import-questionnaire") {
+    showView("overview");
+    const input = document.querySelector("#questionnaireImportFile");
+    if (input) {
+      input.value = "";
+      input.click();
+    }
+    return;
+  }
+  if (action === "new-project") {
+    showView("overview");
+    document.querySelector("#workspaceProjectName")?.focus();
+    return;
+  }
+  if (action === "import-data") {
+    showView("cleaning-rules");
+    const input = document.querySelector("#cleaningDataFile");
+    if (input) {
+      input.value = "";
+      input.click();
+    }
+    return;
+  }
+  if (action === "archive-project") {
+    markWorkspaceStatus("archive");
+    showButtonSaved(button, "已归档");
+    return;
+  }
+  if (action === "save-workspace-project") {
+    saveWorkspaceProject();
+    showButtonSaved(button, "已保存");
+    return;
+  }
+  if (action === "apply-workspace-project") {
+    applyWorkspaceProject(true);
+    showButtonSaved(button, "已同步");
+    return;
+  }
+  if (action === "clear-workspace-project") {
+    clearWorkspaceProject();
+    showButtonSaved(button, "已清空");
+    return;
+  }
+  showView(target);
+}
+
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-jump], [data-action]");
+  if (!button || !document.body.contains(button)) return;
+  event.preventDefault();
+  handleDashboardJumpAction(button);
 });
 
 function formatShortDate(value) {
@@ -321,6 +403,7 @@ function getWorkspaceFormProject() {
     studyType: document.querySelector("#workspaceStudyType").value,
     stage: document.querySelector("#workspaceStage").value,
     sampleTarget: Number(document.querySelector("#workspaceSampleTarget").value) || 0,
+    quotaDimensions: document.querySelector("#workspaceQuotaDimensions")?.value.trim() || "",
     questionnaireText: document.querySelector("#workspaceQuestionnaire").value.trim(),
     updatedAt: workspaceProject?.updatedAt || null,
     status: {
@@ -363,6 +446,7 @@ function fillWorkspaceProject(project) {
   document.querySelector("#workspaceStudyType").value = project.studyType || "概念测试";
   document.querySelector("#workspaceStage").value = project.stage || "调研前";
   document.querySelector("#workspaceSampleTarget").value = project.sampleTarget || "";
+  if (document.querySelector("#workspaceQuotaDimensions")) document.querySelector("#workspaceQuotaDimensions").value = project.quotaDimensions || "";
   document.querySelector("#workspaceQuestionnaire").value = project.questionnaireText || "";
 }
 
@@ -399,55 +483,268 @@ function clearWorkspaceProject() {
     studyType: "概念测试",
     stage: "调研前",
     sampleTarget: 0,
+    quotaDimensions: "",
     questionnaireText: ""
   });
   renderWorkspaceProject();
 }
 
+function workspaceStatusSnapshot(project, savedStatus = {}) {
+  const cleaningDone = Boolean(cleaningCenterState.result || savedStatus.cleaning || project.status.cleaning);
+  return {
+    project_setup: Boolean(project.projectName),
+    proposal_design: Boolean(lastAiPlan || savedStatus.proposal || project.status.proposal),
+    questionnaire_design: Boolean(project.questionnaireText),
+    quality_check: Boolean(lastAuditReport || savedStatus.audit || project.status.audit),
+    data_import: Boolean(cleaningDone || cleaningCenterState.parsed || lastCrosstabDataContext || savedStatus.dataImport),
+    rule_generation: Boolean(cleaningCenterState.rules?.length || savedStatus.ruleGeneration),
+    threshold_adjustment: Boolean(cleaningCenterState.rules?.length || savedStatus.thresholdAdjustment),
+    cleaning_execution: cleaningDone,
+    data_weighting: Boolean(lastWeightingResult || savedStatus.weighting || project.status.weighting),
+    crosstab: Boolean(lastCrosstabDataContext || savedStatus.header || project.status.header),
+    model_psm: Boolean(lastPsmAnalysis || savedStatus.modelPsm),
+    model_kano: Boolean(lastKanoAnalysis || savedStatus.modelKano),
+    model_maxdiff: Boolean(lastMaxDiffDesign || lastMaxDiffScore || savedStatus.modelMaxdiff),
+    ai_report: Boolean(lastAiReport || savedStatus.aiReport),
+    report_delivery: Boolean(lastAiReport || savedStatus.reportDelivery),
+    project_archive: Boolean(savedStatus.archive || project.status.archive),
+    export_assets: Boolean(savedStatus.exportAssets || project.status.exportAssets)
+  };
+}
+
+function workspaceNodeStatus(node, status) {
+  if (status[node.id]) return "completed";
+  const prerequisiteDone = !node.dependsOn || status[node.dependsOn];
+  return prerequisiteDone ? "in_progress" : "pending";
+}
+
+function workspaceFlowNodes() {
+  return [
+    { id: "project_setup", stage: "调研前", name: "项目档案", detail: "项目名、类型、目标样本", action: "编辑", jump: "overview" },
+    { id: "proposal_design", stage: "调研前", name: "方案设计", detail: "AI 生成调研方案", action: "生成方案", jump: "ai-plan", dependsOn: "project_setup" },
+    { id: "questionnaire_design", stage: "调研前", name: "问卷设计", detail: "AI 问卷或导入问卷", action: "设计问卷", jump: "ai-assistant", dependsOn: "proposal_design" },
+    { id: "quality_check", stage: "调研前", name: "上线质检", detail: "检查跳题、排他项、风险", action: "查看质检", jump: "link-test", dependsOn: "questionnaire_design" },
+    { id: "data_import", stage: "数据清洗", name: "数据导入", detail: "CSV / Excel / SAV", action: "导入数据", jump: "cleaning-rules", dependsOn: "quality_check" },
+    { id: "rule_generation", stage: "数据清洗", name: "规则生成", detail: "本地规则 + AI 辅助", action: "生成规则", jump: "cleaning-rules", dependsOn: "data_import" },
+    { id: "threshold_adjustment", stage: "数据清洗", name: "阈值调整", detail: "可新增、删除、编辑规则", action: "进入调整", jump: "cleaning-rules", dependsOn: "rule_generation" },
+    { id: "cleaning_execution", stage: "数据清洗", name: "清洗执行", detail: "输出清洗后数据和报告", action: "执行清洗", jump: "cleaning-rules", dependsOn: "threshold_adjustment" },
+    { id: "data_weighting", stage: "数据清洗", name: "数据加权", detail: "RIM / Cell 加权", action: "计算权重", jump: "data-weighting", dependsOn: "cleaning_execution" },
+    { id: "crosstab", stage: "分析产出", name: "交叉表分析", detail: "默认复用清洗后数据", action: "进入分析", jump: "crosstab-analysis", dependsOn: "cleaning_execution" },
+    { id: "model_psm", stage: "分析产出", name: "PSM 模型", detail: "价格敏感度分析", action: "PSM", jump: "psm", dependsOn: "cleaning_execution" },
+    { id: "model_kano", stage: "分析产出", name: "KANO 模型", detail: "需求属性分类", action: "KANO", jump: "kano", dependsOn: "cleaning_execution" },
+    { id: "model_maxdiff", stage: "分析产出", name: "MaxDiff 模型", detail: "相对偏好排序", action: "MaxDiff", jump: "maxdiff", dependsOn: "cleaning_execution" },
+    { id: "ai_report", stage: "分析产出", name: "AI 洞察报告", detail: "Markdown 报告", action: "生成报告", jump: "ai-report", dependsOn: "crosstab" },
+    { id: "report_delivery", stage: "分析产出", name: "报告交付", detail: "MD / Word / PPT", action: "导出报告", jump: "ai-report", dependsOn: "ai_report" },
+    { id: "project_archive", stage: "交付归档", name: "项目归档", detail: "冻结项目产出", action: "归档项目", jump: "overview", dependsOn: "report_delivery" },
+    { id: "export_assets", stage: "交付归档", name: "导出资产包", detail: "打包项目资料", action: "导出全部", jump: "overview", dependsOn: "project_archive" }
+  ];
+}
+
+function workspaceQualityScore(status) {
+  const score = 40
+    + (status.project_setup ? 8 : 0)
+    + (status.questionnaire_design ? 8 : 0)
+    + (status.quality_check ? 10 : 0)
+    + (status.cleaning_execution ? 18 : 0)
+    + (status.data_weighting ? 6 : 0)
+    + (status.crosstab ? 6 : 0)
+    + (status.ai_report ? 4 : 0);
+  const finalScore = Math.min(100, score);
+  const grade = finalScore >= 90 ? "A" : finalScore >= 75 ? "B" : finalScore >= 60 ? "C" : "D";
+  return { score: finalScore, grade };
+}
+
+function workspaceRemovalRateText() {
+  const result = cleaningCenterState.result;
+  if (!result || !cleaningCenterState.parsed?.rows?.length) return "待执行";
+  return `剔除率 ${formatPercent(result.removed.length / cleaningCenterState.parsed.rows.length)}`;
+}
+
+function dashboardAssets(project, status) {
+  const rawRows = cleaningCenterState.parsed?.rows?.length || 0;
+  const cleanRows = cleaningCenterState.result?.kept?.length || 0;
+  return [
+    { key: "questionnaire", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/></svg>`, name: "问卷稿", state: project.questionnaireText ? `已保存 · ${parseQuestions(project.questionnaireText).length || "若干"}题` : "待导入", done: status.questionnaire_design, jump: "overview" },
+    { key: "rawData", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 10h6"/></svg>`, name: "原始数据", state: rawRows ? `已导入 · N=${rawRows}` : "待导入", done: status.data_import, jump: "cleaning-rules" },
+    { key: "cleanData", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4l4-2 4 2 4-2v8l-4 2-4-2-4 2V4z"/><path d="M6 2v8M10 4v8"/></svg>`, name: "清洗后数据", state: cleanRows ? `已就绪 · N=${cleanRows}` : status.cleaning_execution ? "历史完成" : "待执行", done: status.cleaning_execution, jump: "cleaning-rules" },
+    { key: "weightedData", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 015.66 4H8V2z"/></svg>`, name: "加权数据", state: status.data_weighting ? "已生成" : "待执行", done: status.data_weighting, jump: "data-weighting" },
+    { key: "crosstab", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="1" width="14" height="14" rx="2"/><path d="M1 6h14M6 1v14"/></svg>`, name: "交叉表", state: status.crosstab ? "已有数据" : "待分析", done: status.crosstab, jump: "crosstab-analysis" },
+    { key: "models", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 14l4-7 3 3 5-9"/><circle cx="12" cy="4" r="1.5" fill="currentColor"/></svg>`, name: "专项模型", state: status.model_psm || status.model_kano || status.model_maxdiff ? "已有结果" : "未使用", done: status.model_psm || status.model_kano || status.model_maxdiff, jump: "models" },
+    { key: "reports", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M7 5h3M7 8h3M7 11h2"/></svg>`, name: "报告资产", state: status.ai_report ? "1份" : "0份", done: status.ai_report, jump: "ai-report" }
+  ];
+}
+
+function ensureDashboardHeroShell() {
+  const heroEl = document.querySelector(".dashboard-hero");
+  if (!heroEl || heroEl.querySelector("#dashboardProjectName")) return;
+  heroEl.innerHTML = `
+    <div class="dashboard-hero-head">
+      <div>
+        <span class="section-pill">项目名片</span>
+        <h3 id="dashboardProjectName">未命名项目</h3>
+        <p id="dashboardProjectMeta">请先保存项目档案，后续工具会自动复用项目材料。</p>
+      </div>
+      <div class="dashboard-hero-actions">
+        <button class="secondary-btn" type="button" data-jump="overview" data-action="edit-project">编辑档案</button>
+        <button class="secondary-btn" type="button" data-action="archive-project">归档</button>
+      </div>
+    </div>
+    <div class="dashboard-metric-grid">
+      <button class="dashboard-metric" type="button" data-jump="overview">
+        <span>研究类型</span>
+        <strong id="dashboardStudyType">概念测试</strong>
+        <small>点击编辑</small>
+      </button>
+      <button class="dashboard-metric" type="button" data-jump="overview">
+        <span>目标样本</span>
+        <strong id="dashboardTargetSample">未设置</strong>
+        <small>项目档案</small>
+      </button>
+      <button class="dashboard-metric" type="button" data-jump="cleaning-rules">
+        <span>清洗状态</span>
+        <strong id="dashboardCleaningStatus">未清洗</strong>
+        <small id="dashboardRemovalRate">待执行</small>
+      </button>
+      <button class="dashboard-metric" type="button" data-jump="cleaning-guide">
+        <span>质量评分</span>
+        <strong id="dashboardQualityGrade">C</strong>
+        <small id="dashboardQualityScore">60分</small>
+      </button>
+    </div>
+    <div class="dashboard-stage-line">
+      <span>当前阶段：<strong id="dashboardCurrentStage">调研前</strong></span>
+      <span>最近操作：<strong id="dashboardLastAction">等待保存项目档案</strong></span>
+    </div>
+    <div class="asset-strip" id="dashboardAssetStrip"></div>
+  `;
+}
+
+function renderDashboardEmptyHero() {
+  const heroEl = document.querySelector(".dashboard-hero");
+  if (!heroEl) return;
+  heroEl.innerHTML = `<div class="dashboard-empty-state">
+    <div class="empty-illustration">
+      <svg width="64" height="64" viewBox="0 0 64 64" fill="none"><rect x="8" y="12" width="48" height="40" rx="4" stroke="#bfdbfe" stroke-width="2"/><path d="M20 28h24M20 36h16" stroke="#bfdbfe" stroke-width="2" stroke-linecap="round"/></svg>
+    </div>
+    <h3>还没有创建项目</h3>
+    <p>从以下方式快速开始，建立你的调研项目档案。</p>
+    <div class="empty-actions">
+      <button class="dashboard-empty-card" type="button" data-jump="overview" data-action="import-questionnaire">
+        <strong>导入问卷</strong>
+        <small>从 DOCX / XLSX / CSV 导入已有问卷</small>
+      </button>
+      <button class="dashboard-empty-card" type="button" data-jump="overview" data-action="new-project">
+        <strong>新建项目</strong>
+        <small>填写项目名、类型与目标样本</small>
+      </button>
+      <button class="dashboard-empty-card" type="button" data-jump="cleaning-rules" data-action="import-data">
+        <strong>导入数据</strong>
+        <small>从 CSV / SAV / Excel 导入原始数据</small>
+      </button>
+    </div>
+  </div>`;
+}
+
 function renderWorkspaceProject() {
-  const project = workspaceProject || getWorkspaceFormProject();
+  const formProject = getWorkspaceFormProject();
+  const project = {
+    ...(workspaceProject || {}),
+    ...formProject,
+    status: {
+      ...((workspaceProject || {}).status || {}),
+      ...(formProject.status || {})
+    }
+  };
   const savedProject = loadWorkspaceProject();
   const savedStatus = savedProject?.status || {};
-  const status = {
-    ...project.status,
-    audit: project.status.audit || savedStatus.audit,
-    quota: project.status.quota || savedStatus.quota,
-    cleaning: project.status.cleaning || savedStatus.cleaning,
-    header: project.status.header || savedStatus.header,
-    models: project.status.models || savedStatus.models
-  };
-  const checks = [
-    ["projectBrief", "项目基础信息"],
-    ["questionnaire", "问卷稿已保存"],
-    ["audit", "上线质检已完成"],
-    ["quota", "配额方案已生成"],
-    ["cleaning", "清洗规则已生成"],
-    ["header", "表头建议已生成"],
-    ["models", "专项模型已有结果"]
-  ];
-  const doneCount = checks.filter(([key]) => status[key]).length;
-  const completion = Math.round((doneCount / checks.length) * 100);
-  const next = checks.find(([key]) => !status[key]);
-  document.querySelector("#projectSummaryName").textContent = project.projectName || "未命名项目";
-  document.querySelector("#projectSummaryStage").textContent = project.stage || "未设置";
-  document.querySelector("#projectSummarySample").textContent = project.sampleTarget
-    ? project.sampleTarget.toLocaleString("zh-CN")
-    : "未设置";
+  const status = workspaceStatusSnapshot(project, savedStatus);
+  const nodes = workspaceFlowNodes();
+  const doneCount = nodes.filter((node) => status[node.id]).length;
+  const completion = Math.round((doneCount / nodes.length) * 100);
+  const next = nodes.find((node) => workspaceNodeStatus(node, status) === "in_progress" && !status[node.id]);
+  const quality = workspaceQualityScore(status);
+  const removalRate = status.cleaning_execution && !cleaningCenterState.result ? "历史完成" : workspaceRemovalRateText();
+  const formProjectName = (document.querySelector("#workspaceProjectName")?.value || "").trim();
+  const isBlankProject = !formProjectName && !project.questionnaireText && !project.sampleTarget;
+
+  if (isBlankProject) {
+    renderDashboardEmptyHero();
+  } else {
+    ensureDashboardHeroShell();
+    document.querySelector("#dashboardProjectName").textContent = project.projectName || "未命名项目";
+    document.querySelector("#dashboardProjectMeta").textContent = `${project.studyType || "概念测试"} · 目标样本 ${project.sampleTarget ? project.sampleTarget.toLocaleString("zh-CN") : "未设置"}${project.quotaDimensions ? ` · 配额：${project.quotaDimensions}` : ""}`;
+    document.querySelector("#dashboardStudyType").textContent = project.studyType || "概念测试";
+    document.querySelector("#dashboardTargetSample").textContent = project.sampleTarget ? project.sampleTarget.toLocaleString("zh-CN") : "未设置";
+    document.querySelector("#dashboardCleaningStatus").textContent = status.cleaning_execution ? "已清洗" : status.data_import ? "待执行" : "未清洗";
+    document.querySelector("#dashboardRemovalRate").textContent = removalRate;
+    document.querySelector("#dashboardQualityGrade").textContent = quality.grade;
+    document.querySelector("#dashboardQualityScore").textContent = `${quality.score}分`;
+    document.querySelector("#dashboardCurrentStage").textContent = project.stage || "调研前";
+    document.querySelector("#dashboardLastAction").textContent = project.updatedAt ? `最近保存 ${formatShortDate(project.updatedAt)}` : "等待保存项目档案";
+  }
+
   document.querySelector("#projectCompletion").textContent = `${completion}%`;
-  document.querySelector("#projectNextAction").textContent = next
-    ? `建议补充：${next[1]}。`
-    : "项目基础流程已齐，可以进入统一导出。";
+  document.querySelector("#projectNextAction").textContent = next ? `${next.stage} → ${next.name}` : "项目主流程已完成，可导出资产包。";
+  document.querySelector("#dashboardRecommendation").textContent = next ? `${next.stage}：${next.name}` : "导出资产包";
   document.querySelector("#projectSaveStatus").textContent = project.updatedAt
     ? `最近保存 ${formatShortDate(project.updatedAt)}`
     : "草稿未保存";
-  document.querySelector("#projectChecklist").innerHTML = checks
-    .map(([key, label]) => `
-      <div class="project-check ${status[key] ? "is-done" : ""}">
-        <i>${status[key] ? "✓" : "·"}</i>
-        <span>${label}</span>
-      </div>
-    `)
-    .join("");
+
+  const stageNames = ["调研前", "数据清洗", "分析产出", "交付归档"];
+  document.querySelector("#dashboardStageSummary").innerHTML = stageNames.map((stage) => {
+    const stageNodes = nodes.filter((node) => node.stage === stage);
+    const completed = stageNodes.filter((node) => status[node.id]).length;
+    return `<div><strong>${stage}</strong><span>${"●".repeat(completed)}${"○".repeat(stageNodes.length - completed)}</span><small>${completed}/${stageNodes.length}</small></div>`;
+  }).join("");
+
+  document.querySelector("#projectChecklist").innerHTML = stageNames.map((stage) => {
+    const stageNodes = nodes.filter((node) => node.stage === stage);
+    return `<section class="dashboard-stage-block"><h4>${stage}</h4>${stageNodes.map((node) => {
+      const nodeStatus = workspaceNodeStatus(node, status);
+      const icon = nodeStatus === "completed" ? "●" : nodeStatus === "in_progress" ? "◌" : "○";
+      return `<div class="dashboard-flow-node ${nodeStatus}"><span>${icon}</span><div><strong>${node.name}</strong><small>${node.detail}</small></div><button type="button" data-jump="${node.jump}">${node.action}</button></div>`;
+    }).join("")}</section>`;
+  }).join("");
+
+  const assets = dashboardAssets(project, status);
+  const assetStrip = document.querySelector("#dashboardAssetStrip");
+  if (assetStrip) assetStrip.innerHTML = assets.slice(0, 5).map((asset) => `<button type="button" data-jump="${asset.jump}" class="${asset.done ? "done" : ""}">${asset.name} ${asset.done ? "●" : "○"}</button>`).join("");
+  document.querySelector("#dashboardAssetList").innerHTML = assets.map((asset) => `<button class="dashboard-asset-item ${asset.done ? "done" : ""}" type="button" data-jump="${asset.jump}"><span class="asset-icon-svg">${asset.icon}</span><strong>${asset.name}</strong><small>${asset.state}</small></button>`).join("");
+
+  const stage = project.stage || "调研前";
+  const allActions = [
+    ["导入问卷", "overview", ["调研前", "数据清洗", "分析产出", "交付归档"]],
+    ["导入数据", "cleaning-rules", ["调研前", "数据清洗", "分析产出", "交付归档"]],
+    ["生成方案", "ai-plan", ["调研前"]],
+    ["设计问卷", "ai-assistant", ["调研前"]],
+    ["上线质检", "link-test", ["调研前"]],
+    ["数据清洗", "cleaning-rules", ["数据清洗", "调研前"]],
+    ["交叉表分析", "crosstab-analysis", ["分析产出", "数据清洗"]],
+    ["生成报告", "ai-report", ["分析产出", "交付归档"]],
+    ["归档项目", "overview", ["交付归档"]],
+    ["系统设置", "settings", ["调研前", "数据清洗", "分析产出", "交付归档"]]
+  ];
+  const relevantActions = allActions
+    .filter(([, , stages]) => stages.includes(stage))
+    .slice(0, 5);
+  const hasMore = allActions.filter(([, , stages]) => stages.includes(stage)).length > 5;
+  let actionsHtml = relevantActions.map(([label, jump]) => `<button class="secondary-btn" type="button" data-jump="${jump}">${label}</button>`).join("");
+  if (hasMore) actionsHtml += `<button class="ghost-btn" type="button" id="showAllActions">更多操作</button>`;
+  document.querySelector("#dashboardQuickActions").innerHTML = actionsHtml;
+  const showAllBtn = document.querySelector("#showAllActions");
+  if (showAllBtn) {
+    showAllBtn.addEventListener("click", () => {
+      const stageActions = allActions.filter(([, , stages]) => stages.includes(stage));
+      document.querySelector("#dashboardQuickActions").innerHTML = stageActions.map(([label, jump]) => `<button class="secondary-btn" type="button" data-jump="${jump}">${label}</button>`).join("");
+    });
+  }
+  const logItems = [
+    project.updatedAt ? `保存项目档案：${project.projectName || "未命名项目"}` : "等待保存项目档案",
+    status.cleaning_execution ? `完成数据清洗：${removalRate}` : status.data_import ? "已导入原始数据，等待执行清洗" : "尚未导入原始数据",
+    status.ai_report ? "已生成 AI 洞察报告" : "AI 报告待生成",
+    status.questionnaire_design ? "问卷稿已保存，可进入上线质检" : "问卷稿待导入或设计"
+  ];
+  document.querySelector("#dashboardActivityLog").innerHTML = logItems.map((item, index) => `<li><span>${index === 0 && project.updatedAt ? formatShortDate(project.updatedAt) : "当前"}</span><strong>${escapeHtml(item)}</strong></li>`).join("");
 }
 
 function showButtonSaved(button, text = "已保存") {
@@ -560,14 +857,50 @@ function uint8ToString(bytes) {
   return result;
 }
 
+function zipUint16(bytes, index) {
+  return bytes[index] | (bytes[index + 1] << 8);
+}
+
+function zipUint32(bytes, index) {
+  return (bytes[index] | (bytes[index + 1] << 8) | (bytes[index + 2] << 16) | (bytes[index + 3] << 24)) >>> 0;
+}
+
+function findZipEntryInCentralDirectory(bytes, entryName) {
+  const decoder = new TextDecoder("utf-8");
+  for (let index = 0; index < bytes.length - 46; index += 1) {
+    if (bytes[index] !== 0x50 || bytes[index + 1] !== 0x4b || bytes[index + 2] !== 0x01 || bytes[index + 3] !== 0x02) continue;
+    const compression = zipUint16(bytes, index + 10);
+    const compressedSize = zipUint32(bytes, index + 20);
+    const fileNameLength = zipUint16(bytes, index + 28);
+    const extraLength = zipUint16(bytes, index + 30);
+    const commentLength = zipUint16(bytes, index + 32);
+    const localHeaderOffset = zipUint32(bytes, index + 42);
+    const nameStart = index + 46;
+    const name = decoder.decode(bytes.subarray(nameStart, nameStart + fileNameLength));
+    if (name === entryName) {
+      const localFileNameLength = zipUint16(bytes, localHeaderOffset + 26);
+      const localExtraLength = zipUint16(bytes, localHeaderOffset + 28);
+      const dataStart = localHeaderOffset + 30 + localFileNameLength + localExtraLength;
+      return {
+        compression,
+        data: bytes.subarray(dataStart, dataStart + compressedSize)
+      };
+    }
+    index = nameStart + fileNameLength + extraLength + commentLength - 1;
+  }
+  return null;
+}
+
 function findZipEntry(bytes, entryName) {
+  const centralEntry = findZipEntryInCentralDirectory(bytes, entryName);
+  if (centralEntry) return centralEntry;
   const nameBytes = new TextEncoder().encode(entryName);
   for (let index = 0; index < bytes.length - 30; index += 1) {
     if (bytes[index] !== 0x50 || bytes[index + 1] !== 0x4b || bytes[index + 2] !== 0x03 || bytes[index + 3] !== 0x04) continue;
-    const compression = bytes[index + 8] | (bytes[index + 9] << 8);
-    const compressedSize = bytes[index + 18] | (bytes[index + 19] << 8) | (bytes[index + 20] << 16) | (bytes[index + 21] << 24);
-    const fileNameLength = bytes[index + 26] | (bytes[index + 27] << 8);
-    const extraLength = bytes[index + 28] | (bytes[index + 29] << 8);
+    const compression = zipUint16(bytes, index + 8);
+    const compressedSize = zipUint32(bytes, index + 18);
+    const fileNameLength = zipUint16(bytes, index + 26);
+    const extraLength = zipUint16(bytes, index + 28);
     const nameStart = index + 30;
     const name = bytes.subarray(nameStart, nameStart + fileNameLength);
     const dataStart = nameStart + fileNameLength + extraLength;
@@ -611,7 +944,12 @@ function docxXmlToText(xml) {
 
 async function docxToQuestionnaireText(arrayBuffer) {
   const xml = await readZipText(arrayBuffer, "word/document.xml");
+  if (!xml) throw new Error("未识别到 DOCX 正文内容。");
   return docxXmlToText(xml);
+}
+
+function legacyDocUnsupportedMessage(filename = "该文件") {
+  return `${filename} 是旧版 .doc 格式，浏览器端无法稳定解析，直接读取会产生乱码。请先用 Word/WPS/LibreOffice 另存为 .docx 后再导入。`;
 }
 
 function sharedStringsFromXml(xml) {
@@ -656,21 +994,60 @@ function getWorkbookSheetPaths(workbookXml, relationshipXml = "") {
   });
 }
 
+function getWorkbookSheets(workbookXml, relationshipXml = "") {
+  const relationshipMap = new Map(
+    [...relationshipXml.matchAll(/<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g)]
+      .map((match) => [match[1], match[2].startsWith("/") ? match[2].slice(1) : `xl/${match[2]}`])
+  );
+  const sheets = [...workbookXml.matchAll(/<sheet\b([^>]*)\/?>/g)].map((match, index) => {
+    const attrs = match[1] || "";
+    const id = attrs.match(/r:id="([^"]+)"/)?.[1] || "";
+    const name = decodeXmlText(attrs.match(/name="([^"]+)"/)?.[1] || `Sheet${index + 1}`);
+    const target = relationshipMap.get(id);
+    const path = target || `xl/worksheets/sheet${index + 1}.xml`;
+    return { index, name, path };
+  });
+  return sheets.length ? sheets : getWorkbookSheetPaths(workbookXml, relationshipXml).map((path, index) => ({ index, name: `Sheet${index + 1}`, path }));
+}
+
 async function xlsxToQuestionnaireText(arrayBuffer) {
   const sharedXml = await readZipText(arrayBuffer, "xl/sharedStrings.xml").catch(() => "");
   const workbookXml = await readZipText(arrayBuffer, "xl/workbook.xml").catch(() => "");
   const relationshipXml = await readZipText(arrayBuffer, "xl/_rels/workbook.xml.rels").catch(() => "");
   const sharedStrings = sharedStringsFromXml(sharedXml);
-  const sheetPaths = getWorkbookSheetPaths(workbookXml, relationshipXml);
-  const sheetTexts = [];
-  for (const [index, sheetPath] of sheetPaths.entries()) {
+  const sheets = getWorkbookSheets(workbookXml, relationshipXml);
+  const parsedSheets = [];
+  for (const sheet of sheets) {
+    const sheetPath = sheet.path;
     const sheetXml = await readZipText(arrayBuffer, sheetPath).catch(() => "");
     if (!sheetXml) continue;
     const rows = xlsxSheetXmlToRows(sheetXml, sharedStrings);
     const text = rowsToQuestionnaireText(rows);
-    if (text) sheetTexts.push(text);
+    const questions = text ? parseQuestions(text) : [];
+    if (questions.length) {
+      const headerScore = rows.some((row) =>
+        row.some((cell) => /题号/.test(String(cell || ""))) &&
+        row.some((cell) => /题目内容|题干|问题|question/i.test(String(cell || "")))
+      ) ? 100 : 0;
+      const nameScore = /问卷内容|问卷正文|questionnaire|survey/i.test(sheet.name) ? 50 : /问卷框架|框架/i.test(sheet.name) ? 20 : 0;
+      const metricPenalty = /指标体系|指标|体系/i.test(sheet.name) ? 1000 : 0;
+      parsedSheets.push({ ...sheet, text, questions, score: headerScore + nameScore + questions.length - metricPenalty });
+    }
   }
-  return sheetTexts.join("\n\n");
+  if (!parsedSheets.length) return "";
+  parsedSheets.sort((a, b) => b.score - a.score);
+  const seen = new Set();
+  const mergedQuestions = [];
+  parsedSheets.forEach((sheet) => {
+    sheet.questions.forEach((question) => {
+      if (!question.id || seen.has(question.id)) return;
+      seen.add(question.id);
+      mergedQuestions.push(question);
+    });
+  });
+  return mergedQuestions
+    .map((question) => question.lines.join("\n"))
+    .join("\n\n");
 }
 
 function normalizeCodebookTitle(variable, text) {
@@ -804,13 +1181,22 @@ async function xlsxToDelimitedTableText(arrayBuffer) {
   const relationshipXml = await readZipText(arrayBuffer, "xl/_rels/workbook.xml.rels").catch(() => "");
   const sharedStrings = sharedStringsFromXml(sharedXml);
   const sheetPaths = getWorkbookSheetPaths(workbookXml, relationshipXml);
+  const sheetNames = getWorkbookSheetNames(workbookXml);
   const sheets = [];
 
   for (const [index, sheetPath] of sheetPaths.entries()) {
     const sheetXml = await readZipText(arrayBuffer, sheetPath).catch(() => "");
     if (!sheetXml) continue;
     const rows = xlsxSheetXmlToRows(sheetXml, sharedStrings);
-    if (rows.length) sheets.push({ index, rows });
+    if (rows.length) sheets.push({ index, name: sheetNames[index] || ("Sheet" + (index + 1)), rows });
+  }
+
+  // --- Crosstab format detection ---
+  const isCrosstab = sheets.some((s) =>
+    s.rows.some((row) => row.some((cell) => /CAPTION\s*:/i.test(String(cell || ""))))
+  );
+  if (isCrosstab) {
+    return rowsToCrosstabText(sheets);
   }
 
   const codeSheet = sheets.find((sheet) =>
@@ -821,6 +1207,222 @@ async function xlsxToDelimitedTableText(arrayBuffer) {
   if (!dataSheet || dataSheet.rows.length < 2) return "";
   if (Object.keys(codebook).length) return rowsToMappedDelimitedTable(dataSheet.rows, codebook);
   return rowsToDelimitedTableWithContext(dataSheet.rows);
+}
+
+function getWorkbookSheetNames(workbookXml) {
+  return [...workbookXml.matchAll(/<sheet[^>]*name="([^"]+)"/g)].map((m) => decodeXmlText(m[1]));
+}
+
+function rowsToCrosstabText(sheets) {
+  const priority = (name) => {
+    if (/目录|目錄|contents/i.test(name)) return -1;
+    if (/sig/i.test(name)) return 0;
+    if (/%/.test(name)) return 2;
+    if (/#/.test(name)) return 1;
+    return 1;
+  };
+  const sorted = sheets
+    .map((s) => ({ ...s, p: priority(s.name) }))
+    .filter((s) => s.p >= 0)
+    .sort((a, b) => b.p - a.p);
+
+  const MAX_CHARS = 200000;
+  const MAX_OPTIONS_PER_Q = 20;
+  const MAX_COLS = 12;
+  const parts = [];
+  let totalChars = 0;
+
+  for (const sheet of sorted) {
+    if (totalChars >= MAX_CHARS) break;
+    const rows = sheet.rows;
+    if (!rows.length) continue;
+
+    const hasCaption = rows.some((row) =>
+      row.some((cell) => /CAPTION\s*:/i.test(String(cell || "")))
+    );
+
+    if (hasCaption) {
+      // --- Type A: Standard crosstab with CAPTION markers ---
+      // Build merged multi-level headers
+      // Priority: brand names first, then 总体/整体/行业/Total
+      let headerRowIdx = rows.findIndex((row) =>
+        row.some((cell) => /荣耀|小米|vivo|OPPO|华为|苹果/.test(String(cell || "")))
+      );
+      if (headerRowIdx < 0) {
+        headerRowIdx = rows.findIndex((row) =>
+          row.some((cell) => /总计|合计|总体|整体|行业|Total/i.test(String(cell || "")))
+        );
+      }
+      if (headerRowIdx < 0) headerRowIdx = 0;
+
+      // If the found header row has mostly empty cells, check if the next row
+      // has more non-empty cells (multi-level header where the real leaf is below)
+      const countNonEmpty = (row) => row.filter((c) => String(c || "").trim()).length;
+      if (headerRowIdx + 1 < rows.length) {
+        const curCount = countNonEmpty(rows[headerRowIdx]);
+        const nextCount = countNonEmpty(rows[headerRowIdx + 1]);
+        if (nextCount > curCount + 1) {
+          headerRowIdx = headerRowIdx + 1;
+        }
+      }
+
+      // Merge multi-level headers: combine rows from 0 to headerRowIdx
+      const rawHeaders = rows[headerRowIdx].map((cell, i) => String(cell || "").trim());
+      // Try to find parent headers from rows above
+      const parentHeaders = [];
+      for (let h = 0; h <= headerRowIdx; h++) {
+        const prow = rows[h] || [];
+        for (let c = 1; c < rawHeaders.length; c++) {
+          const pval = String(prow[c] || "").trim();
+          if (pval && pval !== rawHeaders[c] && !/^(整体|总体)$/.test(pval)) {
+            if (!parentHeaders[c]) parentHeaders[c] = pval;
+          }
+        }
+      }
+      const headers = rawHeaders.map((cell, i) => {
+        const base = cell || ("col" + (i + 1));
+        const parent = parentHeaders[i];
+        return parent ? parent + "-" + base : base;
+      });
+      const dataStart = headerRowIdx + 1;
+      const colCount = Math.min(headers.length, MAX_COLS + 1);
+
+      const questions = [];
+      let currentQ = null;
+      let baseEmitted = false;
+      let lastBaseLine = "";
+
+      for (let r = 0; r < rows.length; r++) {
+        const row = rows[r];
+        const firstCell = String(row[0] || "").trim();
+
+        const captionMatch = firstCell.match(/CAPTION\s*:\s*(.*)/i);
+        if (captionMatch) {
+          const rawCaption = captionMatch[1].trim();
+          const caption = rawCaption.replace(/^\[[^\]]+\]\s*[.．]\s*/, "").trim() || rawCaption;
+          currentQ = { caption, options: [], baseLine: "" };
+          questions.push(currentQ);
+          baseEmitted = false;
+          continue;
+        }
+
+        if (/^BASE$/i.test(firstCell)) {
+          if (currentQ && !baseEmitted) {
+            const baseValues = row.slice(1, colCount).map((c) => String(c || "").trim());
+            const baseLine = headers.slice(1, colCount).map((h, i) => h + "=" + (baseValues[i] || "-")).join(" | ");
+            // Only emit BASE if it differs from the previous one (dedup)
+            if (baseLine !== lastBaseLine) {
+              currentQ.baseLine = baseLine;
+              lastBaseLine = baseLine;
+            }
+            baseEmitted = true;
+          }
+          continue;
+        }
+
+        if (r < dataStart) continue;
+        if (!firstCell) continue;
+        if (/荣耀|小米|vivo|OPPO|华为|苹果|总体|总计|合计|整体/.test(firstCell)) continue;
+
+        const values = row.slice(1, colCount).map((c) => String(c || "").trim());
+        if (values.every((v) => !v)) continue;
+        if (!currentQ) continue;
+
+        if (currentQ.options.length < MAX_OPTIONS_PER_Q) {
+          currentQ.options.push(firstCell + " | " + values.join(" | "));
+        }
+      }
+
+      const sectionLines = [];
+      sectionLines.push("=== " + sheet.name + " ===");
+      sectionLines.push("[说明] 本表为交叉表：行是题目选项，列是人群/品牌/平台分群，数值是百分比（%）或频数（#）。");
+      sectionLines.push("[表头] " + headers.slice(1, colCount).join(" | "));
+
+      for (const q of questions) {
+        if (totalChars >= MAX_CHARS) break;
+        sectionLines.push("");
+        if (q.baseLine) {
+          sectionLines.push("[样本基数/BASE] " + q.baseLine);
+        }
+        if (q.caption) {
+          sectionLines.push("[题目] " + q.caption);
+        }
+        if (q.options.length) {
+          sectionLines.push("[选项数据]");
+          for (const opt of q.options) {
+            sectionLines.push("  " + opt);
+          }
+        }
+      }
+
+      const sectionText = sectionLines.join("\n");
+      if (totalChars + sectionText.length > MAX_CHARS) {
+        parts.push(sectionText.slice(0, MAX_CHARS - totalChars) + "\n... (数据量较大，已截断)");
+        totalChars = MAX_CHARS;
+      } else {
+        parts.push(sectionText);
+        totalChars += sectionText.length;
+      }
+    } else {
+      // --- Type B: Indicator/satisfaction sheet without CAPTION ---
+      const titleRowIdx = rows.findIndex((row) => String(row[0] || "").trim().length > 0);
+      const title = titleRowIdx >= 0 ? String(rows[titleRowIdx][0]).trim() : sheet.name;
+
+      let headerRowIdx = rows.findIndex((row) =>
+        row.some((cell) => /业务模块|指标层级|指标名称|重要性系数|行业|荣耀|35岁以下|35岁以上/.test(String(cell || "")))
+      );
+      if (headerRowIdx < 0) headerRowIdx = Math.max(0, titleRowIdx + 1);
+
+      const headers = rows[headerRowIdx].map((cell, i) => String(cell || "").trim() || ("col" + (i + 1)));
+      const dataStart = headerRowIdx + 1;
+      const colCount = Math.min(headers.length, MAX_COLS + 1);
+
+      const sectionLines = [];
+      sectionLines.push("=== " + sheet.name + " ===");
+      sectionLines.push("[说明] 本表为指标/满意度清单表：行是具体指标，列是人群/品牌分组，数值通常是平均分或百分比。");
+      sectionLines.push("[表标题] " + title);
+      sectionLines.push("[表头] " + headers.slice(0, colCount).join(" | "));
+      sectionLines.push("[指标数据]");
+
+      let rowCount = 0;
+      for (let r = dataStart; r < rows.length; r++) {
+        if (totalChars >= MAX_CHARS) break;
+        const row = rows[r];
+        const firstCell = String(row[0] || "").trim();
+        if (!firstCell) continue;
+        if (/业务模块|指标层级|指标名称|重要性系数/.test(firstCell)) continue;
+
+        const values = row.slice(0, colCount).map((c) => String(c || "").trim());
+        if (values.every((v) => !v)) continue;
+        if (values.slice(1).every((v) => !v)) continue;
+
+        sectionLines.push("  " + values.join(" | "));
+        rowCount++;
+        if (rowCount >= 30) break;
+      }
+
+      const sectionText = sectionLines.join("\n");
+      if (totalChars + sectionText.length > MAX_CHARS) {
+        parts.push(sectionText.slice(0, MAX_CHARS - totalChars) + "\n... (数据量较大，已截断)");
+        totalChars = MAX_CHARS;
+      } else {
+        parts.push(sectionText);
+        totalChars += sectionText.length;
+      }
+    }
+  }
+
+  lastCrosstabDataContext = {
+    isCrosstab: true,
+    rawHeaders: [],
+    displayHeaders: [],
+    headerInfos: [],
+    rawRows: [],
+    displayRows: [],
+    crosstabText: parts.join("\n\n")
+  };
+
+  return "[CROSSTAB]\n" + parts.join("\n\n");
 }
 
 function decodeSavText(bytes) {
@@ -1192,45 +1794,55 @@ async function xlsxToCrosstabHeaderPlan(arrayBuffer) {
 function rowsToQuestionnaireText(rows) {
   if (!rows.length) return "";
   // Find the first row that looks like a questionnaire header (within first 15 rows)
-  let headerRowIndex = 0;
+  let headerRowIndex = -1;
   for (let i = 0; i < Math.min(rows.length, 15); i++) {
     const header = rows[i].map((cell) => String(cell || "").replace(/^\ufeff/, "").trim());
-    if (header.some((cell) => /题号|编号|题干|题目|文本|问题|选项|答案|说明|备注|跳题|题型|question|options?/i.test(cell))) {
+    const hasIdColumn = header.some((cell) => /^(题号|题目编号|问题编号|编号|question\s*id|qid|id)$/i.test(cell));
+    const hasTitleColumn = header.some((cell) => /^(题目内容|题干|题目|问题|问题内容|question|title)$/i.test(cell));
+    if (hasIdColumn && hasTitleColumn) {
       headerRowIndex = i;
       break;
     }
   }
+  if (headerRowIndex < 0) return "";
   const header = rows[headerRowIndex].map((cell) => String(cell || "").replace(/^\ufeff/, "").trim());
-  const hasHeader = header.some((cell) => /题号|编号|题干|题目|文本|问题|选项|答案|说明|备注|跳题|题型|question|options?/i.test(cell));
-  if (!hasHeader) {
-    // Check if this sheet contains any question-like patterns; if not, skip it
-    const hasQuestions = rows.some((row) =>
-      row.some((cell) => /^(Q|S|A|B|C|D)\s*\d+[.\-]\d*|^\d+[.．]\s+.*[？?]/.test(String(cell || "").trim()))
-    );
-    if (!hasQuestions) return "";
-    return normalizeImportedText(rows.map((row) => row.filter(Boolean).join(" ")).join("\n"));
-  }
-  const findIndex = (patterns, fallback) => {
+  const findIndex = (patterns) => {
     const index = header.findIndex((cell) => patterns.some((pattern) => pattern.test(cell)));
-    return index >= 0 ? index : fallback;
+    return index;
   };
-  const idIndex = findIndex([/题号|编号|question/i], 0);
-  const titleIndex = findIndex([/题干|题目|文本|问题|title|内容/i], 1);
-  const optionIndex = findIndex([/选项|答案|options?/i], 2);
-  const noteIndex = findIndex([/说明|备注|跳题|note|逻辑/i], 3);
+  const idIndex = findIndex([/^(题号|题目编号|问题编号|编号|question\s*id|qid|id)$/i]);
+  const titleIndex = findIndex([/^(题目内容|题干|题目|问题|问题内容|question|title)$/i]);
+  if (idIndex < 0 || titleIndex < 0) return "";
+  const optionIndex = findIndex([/选项|答案|options?/i]);
+  const noteIndex = findIndex([/说明|备注|跳题|note|逻辑/i]);
   return rows.slice(headerRowIndex + 1)
     .map((row, index) => {
-      const id = row[idIndex] || "";
-      const title = row[titleIndex] || "";
-      const options = String(row[optionIndex] || "")
+      const id = normalizeQuestionnaireId(row[idIndex] || "");
+      const title = String(row[titleIndex] || "").trim();
+      if (!id || !title) return "";
+      const options = String(optionIndex >= 0 ? row[optionIndex] || "" : "")
         .split(/\s*\|\s*|；|;/)
         .map((item) => item.trim())
         .filter(Boolean);
-      const note = row[noteIndex] || "";
+      const note = noteIndex >= 0 ? row[noteIndex] || "" : "";
       return [`${id}. ${title}`.trim(), ...options, note ? `说明：${note}` : ""].filter(Boolean).join("\n");
     })
     .filter(Boolean)
     .join("\n\n");
+}
+
+function normalizeQuestionnaireId(value) {
+  const text = String(value || "")
+    .trim()
+    .replace(/[＊*]/g, "")
+    .replace(/[－—–]/g, "-")
+    .replace(/\s+/g, "");
+  if (!text) return "";
+  const match = text.match(/^([A-Za-z]*)(\d+)(?:[-_](\d+))?$/);
+  if (!match) return text.toUpperCase().replace(/-/g, "_");
+  const prefix = (match[1] || "Q").toUpperCase();
+  const base = `${prefix}${match[2]}`;
+  return match[3] ? `${base}_${match[3]}` : base;
 }
 
 function csvToQuestionnaireText(text) {
@@ -1279,6 +1891,9 @@ function handleQuestionnaireImport(file, targetId = "") {
   reader.onload = async () => {
     try {
       const raw = reader.result;
+      if (/\.doc$/i.test(file.name)) {
+        throw new Error(legacyDocUnsupportedMessage(file.name));
+      }
       const text = /\.docx$/i.test(file.name)
         ? await docxToQuestionnaireText(raw)
         : /\.xlsx$/i.test(file.name)
@@ -1305,7 +1920,7 @@ function handleQuestionnaireImport(file, targetId = "") {
       }
     }
   };
-  if (/\.(docx|xlsx)$/i.test(file.name)) {
+  if (/\.(doc|docx|xlsx)$/i.test(file.name)) {
     reader.readAsArrayBuffer(file);
   } else {
     reader.readAsText(file, "utf-8");
@@ -1323,29 +1938,105 @@ function applyQuestionnaireImport() {
 function buildCrosstabQuestionnaireMap(text) {
   const questions = parseQuestions(text);
   const map = {};
+  const addMapKey = (key, title) => {
+    if (!key || !title) return;
+    const normalized = String(key).toUpperCase();
+    map[normalized] = title;
+    map[normalized.replace(/-/g, "_")] = title;
+    map[normalized.replace(/_/g, "-")] = title;
+    const numeric = normalized.match(/^Q(\d+(?:[_-]\d+)?)$/);
+    if (numeric) map[numeric[1]] = title;
+  };
   questions.forEach((q) => {
     if (q.id) {
-      map[q.id] = q.title;
+      const key = String(q.id).toUpperCase();
+      addMapKey(key, q.title);
+      addMapKey(key.replace(/^([A-Z]+)(\d+)$/, "$1_$2"), q.title);
+      if (/^\d+$/.test(key)) addMapKey(`Q${key}`, q.title);
     }
   });
   return map;
 }
 
+function crosstabQuestionKeyCandidates(variableName) {
+  const text = String(variableName || "").trim();
+  const candidates = [];
+  const add = (value) => {
+    if (!value) return;
+    const normalized = String(value).toUpperCase().replace(/-/g, "_");
+    if (!candidates.includes(normalized)) candidates.push(normalized);
+    const hyphen = normalized.replace(/_/g, "-");
+    if (!candidates.includes(hyphen)) candidates.push(hyphen);
+  };
+  add(text);
+  const normalizedText = text.replace(/^FZ[_-]/i, "").replace(/^FZ(?=Q\d)/i, "");
+  add(normalizedText);
+  const tokenMatch = normalizedText.match(/([A-Za-z]+\d+(?:_\d+)?)(?:__\d+)?/);
+  if (tokenMatch) {
+    const token = tokenMatch[1];
+    add(token);
+    const base = token.match(/^([A-Za-z]+\d+)/)?.[1];
+    if (base && base !== token) add(base);
+  }
+  const numericMatch = normalizedText.match(/^(\d+)(?:[_-](\d+))?/);
+  if (numericMatch) {
+    add(`Q${numericMatch[1]}${numericMatch[2] ? `_${numericMatch[2]}` : ""}`);
+    add(`Q${numericMatch[1]}`);
+  }
+  return candidates;
+}
+
+async function buildCrosstabWorkbookSheetAsync(items, plan, bannerPivotIndexes, mode, onProgress, start, end) {
+  const rows = [];
+  const positions = [];
+  const modeLabel = metricLabelForMode(mode);
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const key = pivotKey(item);
+    const bannerItems = bannerPivotIndexes.map((pivotIndex) => pivotIndex.get(key) || item);
+    positions.push({ title: item.title, type: normalizedQuestionType(item), row: rows.length + 1 });
+    rows.push([`CAPTION:${index + 1}. ${item.title}`]);
+    rows.push(...bannerHeaderRows(plan, mode));
+    if (mode === "significance") {
+      rows.push(["", "", ...bannerItems.map((_, bannerIndex) => excelColumnLetter(bannerIndex))]);
+    }
+    rows.push(["BASE", "", ...bannerItems.map((bannerItem) => questionValidBase(bannerItem))]);
+    rows.push([]);
+    buildWorkbookLineDescriptors(item).forEach((descriptor) => {
+      rows.push([
+        "",
+        descriptor.isNetGroup ? { value: descriptor.label, format: "bold" } : descriptor.label,
+        ...bannerItems.map((bannerItem) => workbookValueForDescriptor(bannerItem, bannerItems[0], descriptor, mode))
+      ]);
+    });
+    rows.push([]);
+    if (index % 3 === 0 || index === items.length - 1) {
+      const percent = start + ((index + 1) / Math.max(items.length, 1)) * (end - start);
+      onProgress?.(`正在生成${modeLabel}工作表...`, percent, `正在写入第 ${index + 1}/${items.length} 题：${item.title}`);
+      await nextUiTick();
+    }
+  }
+  return { rows, positions };
+}
+
 function resolveQuestionTitleFromMap(variableName) {
   if (!variableName || !crosstabQuestionnaireMap || Object.keys(crosstabQuestionnaireMap).length === 0) return null;
-  // Try exact match first
-  if (crosstabQuestionnaireMap[variableName]) return crosstabQuestionnaireMap[variableName];
-  // Try prefix match: Q4_1 → Q4, FZ_Q5__1 → Q5, Q8_1 → Q8
-  const prefixMatch = String(variableName).match(/^([A-Za-z]+\d+)(?:[_\-].*)?$/);
-  if (prefixMatch && crosstabQuestionnaireMap[prefixMatch[1]]) {
-    return crosstabQuestionnaireMap[prefixMatch[1]];
+  const candidates = crosstabQuestionKeyCandidates(variableName);
+  for (const candidate of candidates) {
+    if (crosstabQuestionnaireMap[candidate]) return crosstabQuestionnaireMap[candidate];
   }
-  // Try stripping FZ_ prefix: FZ_Q5 → Q5
-  const fzMatch = String(variableName).match(/^FZ_([A-Za-z]+\d+)(?:[_\-].*)?$/);
-  if (fzMatch && crosstabQuestionnaireMap[fzMatch[1]]) {
-    return crosstabQuestionnaireMap[fzMatch[1]];
+  for (const candidate of candidates) {
+    const base = candidate.match(/^([A-Z]+\d+)(?:[_\-].*)?$/)?.[1];
+    if (base && crosstabQuestionnaireMap[base]) return crosstabQuestionnaireMap[base];
   }
   return null;
+}
+
+function questionDisplayTitle(variableName, fallback = "") {
+  const mapped = resolveQuestionTitleFromMap(variableName);
+  const fallbackText = String(fallback || variableName || "").trim();
+  if (mapped) return mapped;
+  return fallbackText;
 }
 
 function handleCrosstabQuestionnaireImport(file) {
@@ -1355,12 +2046,10 @@ function handleCrosstabQuestionnaireImport(file) {
     try {
       const raw = reader.result;
       let text = "";
-      if (/\.(docx|doc)$/i.test(file.name)) {
-        try {
-          text = await docxToQuestionnaireText(raw);
-        } catch {
-          text = String(raw || "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
-        }
+      if (/\.doc$/i.test(file.name)) {
+        throw new Error(legacyDocUnsupportedMessage(file.name));
+      } else if (/\.docx$/i.test(file.name)) {
+        text = await docxToQuestionnaireText(raw);
       } else if (/\.(xlsx|xls)$/i.test(file.name)) {
         try {
           text = await xlsxToQuestionnaireText(raw);
@@ -1372,7 +2061,7 @@ function handleCrosstabQuestionnaireImport(file) {
       }
       if (!text.trim()) throw new Error("文件内容为空。");
       crosstabQuestionnaireMap = buildCrosstabQuestionnaireMap(text);
-      const matchedCount = Object.keys(crosstabQuestionnaireMap).length;
+      const matchedCount = parseQuestions(text).length;
       const preview = document.querySelector("#crosstabQuestionnairePreview");
       if (preview) {
         preview.style.display = "";
@@ -1919,23 +2608,26 @@ function parseQuestions(text) {
 
   lines.forEach((line, index) => {
     const trimmed = line.trim();
-    const prefixedMatch = trimmed.match(/^(Q|S|A|B|C|D|题)\s*(\d+)[\.、\s]/i);
-    const numericMatch = trimmed.match(/^(\d+)[\.、\s](.+)$/);
+    const structuredMatch = trimmed.match(/^([A-Za-z]*\d+(?:[-_]\d+)?[＊*]?)\s*[.．、]\s*(.+)$/);
+    const prefixedMatch = trimmed.match(/^(Q|S|A|B|C|D|题)\s*(\d+(?:[-_]\d+)?)[\.、\s]/i);
+    const numericMatch = trimmed.match(/^(\d+(?:[-_]\d+)?)[\.、\s](.+)$/);
     const looksLikeQuestion =
       numericMatch && /[？?]|请|您|是否|哪|什么|如何|多少|为什么|评价|打分|选择/.test(numericMatch[2]);
-    const questionMatch = prefixedMatch || (looksLikeQuestion ? numericMatch : null);
+    const structuredLooksLikeQuestion =
+      structuredMatch && /[？?]|请|您|是否|哪|什么|如何|多少|为什么|评价|打分|选择|隐藏题/.test(structuredMatch[2]);
+    const questionMatch = structuredLooksLikeQuestion ? structuredMatch : prefixedMatch || (looksLikeQuestion ? numericMatch : null);
 
     if (questionMatch) {
-      const rawPrefix = prefixedMatch ? questionMatch[1].toUpperCase() : "";
-      const prefix = rawPrefix === "题" ? "Q" : rawPrefix;
-      const number = Number(prefixedMatch ? questionMatch[2] : questionMatch[1]);
-      const id = `${prefix}${number}`;
+      const rawId = structuredLooksLikeQuestion ? questionMatch[1] : prefixedMatch ? `${questionMatch[1]}${questionMatch[2]}` : questionMatch[1];
+      const id = normalizeQuestionnaireId(rawId.replace(/^题/i, "Q"));
+      const prefix = id.match(/^[A-Z]+/)?.[0] || "Q";
+      const number = Number(id.match(/\d+/)?.[0] || 0);
 
       current = {
         id,
         prefix,
         number,
-        display: prefix ? `${prefix}${number}` : `${number}`,
+        display: id,
         title: trimmed,
         line: index + 1,
         options: [],
@@ -2543,9 +3235,9 @@ function exportEditableSuggestions(type) {
 
 function getCleaningConfig() {
   return {
-    minDuration: Math.max(30, Number(document.querySelector("#cleanMinDuration").value) || 120),
-    openMinChars: Math.max(1, Number(document.querySelector("#cleanOpenMinChars").value) || 5),
-    straightThreshold: Math.min(100, Math.max(50, Number(document.querySelector("#cleanStraightThreshold").value) || 90))
+    minDuration: Math.max(30, Number(document.querySelector("#cleanMinDuration")?.value) || 120),
+    openMinChars: Math.max(1, Number(document.querySelector("#cleanOpenMinChars")?.value) || 5),
+    straightThreshold: Math.min(100, Math.max(50, Number(document.querySelector("#cleanStraightThreshold")?.value) || 90))
   };
 }
 
@@ -2623,6 +3315,752 @@ function generateCleaningRules(text, config = getCleaningConfig()) {
   });
 
   return rules;
+}
+
+async function cleaningFileToParsed(file) {
+  const raw = await file.arrayBuffer();
+  const text = /\.sav$/i.test(file.name)
+    ? savToDelimitedTableText(raw)
+    : /\.xlsx?$/i.test(file.name)
+      ? await xlsxToDelimitedTableText(raw)
+      : await file.text();
+  const parsed = parseDelimitedTable(text);
+  if (!parsed.headers.length || !parsed.rows.length) throw new Error("未识别到有效表格数据，请确认文件包含表头和样本行。");
+  return parsed;
+}
+
+function detectCleaningFields(parsed) {
+  const durationFields = parsed.headers.filter((header) => /时长|duration|耗时|用时|time/i.test(header));
+  const idFields = parsed.headers.filter((header) => /respondent|样本|用户|会员|手机号|手机|邮箱|email|openid|ip|设备|device|id$/i.test(header));
+  const openFields = parsed.headers.filter((header) => /开放|填空|文本|文字|备注|请说明|请注明|其他.*说明|其它.*说明|open/i.test(header));
+  const numericFields = parsed.headers.filter((header) => parsed.rows.some((row) => row[header] !== "" && Number.isFinite(Number(row[header]))));
+  const scaleFields = numericFields.filter((header) => {
+    const values = parsed.rows.map((row) => Number(row[header])).filter(Number.isFinite);
+    if (values.length < Math.max(20, parsed.rows.length * 0.2)) return false;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    return min >= 0 && max <= 11;
+  });
+  const categoricalFields = parsed.headers.filter((header) => {
+    const uniq = new Set(parsed.rows.map((row) => String(row[header] ?? "").trim()).filter(Boolean));
+    return uniq.size > 1 && uniq.size <= 20;
+  });
+  return { durationFields, idFields, openFields, numericFields, scaleFields, categoricalFields };
+}
+
+function findFirstHeader(headers, pattern) {
+  return headers.find((header) => pattern.test(header)) || "";
+}
+
+function detectDemographicConflictFields(parsed) {
+  return {
+    age: findFirstHeader(parsed.headers, /年龄|age/i),
+    marriage: findFirstHeader(parsed.headers, /婚姻|婚育|婚况|marital|marriage/i),
+    education: findFirstHeader(parsed.headers, /学历|教育|education|degree/i),
+    occupation: findFirstHeader(parsed.headers, /职业|职位|岗位|occupation|job|career/i),
+    income: findFirstHeader(parsed.headers, /收入|月薪|薪资|income|salary/i),
+    children: findFirstHeader(parsed.headers, /孩子|子女|育儿|宝宝|children|kid/i)
+  };
+}
+
+function cleaningTextIncludes(value, patterns) {
+  const text = String(value ?? "").trim().toLowerCase();
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function parseAgeValue(value) {
+  const text = String(value ?? "").trim();
+  const nums = text.match(/\d+/g)?.map(Number).filter(Number.isFinite) || [];
+  if (!nums.length) return null;
+  if (nums.length >= 2) return Math.round((nums[0] + nums[1]) / 2);
+  return nums[0];
+}
+
+function buildDemographicConflictRules(parsed) {
+  const fields = detectDemographicConflictFields(parsed);
+  const rules = [];
+  if (fields.age && fields.marriage) {
+    rules.push({
+      id: "demo_age_marriage",
+      enabled: false,
+      level: "medium",
+      type: "demographic_conflict",
+      title: "年龄与婚姻状态矛盾",
+      field: `${fields.age}, ${fields.marriage}`,
+      fields: [fields.age, fields.marriage],
+      condition: "age_marriage",
+      operator: "conflict",
+      threshold: "",
+      unit: "",
+      description: "低年龄样本如选择已婚、离异、丧偶等状态，建议进入人工复核，避免误剔除。"
+    });
+  }
+  if (fields.age && fields.children) {
+    rules.push({
+      id: "demo_age_children",
+      enabled: false,
+      level: "medium",
+      type: "demographic_conflict",
+      title: "年龄与子女情况矛盾",
+      field: `${fields.age}, ${fields.children}`,
+      fields: [fields.age, fields.children],
+      condition: "age_children",
+      operator: "conflict",
+      threshold: "",
+      unit: "",
+      description: "低年龄样本如填写有子女/育儿相关信息，建议进入人工复核。"
+    });
+  }
+  if (fields.education && fields.occupation) {
+    rules.push({
+      id: "demo_education_occupation",
+      enabled: false,
+      level: "low",
+      type: "demographic_conflict",
+      title: "学历与职业状态矛盾",
+      field: `${fields.education}, ${fields.occupation}`,
+      fields: [fields.education, fields.occupation],
+      condition: "education_occupation",
+      operator: "conflict",
+      threshold: "",
+      unit: "",
+      description: "学历与职业组合明显不一致时进入复核，例如在校学生同时选择高管/企业主。"
+    });
+  }
+  if (fields.income && fields.occupation) {
+    rules.push({
+      id: "demo_income_occupation",
+      enabled: false,
+      level: "low",
+      type: "demographic_conflict",
+      title: "收入与职业状态矛盾",
+      field: `${fields.income}, ${fields.occupation}`,
+      fields: [fields.income, fields.occupation],
+      condition: "income_occupation",
+      operator: "conflict",
+      threshold: "",
+      unit: "",
+      description: "职业为学生/无业/退休但收入选择明显偏高时，建议进入人工复核。"
+    });
+  }
+  return rules;
+}
+
+function histogram(values, buckets = 12) {
+  const nums = values.map(Number).filter(Number.isFinite);
+  if (!nums.length) return [];
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  if (min === max) return [{ min, max, count: nums.length }];
+  const width = (max - min) / buckets;
+  const bins = Array.from({ length: buckets }, (_, index) => ({ min: min + index * width, max: min + (index + 1) * width, count: 0 }));
+  nums.forEach((value) => {
+    const index = Math.min(buckets - 1, Math.floor((value - min) / width));
+    bins[index].count += 1;
+  });
+  return bins;
+}
+
+function generateCleaningCenterRules(parsed) {
+  const fields = detectCleaningFields(parsed);
+  const rules = [];
+  const durationField = fields.durationFields[0];
+  if (durationField) {
+    const durations = parsed.rows.map((row) => Number(row[durationField])).filter(Number.isFinite);
+    const sorted = [...durations].sort((a, b) => a - b);
+    const p5 = sorted.length ? sorted[Math.floor(sorted.length * 0.05)] : 120;
+    rules.push({
+      id: "duration_short",
+      enabled: true,
+      level: "high",
+      type: "duration",
+      title: "超短时长",
+      field: durationField,
+      operator: "<",
+      threshold: Math.max(30, Math.round(p5 || 120)),
+      unit: "秒",
+      description: "答题时长低于阈值的样本标记为疑似无效。",
+      histogram: histogram(durations)
+    });
+  }
+  if (fields.idFields.length) {
+    rules.push({
+      id: "duplicate_id",
+      enabled: true,
+      level: "high",
+      type: "duplicate",
+      title: "重复样本",
+      field: fields.idFields[0],
+      operator: "duplicate",
+      threshold: 1,
+      unit: "次",
+      description: "同一用户/设备/联系方式重复出现时，仅保留第一条，其余进入剔除明细。"
+    });
+  }
+  if (fields.scaleFields.length >= 5) {
+    rules.push({
+      id: "straight_line",
+      enabled: true,
+      level: "medium",
+      type: "straight",
+      title: "量表直线作答",
+      field: fields.scaleFields.slice(0, 40).join(", "),
+      fields: fields.scaleFields.slice(0, 40),
+      operator: ">=",
+      threshold: 90,
+      unit: "%",
+      description: "量表题中同一分值占比达到阈值，标记为直线作答。"
+    });
+  }
+  if (fields.openFields.length) {
+    rules.push({
+      id: "open_text_short",
+      enabled: true,
+      level: "medium",
+      type: "open_text",
+      title: "开放题过短",
+      field: fields.openFields[0],
+      operator: "<",
+      threshold: 5,
+      unit: "字",
+      description: "开放题文本少于阈值且非空时，标记为低质量开放题。"
+    });
+  }
+  return [...rules, ...buildDemographicConflictRules(parsed)];
+}
+
+function renderCleaningDataPreview() {
+  const preview = document.querySelector("#cleaningDataPreview");
+  const parsed = cleaningCenterState.parsed;
+  if (!preview || !parsed) return;
+  const fields = detectCleaningFields(parsed);
+  preview.innerHTML = `
+    <strong>${escapeHtml(cleaningCenterState.fileName)} · ${parsed.rows.length} 行 × ${parsed.headers.length} 列</strong>
+    <span>识别字段：时长 ${fields.durationFields.length} 个 / ID ${fields.idFields.length} 个 / 开放题 ${fields.openFields.length} 个 / 量表 ${fields.scaleFields.length} 个</span>
+  `;
+}
+
+function cleaningHeaderInfo(header) {
+  return lastCrosstabDataContext?.headerInfos?.find((info) => info.title === header || info.sourceHeader === header || info.source === header) || null;
+}
+
+function cleaningFieldOptionMapping(header, parsed) {
+  const field = String(header || "").trim();
+  if (!field || !parsed?.headers?.includes(field)) return "";
+  const info = cleaningHeaderInfo(field);
+  const displayName = info?.sourceHeader || info?.source || field;
+  const entries = info?.options ? Object.entries(info.options).filter(([, label]) => String(label || "").trim()) : [];
+  if (entries.length) {
+    return `${displayName}：${entries.slice(0, 12).map(([value, label]) => `${value}=${label}`).join("，")}${entries.length > 12 ? "，…" : ""}`;
+  }
+  const values = [...new Set(parsed.rows.map((row) => String(row[field] ?? "").trim()).filter(Boolean))];
+  const sorted = values.sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+    return a.localeCompare(b, "zh-CN");
+  });
+  return `${displayName}：取值 ${sorted.slice(0, 12).join("，")}${sorted.length > 12 ? "，…" : ""}`;
+}
+
+function cleaningRuleFieldMapping(rule, parsed) {
+  const fields = rule.fields?.length
+    ? rule.fields
+    : String(rule.field || "").split(",").map((item) => item.trim()).filter(Boolean);
+  const mappings = fields.map((field) => cleaningFieldOptionMapping(field, parsed)).filter(Boolean);
+  return mappings.length ? mappings.join("\n") : "未识别到选项映射；可在字段中填写数据表里的字段名，多个字段用英文逗号分隔。";
+}
+
+function renderCleaningRules() {
+  const target = document.querySelector("#cleaningResults");
+  const parsed = cleaningCenterState.parsed;
+  const rules = cleaningCenterState.rules;
+  if (!target || !parsed) return;
+  const kpis = `
+    <div class="cleaning-kpi-grid">
+      <div class="cleaning-kpi"><span>样本数</span><strong>${parsed.rows.length}</strong></div>
+      <div class="cleaning-kpi"><span>字段数</span><strong>${parsed.headers.length}</strong></div>
+      <div class="cleaning-kpi"><span>规则数</span><strong>${rules.length}</strong></div>
+      <div class="cleaning-kpi"><span>启用规则</span><strong>${rules.filter((rule) => rule.enabled).length}</strong></div>
+    </div>
+  `;
+  const rowsPreview = parsed.rows.slice(0, 5).map((row) => `<tr>${parsed.headers.slice(0, 8).map((header) => `<td>${escapeHtml(row[header])}</td>`).join("")}</tr>`).join("");
+  const tablePreview = `
+    <article class="audit-issue">
+      <div class="issue-head"><strong>数据预览</strong><span class="issue-tag low">前 5 行 / 前 8 列</span></div>
+      <div class="table-wrap"><table class="compact-table"><thead><tr>${parsed.headers.slice(0, 8).map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rowsPreview}</tbody></table></div>
+    </article>
+  `;
+  const ruleCards = rules.map((rule, index) => {
+    const maxBin = Math.max(1, ...(rule.histogram || []).map((bin) => bin.count));
+    const hist = rule.histogram?.length
+      ? `<div class="cleaning-histogram">${rule.histogram.map((bin) => `<span title="${Math.round(bin.min)}-${Math.round(bin.max)}：${bin.count}" style="height:${Math.max(6, (bin.count / maxBin) * 62)}px"></span>`).join("")}</div>`
+      : "";
+    const thresholdDisabled = ["duplicate", "range", "demographic_conflict"].includes(rule.type) ? "disabled" : "";
+    const fieldMapping = cleaningRuleFieldMapping(rule, parsed);
+    return `
+      <article class="cleaning-rule-card" data-rule-index="${index}">
+        <div class="cleaning-rule-head">
+          <div>
+            <strong>${escapeHtml(rule.title)}</strong>
+            <p class="panel-note">${escapeHtml(rule.description)}</p>
+          </div>
+          <div class="cleaning-rule-actions">
+            <span class="issue-tag ${rule.level}">${rule.enabled ? "已启用" : "未启用"}</span>
+            <button class="icon-btn cleaning-rule-delete" type="button" title="删除规则">×</button>
+          </div>
+        </div>
+        ${hist}
+        <div class="cleaning-rule-controls">
+          <label>规则名称<input class="cleaning-rule-title" value="${escapeHtml(rule.title)}" /></label>
+          <label>规则类型<select class="cleaning-rule-type">
+            ${[
+              ["duration", "超短时长"],
+              ["duplicate", "重复样本"],
+              ["straight", "直线作答"],
+              ["open_text", "开放题过短"],
+              ["demographic_conflict", "人口背景矛盾"],
+              ["range", "选项范围检查"]
+            ].map(([value, label]) => `<option value="${value}" ${rule.type === value ? "selected" : ""}>${label}</option>`).join("")}
+          </select></label>
+          <label>优先级<select class="cleaning-rule-level"><option value="high" ${rule.level === "high" ? "selected" : ""}>高</option><option value="medium" ${rule.level === "medium" ? "selected" : ""}>中</option><option value="low" ${rule.level === "low" ? "selected" : ""}>低</option></select></label>
+          <label>字段<input class="cleaning-rule-field" value="${escapeHtml(rule.field)}" /></label>
+          <label>阈值<input class="cleaning-rule-threshold" type="number" value="${escapeHtml(rule.threshold)}" ${thresholdDisabled} /></label>
+          <label>启用<select class="cleaning-rule-enabled"><option value="true" ${rule.enabled ? "selected" : ""}>启用</option><option value="false" ${!rule.enabled ? "selected" : ""}>关闭</option></select></label>
+        </div>
+        <div class="cleaning-field-map">
+          <strong>选项映射</strong>
+          <pre>${escapeHtml(fieldMapping)}</pre>
+        </div>
+        <label>规则说明<textarea class="cleaning-rule-description compact-textarea">${escapeHtml(rule.description)}</textarea></label>
+      </article>
+    `;
+  }).join("");
+  target.innerHTML = `${kpis}${tablePreview}<article class="audit-issue"><div class="issue-head"><strong>清洗规则</strong><div class="cleaning-rule-actions"><span class="issue-tag medium">可新增 / 删除 / 编辑</span><button class="secondary-btn cleaning-add-rule-inline" type="button">手动新增规则</button></div></div><div class="insight-grid">${ruleCards}</div></article>`;
+  target.querySelector(".cleaning-add-rule-inline")?.addEventListener("click", () => addCleaningRule());
+  target.querySelectorAll(".cleaning-rule-card").forEach((card) => {
+    const index = Number(card.dataset.ruleIndex);
+    card.querySelector(".cleaning-rule-title")?.addEventListener("input", (event) => {
+      cleaningCenterState.rules[index].title = event.target.value.trim() || "自定义规则";
+    });
+    card.querySelector(".cleaning-rule-type")?.addEventListener("change", (event) => {
+      cleaningCenterState.rules[index].type = event.target.value;
+      if (event.target.value === "straight") {
+        cleaningCenterState.rules[index].fields = String(cleaningCenterState.rules[index].field || "").split(",").map((item) => item.trim()).filter(Boolean);
+      }
+      renderCleaningRules();
+    });
+    card.querySelector(".cleaning-rule-level")?.addEventListener("change", (event) => {
+      cleaningCenterState.rules[index].level = event.target.value;
+      renderCleaningRules();
+    });
+    card.querySelector(".cleaning-rule-field")?.addEventListener("input", (event) => {
+      cleaningCenterState.rules[index].field = event.target.value.trim();
+      if (cleaningCenterState.rules[index].type === "straight") {
+        cleaningCenterState.rules[index].fields = event.target.value.split(",").map((item) => item.trim()).filter(Boolean);
+      }
+      if (cleaningCenterState.rules[index].type === "demographic_conflict") {
+        cleaningCenterState.rules[index].fields = event.target.value.split(",").map((item) => item.trim()).filter(Boolean);
+      }
+      const map = card.querySelector(".cleaning-field-map pre");
+      if (map) map.textContent = cleaningRuleFieldMapping(cleaningCenterState.rules[index], cleaningCenterState.parsed);
+    });
+    card.querySelector(".cleaning-rule-threshold")?.addEventListener("input", (event) => {
+      cleaningCenterState.rules[index].threshold = Number(event.target.value) || 0;
+    });
+    card.querySelector(".cleaning-rule-description")?.addEventListener("input", (event) => {
+      cleaningCenterState.rules[index].description = event.target.value.trim();
+    });
+    card.querySelector(".cleaning-rule-enabled")?.addEventListener("change", (event) => {
+      cleaningCenterState.rules[index].enabled = event.target.value === "true";
+      renderCleaningRules();
+    });
+    card.querySelector(".cleaning-rule-delete")?.addEventListener("click", () => {
+      cleaningCenterState.rules.splice(index, 1);
+      renderCleaningRules();
+    });
+  });
+}
+
+function addCleaningRule(rule = {}) {
+  const parsed = cleaningCenterState.parsed;
+  if (!parsed) return;
+  const defaultField = parsed.headers[0] || "";
+  cleaningCenterState.rules.push({
+    id: `custom_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    enabled: false,
+    level: "medium",
+    type: "open_text",
+    title: "自定义清洗规则",
+    field: defaultField,
+    operator: "<",
+    threshold: 5,
+    unit: "",
+    description: "请编辑字段、阈值和说明后启用。",
+    ...rule
+  });
+  renderCleaningRules();
+}
+
+function checkDemographicConflict(row, rule) {
+  const [fieldA, fieldB] = rule.fields?.length ? rule.fields : String(rule.field || "").split(",").map((item) => item.trim()).filter(Boolean);
+  const valueA = row[fieldA];
+  const valueB = row[fieldB];
+  const condition = rule.condition || "";
+  if (!fieldA || !fieldB) return "";
+  if (condition === "age_marriage") {
+    const age = parseAgeValue(valueA);
+    if (age !== null && age < 20 && cleaningTextIncludes(valueB, [/已婚/, /离异/, /离婚/, /丧偶/, /有配偶/, /married/, /divorced/, /widow/])) {
+      return `${rule.title}：${fieldA}=${valueA}，${fieldB}=${valueB}`;
+    }
+  }
+  if (condition === "age_children") {
+    const age = parseAgeValue(valueA);
+    if (age !== null && age < 20 && cleaningTextIncludes(valueB, [/有/, /是/, /1/, /一孩/, /二孩/, /children/, /kid/])) {
+      return `${rule.title}：${fieldA}=${valueA}，${fieldB}=${valueB}`;
+    }
+  }
+  if (condition === "education_occupation") {
+    const edu = String(valueA ?? "");
+    const job = String(valueB ?? "");
+    if (cleaningTextIncludes(edu, [/高中及以下/, /初中/, /小学/, /高中/]) && cleaningTextIncludes(job, [/高管/, /总监/, /经理/, /企业主/, /老板/, /ceo/, /director/])) {
+      return `${rule.title}：${fieldA}=${edu}，${fieldB}=${job}`;
+    }
+    if (cleaningTextIncludes(edu, [/在校/, /学生/]) && cleaningTextIncludes(job, [/高管/, /企业主/, /老板/, /全职工作/])) {
+      return `${rule.title}：${fieldA}=${edu}，${fieldB}=${job}`;
+    }
+  }
+  if (condition === "income_occupation") {
+    const incomeText = String(valueA ?? "");
+    const job = String(valueB ?? "");
+    const highIncome = cleaningTextIncludes(incomeText, [/5万/, /50000/, /10万/, /100000/, /以上/, /高收入/]) || (Number(incomeText) >= 50000);
+    if (highIncome && cleaningTextIncludes(job, [/学生/, /无业/, /待业/, /退休/, /家庭主妇/, /homemaker/, /unemployed/, /student/])) {
+      return `${rule.title}：${fieldA}=${incomeText}，${fieldB}=${job}`;
+    }
+  }
+  return "";
+}
+
+function applyCleaningRule(row, rowIndex, allRows, rule) {
+  if (!rule.enabled) return null;
+  if (rule.type === "duration") {
+    const value = Number(row[rule.field]);
+    if (Number.isFinite(value) && value < Number(rule.threshold)) return `${rule.title}：${value}${rule.unit} < ${rule.threshold}${rule.unit}`;
+  }
+  if (rule.type === "duplicate") {
+    const value = String(row[rule.field] ?? "").trim();
+    if (value && allRows.findIndex((item) => String(item[rule.field] ?? "").trim() === value) !== rowIndex) return `${rule.title}：${rule.field}=${value}`;
+  }
+  if (rule.type === "straight") {
+    const values = (rule.fields || []).map((field) => String(row[field] ?? "").trim()).filter(Boolean);
+    if (values.length >= 5) {
+      const counts = values.reduce((acc, value) => ({ ...acc, [value]: (acc[value] || 0) + 1 }), {});
+      const maxCount = Math.max(...Object.values(counts));
+      const ratio = (maxCount / values.length) * 100;
+      if (ratio >= Number(rule.threshold)) return `${rule.title}：一致率 ${ratio.toFixed(1)}% ≥ ${rule.threshold}%`;
+    }
+  }
+  if (rule.type === "open_text") {
+    const value = String(row[rule.field] ?? "").trim();
+    if (value && value.length < Number(rule.threshold)) return `${rule.title}：${rule.field} 少于 ${rule.threshold}${rule.unit}`;
+  }
+  if (rule.type === "demographic_conflict") {
+    return checkDemographicConflict(row, rule) || null;
+  }
+  if (rule.type === "range") {
+    const value = String(row[rule.field] ?? "").trim();
+    if (!value) return `${rule.title}：${rule.field} 为空`;
+  }
+  return null;
+}
+
+function executeCleaningCenter() {
+  const parsed = cleaningCenterState.parsed;
+  if (!parsed) return;
+  const removed = [];
+  const kept = [];
+  parsed.rows.forEach((row, index) => {
+    const reasons = cleaningCenterState.rules
+      .map((rule) => applyCleaningRule(row, index, parsed.rows, rule))
+      .filter(Boolean);
+    if (reasons.length) {
+      removed.push({ ...row, __清洗结果: "剔除", __剔除原因: reasons.join("；") });
+    } else {
+      kept.push({ ...row, __清洗结果: "保留", __剔除原因: "" });
+    }
+  });
+  cleaningCenterState.result = { kept, removed, executedAt: new Date().toLocaleString("zh-CN") };
+  renderCleaningExecutionResult();
+}
+
+function renderCleaningExecutionResult() {
+  const target = document.querySelector("#cleaningResults");
+  const parsed = cleaningCenterState.parsed;
+  const result = cleaningCenterState.result;
+  if (!target || !parsed || !result) return;
+  const removeRate = parsed.rows.length ? result.removed.length / parsed.rows.length : 0;
+  const reasons = {};
+  result.removed.forEach((row) => {
+    String(row.__剔除原因 || "").split("；").forEach((reason) => {
+      const key = reason.split("：")[0] || "其他";
+      reasons[key] = (reasons[key] || 0) + 1;
+    });
+  });
+  const reasonRows = Object.entries(reasons).sort((a, b) => b[1] - a[1]).map(([reason, count]) => `<tr><td>${escapeHtml(reason)}</td><td>${count}</td><td>${formatPercent(count / Math.max(1, parsed.rows.length))}</td></tr>`).join("");
+  target.innerHTML = `
+    <div class="cleaning-kpi-grid">
+      <div class="cleaning-kpi"><span>原始样本</span><strong>${parsed.rows.length}</strong></div>
+      <div class="cleaning-kpi"><span>保留样本</span><strong>${result.kept.length}</strong></div>
+      <div class="cleaning-kpi"><span>剔除样本</span><strong>${result.removed.length}</strong></div>
+      <div class="cleaning-kpi"><span>剔除率</span><strong>${formatPercent(removeRate)}</strong></div>
+    </div>
+    <article class="audit-issue">
+      <div class="issue-head"><strong>剔除原因分布</strong><span class="issue-tag high">已执行</span></div>
+      <div class="table-wrap"><table class="compact-table"><thead><tr><th>原因</th><th>样本数</th><th>占比</th></tr></thead><tbody>${reasonRows || `<tr><td>无剔除样本</td><td>0</td><td>0.0%</td></tr>`}</tbody></table></div>
+    </article>
+  `;
+  ["#downloadCleanedData", "#downloadRemovedData", "#downloadCleaningReport"].forEach((selector) => {
+    const button = document.querySelector(selector);
+    if (button) button.disabled = false;
+  });
+  const crosstabData = document.querySelector("#crosstabData");
+  if (crosstabData) crosstabData.value = rowsToCsv(parsed.headers, result.kept);
+}
+
+function rowsToCsv(headers, rows, extraHeaders = []) {
+  const allHeaders = [...headers, ...extraHeaders.filter((header) => !headers.includes(header))];
+  return [allHeaders, ...rows.map((row) => allHeaders.map((header) => row[header] ?? ""))].map((row) => row.map(csvCell).join(",")).join("\r\n");
+}
+
+function cleaningFieldSummaryForAi(parsed) {
+  const fields = detectCleaningFields(parsed);
+  const demo = detectDemographicConflictFields(parsed);
+  const sampleRows = parsed.rows.slice(0, 8).map((row) => {
+    const sample = {};
+    parsed.headers.slice(0, 20).forEach((header) => { sample[header] = row[header]; });
+    return sample;
+  });
+  return JSON.stringify({
+    rowCount: parsed.rows.length,
+    headers: parsed.headers,
+    detectedFields: fields,
+    demographicFields: demo,
+    sampleRows
+  }, null, 2);
+}
+
+function buildAiCleaningRulesPrompt(parsed) {
+  return [
+    {
+      role: "system",
+      content: [
+        "你是一名资深市场研究数据清洗专家，擅长根据问卷原始数据字段生成可执行、易理解、不过度复杂的清洗规则。",
+        "请只返回 JSON 数组，不要输出 Markdown、解释或代码块。",
+        "每条规则对象字段必须包含：title、type、level、field、threshold、description、enabled。",
+        "type 只能是 duration、duplicate、straight、open_text、demographic_conflict、range。",
+        "level 只能是 high、medium、low。",
+        "enabled 建议仅对高确定性的机器规则设为 true；人口背景矛盾、选项范围检查等容易误伤的规则默认 false，用于人工复核。",
+        "不要生成大量选项范围检查；除非字段明显存在异常编码风险，否则不要生成 range。",
+        "优先考虑：答题时长、重复样本、矩阵直线作答、开放题低质量、人口背景矛盾（年龄×婚姻、年龄×子女、学历×职业、收入×职业）。"
+      ].join("\n")
+    },
+    {
+      role: "user",
+      content: [
+        "请基于以下字段摘要生成 3-8 条清洗规则。",
+        "要求规则名称用中文，描述要让业务用户看得懂。",
+        "如果某条规则需要多个字段，请 field 使用英文逗号分隔，例如：age, marital_status。",
+        "",
+        "字段摘要：",
+        cleaningFieldSummaryForAi(parsed)
+      ].join("\n")
+    }
+  ];
+}
+
+function parseAiCleaningRulesOutput(output) {
+  const text = String(output || "").trim();
+  const jsonText = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] || text.match(/\[[\s\S]*\]/)?.[0] || text;
+  const parsed = JSON.parse(jsonText);
+  if (!Array.isArray(parsed)) throw new Error("AI 返回内容不是规则数组。");
+  return parsed.slice(0, 12).map((rule) => ({
+    id: `ai_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    enabled: rule.enabled === true,
+    level: ["high", "medium", "low"].includes(rule.level) ? rule.level : "medium",
+    type: ["duration", "duplicate", "straight", "open_text", "demographic_conflict", "range"].includes(rule.type) ? rule.type : "open_text",
+    title: String(rule.title || "AI 建议规则").slice(0, 40),
+    field: String(rule.field || ""),
+    fields: String(rule.field || "").split(",").map((item) => item.trim()).filter(Boolean),
+    operator: rule.type === "duplicate" ? "duplicate" : "",
+    threshold: Number.isFinite(Number(rule.threshold)) ? Number(rule.threshold) : "",
+    unit: rule.type === "duration" ? "秒" : rule.type === "straight" ? "%" : rule.type === "open_text" ? "字" : "",
+    description: String(rule.description || "AI 根据字段结构生成的清洗建议。").slice(0, 220)
+  }));
+}
+
+function buildLocalAiAssistedCleaningRules(parsed) {
+  const fields = detectCleaningFields(parsed);
+  const suggestions = buildDemographicConflictRules(parsed).map((rule) => ({
+    ...rule,
+    id: `local_ai_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    title: `AI建议：${rule.title}`,
+    description: `${rule.description}（AI 辅助建议，默认关闭，建议人工确认后启用。）`
+  }));
+  if (fields.categoricalFields.length && suggestions.length < 3) {
+    suggestions.push({
+      id: `local_ai_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      enabled: false,
+      level: "low",
+      type: "range",
+      title: "AI建议：异常编码复核",
+      field: fields.categoricalFields[0],
+      operator: "in_allowed",
+      threshold: "",
+      unit: "",
+      description: "该字段为低基数分类变量，可在发现异常编码或空值时启用复核；默认不参与剔除。"
+    });
+  }
+  return suggestions;
+}
+
+async function aiAssistCleaningRules() {
+  const parsed = cleaningCenterState.parsed;
+  if (!parsed) return;
+  const button = document.querySelector("#aiAssistCleaningRules");
+  const originalText = "AI 辅助生成清洗规则";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "AI 生成中...";
+  }
+  const settings = loadAiSettings();
+  try {
+    let aiRules = [];
+    if (settings.mode !== "local" && !validateAiSettings(settings).length) {
+      const output = await callAiChatCompletion(settings, buildAiCleaningRulesPrompt(parsed), { maxTokens: 3000, temperature: 0.2 });
+      aiRules = parseAiCleaningRulesOutput(output);
+    } else {
+      aiRules = buildLocalAiAssistedCleaningRules(parsed);
+    }
+    const existingKeys = new Set(cleaningCenterState.rules.map((rule) => `${rule.type}|${rule.field}|${rule.title}`));
+    aiRules.forEach((rule) => {
+      const key = `${rule.type}|${rule.field}|${rule.title}`;
+      if (!existingKeys.has(key)) cleaningCenterState.rules.push(rule);
+    });
+    renderCleaningRules();
+    if (button) button.textContent = aiRules.length ? "已添加" : "无新增";
+  } catch (error) {
+    const fallbackRules = buildLocalAiAssistedCleaningRules(parsed);
+    fallbackRules.forEach((rule) => cleaningCenterState.rules.push(rule));
+    renderCleaningRules();
+    if (button) button.textContent = fallbackRules.length ? "已本地补充" : "无新增";
+  } finally {
+    if (button) {
+      button.disabled = false;
+      setTimeout(() => { button.textContent = originalText; }, 1500);
+    }
+  }
+}
+
+function downloadCleaningCenterData(type) {
+  const parsed = cleaningCenterState.parsed;
+  const result = cleaningCenterState.result;
+  if (!parsed || !result) return;
+  if (type === "cleaned") {
+    downloadTextFile("清洗后数据.csv", rowsToCsv(parsed.headers, result.kept), "text/csv;charset=utf-8");
+  } else if (type === "removed") {
+    downloadTextFile("剔除样本明细.csv", rowsToCsv(parsed.headers, result.removed, ["__清洗结果", "__剔除原因"]), "text/csv;charset=utf-8");
+  }
+}
+
+function downloadCleaningRules() {
+  const parsed = cleaningCenterState.parsed;
+  const rules = cleaningCenterState.rules;
+  if (!parsed || !rules || !rules.length) return;
+  const rows = rules.map((rule, index) => ({
+    序号: index + 1,
+    规则名称: rule.title || "",
+    规则类型: rule.type || "",
+    优先级: rule.level || "",
+    是否启用: rule.enabled ? "是" : "否",
+    关联字段: (cleaningRuleFieldMapping(rule, parsed) || []).join("、"),
+    阈值: rule.threshold != null ? String(rule.threshold) : "",
+    规则说明: rule.detail || "",
+    证据: rule.evidence || ""
+  }));
+  downloadExcelFromRows("清洗规则配置.xlsx", [
+    { header: "序号", key: "序号", width: 8 },
+    { header: "规则名称", key: "规则名称", width: 20 },
+    { header: "规则类型", key: "规则类型", width: 18 },
+    { header: "优先级", key: "优先级", width: 10 },
+    { header: "是否启用", key: "是否启用", width: 10 },
+    { header: "关联字段", key: "关联字段", width: 25 },
+    { header: "阈值", key: "阈值", width: 12 },
+    { header: "规则说明", key: "规则说明", width: 50 },
+    { header: "证据", key: "证据", width: 40 }
+  ], rows);
+}
+
+function downloadCleaningCenterReport() {
+  const parsed = cleaningCenterState.parsed;
+  const result = cleaningCenterState.result;
+  if (!parsed || !result) return;
+  const reasons = {};
+  result.removed.forEach((row) => {
+    String(row.__剔除原因 || "").split("；").forEach((reason) => {
+      const key = reason.split("：")[0] || "其他";
+      reasons[key] = (reasons[key] || 0) + 1;
+    });
+  });
+  const reasonHtml = Object.entries(reasons).sort((a, b) => b[1] - a[1]).map(([reason, count]) => `<tr><td>${escapeHtml(reason)}</td><td>${count}</td><td>${formatPercent(count / Math.max(1, parsed.rows.length))}</td></tr>`).join("");
+  const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>数据清洗报告</title><style>body{font-family:Arial,"Microsoft YaHei",sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:32px}.card{max-width:980px;margin:auto;background:white;border:1px solid #e2e8f0;border-radius:20px;padding:28px}table{width:100%;border-collapse:collapse}td,th{padding:10px;border-bottom:1px solid #e2e8f0;text-align:left}.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.kpi{background:#eff6ff;border-radius:14px;padding:16px}.kpi strong{display:block;font-size:28px;color:#1E88FF}</style></head><body><main class="card"><h1>数据清洗报告</h1><p>文件：${escapeHtml(cleaningCenterState.fileName)}；执行时间：${escapeHtml(result.executedAt)}</p><div class="kpis"><div class="kpi"><span>原始样本</span><strong>${parsed.rows.length}</strong></div><div class="kpi"><span>保留样本</span><strong>${result.kept.length}</strong></div><div class="kpi"><span>剔除样本</span><strong>${result.removed.length}</strong></div><div class="kpi"><span>剔除率</span><strong>${formatPercent(result.removed.length / Math.max(1, parsed.rows.length))}</strong></div></div><h2>剔除原因</h2><table><thead><tr><th>原因</th><th>样本数</th><th>占比</th></tr></thead><tbody>${reasonHtml || "<tr><td>无剔除样本</td><td>0</td><td>0.0%</td></tr>"}</tbody></table></main></body></html>`;
+  downloadTextFile("数据清洗报告.html", html, "text/html;charset=utf-8");
+}
+
+function loadCleaningExampleData() {
+  const csv = [
+    ["respondent_id", "duration", "Q1_gender", "Q2_age", "Q3_marriage", "Q4_education", "Q5_occupation", "Q6_income", "Q10_1", "Q10_2", "Q10_3", "Q10_4", "Q10_5", "open_feedback"],
+    ["A001", "180", "男", "25-34", "未婚", "本科", "白领", "10000-19999元", "5", "5", "5", "5", "5", "体验不错"],
+    ["A002", "42", "女", "18-24", "已婚", "本科", "学生", "50000元以上", "3", "4", "5", "4", "3", "好"],
+    ["A003", "220", "男", "35-44", "已婚", "高中及以下", "高管", "30000-49999元", "1", "1", "1", "1", "1", "页面加载速度较慢"],
+    ["A003", "240", "男", "35-44", "已婚", "本科", "白领", "15000-19999元", "4", "4", "4", "4", "4", "重复样本"],
+    ["A004", "310", "女", "25-34", "未婚", "硕士", "白领", "10000-19999元", "4", "5", "4", "5", "4", "促销信息清楚"]
+  ].map((row) => row.map(csvCell).join(",")).join("\n");
+  const parsed = parseDelimitedTable(csv);
+  cleaningCenterState = { parsed, rules: generateCleaningCenterRules(parsed), result: null, fileName: "示例数据.csv" };
+  renderCleaningDataPreview();
+  renderCleaningRules();
+  document.querySelector("#generateCleaningRulesFromData").disabled = false;
+  document.querySelector("#aiAssistCleaningRules").disabled = false;
+  document.querySelector("#executeCleaning").disabled = false;
+}
+
+async function handleCleaningDataFile(file) {
+  const preview = document.querySelector("#cleaningDataPreview");
+  const result = document.querySelector("#cleaningResults");
+  try {
+    if (preview) preview.innerHTML = `<strong>正在解析</strong><span>${escapeHtml(file.name)}：正在读取数据结构和字段类型。</span>`;
+    if (result) result.innerHTML = `<div class="empty-state"><strong>正在解析数据</strong><span>请稍候，正在本地读取文件并识别清洗字段。</span></div>`;
+    const parsed = await cleaningFileToParsed(file);
+    cleaningCenterState = {
+      parsed,
+      rules: generateCleaningCenterRules(parsed),
+      result: null,
+      fileName: file.name
+    };
+    renderCleaningDataPreview();
+    renderCleaningRules();
+    document.querySelector("#generateCleaningRulesFromData").disabled = false;
+    document.querySelector("#aiAssistCleaningRules").disabled = false;
+    document.querySelector("#executeCleaning").disabled = false;
+    document.querySelector("#downloadCleaningRules").disabled = false;
+    ["#downloadCleanedData", "#downloadRemovedData", "#downloadCleaningReport"].forEach((selector) => {
+      const button = document.querySelector(selector);
+      if (button) button.disabled = true;
+    });
+  } catch (error) {
+    if (preview) preview.innerHTML = `<strong>解析失败</strong><span class="warning-text">${escapeHtml(error.message)}</span>`;
+    if (result) result.innerHTML = `<div class="empty-state"><strong>解析失败</strong><span>${escapeHtml(error.message)}</span></div>`;
+  }
 }
 
 function generateHeaderSuggestions(text) {
@@ -3141,8 +4579,13 @@ function completeScaleRows(rows, values) {
 
 function questionPrefix(header) {
   const text = String(header || "").trim();
-  // 匹配变量名+数字前缀，支持 Q15_2、Q15__1 等格式，后面跟中文或特殊字符也能正确提取
-  const match = text.match(/^([A-Za-z]+\d+)(?:_\d+|__\d+)?(?:[^A-Za-z0-9]|$)/);
+  // 双下划线通常是同一道矩阵/多选题的子项：Q27__1、Q27__2 → Q27
+  const matrixMatch = text.match(/^([A-Za-z]+\d+)__\d+(?:[^A-Za-z0-9]|$)/);
+  if (matrixMatch) return matrixMatch[1];
+  // 单下划线通常是另一道派生题/追问题：Q27_2__1__open → Q27_2，不能并入 Q27
+  const subQuestionMatch = text.match(/^([A-Za-z]+\d+_\d+)(?:__\d+)?(?:[^A-Za-z0-9]|$)/);
+  if (subQuestionMatch) return subQuestionMatch[1];
+  const match = text.match(/^([A-Za-z]+\d+)(?:[^A-Za-z0-9]|$)/);
   return match ? match[1] : "";
 }
 
@@ -3162,13 +4605,18 @@ function groupQuestionHeaders(headers, rows = []) {
         return candidateInfo?.binary && candidateInfo.parentTitle === info.parentTitle;
       });
       related.forEach((candidate) => used.add(candidate));
-      groups.push({ key: info.source, title: info.parentTitle, headers: related, multiResponse: true });
+      groups.push({ key: info.source, title: questionDisplayTitle(info.source, info.parentTitle), headers: related, multiResponse: true });
       return;
     }
     const prefix = questionPrefix(header);
     const multiPrefix = String(header).match(/^([A-Za-z]+\d+(?:_\d+)?)__\d+/)?.[1];
     if (multiPrefix) {
       const related = headers.filter((candidate) => String(candidate).startsWith(`${multiPrefix}__`));
+      if (rows.length > 0 && related.every((candidate) => isBinaryOptionColumn(candidate, rows))) {
+        related.forEach((candidate) => used.add(candidate));
+        groups.push({ key: multiPrefix, title: questionDisplayTitle(multiPrefix, multiPrefix), headers: related, multiResponse: true });
+        return;
+      }
       // 仅当所有相关字段的值看起来是二元值（0/1/选中/未选/是/否）时才判定为多选题
       const isMultiResponse = rows.length > 0 && related.every((candidate) => {
         const allValues = rows.map((row) => row[candidate]).filter((v) => v !== undefined && v !== "");
@@ -3176,7 +4624,7 @@ function groupQuestionHeaders(headers, rows = []) {
       });
       if (isMultiResponse) {
         related.forEach((candidate) => used.add(candidate));
-        groups.push({ key: multiPrefix, title: multiPrefix, headers: related, multiResponse: true });
+        groups.push({ key: multiPrefix, title: questionDisplayTitle(multiPrefix, multiPrefix), headers: related, multiResponse: true });
         return;
       }
     }
@@ -3191,12 +4639,12 @@ function groupQuestionHeaders(headers, rows = []) {
       const firstInfo = getHeaderInfo(related[0]);
       let title = prefix;
       if (firstInfo?.parentTitle) {
-        title = firstInfo.parentTitle.replace(/^[A-Z]+\d+\.?\s*/, "").trim();
+        title = firstInfo.parentTitle.trim();
         if (title.length > 80) title = title.substring(0, 80) + "...";
       }
-      groups.push({ key: prefix, title, headers: related });
+      groups.push({ key: prefix, title: questionDisplayTitle(prefix, title), headers: related });
     } else {
-      groups.push({ key: header, title: header, headers: [header] });
+      groups.push({ key: header, title: questionDisplayTitle(header, header), headers: [header] });
       used.add(header);
     }
   });
@@ -3205,6 +4653,49 @@ function groupQuestionHeaders(headers, rows = []) {
 
 function isBinaryMentionValue(value) {
   return /^(1|选中|是|yes|true)$/i.test(String(value || "").trim());
+}
+
+function isBinaryOptionColumn(header, rows = []) {
+  const values = rows.map((row) => row[header]).filter((value) => value !== undefined && value !== "");
+  return values.length > 0 && values.every((value) => /^(0|1|选中|未选|是|否|yes|no|true|false)$/i.test(String(value).trim()));
+}
+
+function normalizeBinaryValue(value) {
+  return String(value || "").trim().replace(/\s+/g, "").toLowerCase();
+}
+
+function isBinaryValue(value) {
+  return [
+    "0",
+    "1",
+    "yes",
+    "no",
+    "y",
+    "n",
+    "true",
+    "false",
+    "checked",
+    "unchecked",
+    "selected",
+    "unselected",
+    "选中",
+    "未选中",
+    "是",
+    "否",
+    "有",
+    "无",
+    "提及",
+    "未提及"
+  ].includes(normalizeBinaryValue(value));
+}
+
+function isBinaryMentionValue(value) {
+  return ["1", "yes", "y", "true", "checked", "selected", "选中", "是", "有", "提及"].includes(normalizeBinaryValue(value));
+}
+
+function isBinaryOptionColumn(header, rows = []) {
+  const values = rows.map((row) => row[header]).filter((value) => value !== undefined && value !== "");
+  return values.length > 0 && values.every(isBinaryValue);
 }
 
 function splitMultiValues(value) {
@@ -3216,7 +4707,39 @@ function splitMultiValues(value) {
 
 function isOpenEndedHeader(header) {
   const text = String(header || "").trim();
-  return /填空|开放|意见|建议|描述|原因|理由|备注|详细|具体|感想|反馈|补充|其他.*说明|说明.*其他/i.test(text);
+  return /填空|开放|文本|文字|备注|详细说明|具体说明|请注明|请说明|请描述|请填写|请补充|其他.*(?:说明|注明|填写|填空|描述|补充)|其它.*(?:说明|注明|填写|填空|描述|补充)|(?:说明|注明|填写|填空|描述|补充).*其他|(?:说明|注明|填写|填空|描述|补充).*其它/i.test(text);
+}
+
+function isOpenTextHeader(header) {
+  const text = String(header || "").trim();
+  return isOpenEndedHeader(text) || /(?:^|[_\s])open(?:[_\s]|$)|__open\b/i.test(text);
+}
+
+function isOtherSpecifyHeader(header) {
+  const text = String(header || "").trim();
+  const info = getHeaderInfo(text);
+  const labelText = [text, info?.title, info?.parentTitle, info?.optionLabel].filter(Boolean).join(" ");
+  return isOtherSpecifyText(labelText);
+}
+
+function isOtherSpecifyField(header, rows = []) {
+  if (!isOtherSpecifyHeader(header)) return false;
+  return /(?:^|__)open\b/i.test(String(header || "")) || !isBinaryOptionColumn(header, rows);
+}
+
+function isOpenEndedField(header, rows = []) {
+  return isOpenEndedHeader(header) && !isBinaryOptionColumn(header, rows);
+}
+
+function hasOtherOptionLabel(label) {
+  return /其他|其它|other/i.test(String(label || ""));
+}
+
+function isOtherSpecifyText(text) {
+  const normalized = String(text || "").replace(/\s+/g, "").replace(/[，,。．.、；;：:（）()【】[\]{}<>《》“”"‘’'…]+/g, "");
+  return /(?:其他|其它|other).*(?:说明|注明|填写|填空|描述|补充|specify|please specify)/i.test(normalized)
+    || /(?:说明|注明|填写|填空|描述|补充|specify).*(?:其他|其它|other)/i.test(normalized)
+    || (/(?:^|__)open\b/i.test(String(text || "")) && /其他|其它|other/i.test(String(text || "")));
 }
 
 function inferSingleColumnType(header, values) {
@@ -3226,6 +4749,8 @@ function inferSingleColumnType(header, values) {
   const numericValues = validValues.map(toNumberOrNull).filter((value) => value !== null);
   const uniqueNumbers = [...new Set(numericValues)];
   const uniqueValues = [...new Set(validValues)];
+  const hasQuestionKey = crosstabQuestionKeyCandidates(header).some((key) => /^([A-Z]+\d+)/.test(key));
+  const averageTextLength = validValues.length ? mean(validValues.map((value) => String(value).length)) || 0 : 0;
   const numericRatio = validValues.length ? numericValues.length / validValues.length : 0;
   const maxNumber = Math.max(...uniqueNumbers, 0);
   const minNumber = Math.min(...uniqueNumbers, 0);
@@ -3234,7 +4759,9 @@ function inferSingleColumnType(header, values) {
   if (numericRatio > 0.8 && minNumber >= 0 && maxNumber <= 10 && uniqueNumbers.length >= 8) return "scale";
   if (numericRatio > 0.8 && [5, 7, 10].includes(maxNumber) && minNumber >= 1) return "scale";
   if (validValues.some((value) => splitMultiValues(value).length > 1)) return "multi_single_cell";
-  if (uniqueValues.length > Math.max(12, validValues.length * 0.45) || validValues.some((value) => String(value).length > 18)) return "open";
+  if (validValues.some((value) => String(value).length > 28)) return "open";
+  if (!hasQuestionKey && (uniqueValues.length > Math.max(12, validValues.length * 0.45) || averageTextLength > 14)) return "open";
+  if (hasQuestionKey && uniqueValues.length > Math.max(20, validValues.length * 0.75) && averageTextLength > 12) return "open";
   return "single";
 }
 
@@ -3242,6 +4769,7 @@ function inferMultiColumnType(group, rows) {
   const values = group.headers.flatMap((header) => rows.map((row) => row[header]).filter(Boolean));
   const numericValues = values.map(toNumberOrNull).filter((value) => value !== null);
   const uniqueNumbers = [...new Set(numericValues)];
+  if (values.length && values.every(isBinaryValue)) return "multi_columns";
   const allBinary = values.length && values.every((value) => /^(0|1|选中|未选|是|否)$/i.test(String(value).trim()));
   const minNumber = Math.min(...uniqueNumbers, 0);
   const maxNumber = Math.max(...uniqueNumbers, 0);
@@ -3293,25 +4821,37 @@ function openTextSummary(values) {
   };
 }
 
-function buildSingleQuestionPivot(parsed) {
+function buildSingleQuestionPivot(parsed, options = {}) {
+  const { resetExcluded = true } = options;
   const total = parsed.rows.length;
-  excludedPivotItems = [];
+  if (resetExcluded) excludedPivotItems = [];
   return groupQuestionHeaders(parsed.headers, parsed.rows).flatMap((group) => {
     if (group.headers.length > 1) {
-      if (isOpenEndedHeader(group.title) || group.headers.some((h) => isOpenEndedHeader(h))) {
+      const otherSpecifyHeaders = group.headers.filter((header) => isOtherSpecifyField(header, parsed.rows));
+      const activeHeaders = group.headers.filter((header) => !isOtherSpecifyField(header, parsed.rows));
+      if (otherSpecifyHeaders.length) {
+        excludedPivotItems.push({ title: `${group.title} - 其他项填空说明`, headers: otherSpecifyHeaders, reason: "其他项填空说明已作为辅助字段处理" });
+      }
+      if (!activeHeaders.length) {
         excludedPivotItems.push({ title: group.title, headers: group.headers, reason: "开放题过滤" });
         return [];
       }
-      const type = inferMultiColumnType(group, parsed.rows);
-      if (type === "multi_columns" || group.multiResponse) {
+      const activeGroup = { ...group, headers: activeHeaders };
+      if (isOpenEndedHeader(activeGroup.title) || activeGroup.headers.some((h) => isOpenEndedField(h, parsed.rows))) {
+        excludedPivotItems.push({ title: group.title, headers: group.headers, reason: "开放题过滤" });
+        return [];
+      }
+      const type = inferMultiColumnType(activeGroup, parsed.rows);
+      if (type === "multi_columns" || activeGroup.multiResponse) {
         const validBase = parsed.rows.filter((row) =>
-          group.headers.some((header) => isBinaryMentionValue(row[header]))
+          activeGroup.headers.some((header) => isBinaryMentionValue(row[header]))
         ).length;
-        const optionRows = group.headers.map((header) => {
+        const optionRows = activeGroup.headers.map((header) => {
           const mentions = parsed.rows.filter((row) => isBinaryMentionValue(row[header])).length;
           const info = getHeaderInfo(header);
+          const cleanLabel = info?.optionLabel || header.replace(new RegExp(`^${activeGroup.key}(?:__\\d+)?\\s*`), "").replace(/^[_\s]+/, "").trim() || header;
           return {
-            label: info?.optionLabel || header.replace(new RegExp(`^${group.key}(?:__\\d+)?\\s*`), "").trim() || header,
+            label: cleanLabel,
             header: header,
             count: mentions,
             mentionPercent: 0,
@@ -3321,7 +4861,7 @@ function buildSingleQuestionPivot(parsed) {
         const totalMentions = optionRows.reduce((sum, row) => sum + row.count, 0);
         optionRows.forEach((row) => { row.mentionPercent = totalMentions ? row.count / totalMentions : 0; });
         // Apply NET group configuration
-        const netGroups = getNetGroupsForQuestion(group.key);
+        const netGroups = getNetGroupsForQuestion(activeGroup.key);
         if (netGroups.length > 0) {
           const finalRows = [];
           const usedHeaders = new Set();
@@ -3354,30 +4894,30 @@ function buildSingleQuestionPivot(parsed) {
           });
           const totalMentions2 = finalRows.reduce((sum, row) => sum + row.count, 0);
           finalRows.forEach((row) => { row.mentionPercent = totalMentions2 ? row.count / totalMentions2 : 0; });
-          return [{ title: group.title, type: "多选题", total, validBase, rows: finalRows }];
+          return [{ title: activeGroup.title, type: "多选题", total, validBase, rows: finalRows }];
         }
-        return [{ title: group.title, type: "多选题", total, validBase, rows: optionRows }];
+        return [{ title: activeGroup.title, type: "多选题", total, validBase, rows: optionRows }];
       }
 
       if (type === "ranking") {
-        const rows = group.headers.map((header) => {
+        const rows = activeGroup.headers.map((header) => {
           const values = parsed.rows.map((row) => toNumberOrNull(row[header])).filter((value) => value !== null);
           const avgRank = mean(values) || 0;
           const firstRate = values.filter((value) => value === 1).length / Math.max(values.length, 1);
           const secondRate = values.filter((value) => value === 2).length / Math.max(values.length, 1);
           const top3Rate = values.filter((value) => value >= 1 && value <= 3).length / Math.max(values.length, 1);
-          return { label: header, score: values.length ? group.headers.length + 1 - avgRank : 0, firstRate, secondRate, top3Rate, avgRank };
+          return { label: header, score: values.length ? activeGroup.headers.length + 1 - avgRank : 0, firstRate, secondRate, top3Rate, avgRank };
         });
-        return [{ title: group.title, type: "排序题", total, validBase: Math.max(...group.headers.map((header) => parsed.rows.map((row) => toNumberOrNull(row[header])).filter((value) => value !== null).length), 0), rows }];
+        return [{ title: activeGroup.title, type: "排序题", total, validBase: Math.max(...activeGroup.headers.map((header) => parsed.rows.map((row) => toNumberOrNull(row[header])).filter((value) => value !== null).length), 0), rows }];
       }
 
       if (type === "matrix_scale") {
-        return group.headers.map((header) => {
+        return activeGroup.headers.map((header) => {
           const values = parsed.rows.map((row) => row[header]).filter(Boolean);
           const info = getHeaderInfo(header);
-          const cleanLabel = info?.optionLabel || header.replace(new RegExp(`^${group.key}(?:__\\d+)?\\s*`), "").replace(/^[_\s]+/, "").trim() || header;
+          const cleanLabel = info?.optionLabel || header.replace(new RegExp(`^${activeGroup.key}(?:__\\d+)?\\s*`), "").replace(/^[_\s]+/, "").trim() || header;
           return {
-            title: `${group.title} - ${cleanLabel}`,
+            title: `${questionDisplayTitle(activeGroup.key, activeGroup.title)} - ${cleanLabel}`,
             type: "量表题",
             total,
             validBase: values.length,
@@ -3387,15 +4927,15 @@ function buildSingleQuestionPivot(parsed) {
         });
       }
 
-      const rows = group.headers.map((header) => {
+      const rows = activeGroup.headers.map((header) => {
         const values = parsed.rows.map((row) => row[header]).filter(Boolean);
         return {
-          label: header,
+          label: questionDisplayTitle(header, header),
           validBase: values.length,
           frequencies: frequencyRows(values, values.length, values.length)
         };
       });
-      return [{ title: group.title, type: "矩阵单选", total, validBase: Math.max(...rows.map((row) => row.validBase || 0), 0), rows }];
+      return [{ title: activeGroup.title, type: "矩阵单选", total, validBase: Math.max(...rows.map((row) => row.validBase || 0), 0), rows }];
     }
 
     const header = group.headers[0];
@@ -3407,7 +4947,7 @@ function buildSingleQuestionPivot(parsed) {
       const passives = numericValues.filter((value) => value >= 7 && value <= 8).length;
       const detractors = numericValues.filter((value) => value <= 6).length;
       return [{
-        title: header,
+        title: questionDisplayTitle(header, header),
         type: "NPS题",
         total,
         validBase: numericValues.length,
@@ -3423,7 +4963,7 @@ function buildSingleQuestionPivot(parsed) {
     }
     if (type === "scale") {
       const validValues = values.filter((value) => toNumberOrNull(value) !== null);
-      return [{ title: header, type: "量表题", total, validBase: validValues.length, stats: statRowsForScale(values), frequencies: completeScaleRows(frequencyRows(values, validValues.length, validValues.length), validValues) }];
+      return [{ title: questionDisplayTitle(header, header), type: "量表题", total, validBase: validValues.length, stats: statRowsForScale(values), frequencies: completeScaleRows(frequencyRows(values, validValues.length, validValues.length), validValues) }];
     }
     if (type === "multi_single_cell") {
       const mentions = new Map();
@@ -3470,16 +5010,16 @@ function buildSingleQuestionPivot(parsed) {
         });
         const totalMentions2 = finalRows.reduce((sum, row) => sum + row.count, 0);
         finalRows.forEach((row) => { row.mentionPercent = totalMentions2 ? row.count / totalMentions2 : 0; });
-        return [{ title: header, type: "多选题", total, validBase, rows: finalRows }];
+        return [{ title: questionDisplayTitle(header, header), type: "多选题", total, validBase, rows: finalRows }];
       }
-      return [{ title: header, type: "多选题", total, validBase, rows: optionRows }];
+      return [{ title: questionDisplayTitle(header, header), type: "多选题", total, validBase, rows: optionRows }];
     }
     if (type === "open") {
       excludedPivotItems.push({ title: header, headers: [header], reason: "开放题过滤" });
       return [];
     }
     const validValues = values.filter(Boolean);
-    return [{ title: header, type: "单选题", total, validBase: validValues.length, rows: frequencyRows(values, validValues.length, validValues.length) }];
+    return [{ title: questionDisplayTitle(header, header), type: "单选题", total, validBase: validValues.length, rows: frequencyRows(values, validValues.length, validValues.length) }];
   });
 }
 
@@ -3650,22 +5190,58 @@ function renderQuestionPivotItem(item) {
   return renderFrequencyTable(item.rows, true);
 }
 
-function generateQuestionPivot() {
+function nextUiTick() {
+  return new Promise((resolve) => window.setTimeout(resolve, 0));
+}
+
+function renderCrosstabProgressCard(status, percent = 0, detail = "") {
+  const result = document.querySelector("#crosstabResults");
+  const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+  result.innerHTML = `
+    <article class="audit-issue crosstab-progress-card">
+      <div class="issue-head">
+        <strong>正在生成全部交叉表</strong>
+        <span class="issue-tag medium">${safePercent}%</span>
+      </div>
+      <div class="progress-bar" aria-label="全部交叉表生成进度">
+        <span id="pivotProgressBar" style="width:${safePercent}%"></span>
+      </div>
+      <p id="pivotProgress">${escapeHtml(status)}</p>
+      <div class="issue-evidence" id="pivotProgressDetail">${escapeHtml(detail)}</div>
+    </article>
+  `;
+}
+
+function updateCrosstabProgress(status, percent, detail = "") {
+  const textEl = document.querySelector("#pivotProgress");
+  const barEl = document.querySelector("#pivotProgressBar");
+  const detailEl = document.querySelector("#pivotProgressDetail");
+  const tagEl = document.querySelector(".crosstab-progress-card .issue-tag");
+  const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+  if (textEl) textEl.textContent = status;
+  if (barEl) barEl.style.width = `${safePercent}%`;
+  if (detailEl) detailEl.textContent = detail;
+  if (tagEl) tagEl.textContent = `${safePercent}%`;
+}
+
+async function generateQuestionPivot() {
   const parsed = getWorkingCrosstabData();
   const result = document.querySelector("#crosstabResults");
   if (!parsed.rows.length) {
     result.innerHTML = `<div class="empty-state"><strong>无法生成全部交叉表</strong><span>请先导入或粘贴带表头的数据文件。</span></div>`;
     return;
   }
+  try {
+  updateCrosstabProgress("正在识别题型与题干...", 8, `数据量：${parsed.rows.length} 行，字段：${parsed.headers.length} 个。`);
+  await nextUiTick();
   lastQuestionPivot = buildSingleQuestionPivot(parsed);
   if (!lastQuestionPivot.length) {
     result.innerHTML = `<div class="empty-state"><strong>无法生成全部交叉表</strong><span>当前数据只识别到开放题或填空题；全部交叉表已默认排除开放题。</span></div>`;
     return;
   }
-  const progressEl = document.querySelector("#pivotProgress");
-  if (progressEl) progressEl.textContent = `已识别 ${lastQuestionPivot.length} 题（已排除开放题），正在构建 Banner 交叉与 Excel 导出...`;
-  window.setTimeout(() => {
-    exportQuestionPivot();
+  updateCrosstabProgress("已识别题目，正在构建交叉表工作簿...", 25, `识别到 ${lastQuestionPivot.length} 题；已排除开放/填空变量 ${excludedPivotItems.length} 个。`);
+  await nextUiTick();
+    await exportQuestionPivot((status, percent, detail) => updateCrosstabProgress(status, percent, detail));
     const typeCounts = lastQuestionPivot.reduce((counts, item) => {
       counts[item.type] = (counts[item.type] || 0) + 1;
       return counts;
@@ -3679,17 +5255,13 @@ function generateQuestionPivot() {
         ${excludedPivotItems.length ? `<div class="panel-note" style="margin-top:0.5rem;"><strong>已排除 ${excludedPivotItems.length} 个变量（开放题/填空题）：</strong> ${excludedPivotItems.slice(0, 20).map((e) => escapeHtml(e.title || e.headers[0])).join("、")}${excludedPivotItems.length > 20 ? ` 等共 ${excludedPivotItems.length} 个` : ""}</div>` : ""}
       </article>
     `;
-  }, 300);
+  } catch (error) {
+    result.innerHTML = `<div class="empty-state"><strong>生成失败</strong><span>${escapeHtml(error.message || "导出全部交叉表时发生错误。")}</span></div>`;
+  }
 }
 
 function renderQuestionPivot() {
-  const result = document.querySelector("#crosstabResults");
-  result.innerHTML = `
-    <div class="empty-state">
-      <strong>正在生成全部交叉表</strong>
-      <span id="pivotProgress">正在识别题型、计算频数并排除开放题，请稍候...</span>
-    </div>
-  `;
+  renderCrosstabProgressCard("正在识别题型、计算频数并排除开放题，请稍候...", 3, "页面会分阶段刷新进度，导出完成后自动下载 Excel。");
   window.setTimeout(generateQuestionPivot, 100);
 }
 
@@ -3824,7 +5396,7 @@ function questionPivotRows(items) {
   const bannerPivotIndexes = lastCrosstabHeaderPlan?.length
     ? lastCrosstabHeaderPlan.map((banner) => {
       const filteredRows = filterRowsByConditionParts(data, banner.parts || parseHeaderCondition(banner.condition));
-      return indexPivotItems(buildSingleQuestionPivot({ headers: data.headers, rows: filteredRows }));
+      return indexPivotItems(buildSingleQuestionPivot({ headers: data.headers, rows: filteredRows }, { resetExcluded: false }));
     })
     : [];
   if (lastCrosstabHeaderPlan?.length) {
@@ -3884,8 +5456,27 @@ function buildBannerPivotIndexes(data, plan) {
       return baseIndex;
     }
     const filteredRows = filterRowsByConditionParts(data, banner.parts || parseHeaderCondition(banner.condition));
-    return indexPivotItems(buildSingleQuestionPivot({ headers: data.headers, rows: filteredRows }));
+    return indexPivotItems(buildSingleQuestionPivot({ headers: data.headers, rows: filteredRows }, { resetExcluded: false }));
   });
+}
+
+async function buildBannerPivotIndexesAsync(data, plan, onProgress, start = 30, end = 48) {
+  if (!plan.length) return [];
+  const indexes = [];
+  const baseIndex = lastQuestionPivot?.length ? indexPivotItems(lastQuestionPivot) : null;
+  for (let index = 0; index < plan.length; index += 1) {
+    const banner = plan[index];
+    const percent = start + ((index + 1) / Math.max(plan.length, 1)) * (end - start);
+    onProgress?.("正在计算 Banner 表头分组...", percent, `正在处理第 ${index + 1}/${plan.length} 个表头：${banner.group || ""} ${banner.label || ""}`.trim());
+    if (!banner.parts?.length && !banner.condition && baseIndex) {
+      indexes.push(baseIndex);
+    } else {
+      const filteredRows = filterRowsByConditionParts(data, banner.parts || parseHeaderCondition(banner.condition));
+      indexes.push(indexPivotItems(buildSingleQuestionPivot({ headers: data.headers, rows: filteredRows }, { resetExcluded: false })));
+    }
+    if (index % 2 === 1) await nextUiTick();
+  }
+  return indexes;
 }
 
 function normalizedQuestionType(item) {
@@ -3941,6 +5532,15 @@ function excelColumnLetter(index) {
 
 function findByLabel(rows, label) {
   return rows?.find((row) => row.label === label) || null;
+}
+
+function findRowForDescriptor(rows, descriptor) {
+  if (!rows?.length) return null;
+  if (descriptor.header) {
+    const byHeader = rows.find((row) => row.header === descriptor.header);
+    if (byHeader) return byHeader;
+  }
+  return findByLabel(rows, descriptor.label);
 }
 
 function findStat(stats, label) {
@@ -4026,7 +5626,7 @@ function buildWorkbookLineDescriptors(item) {
     return descriptors;
   }
 
-  item.rows?.forEach((row) => descriptors.push({ label: row.label, kind: type === "多选题" ? "multi" : "row", isNetGroup: row.isNetGroup }));
+  item.rows?.forEach((row) => descriptors.push({ label: row.label, header: row.header, kind: type === "多选题" ? "multi" : "row", isNetGroup: row.isNetGroup }));
   return descriptors;
 }
 
@@ -4091,8 +5691,8 @@ function workbookValueForDescriptor(item, referenceItem, descriptor, mode) {
     return mode === "percent" ? "" : (match?.[1] || 0);
   }
 
-  const row = findByLabel(item.rows, descriptor.label);
-  const refRow = findByLabel(reference.rows, descriptor.label);
+  const row = findRowForDescriptor(item.rows, descriptor);
+  const refRow = findRowForDescriptor(reference.rows, descriptor);
   if (type === "多选题" || descriptor.kind === "multi") {
     return valueForQuestionRow(row, refRow, mode, (x) => x?.count, (x) => x?.countPercent, () => questionValidBase(item), () => questionValidBase(reference));
   }
@@ -4151,13 +5751,17 @@ function buildCrosstabDirectoryRows(positions, plan) {
   return rows;
 }
 
-function exportQuestionPivotWorkbook() {
+async function exportQuestionPivotWorkbook(onProgress) {
   const data = getWorkingCrosstabData();
   const plan = activeCrosstabHeaderPlan();
-  const bannerPivotIndexes = buildBannerPivotIndexes(data, plan);
-  const countSheet = buildCrosstabWorkbookSheet(lastQuestionPivot, plan, bannerPivotIndexes, "count");
-  const percentSheet = buildCrosstabWorkbookSheet(lastQuestionPivot, plan, bannerPivotIndexes, "percent");
-  const sigSheet = buildCrosstabWorkbookSheet(lastQuestionPivot, plan, bannerPivotIndexes, "significance");
+  onProgress?.("正在准备 Banner 表头...", 30, `表头列：${plan.length} 列。`);
+  await nextUiTick();
+  const bannerPivotIndexes = await buildBannerPivotIndexesAsync(data, plan, onProgress, 32, 48);
+  const countSheet = await buildCrosstabWorkbookSheetAsync(lastQuestionPivot, plan, bannerPivotIndexes, "count", onProgress, 48, 66);
+  const percentSheet = await buildCrosstabWorkbookSheetAsync(lastQuestionPivot, plan, bannerPivotIndexes, "percent", onProgress, 66, 84);
+  const sigSheet = await buildCrosstabWorkbookSheetAsync(lastQuestionPivot, plan, bannerPivotIndexes, "significance", onProgress, 84, 96);
+  onProgress?.("正在写出 Excel 文件...", 98, "即将触发浏览器下载。");
+  await nextUiTick();
   downloadExcelWorkbookXml("全部交叉表.xlsx", [
     { name: "目录", rows: buildCrosstabDirectoryRows(countSheet.positions, plan) },
     { name: "频数", rows: countSheet.rows },
@@ -4166,9 +5770,9 @@ function exportQuestionPivotWorkbook() {
   ]);
 }
 
-function exportQuestionPivot() {
+async function exportQuestionPivot(onProgress) {
   if (!lastQuestionPivot) return;
-  exportQuestionPivotWorkbook();
+  await exportQuestionPivotWorkbook(onProgress);
 }
 
 function detectCrosstabFields() {
@@ -4237,7 +5841,7 @@ function renderCrosstabAnalysis() {
       ${analysis.colLabels.map((_, colIndex) => {
         const count = analysis.matrix[rowIndex][colIndex];
         const percent = analysis.colTotals[colIndex] ? count / analysis.colTotals[colIndex] : 0;
-        return `<td><strong>${count}</strong><span>${formatPercent(percent)}</span></td>`;
+        return `<td class="crosstab-cell"><strong>${count}</strong><span>${formatPercent(percent)}</span></td>`;
       }).join("")}
       <td>${analysis.rowTotals[rowIndex]}</td>
     </tr>
@@ -5713,10 +7317,13 @@ function exportAbcScoreResult() {
 }
 
 function getAiPlanConfig() {
+  const templateId = document.querySelector("#aiPlanTemplateSelect")?.value || "";
   return {
     project: document.querySelector("#aiPlanContext")?.value.trim() || "未命名调研项目",
     brief: document.querySelector("#aiPlanInput")?.value.trim() || "",
     mode: document.querySelector("#aiPlanMode")?.value || "brief",
+    templateMode: document.querySelector("#aiPlanTemplateMode")?.value || "none",
+    template: aiPlanTemplates.find((template) => template.id === templateId) || null,
     studyType: document.querySelector("#aiPlanStudyType")?.value || "concept",
     audience: document.querySelector("#aiPlanAudience")?.value.trim() || "目标品类潜在或现有用户",
     sampleSize: Number(document.querySelector("#aiPlanSampleSize")?.value) || Number(document.querySelector("#workspaceSampleTarget")?.value) || 400,
@@ -5735,6 +7342,364 @@ function aiPlanStudyTypeName(type) {
     kano: "KANO 功能需求",
     custom: "综合研究"
   }[type] || "综合研究";
+}
+
+function aiPlanTemplateStorageKey() {
+  return "research-tool.ai-plan-templates.v1";
+}
+
+function normalizeTemplateText(text) {
+  return normalizeImportedText(String(text || ""))
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+async function pptxToTemplateText(arrayBuffer) {
+  const chunks = [];
+  for (let index = 1; index <= 120; index += 1) {
+    const xml = await readZipText(arrayBuffer, `ppt/slides/slide${index}.xml`).catch(() => "");
+    if (!xml && index > 20) break;
+    if (!xml) continue;
+    const texts = [...xml.matchAll(/<a:t[^>]*>([\s\S]*?)<\/a:t>/g)]
+      .map((match) => decodeXmlText(match[1]).trim())
+      .filter(Boolean);
+    if (texts.length) chunks.push(`第 ${index} 页\n${texts.join("\n")}`);
+  }
+  return normalizeTemplateText(chunks.join("\n\n"));
+}
+
+async function aiPlanTemplateFileToText(file) {
+  const raw = await file.arrayBuffer();
+  if (/\.doc$/i.test(file.name)) throw new Error(legacyDocUnsupportedMessage(file.name));
+  if (/\.docx$/i.test(file.name)) return docxToQuestionnaireText(raw);
+  if (/\.pptx$/i.test(file.name)) return pptxToTemplateText(raw);
+  return normalizeTemplateText(await file.text());
+}
+
+function inferTemplateSections(text) {
+  const lines = normalizeTemplateText(text).split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const sections = [];
+  const headingPatterns = [
+    /^(?:#{1,4}\s*)?((?:第?[一二三四五六七八九十\d]+[章节部分]?|[一二三四五六七八九十\d]+[\.、]|[0-9]{1,2}\.[0-9]{0,2})\s*[^。；;]{2,40})$/,
+    /^(项目背景|研究背景|项目缘起|研究目标|研究设计|研究方法|样本设计|问卷设计|研究内容|执行流程|质量控制|时间计划|交付物|项目团队|报价|附录)(?:[^\n]{0,24})$/i
+  ];
+  lines.forEach((line, index) => {
+    const compact = line.replace(/\s+/g, " ");
+    const isHeading = compact.length <= 48 && headingPatterns.some((pattern) => pattern.test(compact));
+    if (isHeading) {
+      const level = /(?:^#{3}|^\d+\.\d+|^[（(]?[一二三四五六七八九十]+[）)]|^[0-9]+\.[0-9]+)/.test(compact) ? 2 : 1;
+      sections.push({ title: compact.replace(/^#{1,4}\s*/, ""), level, line: index + 1 });
+    }
+  });
+  return sections.slice(0, 40);
+}
+
+function extractTemplateExamples(text, sections) {
+  const lines = normalizeTemplateText(text).split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const examples = [];
+  sections.slice(0, 8).forEach((section) => {
+    const start = Math.max(0, section.line);
+    const paragraph = lines.slice(start, start + 4)
+      .filter((line) => line.length >= 18 && !/^[-*•]?\s*$/.test(line))
+      .join(" ");
+    if (paragraph) examples.push({ section: section.title, sample: paragraph.slice(0, 280) });
+  });
+  if (!examples.length) {
+    lines.filter((line) => line.length >= 30).slice(0, 6).forEach((line, index) => {
+      examples.push({ section: `典型段落 ${index + 1}`, sample: line.slice(0, 280) });
+    });
+  }
+  return examples;
+}
+
+function extractTemplateStyleFingerprint(text, sections) {
+  const normalized = normalizeTemplateText(text);
+  const terms = ["拟", "旨在", "以期", "围绕", "聚焦", "洞察", "验证", "评估", "诊断", "对标", "受访者", "被访者", "焦点小组", "座谈会", "执行控制", "质量控制", "交付物"]
+    .filter((term) => normalized.includes(term));
+  const headingHabits = sections.slice(0, 12).map((section) => section.title);
+  const placeholderMatches = [...normalized.matchAll(/【[^】]{1,24}】|\[[^\]]{1,24}\]|\{[^}]{1,24}\}/g)].map((match) => match[0]);
+  const sentenceLengths = normalized.split(/[。！？!?]\s*/).map((sentence) => sentence.trim().length).filter((length) => length > 8);
+  const avgSentenceLength = sentenceLengths.length ? Math.round(sentenceLengths.reduce((sum, n) => sum + n, 0) / sentenceLengths.length) : 0;
+  const tone = [
+    avgSentenceLength >= 55 ? "长句偏多，表达偏正式" : "句子较短，表达偏直接",
+    terms.includes("拟") || terms.includes("旨在") || terms.includes("以期") ? "偏正式/咨询式措辞" : "偏业务说明式措辞",
+    /与|及/.test(headingHabits.join("")) ? "章节标题常使用“XX与XX/XX及XX”结构" : "章节标题较直接"
+  ];
+  return {
+    terms: terms.slice(0, 18),
+    headingHabits,
+    placeholders: [...new Set(placeholderMatches)].slice(0, 12),
+    avgSentenceLength,
+    tone
+  };
+}
+
+function analyzeAiPlanTemplate(text, filename) {
+  const normalized = normalizeTemplateText(text);
+  const sections = inferTemplateSections(normalized);
+  const examples = extractTemplateExamples(normalized, sections);
+  const style = extractTemplateStyleFingerprint(normalized, sections);
+  return {
+    id: `tpl_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    name: filename.replace(/\.(docx|pptx|md|txt)$/i, ""),
+    filename,
+    createdAt: new Date().toISOString(),
+    sections,
+    examples,
+    style,
+    rawSummary: normalized.slice(0, 5000)
+  };
+}
+
+function saveAiPlanTemplates() {
+  try {
+    localStorage.setItem(aiPlanTemplateStorageKey(), JSON.stringify(aiPlanTemplates.slice(0, 12)));
+  } catch {
+    // 浏览器存储不可用时仅保留当前会话模板
+  }
+}
+
+function loadAiPlanTemplates() {
+  try {
+    aiPlanTemplates = JSON.parse(localStorage.getItem(aiPlanTemplateStorageKey()) || "[]");
+  } catch {
+    aiPlanTemplates = [];
+  }
+  renderAiPlanTemplateOptions();
+}
+
+function renderAiPlanTemplateOptions(selectedId = "") {
+  const select = document.querySelector("#aiPlanTemplateSelect");
+  if (!select) return;
+  select.innerHTML = aiPlanTemplates.length
+    ? aiPlanTemplates.map((template) => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.name)}</option>`).join("")
+    : `<option value="">暂无模板</option>`;
+  if (selectedId && aiPlanTemplates.some((template) => template.id === selectedId)) select.value = selectedId;
+  renderAiPlanTemplatePreview();
+}
+
+function renderAiPlanTemplatePreview() {
+  const preview = document.querySelector("#aiPlanTemplatePreview");
+  if (!preview) return;
+  const templateId = document.querySelector("#aiPlanTemplateSelect")?.value || "";
+  const mode = document.querySelector("#aiPlanTemplateMode")?.value || "none";
+  const template = aiPlanTemplates.find((item) => item.id === templateId);
+  if (!template || mode === "none") {
+    preview.innerHTML = `<strong>${template ? "模板已导入，当前未启用" : "未导入模板"}</strong><span>${template ? "将模板使用方式改为结构/风格/混合后，生成方案会自动参考该模板。" : "导入方案模板后，这里会显示识别到的章节、典型写法和风格特征。"}</span>`;
+    return;
+  }
+  const sectionText = template.sections.slice(0, 8).map((section) => section.title).join(" / ") || "未识别到明确章节";
+  const styleText = template.style.tone.join("；");
+  preview.innerHTML = `
+    <strong>${escapeHtml(template.name)} · ${escapeHtml({ structure: "结构模式", style: "风格模式", hybrid: "混合模式" }[mode] || "模板模式")}</strong>
+    <span>章节：${escapeHtml(sectionText)}</span>
+    <span>风格：${escapeHtml(styleText)}</span>
+  `;
+}
+
+function buildAiPlanTemplatePromptBlock(config) {
+  if (!config.template || config.templateMode === "none") return "";
+  const template = config.template;
+  const modeName = { structure: "结构模式", style: "风格模式", hybrid: "混合模式" }[config.templateMode] || "模板模式";
+  const sectionLines = template.sections.length
+    ? template.sections.map((section, index) => `${index + 1}. ${"  ".repeat(Math.max(0, section.level - 1))}${section.title}`).join("\n")
+    : "未识别到明确章节，请仅参考模板示例的写法和内容深度。";
+  const style = template.style;
+  const exampleLines = template.examples.slice(0, config.templateMode === "hybrid" ? 8 : 5)
+    .map((example) => `【${example.section}】${example.sample}`)
+    .join("\n");
+  return [
+    "【方案模板参考】",
+    `模板名称：${template.name}`,
+    `模板使用方式：${modeName}`,
+    "",
+    "## 模板结构（按需遵循）",
+    sectionLines,
+    "",
+    "## 模板风格特征",
+    `- 章节标题习惯：${style.headingHabits.slice(0, 10).join(" / ") || "未识别到明显标题习惯"}`,
+    `- 措辞/术语：${style.terms.join("、") || "未识别到明显术语特征"}`,
+    `- 语气判断：${style.tone.join("；")}`,
+    `- 占位符格式：${style.placeholders.join("、") || "未识别到明显占位符"}`,
+    "",
+    "## 模板内容示例（用于理解写作深度，不要机械照抄）",
+    exampleLines || "未提取到典型段落。",
+    "",
+    "## 模板适配要求",
+    config.templateMode === "structure"
+      ? "请优先遵循模板的章节顺序和层级关系；内容必须根据新项目重新生成，不要复用模板原项目内容。"
+      : config.templateMode === "style"
+        ? "请在遵循模板结构基础上，模仿模板的标题习惯、措辞风格、术语体系、段落长度和洞察表达方式；内容必须根据新项目重新生成。"
+        : "请遵循模板结构和风格；执行流程、质量控制、交付物等通用章节可以参考模板写法进行改写复用，但项目背景、研究目标、样本与研究内容必须根据新项目重新生成。"
+  ].join("\n");
+}
+
+function aiQuestionnaireTemplateStorageKey() {
+  return "research-tool.ai-questionnaire-templates.v1";
+}
+
+async function aiQuestionnaireTemplateFileToText(file) {
+  const raw = await file.arrayBuffer();
+  if (/\.doc$/i.test(file.name)) throw new Error(legacyDocUnsupportedMessage(file.name));
+  if (/\.docx$/i.test(file.name)) return docxToQuestionnaireText(raw);
+  if (/\.(xlsx|xls)$/i.test(file.name)) return xlsxToQuestionnaireText(raw);
+  if (/\.pptx$/i.test(file.name)) return pptxToTemplateText(raw);
+  return normalizeTemplateText(await file.text());
+}
+
+function inferQuestionnaireTemplateType(question) {
+  const text = `${question.title}\n${question.lines.join("\n")}`;
+  if (/NPS|推荐.*0\s*[-~—]\s*10|0\s*[-~—]\s*10.*推荐/.test(text)) return "NPS题";
+  if (/KANO|具备|不具备|理应如此|勉强接受/.test(text)) return "KANO题组";
+  if (/开放|请说明|为什么|原因|文本|填空/.test(text)) return "开放题";
+  if (/价格|多少钱|金额|元|PSM|太便宜|太贵|比较便宜|比较贵/.test(text)) return "价格/数值题";
+  if (/满意|同意|重要|评价|打分|1\s*[=-].*5|5分|7分|10分|量表|矩阵/.test(text)) return "量表/矩阵题";
+  if (/多选|请选择所有|可多选|复选|最多选择|不限项/.test(text)) return "多选题";
+  return "单选题";
+}
+
+function analyzeAiQuestionnaireTemplate(text, filename) {
+  const normalized = normalizeTemplateText(text);
+  const questions = parseQuestions(normalized);
+  const typeCounts = {};
+  questions.forEach((question) => {
+    const type = inferQuestionnaireTemplateType(question);
+    typeCounts[type] = (typeCounts[type] || 0) + 1;
+  });
+  const prefixes = [...new Set(questions.map((question) => question.prefix).filter(Boolean))];
+  const sections = inferTemplateSections(normalized)
+    .filter((section) => /问卷|甄别|主体|背景|结束|模块|S\d|Q\d|D\d|NPS|KANO|PSM|价格|满意|品牌|概念|U&A|使用|态度/.test(section.title))
+    .slice(0, 18);
+  const examples = questions.slice(0, 12).map((question) => ({
+    code: question.id,
+    type: inferQuestionnaireTemplateType(question),
+    title: question.title.slice(0, 160),
+    sample: question.lines.slice(0, 8).join("\n").slice(0, 500)
+  }));
+  const optionSamples = questions
+    .filter((question) => question.options.length)
+    .slice(0, 6)
+    .map((question) => `${question.id}: ${question.options.slice(0, 8).map((option) => `${option.key}.${option.text}`).join(" / ")}`);
+  const logicHints = normalized.split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => /跳|终止|继续|随机|轮换|置底|互斥|排他|配额|隐藏|逻辑|未选中|注明|Anchor/i.test(line))
+    .slice(0, 16);
+  return {
+    id: `qtpl_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    name: filename.replace(/\.(docx|xlsx|xls|pptx|md|txt|csv)$/i, ""),
+    filename,
+    createdAt: new Date().toISOString(),
+    questionCount: questions.length,
+    prefixes,
+    typeCounts,
+    sections,
+    examples,
+    optionSamples,
+    logicHints,
+    rawSummary: normalized.slice(0, 8000)
+  };
+}
+
+function saveAiQuestionnaireTemplates() {
+  try {
+    localStorage.setItem(aiQuestionnaireTemplateStorageKey(), JSON.stringify(aiQuestionnaireTemplates.slice(0, 12)));
+  } catch {
+    // 浏览器存储不可用时仅保留当前会话模板
+  }
+}
+
+function loadAiQuestionnaireTemplates() {
+  try {
+    aiQuestionnaireTemplates = JSON.parse(localStorage.getItem(aiQuestionnaireTemplateStorageKey()) || "[]");
+  } catch {
+    aiQuestionnaireTemplates = [];
+  }
+  renderAiQuestionnaireTemplateOptions();
+}
+
+function renderAiQuestionnaireTemplateOptions(selectedId = "") {
+  const select = document.querySelector("#aiQuestionnaireTemplateSelect");
+  if (!select) return;
+  select.innerHTML = aiQuestionnaireTemplates.length
+    ? aiQuestionnaireTemplates.map((template) => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.name)}</option>`).join("")
+    : `<option value="">暂无模板</option>`;
+  if (selectedId && aiQuestionnaireTemplates.some((template) => template.id === selectedId)) select.value = selectedId;
+  renderAiQuestionnaireTemplatePreview();
+}
+
+function renderAiQuestionnaireTemplatePreview() {
+  const preview = document.querySelector("#aiQuestionnaireTemplatePreview");
+  if (!preview) return;
+  const templateId = document.querySelector("#aiQuestionnaireTemplateSelect")?.value || "";
+  const mode = document.querySelector("#aiQuestionnaireTemplateMode")?.value || "none";
+  const template = aiQuestionnaireTemplates.find((item) => item.id === templateId);
+  if (!template || mode === "none") {
+    preview.innerHTML = `<strong>${template ? "模板已导入，当前未启用" : "未导入模板"}</strong><span>${template ? "将模板参考方式改为结构/风格/混合后，生成问卷会自动参考该模板。" : "导入问卷模板后，这里会显示识别到的题号、题型、选项表和逻辑备注特征。"}</span>`;
+    return;
+  }
+  const typeText = Object.entries(template.typeCounts || {}).map(([type, count]) => `${type}${count}题`).join("、") || "未识别到题型";
+  const prefixText = template.prefixes?.length ? template.prefixes.join(" / ") : "未识别到前缀";
+  preview.innerHTML = `
+    <strong>${escapeHtml(template.name)} · ${escapeHtml({ structure: "结构模式", style: "风格模式", hybrid: "混合模式" }[mode] || "模板模式")}</strong>
+    <span>识别：${template.questionCount || 0} 题；题号前缀：${escapeHtml(prefixText)}</span>
+    <span>题型：${escapeHtml(typeText)}</span>
+  `;
+}
+
+function buildAiQuestionnaireTemplatePromptBlock(config) {
+  if (!config.template || config.templateMode === "none") return "";
+  const template = config.template;
+  const modeName = { structure: "结构模式", style: "风格模式", hybrid: "混合模式" }[config.templateMode] || "模板模式";
+  const typeText = Object.entries(template.typeCounts || {}).map(([type, count]) => `${type}：${count}题`).join("；") || "未识别到题型";
+  const sectionText = template.sections?.length
+    ? template.sections.map((section, index) => `${index + 1}. ${section.title}`).join("\n")
+    : "未识别到明确章节，请参考题号体系和题目写法。";
+  const exampleText = (template.examples || []).slice(0, config.templateMode === "hybrid" ? 10 : 6)
+    .map((item) => `【${item.code}｜${item.type}】${item.sample}`)
+    .join("\n\n");
+  const optionText = (template.optionSamples || []).slice(0, 8).join("\n");
+  const logicText = (template.logicHints || []).slice(0, 12).join("\n");
+  return [
+    "【问卷模板参考】",
+    `模板名称：${template.name}`,
+    `模板参考方式：${modeName}`,
+    `题目数量：${template.questionCount || 0}`,
+    `题号前缀：${(template.prefixes || []).join(" / ") || "未识别"}`,
+    `题型分布：${typeText}`,
+    "",
+    "## 模板章节/模块结构",
+    sectionText,
+    "",
+    "## 模板题目写法示例",
+    exampleText || "未提取到典型题目。",
+    "",
+    "## 模板选项编码示例",
+    optionText || "未提取到选项示例。",
+    "",
+    "## 模板逻辑与备注习惯",
+    logicText || "未提取到明显跳题/随机/置底/配额备注。",
+    "",
+    "## 模板适配要求",
+    config.templateMode === "structure"
+      ? "请主要学习模板的模块顺序、题号前缀和题型组合；题干、选项和业务内容必须根据新项目重新生成。"
+      : config.templateMode === "style"
+        ? "请学习模板的题干语气、选项粒度、编码表格式、跳题和随机备注写法；题目内容必须根据新项目重新生成。"
+        : "请学习模板结构和写法。可将通用甄别、背景、质量控制和常规选项表达改写复用，但品牌、产品、价格、场景和核心业务题必须根据新项目重新生成。"
+  ].join("\n");
+}
+
+async function importAiQuestionnaireTemplateFile(file) {
+  const preview = document.querySelector("#aiQuestionnaireTemplatePreview");
+  if (preview) preview.innerHTML = `<strong>正在解析模板</strong><span>正在识别题号、题型、选项表和逻辑备注...</span>`;
+  const text = await aiQuestionnaireTemplateFileToText(file);
+  if (!text.trim()) throw new Error("未识别到模板文本内容。");
+  const template = analyzeAiQuestionnaireTemplate(text, file.name);
+  aiQuestionnaireTemplates = [template, ...aiQuestionnaireTemplates.filter((item) => item.name !== template.name)].slice(0, 12);
+  saveAiQuestionnaireTemplates();
+  const modeSelect = document.querySelector("#aiQuestionnaireTemplateMode");
+  if (modeSelect && modeSelect.value === "none") modeSelect.value = "style";
+  renderAiQuestionnaireTemplateOptions(template.id);
+  showButtonSaved(document.querySelector("#importAiQuestionnaireTemplate"), "已导入");
 }
 
 function aiPlanModules(type) {
@@ -6042,15 +8007,17 @@ function buildLocalAiResearchPlan(config = getAiPlanConfig()) {
 
 function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = buildLocalAiResearchPlan(config)) {
   const framework = aiPlanPrimaryFramework(config.studyType);
+  const templateBlock = buildAiPlanTemplatePromptBlock(config);
   return [
     {
       role: "system",
       content: [
-        "你是一名资深市场研究方案设计专家。请把用户的业务需求转化为可执行的调研方案，输出中文 Markdown。",
+        "你是一名资深市场研究方案架构师，擅长根据客户品牌调性、咨询公司/研究公司的内部文档规范输出研究方案。请把用户的业务需求转化为策略层面可执行的调研方案，输出中文 Markdown。分析框架部分聚焦策略逻辑和分析思路，不要过度细化到统计检验方法和执行操作层面。",
         "直接从方案标题开始输出，不要写“好的”“作为专家”“我将”“思考过程”“分析如下”等开场白或推理过程。",
         "方案必须使用主流市场研究框架，例如 U&A、品牌健康度、概念吸引力、购买转化、满意度/NPS、价格策略、关键驱动分析、分群画像等。",
         "不要机械套用当前工具已有的 PSM/KANO/MaxDiff/ABC；只有当业务问题明确需要价格、功能优先级、相对偏好或用户价值分层时，才把这些作为专项模块。",
-        "方案要专业、具体、可落地，覆盖研究背景、目标、核心问题、样本方案、配额建议、问卷模块、分析框架、质量控制、项目排期和交付物。不要泛泛而谈。"
+        "方案要专业、具体、可落地，覆盖研究背景、目标、核心问题、样本方案、配额建议、问卷模块、分析框架、质量控制、项目排期和交付物。不要泛泛而谈。",
+        "如果用户提供了方案模板参考，必须优先遵循模板的章节顺序、标题习惯、内容深度、措辞风格和术语体系；模板是写法规范，不是内容来源，新项目背景和研究内容必须重新生成。"
       ].join("")
     },
     {
@@ -6069,30 +8036,31 @@ function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = build
         "用户需求：",
         config.brief || "用户暂未填写详细需求，请基于输入字段生成一版通用但可执行的方案。",
         "",
+        templateBlock,
+        templateBlock ? "" : "",
         "详细方案必须细化到以下层级：",
         "1. 项目背景与业务问题：说明为什么要做、要回答什么决策问题。",
         "2. 研究目标与核心假设：每个目标对应可验证的问题和指标。",
         "3. 研究设计：目标人群、样本条件、样本量、配额、研究方法、执行方式。",
         "4. 研究内容：按问卷模块展开，必须逐模块写清模块目的、核心指标、建议题目方向、样本/配额注意点、预期图表或输出价值。",
-        "5. 分析框架：必须针对每个研究目标展开具体的分析框架，包含：\n",
-        "   - 分析维度：明确每个框架下要分析的具体维度（如认知度、情感度、行为意向、使用场景等）。\n",
-        "   - 分析指标：列出每个维度的具体测量指标（如 Top2 Box、NPS、渗透率、TGI、转换率等）。\n",
-        "   - 分析方法：说明使用什么统计方法（如交叉分析、卡方检验、T 检验、因子分析、回归分析、聚类分析、对应分析等）。\n",
-        "   - 分析逻辑：说明该框架如何回答对应的业务问题，预期得出什么结论。\n",
-        "   - 输出形式：说明最终呈现形式（如矩阵表、热力图、雷达图、漏斗图、用户画像等）。\n",
-        "   - 按研究目标分模块展开，每个框架至少 200 字。",
+        "5. 分析框架：针对每个研究目标展开分析思路，聚焦「回答什么业务问题→看什么数据→得出什么结论」的逻辑链，包含：\n",
+        "   - 核心问题：该框架要回答的关键业务决策问题。\n",
+        "   - 分析思路：从哪些角度切入分析（如认知→态度→行为的漏斗逻辑、人群差异对比、驱动因素拆解等），说明分析路径而非罗列统计方法。\n",
+        "   - 关键指标：该框架关注的核心指标（如渗透率、NPS、Top2Box、转换率等），不需要列出所有统计检验方法。\n",
+        "   - 预期结论：说明该框架预期能得出什么类型的结论和建议。\n",
+        "   - 按研究目标分模块展开，每个框架 100-150 字，聚焦策略层面的分析逻辑，不要细化到具体统计操作。",
         "6. 质量控制：上线前质检、回收监控、数据清洗、开放题编码、加权和交叉分析口径。",
         "7. 交付物与时间计划：明确每个阶段产出。",
         "",
         "详细方案输出要求：",
         "- 不能只输出目录或原则性描述，每个核心模块至少包含 3-5 条具体研究问题或题目方向。",
         "- 必须包含至少 2 张 Markdown 表格：\n",
-        "  1) 研究模块 x 指标 x 分析方法的框架矩阵表\n",
+        "  1) 研究目标 x 核心指标 x 预期结论的框架概览表\n",
         "  2) 样本配额建议表\n",
-        "- 分析框架部分必须按研究目标分模块详细展开，每个框架包含维度、指标、方法、逻辑、输出形式 5 个要素。",
+        "- 分析框架部分按研究目标分模块展开，每个框架聚焦核心问题、分析思路、关键指标和预期结论，保持策略层面的简洁，不要细化到具体统计检验方法。\n",
         "- 需要包含问卷模块建议、分析模型建议、质量控制规则和最终交付清单。",
         "- 不要把 PSM/KANO/MaxDiff/ABC 作为默认堆叠模型；除非用户明确需要，否则优先使用 U&A、品牌健康度、概念吸引力、购买转化、关键驱动等主流模型。",
-        "- 方案字数不少于 3000 字，分析框架部分不少于 800 字。",
+        "- 方案字数不少于 2500 字，分析框架部分不少于 500 字。",
         "",
         "可参考但不要机械照抄的本地方案框架：",
         localPlan
@@ -6135,6 +8103,21 @@ function renderAiPlanOutput(output, source) {
   `;
 }
 
+async function importAiPlanTemplateFile(file) {
+  const preview = document.querySelector("#aiPlanTemplatePreview");
+  if (preview) {
+    preview.innerHTML = `<strong>正在解析模板</strong><span>${escapeHtml(file.name)}：正在识别章节结构、典型段落和风格特征。</span>`;
+  }
+  const text = await aiPlanTemplateFileToText(file);
+  if (!text || text.length < 30) throw new Error("未能从模板中提取到足够文本。");
+  const template = analyzeAiPlanTemplate(text, file.name);
+  aiPlanTemplates = [template, ...aiPlanTemplates.filter((item) => item.name !== template.name)].slice(0, 12);
+  saveAiPlanTemplates();
+  const modeSelect = document.querySelector("#aiPlanTemplateMode");
+  if (modeSelect && modeSelect.value === "none") modeSelect.value = "style";
+  renderAiPlanTemplateOptions(template.id);
+  showButtonSaved(document.querySelector("#importAiPlanTemplate"), "已导入");
+}
 
 async function generateAiPlan() {
   const result = document.querySelector("#aiPlanResults");
@@ -6142,9 +8125,9 @@ async function generateAiPlan() {
   const config = getAiPlanConfig();
   const localPlan = buildLocalAiResearchPlan(config);
   const steps = [
-    { title: "解析业务需求", detail: "整理项目背景、研究类型、目标人群、样本量和约束条件。" },
+    { title: "解析业务需求", detail: config.template && config.templateMode !== "none" ? `整理项目背景，并带入模板「${config.template.name}」的结构与风格。` : "整理项目背景、研究类型、目标人群、样本量和约束条件。" },
     { title: "搭建方案框架", detail: "生成研究目标、核心问题、方法路径、方案章节与研究模块。" },
-    { title: "校验模型设置", detail: settings.mode === "local" || !settings.apiKey ? "未配置可用 API Key，将使用本地方案框架。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"} 优化方案。` },
+    { title: "校验模型设置", detail: settings.mode === "local" || !settings.apiKey ? "未填写前端 Key，将通过后端代理调用内置阿里云百炼。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"} 优化方案。` },
     { title: "生成可交付方案", detail: "输出可复制、可导出、可同步到项目档案的方案文本。" }
   ];
   renderAiProgress(result, steps, 0, "", "正在生成调研方案");
@@ -6287,11 +8270,88 @@ function applyAiPlanToProject() {
   showButtonSaved(document.querySelector("#applyAiPlanToProject"), "已同步");
 }
 
+const aiStudyTypeLabels = {
+  concept: "概念/新品测试",
+  ua: "U&A 使用习惯与态度",
+  brand: "品牌健康度",
+  nps: "满意度 / NPS",
+  pricing: "价格研究 / PSM",
+  kano: "KANO 功能需求"
+};
+
+function getCheckedMultiselectValues(selector, fallback = []) {
+  const root = document.querySelector(selector);
+  if (!root) return [...fallback];
+  const values = Array.from(root.querySelectorAll('input[type="checkbox"]:checked'))
+    .map((input) => input.value)
+    .filter(Boolean);
+  return values.length ? values : [...fallback];
+}
+
+function setCheckedMultiselectValues(selector, values = [], labels = {}, placeholder = "请选择") {
+  const root = document.querySelector(selector);
+  if (!root) return;
+  const selected = new Set(values);
+  root.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+    input.checked = selected.has(input.value);
+  });
+  const text = root.querySelector(".multiselect-text");
+  if (!text) return;
+  const checked = Array.from(root.querySelectorAll('input[type="checkbox"]:checked'));
+  text.textContent = checked.length ? checked.map((input) => labels[input.value] || input.value).join("、") : placeholder;
+  text.style.color = checked.length ? "#1e293b" : "#95a1ad";
+}
+
+function aiStudyTypeValues(typeOrTypes) {
+  const values = Array.isArray(typeOrTypes)
+    ? typeOrTypes
+    : String(typeOrTypes || "").split(/[,，、]/);
+  const valid = values.map((value) => String(value).trim()).filter((value) => aiStudyTypeLabels[value]);
+  return valid.length ? Array.from(new Set(valid)) : ["concept"];
+}
+
+function getAiStudyTypes() {
+  return getCheckedMultiselectValues("#aiStudyType", ["concept"]);
+}
+
+function setAiStudyTypeSelection(values) {
+  setCheckedMultiselectValues("#aiStudyType", aiStudyTypeValues(values), aiStudyTypeLabels, "请选择研究类型");
+}
+
+function uniqueAiQuestions(questions) {
+  const seen = new Set();
+  return questions.filter((question) => {
+    const key = `${question.type}|${question.title}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function recodeAiBodyQuestions(questions) {
+  const counters = { Q: 0, RS: 0, N: 0, NPS: 0, K: 0, OE: 0 };
+  return questions.map((question) => {
+    let prefix = "Q";
+    if (/开放/.test(question.type)) prefix = "OE";
+    else if (/NPS/.test(question.type)) prefix = "NPS";
+    else if (/KANO/.test(question.type)) prefix = "K";
+    else if (/数值/.test(question.type)) prefix = "N";
+    else if (/量表|矩阵/.test(question.type)) prefix = "RS";
+    counters[prefix] += 1;
+    return { ...question, code: `${prefix}${counters[prefix]}` };
+  });
+}
+
 function getAiDesignerConfig() {
+  const studyTypes = getAiStudyTypes();
+  const templateId = document.querySelector("#aiQuestionnaireTemplateSelect")?.value || "";
   return {
     project: document.querySelector("#aiContext")?.value.trim() || "未命名调研项目",
     brief: document.querySelector("#aiInput")?.value.trim() || "",
-    studyType: document.querySelector("#aiStudyType")?.value || "concept",
+    studyType: studyTypes[0] || "concept",
+    studyTypes,
+    templateMode: document.querySelector("#aiQuestionnaireTemplateMode")?.value || "none",
+    template: aiQuestionnaireTemplates.find((template) => template.id === templateId) || null,
     audience: document.querySelector("#aiAudience")?.value.trim() || "目标品类潜在或现有用户",
     sampleSize: Number(document.querySelector("#aiSampleSize")?.value) || 400,
     duration: Number(document.querySelector("#aiDuration")?.value) || 8
@@ -6308,14 +8368,8 @@ function targetAiQuestionCount(duration) {
 }
 
 function aiStudyTypeName(type) {
-  return {
-    concept: "概念/新品测试",
-    ua: "U&A 使用习惯与态度",
-    brand: "品牌健康度",
-    nps: "满意度 / NPS",
-    pricing: "价格研究 / PSM",
-    kano: "KANO 功能需求"
-  }[type] || "定量调研";
+  if (Array.isArray(type)) return aiStudyTypeValues(type).map((value) => aiStudyTypeLabels[value] || value).join("、");
+  return aiStudyTypeLabels[type] || "定量调研";
 }
 
 function aiQuestion(code, type, title, options, note = "") {
@@ -6401,7 +8455,9 @@ function bodyAiQuestions(config) {
     ]
   };
 
-  return modules[config.studyType] || modules.concept;
+  const selectedTypes = aiStudyTypeValues(config.studyTypes || config.studyType);
+  const selectedQuestions = selectedTypes.flatMap((type) => modules[type] || []);
+  return uniqueAiQuestions(selectedQuestions.length ? selectedQuestions : modules.concept);
 }
 
 function backgroundAiQuestions() {
@@ -6443,7 +8499,9 @@ function optionalAiQuestions(config) {
       aiQuestion("KX1", "多选题", "以下哪些功能是您认为必须具备的？", [["1", "功能A", ""], ["2", "功能B", ""], ["3", "功能C", ""], ["4", "功能D", ""], ["99", "其他", "置底"]], "功能清单筛选。")
     ]
   };
-  return [...(map[config.studyType] || map.concept), ...common];
+  const selectedTypes = aiStudyTypeValues(config.studyTypes || config.studyType);
+  const selectedQuestions = selectedTypes.flatMap((type) => map[type] || []);
+  return uniqueAiQuestions([...(selectedQuestions.length ? selectedQuestions : map.concept), ...common]);
 }
 
 function renderAiQuestionTable(question) {
@@ -6470,7 +8528,7 @@ function buildAiQuestionnaireDesign() {
   const reservedCount = screener.length + 1;
   const backgroundCount = target.target <= 10 ? 2 : 3;
   const bodyTarget = Math.max(2, target.target - reservedCount - backgroundCount);
-  const body = [...baseBody, ...optional].slice(0, bodyTarget);
+  const body = recodeAiBodyQuestions([...baseBody, ...optional].slice(0, bodyTarget));
   const background = backgroundPool.slice(0, backgroundCount);
   const allQuestions = [...screener, ...body, ...background];
   const estimatedMinutes = config.duration || Math.max(5, Math.min(20, Math.ceil((allQuestions.length + 1) * 0.55 + body.length * 0.25)));
@@ -6478,7 +8536,7 @@ function buildAiQuestionnaireDesign() {
     `${config.project} 调研问卷`,
     "",
     "一、问卷说明",
-    `- 研究类型：${aiStudyTypeName(config.studyType)}`,
+    `- 研究类型：${aiStudyTypeName(config.studyTypes || config.studyType)}`,
     `- 目标人群：${config.audience}`,
     `- 目标样本量：N=${config.sampleSize}`,
     `- 期望/建议时长：约 ${estimatedMinutes} 分钟`,
@@ -6533,7 +8591,7 @@ function renderAiQuestionnaireHtml(result) {
     <article class="audit-issue">
       <div class="issue-head">
         <strong>问卷设计初稿</strong>
-        <span class="issue-tag low">${aiStudyTypeName(result.config.studyType)}</span>
+        <span class="issue-tag low">${aiStudyTypeName(result.config.studyTypes || result.config.studyType)}</span>
       </div>
       <div class="metric-grid compact-metrics">
         <div><span>建议时长</span><strong>${result.estimatedMinutes} 分钟</strong></div>
@@ -6641,7 +8699,7 @@ function renderAiSettingsStatus(settings = loadAiSettings()) {
     preview.innerHTML = `
       <strong>${escapeHtml(preset.name)}</strong>
       <span>${escapeHtml(`模型：${settings.model || "-"}；接口：${settings.url || "-"}`)}</span>
-      ${errors.length ? `<span class="warning-text">${escapeHtml(errors.join("；"))}</span>` : `<span>${escapeHtml(settings.apiKey ? "设置校验通过，可以在 AI 功能中调用。" : "模型与接口已就绪；未填写 Key 时 AI 功能会使用本地规则。")}</span>`}
+      ${errors.length ? `<span class="warning-text">${escapeHtml(errors.join("；"))}</span>` : `<span>${escapeHtml(settings.apiKey ? "设置校验通过，可以在 AI 功能中调用。" : "模型与接口已就绪；未填写前端 Key 时会通过后端代理调用内置阿里云百炼。")}</span>`}
     `;
   }
   if (hint) {
@@ -6700,7 +8758,9 @@ function saveAiSettings() {
     renderAiSettingsStatus(settings);
     return errors;
   }
-  localStorage.setItem("surveyAiSettings", JSON.stringify(settings));
+  try {
+    localStorage.setItem("surveyAiSettings", JSON.stringify(settings));
+  } catch { /* 隐私模式忽略写入 */ }
   renderAiSettingsStatus(settings);
   showButtonSaved(document.querySelector("#saveAiSettings"), "已保存");
   return [];
@@ -6732,6 +8792,10 @@ async function callAiChatCompletion(settings, messages, options = {}) {
     temperature: options.temperature ?? 0.35,
     max_tokens: options.maxTokens ?? 3500
   };
+  // 设置6分钟超时（比后端5分钟略长），防止大报告生成时524超时
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? 360000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const response = await fetch("./api/ai", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -6740,10 +8804,16 @@ async function callAiChatCompletion(settings, messages, options = {}) {
       url: settings.url,
       apiKey: settings.apiKey,
       body: requestBody
-    })
+    }),
+    signal: controller.signal
   }).catch((error) => {
+    clearTimeout(timeout);
+    if (error.name === "AbortError") {
+      throw new Error("AI 请求超时（6分钟），可能因数据量过大或模型响应缓慢。建议减少数据量后重试，或选择更快的模型档位。");
+    }
     throw new Error(`AI 后端代理连接失败：${error.message}`);
   });
+  clearTimeout(timeout);
   if ([404, 405].includes(response.status)) {
     throw new Error("当前环境没有启用 AI 后端代理，请通过 npm run dev 本地服务或 Cloudflare Pages Functions 部署后再调用。");
   }
@@ -6776,9 +8846,7 @@ async function callAiChatCompletion(settings, messages, options = {}) {
   }
   return content.trim();
 }
-  if (window.location.protocol === "file:") {
-    throw new Error("AI 后端代理需要通过本地服务或线上地址访问，不能直接用 file:// 页面调用。请使用 npm run dev 打开本地服务，或访问已部署的网址。");
-  }
+
 function normalizeAiResponseContent(content) {
   if (Array.isArray(content)) {
     return content.map((item) => {
@@ -6797,6 +8865,7 @@ function buildAiQuestionnairePrompt() {
   const design = buildAiQuestionnaireDesign();
   const target = targetAiQuestionCount(config.duration);
   const localDraft = design.questionnaireText;
+  const templateBlock = buildAiQuestionnaireTemplatePromptBlock(config);
   return [
     {
       role: "system",
@@ -6811,15 +8880,19 @@ function buildAiQuestionnairePrompt() {
       role: "user",
       content: [
         `项目名称/背景：${config.project}`,
-        `研究类型：${aiStudyTypeName(config.studyType)}`,
+        `研究类型：${aiStudyTypeName(config.studyTypes || config.studyType)}`,
+        `已选择研究类型代码：${aiStudyTypeValues(config.studyTypes || config.studyType).join("、")}`,
         `目标人群：${config.audience}`,
         `目标样本量：N=${config.sampleSize}`,
         `期望时长：约 ${config.duration} 分钟`,
         `题量要求：${target.level}，总题数建议 ${target.min}-${target.max} 题，优先接近 ${target.target} 题。总题数包含甄别题、主体题、背景题和质量控制题。`,
+        "组合类型规则：如果研究类型包含多个方向，必须融合多个模块设计，不要只按第一个类型生成。例如概念/新品测试+价格研究需要同时包含概念理解、吸引力、购买意愿、卖点偏好和PSM/价格接受相关题目。",
         "题量调整规则：即使是短问卷初稿，也要先覆盖核心研究模块；时长越长，越应增加U&A、品牌健康度、概念吸引力、购买转化、关键驱动、价格/功能、背景分层等模块。请把结果当作可删减的完整初稿，而不是最终上线精简版。不要无视时长字段。",
+        templateBlock ? "模板参考规则：用户已导入问卷模板，请优先学习模板的题号体系、题型结构、选项编码、跳题备注和随机/置底写法；但不要机械复制模板中的旧项目品牌、产品、价格和人群信息。" : "",
         "",
         "研究需求：",
         config.brief || "用户未填写详细需求，请基于研究类型生成通用版问卷。",
+        templateBlock ? `\n${templateBlock}` : "",
         "",
         "请输出以下结构：",
         "一、问卷说明",
@@ -7081,7 +9154,24 @@ function pushUint32(bytes, value) {
   bytes.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
 }
 
-function createZip(entries) {
+function zipContentBytes(content, encoder) {
+  if (content instanceof Uint8Array) return content;
+  if (content instanceof ArrayBuffer) return new Uint8Array(content);
+  return encoder.encode(String(content ?? ""));
+}
+
+function concatUint8Arrays(parts) {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const output = new Uint8Array(total);
+  let offset = 0;
+  parts.forEach((part) => {
+    output.set(part, offset);
+    offset += part.length;
+  });
+  return output;
+}
+
+function createZipBytes(entries) {
   const encoder = new TextEncoder();
   const localParts = [];
   const centralParts = [];
@@ -7089,12 +9179,12 @@ function createZip(entries) {
   const { time, day } = dosDateTime();
   entries.forEach((entry) => {
     const nameBytes = encoder.encode(entry.name);
-    const dataBytes = encoder.encode(entry.content);
+    const dataBytes = zipContentBytes(entry.content, encoder);
     const crc = crc32(dataBytes);
     const local = [];
     pushUint32(local, 0x04034b50);
     pushUint16(local, 20);
-    pushUint16(local, 0);
+    pushUint16(local, 0x0800);
     pushUint16(local, 0);
     pushUint16(local, time);
     pushUint16(local, day);
@@ -7109,7 +9199,7 @@ function createZip(entries) {
     pushUint32(central, 0x02014b50);
     pushUint16(central, 20);
     pushUint16(central, 20);
-    pushUint16(central, 0);
+    pushUint16(central, 0x0800);
     pushUint16(central, 0);
     pushUint16(central, time);
     pushUint16(central, day);
@@ -7136,12 +9226,21 @@ function createZip(entries) {
   pushUint32(end, centralSize);
   pushUint32(end, offset);
   pushUint16(end, 0);
-  return new Blob([...localParts, ...centralParts, new Uint8Array(end)], { type: "application/zip" });
+  return concatUint8Arrays([...localParts, ...centralParts, new Uint8Array(end)]);
+}
+
+function createZip(entries) {
+  return new Blob([createZipBytes(entries)], { type: "application/zip" });
 }
 
 function wordParagraph(text, style = "") {
-  const styleXml = style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : "";
-  return `<w:p>${styleXml}<w:r><w:t xml:space="preserve">${xmlEscape(text)}</w:t></w:r></w:p>`;
+  const isHeading = /^Heading[1-3]$/.test(style);
+  const isMainTitle = style === "Heading1";
+  const styleXml = style
+    ? `<w:pPr><w:pStyle w:val="${style}"/>${isMainTitle ? '<w:jc w:val="center"/>' : ""}</w:pPr>`
+    : "";
+  const runStyleXml = isHeading ? "<w:rPr><w:b/></w:rPr>" : "";
+  return `<w:p>${styleXml}<w:r>${runStyleXml}<w:t xml:space="preserve">${xmlEscape(text)}</w:t></w:r></w:p>`;
 }
 
 function wordTable(rows) {
@@ -7197,7 +9296,7 @@ function createDocxBlob(markdown) {
     { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>` },
     { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>` },
     { name: "word/_rels/document.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>` },
-    { name: "word/styles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:spacing w:before="220" w:after="100"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:pPr><w:spacing w:before="180" w:after="80"/></w:pPr><w:rPr><w:b/><w:sz w:val="24"/></w:rPr></w:style><w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:color="auto"/><w:left w:val="single" w:sz="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:color="auto"/><w:right w:val="single" w:sz="4" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:color="auto"/></w:tblBorders></w:tblPr></w:style></w:styles>` },
+    { name: "word/styles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:jc w:val="center"/><w:spacing w:before="240" w:after="120"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:spacing w:before="220" w:after="100"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:pPr><w:spacing w:before="180" w:after="80"/></w:pPr><w:rPr><w:b/><w:sz w:val="24"/></w:rPr></w:style><w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:color="auto"/><w:left w:val="single" w:sz="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:color="auto"/><w:right w:val="single" w:sz="4" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:color="auto"/></w:tblBorders></w:tblPr></w:style></w:styles>` },
     { name: "word/document.xml", content: markdownToWordDocumentXml(markdown) }
   ]);
 }
@@ -7272,7 +9371,383 @@ function pptShape(id, name, x, y, w, h, paragraphs, fill = "FFFFFF", line = "D8E
   return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${xmlEscape(name)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="${fill}"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="${line}"/></a:solidFill></a:ln></p:spPr><p:txBody><a:bodyPr wrap="square" lIns="120000" tIns="90000" rIns="120000" bIns="90000"/><a:lstStyle/>${paraXml}</p:txBody></p:sp>`;
 }
 
-function pptSlideXml(slide, index, total) {
+function pptRect(id, name, x, y, w, h, fill = "2F6BFF", line = "2F6BFF") {
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${xmlEscape(name)}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="${fill}"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="${line}"/></a:solidFill></a:ln></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>`;
+}
+
+function pptLineShape(id, name, x1, y1, x2, y2, color = "CBD5E1") {
+  const x = Math.min(x1, x2);
+  const y = Math.min(y1, y2);
+  const w = Math.abs(x2 - x1) || 1;
+  const h = Math.abs(y2 - y1) || 1;
+  return `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${xmlEscape(name)}"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="12700"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:ln></p:spPr><p:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></p:style></p:cxnSp>`;
+}
+
+function extractReportChartItems(markdown, maxItems = 8) {
+  const items = [];
+  const seen = new Set();
+  String(markdown || "").split(/\r?\n/).forEach((rawLine) => {
+    if (items.length >= maxItems) return;
+    const line = rawLine.replace(/\*\*/g, "").replace(/[|]/g, " ").trim();
+    const match = line.match(/(.{2,36}?)(?:：|:|\s)(-?\d+(?:\.\d+)?)\s*%/);
+    if (!match) return;
+    const label = match[1]
+      .replace(/^[-*\d.\s]+/, "")
+      .replace(/^(选项|指标|维度|发现|其中)\s*/, "")
+      .slice(-18)
+      .trim();
+    const value = Number(match[2]);
+    if (!label || Number.isNaN(value)) return;
+    const key = `${label}_${value}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ label, value: Math.max(0, Math.min(100, value)) });
+  });
+  return items;
+}
+
+function parseChartPercentValue(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw || /^[-—]+$/.test(raw)) return null;
+  const hasPercent = raw.includes("%");
+  const num = Number(raw.replace(/,/g, "").replace(/[^\d.-]/g, ""));
+  if (!Number.isFinite(num)) return null;
+  const percent = !hasPercent && Math.abs(num) <= 1 ? num * 100 : num;
+  if (!Number.isFinite(percent) || percent <= 0 || percent >= 99.5) return null;
+  return percent;
+}
+
+function cleanChartLabel(label) {
+  return String(label || "")
+    .replace(/\[[^\]]+\]/g, "")
+    .replace(/^(CAPTION|PART)\s*[:：]?\s*/i, "")
+    .replace(/^[-*\d.\s]+/, "")
+    .replace(/^(选项|指标|维度|发现|其中|最高|最低|合计|总计|BASE|样本)\s*[:：=]?\s*/i, "")
+    .replace(/[|]/g, " ")
+    .trim()
+    .slice(0, 28);
+}
+
+function shouldSkipChartLabel(label) {
+  return !label || /^(合计|总计|总体|Total|BASE|样本|N)$/i.test(label) || /最高=|最低=|^l最高|^l最低/i.test(label);
+}
+
+function findTotalColumnIndex(headers = []) {
+  const exactIndex = headers.findIndex((header) => /^(Total|总体|总计|合计)$/i.test(String(header || "").trim()));
+  if (exactIndex >= 0) return exactIndex;
+  const fuzzyIndex = headers.findIndex((header) => /Total|总体|总计|合计/i.test(String(header || "")));
+  return fuzzyIndex >= 0 ? fuzzyIndex : 0;
+}
+
+function extractCrosstabChartItems(dataContext, maxItems = 8) {
+  if (!dataContext?.isCrosstab || !dataContext.crosstabText) return [];
+  const sections = parseCrosstabToStructured(dataContext.crosstabText);
+  const items = [];
+  const seen = new Set();
+
+  for (const section of sections) {
+    const totalIndex = findTotalColumnIndex(section.headers || []);
+    for (const question of section.questions || []) {
+      for (const option of question.options || []) {
+        if (items.length >= maxItems) return items;
+        const optionLabel = cleanChartLabel(option.name);
+        if (shouldSkipChartLabel(optionLabel)) continue;
+        const value = parseChartPercentValue(option.values?.[totalIndex] ?? option.values?.[0]);
+        if (value == null) continue;
+        const questionLabel = cleanChartLabel(question.caption).replace(/^Q\d+\.?\s*/i, "");
+        const label = questionLabel && questionLabel !== optionLabel
+          ? `${questionLabel.slice(0, 10)}-${optionLabel}`
+          : optionLabel;
+        const key = `${label}_${value.toFixed(2)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push({ label, value: Number(value.toFixed(1)) });
+      }
+    }
+  }
+
+  return items.length >= 2 ? items : extractCrosstabChartItemsFromText(dataContext.crosstabText, maxItems);
+}
+
+function extractCrosstabChartItemsFromText(crosstabText, maxItems = 8) {
+  const items = [];
+  const seen = new Set();
+  let headers = [];
+  let totalIndex = 0;
+  let currentQuestion = "";
+  let inOptions = false;
+  const lines = String(crosstabText || "").split(/\r?\n/);
+
+  for (const rawLine of lines) {
+    if (items.length >= maxItems) break;
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const headerMatch = line.match(/^\[(?:表头|琛ㄥご)\]\s*(.*)$/);
+    if (headerMatch) {
+      headers = headerMatch[1].split("|").map((cell) => cell.trim()).filter(Boolean);
+      totalIndex = findTotalColumnIndex(headers);
+      inOptions = false;
+      continue;
+    }
+
+    const questionMatch = line.match(/^\[(?:题目|棰樼洰)\]\s*(.*)$/);
+    if (questionMatch) {
+      currentQuestion = questionMatch[1].trim();
+      inOptions = false;
+      continue;
+    }
+
+    if (/^\[(?:选项数据|閫夐」鏁版嵁)\]/.test(line)) {
+      inOptions = true;
+      continue;
+    }
+
+    if (line.startsWith("[")) {
+      inOptions = false;
+      continue;
+    }
+
+    if (!inOptions) continue;
+    const cells = line.split("|").map((cell) => cell.trim());
+    if (cells.length < 2) continue;
+    const optionLabel = cleanChartLabel(cells[0]);
+    if (shouldSkipChartLabel(optionLabel)) continue;
+    const value = parseChartPercentValue(cells[totalIndex + 1] ?? cells[1]);
+    if (value == null) continue;
+    const questionLabel = cleanChartLabel(currentQuestion).replace(/^Q\d+\.?\s*/i, "");
+    const label = questionLabel && questionLabel !== optionLabel
+      ? `${questionLabel.slice(0, 10)}-${optionLabel}`
+      : optionLabel;
+    const key = `${label}_${value.toFixed(2)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ label, value: Number(value.toFixed(1)) });
+  }
+
+  return items;
+}
+
+function getAiReportChartItems(markdown, dataContext, maxItems = 8) {
+  const fromData = extractCrosstabChartItems(dataContext, maxItems);
+  if (fromData.length >= 2) return fromData;
+  return extractReportChartItems(markdown, maxItems)
+    .filter((item) => item.value > 0 && item.value < 99.5 && !shouldSkipChartLabel(item.label))
+    .slice(0, maxItems);
+}
+
+function normalizePptChartItems(items, maxItems = 8) {
+  const seen = new Set();
+  return (items || [])
+    .map((item) => ({
+      label: cleanChartLabel(item?.label || item?.name || ""),
+      value: Number(item?.value)
+    }))
+    .filter((item) => {
+      if (!item.label || shouldSkipChartLabel(item.label)) return false;
+      if (!Number.isFinite(item.value) || item.value <= 0 || item.value >= 99.5) return false;
+      const key = `${item.label}_${item.value.toFixed(1)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxItems)
+    .map((item) => ({ label: item.label.slice(0, 20), value: Number(item.value.toFixed(1)) }));
+}
+
+function normalizePptChartGroups(groups, maxGroups = 10, maxItemsPerGroup = 8) {
+  const seenTitles = new Set();
+  return (groups || [])
+    .map((group, index) => {
+      const items = normalizePptChartItems(group?.items, maxItemsPerGroup);
+      const rawTitle = cleanChartLabel(group?.title || `关键指标图表 ${index + 1}`) || `关键指标图表 ${index + 1}`;
+      const title = rawTitle.endsWith("图表") ? rawTitle : `${rawTitle.slice(0, 18)}图表`;
+      return { title, items };
+    })
+    .filter((group) => {
+      if (group.items.length < 2) return false;
+      if (seenTitles.has(group.title)) return false;
+      seenTitles.add(group.title);
+      return true;
+    })
+    .slice(0, maxGroups);
+}
+
+function extractCrosstabChartGroups(dataContext, maxGroups = 10, maxItemsPerGroup = 8) {
+  if (!dataContext?.isCrosstab || !dataContext.crosstabText) return [];
+  const sections = parseCrosstabToStructured(dataContext.crosstabText);
+  const groups = [];
+  const seenTitles = new Set();
+
+  for (const section of sections) {
+    const totalIndex = findTotalColumnIndex(section.headers || []);
+    for (const question of section.questions || []) {
+      if (groups.length >= maxGroups) return groups;
+      const title = cleanChartLabel(question.caption || section.title || "关键指标");
+      if (!title || seenTitles.has(title)) continue;
+      const items = [];
+      const seenItems = new Set();
+      for (const option of question.options || []) {
+        const label = cleanChartLabel(option.name);
+        if (shouldSkipChartLabel(label) || seenItems.has(label)) continue;
+        const value = parseChartPercentValue(option.values?.[totalIndex] ?? option.values?.[0]);
+        if (value == null) continue;
+        seenItems.add(label);
+        items.push({ label, value: Number(value.toFixed(1)) });
+        if (items.length >= maxItemsPerGroup) break;
+      }
+      if (items.length >= 2) {
+        seenTitles.add(title);
+        groups.push({ title: `${title.slice(0, 18)}图表`, items });
+      }
+    }
+  }
+
+  return groups;
+}
+
+function xlsxCellRef(colIndex, rowIndex) {
+  let col = "";
+  let index = colIndex;
+  while (index > 0) {
+    const mod = (index - 1) % 26;
+    col = String.fromCharCode(65 + mod) + col;
+    index = Math.floor((index - mod) / 26);
+  }
+  return `${col}${rowIndex}`;
+}
+
+function xlsxCell(ref, value, sharedStringMap = null) {
+  if (typeof value === "number") return `<c r="${ref}"><v>${value}</v></c>`;
+  if (sharedStringMap) return `<c r="${ref}" t="s"><v>${sharedStringMap.get(String(value))}</v></c>`;
+  return `<c r="${ref}" t="inlineStr"><is><t>${xmlEscape(value)}</t></is></c>`;
+}
+
+function createChartWorkbookBytes(items, title = "关键指标") {
+  const rows = [
+    ["指标", "比例"],
+    ...items.map((item) => [item.label, Number((item.value / 100).toFixed(4))])
+  ];
+  const sharedStrings = [];
+  const sharedStringMap = new Map();
+  rows.flat().forEach((value) => {
+    if (typeof value === "number") return;
+    const text = String(value);
+    if (!sharedStringMap.has(text)) {
+      sharedStringMap.set(text, sharedStrings.length);
+      sharedStrings.push(text);
+    }
+  });
+  const rowXml = rows.map((row, rowIndex) => {
+    const r = rowIndex + 1;
+    const cells = row.map((value, colIndex) => xlsxCell(xlsxCellRef(colIndex + 1, r), value, sharedStringMap)).join("");
+    return `<row r="${r}">${cells}</row>`;
+  }).join("");
+  const lastRow = rows.length;
+  const sharedStringXml = sharedStrings.map((text) => `<si><t>${xmlEscape(text)}</t></si>`).join("");
+  return createZipBytes([
+    { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
+    { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+    { name: "xl/workbook.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>` },
+    { name: "xl/_rels/workbook.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>` },
+    { name: "xl/worksheets/sheet1.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:B${lastRow}"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetData>${rowXml}</sheetData></worksheet>` },
+    { name: "xl/sharedStrings.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sharedStrings.length}" uniqueCount="${sharedStrings.length}">${sharedStringXml}</sst>` },
+    { name: "xl/styles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="微软雅黑"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>` }
+  ]);
+}
+
+function chartFormula(range) {
+  return `Sheet1!$${range}`;
+}
+
+function chartStringCache(items) {
+  return `<c:strCache><c:ptCount val="${items.length}"/>${items.map((item, index) => `<c:pt idx="${index}"><c:v>${xmlEscape(item.label)}</c:v></c:pt>`).join("")}</c:strCache>`;
+}
+
+function chartNumberCache(items) {
+  return `<c:numCache><c:formatCode>0%</c:formatCode><c:ptCount val="${items.length}"/>${items.map((item, index) => `<c:pt idx="${index}"><c:v>${Number((item.value / 100).toFixed(4))}</c:v></c:pt>`).join("")}</c:numCache>`;
+}
+
+function chartTextPr(size = 1100) {
+  return `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${size}"><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/><a:cs typeface="Microsoft YaHei"/></a:defRPr></a:pPr><a:endParaRPr lang="zh-CN" sz="${size}"/></a:p></c:txPr>`;
+}
+
+function createNativeChartXml(items, title = "关键指标图表") {
+  const count = items.length;
+  const catRange = chartFormula(`A$2:$A$${count + 1}`);
+  const valRange = chartFormula(`B$2:$B$${count + 1}`);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:date1904 val="0"/><c:lang val="zh-CN"/><c:roundedCorners val="0"/><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="zh-CN" sz="1600" b="1"><a:solidFill><a:srgbClr val="0F172A"/></a:solidFill><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/><a:cs typeface="Microsoft YaHei"/></a:rPr><a:t>${xmlEscape(title)}</a:t></a:r></a:p></c:rich></c:tx><c:layout/><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/><c:plotArea><c:layout/><c:barChart><c:barDir val="bar"/><c:grouping val="clustered"/><c:varyColors val="0"/><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:f>${chartFormula("B$1")}</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>比例</c:v></c:pt></c:strCache></c:strRef></c:tx><c:spPr><a:solidFill><a:srgbClr val="2563EB"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="2563EB"/></a:solidFill></a:ln></c:spPr><c:cat><c:strRef><c:f>${catRange}</c:f>${chartStringCache(items)}</c:strRef></c:cat><c:val><c:numRef><c:f>${valRange}</c:f>${chartNumberCache(items)}</c:numRef></c:val><c:dLbls><c:numFmt formatCode="0%" sourceLinked="0"/><c:showVal val="1"/><c:showLegendKey val="0"/><c:showCatName val="0"/><c:showSerName val="0"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000"><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/><a:cs typeface="Microsoft YaHei"/></a:defRPr></a:pPr></a:p></c:txPr></c:dLbls></c:ser><c:gapWidth val="80"/><c:axId val="10"/><c:axId val="20"/></c:barChart><c:catAx><c:axId val="10"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/>${chartTextPr(1100)}<c:crossAx val="20"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/></c:catAx><c:valAx><c:axId val="20"/><c:scaling><c:orientation val="minMax"/><c:max val="1"/><c:min val="0"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:majorGridlines/><c:numFmt formatCode="0%" sourceLinked="0"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/>${chartTextPr(1000)}<c:crossAx val="10"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx></c:plotArea><c:legend><c:legendPos val="b"/><c:layout/><c:overlay val="0"/>${chartTextPr(1100)}</c:legend><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart><c:externalData r:id="rId1"><c:autoUpdate val="0"/></c:externalData></c:chartSpace>`;
+}
+
+function pptNativeChartFrame(id, chartRelId, x = 850000, y = 1650000, w = 10600000, h = 4350000) {
+  return `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Editable Chart"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${chartRelId}"/></a:graphicData></a:graphic></p:graphicFrame>`;
+}
+
+function createChartWorkbookBytes(items, title = "关键指标") {
+  const rows = [
+    ["指标", "比例"],
+    ...items.map((item) => [item.label, Number((item.value / 100).toFixed(4))])
+  ];
+  const sharedStrings = [];
+  const sharedStringMap = new Map();
+  rows.flat().forEach((value) => {
+    if (typeof value === "number") return;
+    const text = String(value);
+    if (!sharedStringMap.has(text)) {
+      sharedStringMap.set(text, sharedStrings.length);
+      sharedStrings.push(text);
+    }
+  });
+  const rowXml = rows.map((row, rowIndex) => {
+    const r = rowIndex + 1;
+    const cells = row.map((value, colIndex) => xlsxCell(xlsxCellRef(colIndex + 1, r), value, sharedStringMap)).join("");
+    return `<row r="${r}">${cells}</row>`;
+  }).join("");
+  const sharedStringXml = sharedStrings.map((text) => `<si><t>${xmlEscape(text)}</t></si>`).join("");
+  return createZipBytes([
+    { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
+    { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+    { name: "xl/workbook.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>` },
+    { name: "xl/_rels/workbook.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>` },
+    { name: "xl/worksheets/sheet1.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:B${rows.length}"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetData>${rowXml}</sheetData></worksheet>` },
+    { name: "xl/sharedStrings.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sharedStrings.length}" uniqueCount="${sharedStrings.length}">${sharedStringXml}</sst>` },
+    { name: "xl/styles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Microsoft YaHei"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>` }
+  ]);
+}
+
+function createNativeChartXml(items, title = "关键指标图表") {
+  const count = items.length;
+  const catRange = chartFormula(`A$2:$A$${count + 1}`);
+  const valRange = chartFormula(`B$2:$B$${count + 1}`);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:date1904 val="0"/><c:lang val="zh-CN"/><c:roundedCorners val="0"/><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="zh-CN" sz="1600" b="1"><a:solidFill><a:srgbClr val="0F172A"/></a:solidFill><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/><a:cs typeface="Microsoft YaHei"/></a:rPr><a:t>${xmlEscape(title)}</a:t></a:r></a:p></c:rich></c:tx><c:layout/><c:overlay val="0"/></c:title><c:autoTitleDeleted val="0"/><c:plotArea><c:layout/><c:barChart><c:barDir val="bar"/><c:grouping val="clustered"/><c:varyColors val="0"/><c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:f>${chartFormula("B$1")}</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>比例</c:v></c:pt></c:strCache></c:strRef></c:tx><c:spPr><a:solidFill><a:srgbClr val="2563EB"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="2563EB"/></a:solidFill></a:ln></c:spPr><c:dLbls><c:numFmt formatCode="0%" sourceLinked="0"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000"><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/><a:cs typeface="Microsoft YaHei"/></a:defRPr></a:pPr></a:p></c:txPr><c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/><c:showSerName val="0"/></c:dLbls><c:cat><c:strRef><c:f>${catRange}</c:f>${chartStringCache(items)}</c:strRef></c:cat><c:val><c:numRef><c:f>${valRange}</c:f>${chartNumberCache(items)}</c:numRef></c:val></c:ser><c:gapWidth val="80"/><c:axId val="10"/><c:axId val="20"/></c:barChart><c:catAx><c:axId val="10"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/>${chartTextPr(1100)}<c:crossAx val="20"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/></c:catAx><c:valAx><c:axId val="20"/><c:scaling><c:orientation val="minMax"/><c:max val="1"/><c:min val="0"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:majorGridlines/><c:numFmt formatCode="0%" sourceLinked="0"/><c:majorTickMark val="out"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/>${chartTextPr(1000)}<c:crossAx val="10"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx></c:plotArea><c:legend><c:legendPos val="b"/><c:layout/><c:overlay val="0"/>${chartTextPr(1100)}</c:legend><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart><c:externalData r:id="rId1"><c:autoUpdate val="0"/></c:externalData></c:chartSpace>`;
+}
+
+function pptBarChartShapes(items, startId = 10) {
+  const chartItems = items.slice(0, 8);
+  if (!chartItems.length) return "";
+  const left = 1000000;
+  const top = 1850000;
+  const chartW = 9000000;
+  const chartH = 3500000;
+  const barGap = 160000;
+  const barH = Math.floor((chartH - barGap * (chartItems.length - 1)) / chartItems.length);
+  const maxValue = Math.max(10, ...chartItems.map((item) => item.value));
+  let id = startId;
+  const shapes = [
+    pptLineShape(id++, "AxisY", left, top - 120000, left, top + chartH + 120000, "CBD5E1"),
+    pptLineShape(id++, "AxisX", left, top + chartH + 120000, left + chartW + 200000, top + chartH + 120000, "CBD5E1")
+  ];
+  chartItems.forEach((item, index) => {
+    const y = top + index * (barH + barGap);
+    const barW = Math.max(100000, Math.round(chartW * item.value / maxValue));
+    shapes.push(pptShape(id++, `ChartLabel${index}`, left - 780000, y - 20000, 700000, barH + 40000, [{ text: item.label, size: 1300, bold: true, color: "334155" }], "FFFFFF", "FFFFFF"));
+    shapes.push(pptRect(id++, `ChartBar${index}`, left, y, barW, barH, index % 2 ? "60A5FA" : "2563EB", index % 2 ? "60A5FA" : "2563EB"));
+    shapes.push(pptShape(id++, `ChartValue${index}`, left + barW + 90000, y - 20000, 900000, barH + 40000, [{ text: `${item.value.toFixed(item.value % 1 ? 1 : 0)}%`, size: 1500, bold: true, color: "0F172A" }], "FFFFFF", "FFFFFF"));
+  });
+  return shapes.join("");
+}
+
+function pptSlideXml(slide, index, total, footerLabel = "AI 调研方案设计") {
   const title = pptShape(2, "Title", 550000, 420000, 11200000, 850000, [{ text: slide.title, size: 3000, bold: true, color: "0F2530" }], "FFFFFF", "FFFFFF");
   const bullets = slide.bullets.length ? slide.bullets : ["请结合业务背景继续补充本页内容。"];
   const bodyParagraphs = bullets.slice(0, 8).map((text) => ({
@@ -7281,37 +9756,132 @@ function pptSlideXml(slide, index, total) {
     bullet: true,
     color: "334155"
   }));
-  const body = pptShape(3, "Body", 700000, 1450000, 11250000, 4800000, bodyParagraphs, "F8FAFC", "D8E2EA");
-  const footer = pptShape(4, "Footer", 700000, 6450000, 11250000, 320000, [{ text: `AI 调研方案设计 · ${index + 1}/${total}`, size: 1200, color: "64748B" }], "FFFFFF", "FFFFFF");
+  const body = slide.chartItems?.length
+    ? `${pptShape(3, "Insight", 700000, 1250000, 11250000, 420000, bodyParagraphs.slice(0, 1), "EFF6FF", "BFDBFE")}${pptNativeChartFrame(5, "rId2")}`
+    : pptShape(3, "Body", 700000, 1450000, 11250000, 4800000, bodyParagraphs, "F8FAFC", "D8E2EA");
+  const footer = pptShape(4, "Footer", 700000, 6450000, 11250000, 320000, [{ text: `${footerLabel} · ${index + 1}/${total}`, size: 1200, color: "64748B" }], "FFFFFF", "FFFFFF");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:effectLst/></p:bgPr></p:bg><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${title}${body}${footer}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
 }
 
-function createPptxBlob(markdown, title = "AI调研方案") {
-  const slides = markdownToPptSlides(markdown, title);
-  const slideEntries = slides.map((slide, index) => ({
+function createPptxPackage(slides, title = "AI调研方案", footerLabel = "AI 调研方案设计") {
+  let chartCounter = 0;
+  const packagedSlides = slides.map((slide) => {
+    if (!slide.chartItems?.length) return slide;
+    chartCounter += 1;
+    return { ...slide, chartIndex: chartCounter };
+  });
+  const slideEntries = packagedSlides.map((slide, index) => ({
     name: `ppt/slides/slide${index + 1}.xml`,
-    content: pptSlideXml(slide, index, slides.length)
+    content: pptSlideXml(slide, index, packagedSlides.length, footerLabel)
   }));
-  const slideRelEntries = slides.map((_, index) => ({
+  const slideRelEntries = packagedSlides.map((slide, index) => ({
     name: `ppt/slides/_rels/slide${index + 1}.xml.rels`,
-    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/></Relationships>`
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>${slide.chartIndex ? `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${slide.chartIndex}.xml"/>` : ""}</Relationships>`
   }));
-  const slideOverrides = slides.map((_, index) => `<Override PartName="/ppt/slides/slide${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("");
-  const slideIds = slides.map((_, index) => `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`).join("");
-  const slideRels = slides.map((_, index) => `<Relationship Id="rId${index + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${index + 1}.xml"/>`).join("");
+  const chartSlides = packagedSlides.filter((slide) => slide.chartIndex);
+  const chartEntries = chartSlides.map((slide) => ({
+    name: `ppt/charts/chart${slide.chartIndex}.xml`,
+    content: createNativeChartXml(slide.chartItems, slide.title)
+  }));
+  const chartRelEntries = chartSlides.map((slide) => ({
+    name: `ppt/charts/_rels/chart${slide.chartIndex}.xml.rels`,
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/Microsoft_Excel_Sheet${slide.chartIndex}.xlsx"/></Relationships>`
+  }));
+  const embeddingEntries = chartSlides.map((slide) => ({
+    name: `ppt/embeddings/Microsoft_Excel_Sheet${slide.chartIndex}.xlsx`,
+    content: createChartWorkbookBytes(slide.chartItems, slide.title)
+  }));
+  const slideOverrides = packagedSlides.map((_, index) => `<Override PartName="/ppt/slides/slide${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("");
+  const chartOverrides = chartSlides.map((slide) => `<Override PartName="/ppt/charts/chart${slide.chartIndex}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
+  const slideIds = packagedSlides.map((_, index) => `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`).join("");
+  const slideRels = packagedSlides.map((_, index) => `<Relationship Id="rId${index + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${index + 1}.xml"/>`).join("");
+  const now = new Date().toISOString();
   return createZip([
-    { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${slideOverrides}</Types>` },
-    { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>` },
+    { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="xlsx" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/presProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presProps+xml"/><Override PartName="/ppt/viewProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml"/><Override PartName="/ppt/tableStyles.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${slideOverrides}${chartOverrides}</Types>` },
+    { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>` },
+    { name: "docProps/core.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xmlEscape(title)}</dc:title><dc:creator>Survey Worker</dc:creator><cp:lastModifiedBy>Survey Worker</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>` },
+    { name: "docProps/app.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Survey Worker</Application><PresentationFormat>宽屏</PresentationFormat><Slides>${packagedSlides.length}</Slides><Notes>0</Notes><HiddenSlides>0</HiddenSlides><ScaleCrop>false</ScaleCrop><HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>幻灯片标题</vt:lpstr></vt:variant><vt:variant><vt:i4>${packagedSlides.length}</vt:i4></vt:variant></vt:vector></HeadingPairs><TitlesOfParts><vt:vector size="${packagedSlides.length}" baseType="lpstr">${packagedSlides.map((slide) => `<vt:lpstr>${xmlEscape(slide.title)}</vt:lpstr>`).join("")}</vt:vector></TitlesOfParts><Company>Survey Worker</Company><LinksUpToDate>false</LinksUpToDate><SharedDoc>false</SharedDoc><HyperlinksChanged>false</HyperlinksChanged><AppVersion>16.0000</AppVersion></Properties>` },
     { name: "ppt/presentation.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slideIds}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000" type="wide"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>` },
-    { name: "ppt/_rels/presentation.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>${slideRels}</Relationships>` },
+    { name: "ppt/_rels/presentation.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>${slideRels}<Relationship Id="rId${slides.length + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/presProps" Target="presProps.xml"/><Relationship Id="rId${slides.length + 3}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps" Target="viewProps.xml"/><Relationship Id="rId${slides.length + 4}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/tableStyles" Target="tableStyles.xml"/></Relationships>` },
+    { name: "ppt/presProps.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentationPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:showPr><p:present/></p:showPr><p:clrMru/></p:presentationPr>` },
+    { name: "ppt/viewProps.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:viewPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:normalViewPr><p:restoredLeft sz="15620"/><p:restoredTop sz="94660"/></p:normalViewPr><p:slideViewPr><p:cSldViewPr><p:cViewPr varScale="1"><p:scale><a:sx n="100" d="100"/><a:sy n="100" d="100"/></p:scale><p:origin x="0" y="0"/></p:cViewPr><p:guideLst/></p:cSldViewPr></p:slideViewPr><p:notesTextViewPr><p:cViewPr><p:scale><a:sx n="100" d="100"/><a:sy n="100" d="100"/></p:scale><p:origin x="0" y="0"/></p:cViewPr></p:notesTextViewPr><p:gridSpacing cx="72008" cy="72008"/></p:viewPr>` },
+    { name: "ppt/tableStyles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>` },
     { name: "ppt/slideMasters/slideMaster1.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/><p:sldLayoutIdLst><p:sldLayoutId id="1" r:id="rId1"/></p:sldLayoutIdLst><p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles></p:sldMaster>` },
     { name: "ppt/slideMasters/_rels/slideMaster1.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/></Relationships>` },
     { name: "ppt/slideLayouts/slideLayout1.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank" preserve="1"><p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>` },
     { name: "ppt/slideLayouts/_rels/slideLayout1.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>` },
     { name: "ppt/theme/theme1.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Survey Theme"><a:themeElements><a:clrScheme name="Survey"><a:dk1><a:srgbClr val="0F2530"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="334155"/></a:dk2><a:lt2><a:srgbClr val="F8FAFC"/></a:lt2><a:accent1><a:srgbClr val="155E75"/></a:accent1><a:accent2><a:srgbClr val="2E7D5B"/></a:accent2><a:accent3><a:srgbClr val="D99A2B"/></a:accent3><a:accent4><a:srgbClr val="B03024"/></a:accent4><a:accent5><a:srgbClr val="2E6FBA"/></a:accent5><a:accent6><a:srgbClr val="6B7280"/></a:accent6><a:hlink><a:srgbClr val="155E75"/></a:hlink><a:folHlink><a:srgbClr val="6B7280"/></a:folHlink></a:clrScheme><a:fontScheme name="Survey"><a:majorFont><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/></a:majorFont><a:minorFont><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/></a:minorFont></a:fontScheme><a:fmtScheme name="Survey"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>` },
     ...slideEntries,
-    ...slideRelEntries
+    ...slideRelEntries,
+    ...chartEntries,
+    ...chartRelEntries,
+    ...embeddingEntries
   ]);
+}
+
+function createSurveyPptThemeXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Survey Theme"><a:themeElements><a:clrScheme name="Survey"><a:dk1><a:srgbClr val="0F172A"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="334155"/></a:dk2><a:lt2><a:srgbClr val="F8FAFC"/></a:lt2><a:accent1><a:srgbClr val="2563EB"/></a:accent1><a:accent2><a:srgbClr val="0EA5E9"/></a:accent2><a:accent3><a:srgbClr val="10B981"/></a:accent3><a:accent4><a:srgbClr val="F59E0B"/></a:accent4><a:accent5><a:srgbClr val="EF4444"/></a:accent5><a:accent6><a:srgbClr val="64748B"/></a:accent6><a:hlink><a:srgbClr val="2563EB"/></a:hlink><a:folHlink><a:srgbClr val="64748B"/></a:folHlink></a:clrScheme><a:fontScheme name="Survey"><a:majorFont><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/><a:cs typeface="Microsoft YaHei"/></a:majorFont><a:minorFont><a:latin typeface="Microsoft YaHei"/><a:ea typeface="Microsoft YaHei"/><a:cs typeface="Microsoft YaHei"/></a:minorFont></a:fontScheme><a:fmtScheme name="Survey"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:lumMod val="110000"/><a:satMod val="105000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="90000"/><a:satMod val="105000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill><a:solidFill><a:schemeClr val="phClr"><a:alpha val="50000"/></a:schemeClr></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/></a:ln><a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/></a:ln><a:ln w="19050" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst><a:outerShdw blurRad="40000" dist="20000" dir="5400000" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="12000"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle><a:effectStyle><a:effectLst><a:outerShdw blurRad="80000" dist="30000" dir="5400000" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="18000"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"><a:tint val="95000"/><a:satMod val="170000"/></a:schemeClr></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="93000"/><a:satMod val="150000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="98000"/><a:satMod val="120000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>`;
+}
+
+function createPptxPackage(slides, title = "AI调研报告", footerLabel = "AI 调研报告") {
+  let chartCounter = 0;
+  const packagedSlides = slides.map((slide) => {
+    if (!slide.chartItems?.length) return slide;
+    chartCounter += 1;
+    return { ...slide, chartIndex: chartCounter };
+  });
+  const slideEntries = packagedSlides.map((slide, index) => ({
+    name: `ppt/slides/slide${index + 1}.xml`,
+    content: pptSlideXml(slide, index, packagedSlides.length, footerLabel)
+  }));
+  const slideRelEntries = packagedSlides.map((slide, index) => ({
+    name: `ppt/slides/_rels/slide${index + 1}.xml.rels`,
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>${slide.chartIndex ? `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${slide.chartIndex}.xml"/>` : ""}</Relationships>`
+  }));
+  const chartSlides = packagedSlides.filter((slide) => slide.chartIndex);
+  const chartEntries = chartSlides.map((slide) => ({
+    name: `ppt/charts/chart${slide.chartIndex}.xml`,
+    content: createNativeChartXml(slide.chartItems, slide.title)
+  }));
+  const chartRelEntries = chartSlides.map((slide) => ({
+    name: `ppt/charts/_rels/chart${slide.chartIndex}.xml.rels`,
+    content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/Microsoft_Excel_Sheet${slide.chartIndex}.xlsx"/></Relationships>`
+  }));
+  const embeddingEntries = chartSlides.map((slide) => ({
+    name: `ppt/embeddings/Microsoft_Excel_Sheet${slide.chartIndex}.xlsx`,
+    content: createChartWorkbookBytes(slide.chartItems, slide.title)
+  }));
+  const slideOverrides = packagedSlides.map((_, index) => `<Override PartName="/ppt/slides/slide${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("");
+  const chartOverrides = chartSlides.map((slide) => `<Override PartName="/ppt/charts/chart${slide.chartIndex}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
+  const slideIds = packagedSlides.map((_, index) => `<p:sldId id="${256 + index}" r:id="rId${index + 2}"/>`).join("");
+  const slideRels = packagedSlides.map((_, index) => `<Relationship Id="rId${index + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${index + 1}.xml"/>`).join("");
+  const now = new Date().toISOString();
+  const presentationRelBase = packagedSlides.length + 2;
+  return createZip([
+    { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="xlsx" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/presProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presProps+xml"/><Override PartName="/ppt/viewProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml"/><Override PartName="/ppt/tableStyles.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${slideOverrides}${chartOverrides}</Types>` },
+    { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>` },
+    { name: "docProps/core.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xmlEscape(title)}</dc:title><dc:creator>Survey Worker</dc:creator><cp:lastModifiedBy>Survey Worker</cp:lastModifiedBy><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>` },
+    { name: "docProps/app.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>Survey Worker</Application><PresentationFormat>宽屏</PresentationFormat><Slides>${packagedSlides.length}</Slides><Notes>0</Notes><HiddenSlides>0</HiddenSlides><ScaleCrop>false</ScaleCrop><HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>幻灯片标题</vt:lpstr></vt:variant><vt:variant><vt:i4>${packagedSlides.length}</vt:i4></vt:variant></vt:vector></HeadingPairs><TitlesOfParts><vt:vector size="${packagedSlides.length}" baseType="lpstr">${packagedSlides.map((slide) => `<vt:lpstr>${xmlEscape(slide.title)}</vt:lpstr>`).join("")}</vt:vector></TitlesOfParts><Company>Survey Worker</Company><LinksUpToDate>false</LinksUpToDate><SharedDoc>false</SharedDoc><HyperlinksChanged>false</HyperlinksChanged><AppVersion>16.0000</AppVersion></Properties>` },
+    { name: "ppt/presentation.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>${slideIds}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000" type="screen16x9"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>` },
+    { name: "ppt/_rels/presentation.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>${slideRels}<Relationship Id="rId${presentationRelBase}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/presProps" Target="presProps.xml"/><Relationship Id="rId${presentationRelBase + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps" Target="viewProps.xml"/><Relationship Id="rId${presentationRelBase + 2}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/tableStyles" Target="tableStyles.xml"/></Relationships>` },
+    { name: "ppt/presProps.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentationPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:showPr><p:present/></p:showPr><p:clrMru/></p:presentationPr>` },
+    { name: "ppt/viewProps.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:viewPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:normalViewPr><p:restoredLeft sz="15620"/><p:restoredTop sz="94660"/></p:normalViewPr><p:slideViewPr><p:cSldViewPr><p:cViewPr varScale="1"><p:scale><a:sx n="100" d="100"/><a:sy n="100" d="100"/></p:scale><p:origin x="0" y="0"/></p:cViewPr><p:guideLst/></p:cSldViewPr></p:slideViewPr><p:notesTextViewPr><p:cViewPr><p:scale><a:sx n="100" d="100"/><a:sy n="100" d="100"/></p:scale><p:origin x="0" y="0"/></p:cViewPr></p:notesTextViewPr><p:gridSpacing cx="72008" cy="72008"/></p:viewPr>` },
+    { name: "ppt/tableStyles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>` },
+    { name: "ppt/slideMasters/slideMaster1.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/><p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst><p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles></p:sldMaster>` },
+    { name: "ppt/slideMasters/_rels/slideMaster1.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/></Relationships>` },
+    { name: "ppt/slideLayouts/slideLayout1.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank" preserve="1"><p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>` },
+    { name: "ppt/slideLayouts/_rels/slideLayout1.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>` },
+    { name: "ppt/theme/theme1.xml", content: createSurveyPptThemeXml() },
+    ...slideEntries,
+    ...slideRelEntries,
+    ...chartEntries,
+    ...chartRelEntries,
+    ...embeddingEntries
+  ]);
+}
+
+function createPptxBlob(markdown, title = "AI调研方案", footerLabel = "AI 调研方案设计") {
+  return createPptxPackage(markdownToPptSlides(markdown, title), title, footerLabel);
 }
 
 function exportAiWord() {
@@ -7419,7 +9989,7 @@ async function generateAiWorkbench() {
   const text = document.querySelector("#aiWorkbenchInput").value.trim();
   const result = document.querySelector("#aiWorkbenchResults");
   const settings = loadAiSettings();
-  result.innerHTML = `<div class="empty-state"><strong>正在生成 AI 建议</strong><span>${escapeHtml(settings.mode === "local" || !settings.apiKey ? "正在使用本地规则。" : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}。`)}</span></div>`;
+  result.innerHTML = `<div class="empty-state"><strong>正在生成 AI 建议</strong><span>${escapeHtml(settings.mode === "local" || !settings.apiKey ? "正在通过后端代理调用内置阿里云百炼。" : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}。`)}</span></div>`;
   let output = buildLocalAiWorkbenchOutput(task, text);
   let source = "本地规则";
   if (settings.mode !== "local") {
@@ -7472,8 +10042,237 @@ function exportAiWorkbenchWord() {
   downloadBlob("AI助手建议.docx", createDocxBlob(lastAiWorkbenchOutput));
 }
 
+/**
+ * 本地解析交叉表文本，提取结构化数据，避免直接把原始文本传给AI造成Token浪费。
+ * 支持两种格式：
+ *   A) 标准交叉表：[表头] + [样本基数/BASE] + [题目] + [选项数据]
+ *   B) 指标/满意度清单表：[表头] + [表标题] + [指标数据]
+ */
+function parseCrosstabToStructured(crosstabText) {
+  const sections = [];
+  const rawSections = crosstabText.split(/(?=^=== .+? ===$)/m);
+
+  for (const rawSection of rawSections) {
+    const trimmed = rawSection.trim();
+    if (!trimmed) continue;
+
+    const nameMatch = trimmed.match(/^=== (.+?) ===/);
+    const section = {
+      name: nameMatch ? nameMatch[1] : "数据表",
+      headers: [],
+      base: {},
+      questions: [],
+      indicators: [],
+      title: "",
+      type: "crosstab"
+    };
+
+    const lines = trimmed.split("\n");
+    let currentQuestion = null;
+    let inIndicatorMode = false;
+    let inOptionMode = false;
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("===")) continue;
+
+      if (line.startsWith("[表头]")) {
+        section.headers = line.slice(4).split("|").map(h => h.trim()).filter(Boolean);
+      } else if (line.startsWith("[样本基数/BASE]")) {
+        const baseText = line.slice("[样本基数/BASE]".length).trim();
+        const pairs = baseText.split("|").map(p => p.trim()).filter(Boolean);
+        for (const pair of pairs) {
+          const eqIdx = pair.indexOf("=");
+          if (eqIdx > 0) {
+            section.base[pair.slice(0, eqIdx).trim()] = pair.slice(eqIdx + 1).trim();
+          }
+        }
+      } else if (line.startsWith("[题目]")) {
+        if (currentQuestion) section.questions.push(currentQuestion);
+        currentQuestion = { caption: line.slice(4).trim(), options: [], base: { ...section.base } };
+        inOptionMode = false;
+        inIndicatorMode = false;
+      } else if (line.startsWith("[选项数据]")) {
+        inOptionMode = true;
+        inIndicatorMode = false;
+      } else if (line.startsWith("[指标数据]")) {
+        inIndicatorMode = true;
+        inOptionMode = false;
+        section.type = "indicator";
+      } else if (line.startsWith("[表标题]")) {
+        section.title = line.slice(5).trim();
+        section.type = "indicator";
+      } else if (line.startsWith("[说明]")) {
+        // 跳过说明行
+      } else {
+        const cells = line.split("|").map(c => c.trim());
+        if (inIndicatorMode && cells.length >= 2) {
+          section.indicators.push(cells);
+        } else if (inOptionMode && currentQuestion && cells.length >= 2) {
+          currentQuestion.options.push({ name: cells[0], values: cells.slice(1) });
+        }
+      }
+    }
+    if (currentQuestion) section.questions.push(currentQuestion);
+    sections.push(section);
+  }
+
+  return sections;
+}
+
+/**
+ * 将本地解析后的结构化交叉表数据转为精简统计摘要。
+ * 采用紧凑格式（非Markdown表格），去掉冗余标记和%符号，大幅减少Token消耗。
+ * 为每道题自动标注总体列最高/最低值，帮助AI快速提取关键洞察。
+ */
+function buildStructuredCrosstabSummary(sections, dataContext) {
+  const lines = [];
+  lines.push("## 数据说明（已由系统本地解析，无需自行解析格式）");
+  lines.push("- 数据格式：交叉表（已聚合的频数/百分比表，非原始问卷数据）");
+  lines.push("- 数值单位：百分比(%)或频数(#)，以下数据已省略%符号");
+  if (dataContext.totalN) {
+    lines.push("- 总样本基数（BASE）：" + dataContext.totalN);
+  }
+
+  let totalQuestions = 0;
+  let totalIndicators = 0;
+  for (const section of sections) {
+    totalQuestions += section.questions.length;
+    totalIndicators += section.indicators.length;
+  }
+  lines.push("- 题目数量：" + (totalQuestions || dataContext.questionCount || "未知"));
+  if (totalIndicators) lines.push("- 指标表数量：" + totalIndicators);
+
+  // Stage1 质量诊断：小样本预警
+  const diagnostics = [];
+  for (const section of sections) {
+    const baseKeys = Object.keys(section.base);
+    for (const key of baseKeys) {
+      const n = parseInt(String(section.base[key]).replace(/[^\d]/g, ""));
+      if (n && n < 30 && key !== "总体" && key !== "Total") {
+        diagnostics.push("- 小样本预警：「" + key + "」BASE=" + n + "，相关交叉分析仅供参考");
+      }
+    }
+  }
+  if (diagnostics.length) {
+    lines.push("");
+    lines.push("### 数据质量诊断");
+    lines.push(...diagnostics.slice(0, 10));
+  }
+
+  // Stage1 反常点扫描：检测各题中总体列最高/最低值与常理矛盾的情况
+  const anomalies = [];
+  for (const section of sections) {
+    for (const q of section.questions) {
+      if (q.options.length < 2 || !section.headers.length) continue;
+      // 检测是否有选项的值异常高（>80%）或异常低（<2%）
+      for (const opt of q.options) {
+        const num = parseFloat(String(opt.values[0]).replace(/[^\d.-]/g, ""));
+        if (!isNaN(num)) {
+          if (num > 80) {
+            anomalies.push("- 「" + q.caption + "」选项「" + opt.name + "」占比" + num + "%，集中度过高");
+          } else if (num < 2 && num > 0) {
+            anomalies.push("- 「" + q.caption + "」选项「" + opt.name + "」占比仅" + num + "%，可能为小众选项");
+          }
+        }
+      }
+    }
+  }
+  if (anomalies.length) {
+    lines.push("");
+    lines.push("### 反常点扫描（系统自动检测）");
+    lines.push(...anomalies.slice(0, 10));
+    if (anomalies.length > 10) lines.push("... 其余" + (anomalies.length - 10) + "条省略");
+  }
+
+  lines.push("");
+
+  let globalBasePrinted = false;
+
+  for (const section of sections) {
+    lines.push("### " + section.name);
+
+    // 表头和BASE只输出一次
+    if (section.headers.length) {
+      lines.push("列分群（按顺序）：" + section.headers.join(" | "));
+    }
+
+    const baseKeys = Object.keys(section.base);
+    if (baseKeys.length && !globalBasePrinted) {
+      lines.push("BASE：" + baseKeys.map(k => `${k}=${section.base[k]}`).join(" | "));
+      globalBasePrinted = true;
+    } else if (baseKeys.length && globalBasePrinted) {
+      const sameAsGlobal = sections[0] && sections[0].base &&
+        baseKeys.every(k => sections[0].base[k] === section.base[k]);
+      if (!sameAsGlobal) {
+        lines.push("BASE（本表）：" + baseKeys.map(k => `${k}=${section.base[k]}`).join(" | "));
+      }
+    }
+
+    // 指标/满意度清单表（紧凑格式）
+    if (section.indicators.length) {
+      if (section.title) lines.push("表标题：" + section.title);
+      lines.push("");
+      for (const row of section.indicators) {
+        lines.push("  " + row.join(" | "));
+      }
+      lines.push("");
+    }
+
+    // 题目选项数据（紧凑格式，不重复表头）
+    // 智能压缩：题目多时限制每题选项数，但不限制题目总数（让AI看到所有数据）
+    const MAX_OPTIONS_WHEN_MANY = 8;
+    let qIndex = 0;
+    for (const q of section.questions) {
+      qIndex++;
+      lines.push(q.caption);
+      // 当题目很多时，限制每题显示的选项数
+      const optLimit = totalQuestions > 50 ? Math.min(q.options.length, MAX_OPTIONS_WHEN_MANY) : q.options.length;
+      for (let oi = 0; oi < optLimit; oi++) {
+        const opt = q.options[oi];
+        // 去掉值中的%符号以节省Token
+        const cleanValues = opt.values.map(v => String(v).replace(/%/g, "").trim());
+        lines.push("  " + opt.name + ": " + cleanValues.join(" | "));
+      }
+      if (optLimit < q.options.length) {
+        lines.push(`  ... 其余${q.options.length - optLimit}项省略`);
+      }
+
+      // 只标注第一列（通常是总体）的最高/最低值
+      if (q.options.length && section.headers.length) {
+        const firstColName = section.headers[0];
+        let maxVal = -Infinity, maxOpt = "", minVal = Infinity, minOpt = "";
+        for (const opt of q.options) {
+          const num = parseFloat(String(opt.values[0]).replace(/[^\d.-]/g, ""));
+          if (isNaN(num)) continue;
+          if (num > maxVal) { maxVal = num; maxOpt = opt.name; }
+          if (num < minVal) { minVal = num; minOpt = opt.name; }
+        }
+        if (maxOpt && minOpt && maxVal !== minVal) {
+          lines.push("  [差异] " + firstColName + "最高=" + maxOpt + "(" + maxVal + ")，最低=" + minOpt + "(" + minVal + ")");
+        }
+      }
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
 function summarizeCrosstabForAiReport(dataContext) {
-  if (!dataContext || !dataContext.headerInfos || !dataContext.rawRows || !dataContext.rawRows.length) {
+  if (!dataContext) return null;
+
+  // --- Crosstab mode: local parse → structured summary (reduces Token usage) ---
+  if (dataContext.isCrosstab && dataContext.crosstabText) {
+    const sections = parseCrosstabToStructured(dataContext.crosstabText);
+    if (!sections.length) {
+      // 解析失败时回退到原文（兜底）
+      return "## 交叉表数据\n（解析失败，附原文）\n\n" + dataContext.crosstabText.slice(0, 8000);
+    }
+    return buildStructuredCrosstabSummary(sections, dataContext);
+  }
+
+  if (!dataContext.headerInfos || !dataContext.rawRows || !dataContext.rawRows.length) {
     return null;
   }
   const { headerInfos, rawRows, displayHeaders } = dataContext;
@@ -7557,54 +10356,187 @@ function summarizeCrosstabForAiReport(dataContext) {
   return lines.join("\n");
 }
 
-function buildAiReportPrompt(context, summary) {
+function readAiReportContext() {
+  const value = (selector) => document.querySelector(selector)?.value.trim() || "";
+  // 读取多选项目类型
+  const projectTypeCheckboxes = document.querySelectorAll("#aiReportProjectType input[type='checkbox']:checked");
+  const projectTypes = Array.from(projectTypeCheckboxes).map(cb => cb.value);
+  return {
+    projectName: value("#aiReportProjectName"),
+    projectType: projectTypes.length ? projectTypes : ["general"],
+    objective: value("#aiReportObjective"),
+    hypothesis: value("#aiReportHypothesis"),
+    targetAudience: value("#aiReportTargetAudience"),
+    dataPeriod: value("#aiReportDataPeriod"),
+    categoryContext: value("#aiReportCategoryContext"),
+    audienceType: value("#aiReportAudienceType"),
+    weightingStatus: value("#aiReportWeightingStatus")
+  };
+}
+
+function formatAiReportContext(context) {
+  const projectTypeLabels = {
+    general: "通用定量研究",
+    ua: "U&A 使用与态度研究",
+    concept: "概念测试",
+    nps: "满意度 / NPS",
+    brand: "品牌健康度",
+    launch: "新品上市复盘",
+    ad: "广告测试",
+    mystery: "神秘客"
+  };
+  const typeLabels = Array.isArray(context.projectType)
+    ? context.projectType.map(t => projectTypeLabels[t] || t).join(" + ")
+    : projectTypeLabels[context.projectType] || "通用定量研究";
+  const required = [
+    ["项目名称", context.projectName || "未填写"],
+    ["项目类型", typeLabels],
+    ["研究目标", context.objective || "未填写，请先基于数据提炼最可能的3个研究假设，再展开分析"]
+  ];
+  const optional = [
+    ["核心假设/待验证命题", context.hypothesis],
+    ["目标人群定义", context.targetAudience],
+    ["数据时间范围", context.dataPeriod],
+    ["行业/品类背景", context.categoryContext],
+    ["报告受众", context.audienceType],
+    ["数据加权状态", context.weightingStatus]
+  ].filter(([, value]) => value);
+  return [
+    "【项目背景信息】",
+    ...required.map(([key, value]) => `- ${key}：${value}`),
+    ...(optional.length ? ["", "【补充背景】", ...optional.map(([key, value]) => `- ${key}：${value}`)] : [])
+  ].join("\n");
+}
+
+function buildAiReportVariableNotes(dataContext) {
+  if (!dataContext?.headerInfos?.length) return "未识别到关键变量说明。";
+  const groups = dataContext.headerInfos.filter((h) => h.type === "group").map((h) => h.header).slice(0, 20);
+  const questions = dataContext.headerInfos.filter((h) => h.type === "question").map((h) => h.header).slice(0, 30);
+  return [
+    "【关键变量说明】",
+    `- 行/题目变量：${questions.length ? questions.join("、") : "未识别到明显题目字段"}`,
+    `- 列/分群变量：${groups.length ? groups.join("、") : "未识别到明显分群字段"}`,
+    "- 变量类型由系统按字段名和数据结构自动识别，报告中需结合变量含义谨慎解读。"
+  ].join("\n");
+}
+
+/**
+ * 根据项目类型返回报告框架指引。
+ * 采用三段式大框架（项目概述-主要研究发现-结论与建议），具体内容在主要发现中自由展开。
+ * 项目类型多选时，融合各类型分析要点作为提示，不限制固定章节。
+ */
+function getProjectTypeGuidance(projectType) {
+  // 兼容单选字符串和多选数组
+  const types = Array.isArray(projectType) ? projectType : [projectType];
+
+  const typeHints = {
+    general: "通用定量分析：根据数据内容自行选择最有分析价值的维度展开。",
+    ua: "U&A分析要点：品类认知与渗透、使用场景与行为、购买决策路径、品牌态度与忠诚度、需求痛点与未满足需求。",
+    concept: "概念测试分析要点：概念理解度与传达效果、购买吸引力与转化意愿、卖点偏好排序、价格接受度、概念弱点与改进方向。",
+    nps: "满意度/NPS分析要点：NPS得分与人群分布、满意度维度矩阵、驱动因素拆解（重要性×表现）、体验短板与贬损者痛点、改进优先级。",
+    brand: "品牌健康度分析要点：品牌认知度（提示前/后）、品牌漏斗（认知→考虑→购买→推荐）、品牌形象感知地图、品牌流失与转换、品牌竞争力。",
+    launch: "新品上市复盘分析要点：上市KPI达成率、认知-试用-复购漏斗、消费者体验评价、复购意愿与流失原因、渠道与价格表现。",
+    ad: "广告测试分析要点：广告回忆度与关键元素记忆、信息理解度与品牌关联、情感反应与喜好度、购买意愿影响、人群差异与媒介优化。",
+    mystery: "神秘客分析要点：整体体验评分与达标率、各环节体验拆解、服务标准执行率、问题定位与典型案例、竞品对比。"
+  };
+
+  const typeLabels = {
+    general: "通用定量研究",
+    ua: "U&A",
+    concept: "概念测试",
+    nps: "满意度/NPS",
+    brand: "品牌健康度",
+    launch: "新品上市复盘",
+    ad: "广告测试",
+    mystery: "神秘客"
+  };
+
+  // 融合所有选中类型的分析要点
+  const hints = types.map(t => typeHints[t] || typeHints.general).filter(h => h);
+  const typeLabel = types.map(t => typeLabels[t] || t).join(" + ");
+
+  return {
+    role: "你是一位拥有15年经验的资深市场研究总监，擅长将定量数据转化为商业洞察。",
+    structure: [
+      "报告采用三段式大框架，具体章节和内容根据数据自由展开：",
+      "",
+      "一、项目概述",
+      "  核心结论（1-2句话直接回答研究目标）+ 关键发现亮点（3-5条）+ 研究说明（样本量、结构、局限性，1段带过）。",
+      "",
+      "二、主要研究发现",
+      "  这是报告主体，根据数据内容和你选中的项目类型分析要点自行组织章节。",
+      "  每个发现遵循金字塔结构：一句话结论（加粗）→ 数据支撑（精确到百分比，标注基数N）→ 业务解读（为什么重要）→ 反常延伸（如有矛盾数据必须提及）。",
+      "  反常发现自然融入相关发现中，格式如「发现X：与预期相反，[现象]，[可能解释]」，不单独成章。",
+      "  人群差异只写有显著差异且对业务有意义的维度，无差异时诚实写「各群体表现趋同」。",
+      "  尽可能覆盖数据中有分析价值的题目，不要只挑3-5题就结束。",
+      "",
+      "三、结论与建议",
+      "  直接回答研究目标是否成立，给出分人群/分场景策略建议和优先级排序。",
+      "  每个建议必须对应前面的具体发现，标注数据支撑。",
+      "",
+      "【本次项目类型：" + typeLabel + "】",
+      "分析要点参考（根据数据情况灵活选择，不必全部覆盖）：",
+      ...hints.map(h => "  - " + h)
+    ].join("\n")
+  };
+}
+
+function buildAiReportPrompt(context, summary, dataContext) {
+  const contextText = formatAiReportContext(context);
+  const variableNotes = buildAiReportVariableNotes(dataContext);
+  const guidance = getProjectTypeGuidance(context.projectType);
   return [
     {
       role: "system",
-      content: "你是一名资深市场研究定量报告撰写专家。请基于用户提供的项目背景和数据摘要，撰写一份专业的Markdown格式定量分析报告，并在报告中包含可直接用于PPT汇报的脚本内容。报告需使用中文。"
+      content: [
+        guidance.role,
+        "",
+        "【六阶段报告生成流程】你的报告生成严格遵循以下六阶段方法论（阶段1已由系统在本地完成，你负责阶段2-5）：",
+        "",
+        "阶段1（已完成）：系统已在本地完成统计摘要+质量诊断，数据已结构化为紧凑格式传入。",
+        "阶段2 洞察挖掘：在正式撰写前，先内部完成洞察挖掘——关键发现（3-5个对业务决策最有影响的发现，按业务影响力×数据确定性排序）、人群差异（排除差异<5pp或样本<30的对比）、反常与矛盾（至少找到1个与常识矛盾的数据点，给出A/B两个可能解释）、弱信号（单项不显著但趋势一致的苗头）。",
+        "阶段3 自适应框架：基于项目类型专属结构组织报告，但可根据洞察优先级调整顺序和详略；某章节无值得写的内容时允许精简或合并，不要硬凑。",
+        "阶段4 分段撰写：每个发现遵循金字塔结构——一句话结论（加粗）→数据支撑（精确到百分比，标注基数N=XXX）→业务解读（为什么重要）→反常延伸（如有矛盾数据必须提及）。回答So What：不仅写「是什么」，还要写「意味着什么」和「该怎么办」。",
+        "阶段5 整合审查：确保执行摘要的结论在正文都有展开、建议都对应前面具体发现、无突然出现的数据。统一百分比精度（1位小数）和基数标注格式。",
+        "",
+        "【核心写作原则】",
+        "- 数据引用必须精确到百分比，保留1位小数；标注基数如「在都市白领中，45.2%（N=567）」；人群对比标注差异绝对值如「高出17.0pp」。",
+        "- 洞察标题使用『四字标签+一句话解读』格式，例如『认知断层：品牌知名度高但购买转化率仅12.3%』。",
+        "- 反常点不单独成章，作为核心发现中的「反常发现」自然融入，格式：「发现X：与预期相反，[数据现象]，[可能解释]」。",
+        "- 样本质量信息只在执行摘要或开篇「研究说明」中1段带过，不单独成章。",
+        "- 如存在样本量<30的细分单元格，必须标注「小样本，谨慎解读」。",
+        "- 未达显著差异的数据，表述为「略高于」「与...接近」，禁止说「显著高于」。",
+        "- 如果用户未填写核心假设，先基于数据提炼最可能的3个假设再展开分析。",
+        "- 禁止把表格内容用文字复述一遍；禁止使用「总体来看」「不难发现」「综上所述」等模板化过渡语。",
+        "- 所有建议必须与研究目标和关键业务决策直接挂钩，不要输出免责套话。",
+        "",
+        "【输出纪律】直接输出报告正文，从第一行开始就是报告标题或正文内容。严禁输出『好的』『我已收到』『我来分析』『以下是』等对话过渡语。",
+        "",
+        "【数据说明】数据已由系统在本地解析为结构化格式。BASE行的值是各列样本基数，不要把表格行数当作样本量。数据摘要中已为每道题标注关键差异，可直接引用。交叉表的列是品牌/人群分群，行是题目选项。",
+      ].join("\n")
     },
     {
       role: "user",
       content: [
-        `项目背景：${context || "未填写具体背景，请基于数据摘要推断研究主题。"}`,
+        contextText,
+        "",
+        variableNotes,
         "",
         "【数据摘要】",
         summary,
         "",
-        "请输出以下结构的报告：",
+        "【报告结构】",
+        "请按照以下三段式框架组织报告，主要发现部分根据数据内容和项目类型分析要点自由展开：",
         "",
-        "# 定量调研报告",
-        "",
-        "## 一、研究背景与目的",
-        "简要说明研究背景、目标人群、样本量和核心研究问题。",
-        "",
-        "## 二、样本结构",
-        "基于背景变量/分群字段，描述样本的人口统计特征或行为特征分布。",
-        "",
-        "## 三、核心发现",
-        "### 3.1 关键指标总览",
-        "列出各核心问题的Top2结论，用数据支撑。",
-        "### 3.2 群体差异洞察",
-        "基于交叉数据，指出不同群体间的显著差异（如有）。",
-        "### 3.3 关键驱动因素（如适用）",
-        "如数据包含量表或重要性评分，分析核心驱动因素。",
-        "",
-        "## 四、结论与建议",
-        "用 bullet points 给出 3-5 条可落地的业务建议。",
+        guidance.structure,
         "",
         "---",
         "",
-        "## PPT汇报脚本",
+        "## PPT 可视化脚本（必选）",
         "",
-        "为上述报告内容设计一份可直接用于PPT汇报的脚本，要求：",
-        "1. 按页给出每页PPT的标题、核心要点（3-5条）和演讲者备注（讲什么、怎么讲）。",
-        "2. 总页数控制在 10-15 页。",
-        "3. 用 Markdown 表格或列表格式输出，便于直接复制到PPT大纲。",
-        "",
-        "格式示例：",
-        "| 页码 | PPT标题 | 核心要点 | 演讲者备注 |",
-        "|------|---------|----------|------------|",
-        "| 1 | 研究背景 | ... | ... |",
+        "PPT脚本至少15-25页：封面页→目录页→核心发现总览（1-2页）→各分析模块图表页（每模块2-3页）→反常发现页→结论与建议（1-2页）→附录。",
+        "每页含：页面标题（不超过15字）、图表类型建议、数据呈现要点、页面洞察话术（30-50字）。",
+        "用Markdown表格输出：| 页码 | 页面标题 | 图表类型建议 | 数据呈现要点 | 页面洞察话术 |",
         ""
       ].join("\n")
     }
@@ -7612,15 +10544,26 @@ function buildAiReportPrompt(context, summary) {
 }
 
 async function generateAiReport() {
-  const context = document.querySelector("#aiReportContext")?.value.trim() || "";
+  const context = readAiReportContext();
   const result = document.querySelector("#aiReportResults");
   const genButton = document.querySelector("#generateAiReport");
   const copyButton = document.querySelector("#copyAiReport");
   const mdButton = document.querySelector("#exportAiReportMd");
   const wordButton = document.querySelector("#exportAiReportWord");
+  const pptButton = document.querySelector("#exportAiReportPpt");
   const settings = loadAiSettings();
+  const setExportButtons = (enabled) => {
+    copyButton.disabled = !enabled;
+    mdButton.disabled = !enabled;
+    wordButton.disabled = !enabled;
+    if (pptButton) pptButton.disabled = !enabled;
+  };
 
-  if (!lastCrosstabDataContext || !lastCrosstabDataContext.rawRows || !lastCrosstabDataContext.rawRows.length) {
+  const hasCrosstabData = lastCrosstabDataContext && (
+    (lastCrosstabDataContext.isCrosstab && lastCrosstabDataContext.crosstabText) ||
+    (Array.isArray(lastCrosstabDataContext.rawRows) && lastCrosstabDataContext.rawRows.length)
+  );
+  if (!hasCrosstabData) {
     result.innerHTML = `
       <div class="empty-state">
         <strong>缺少数据</strong>
@@ -7630,60 +10573,75 @@ async function generateAiReport() {
     return;
   }
 
-  result.innerHTML = `<div class="empty-state"><strong>正在生成定量报告</strong><span>${escapeHtml(settings.mode === "local" || !settings.apiKey ? "正在使用本地规则..." : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}...`)}</span></div>`;
+  const modelSourceText = settings.provider === "custom" && settings.apiKey
+    ? "正在调用自定义/本地大模型..."
+    : settings.mode === "local" || !settings.apiKey
+      ? "正在通过后端代理调用内置阿里云百炼..."
+      : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}...`;
+  result.innerHTML = `<div class="empty-state"><strong>正在生成定量报告</strong><span>${escapeHtml(modelSourceText)}</span></div>`;
   genButton.disabled = true;
-  copyButton.disabled = true;
-  mdButton.disabled = true;
-  wordButton.disabled = true;
+  setExportButtons(false);
 
-  const summary = summarizeCrosstabForAiReport(lastCrosstabDataContext);
-  if (!summary) {
+  try {
+    const summary = summarizeCrosstabForAiReport(lastCrosstabDataContext);
+    if (!summary) {
+      result.innerHTML = `
+        <div class="empty-state">
+          <strong>数据摘要失败</strong>
+          <span>无法从当前数据生成有效统计摘要，请检查数据格式。</span>
+        </div>
+      `;
+      return;
+    }
+
+    let output = summary;
+    let source = "本地统计摘要";
+
+    if (settings.mode !== "local") {
+      const errors = validateAiSettings(settings);
+      if (!errors.length) {
+        try {
+          const prompt = buildAiReportPrompt(context, summary, lastCrosstabDataContext);
+          output = await callAiChatCompletion(settings, prompt, {
+            maxTokens: 8000,
+            timeoutMs: 180000
+          });
+          source = aiProviderPresets[settings.provider]?.name || "大模型";
+        } catch (error) {
+          output = `## 数据摘要（本地生成）\n\n${summary}\n\n---\n\n> 大模型调用失败，已回退为本地统计摘要。错误信息：${error.message}`;
+          source = "本地统计摘要（模型调用失败）";
+        }
+      } else {
+        output = `## 数据摘要（本地生成）\n\n${summary}\n\n---\n\n> 大模型设置未通过校验，已回退为本地统计摘要：${errors.join("；")}`;
+        source = "本地统计摘要（设置未通过校验）";
+      }
+    }
+
+    lastAiReport = output;
+    lastAiReportMode = "markdown";
+    markWorkspaceStatus("ai_report");
+
+    const html = renderMarkdownPreview(output);
+    result.innerHTML = `
+      <article class="audit-issue">
+        <div class="issue-head">
+          <strong>AI 定量报告</strong>
+          <span class="issue-tag low">${escapeHtml(source)}</span>
+        </div>
+        <div class="markdown-body">${html}</div>
+      </article>
+    `;
+    setExportButtons(true);
+  } catch (error) {
     result.innerHTML = `
       <div class="empty-state">
-        <strong>数据摘要失败</strong>
-        <span>无法从当前数据生成有效统计摘要，请检查数据格式。</span>
+        <strong>生成失败</strong>
+        <span>${escapeHtml(error.message || "生成过程中发生未知错误，请重新识别数据后再试。")}</span>
       </div>
     `;
+  } finally {
     genButton.disabled = false;
-    return;
   }
-
-  let output = summary;
-  let source = "本地统计摘要";
-
-  if (settings.mode !== "local") {
-    const errors = validateAiSettings(settings);
-    if (!errors.length) {
-      try {
-        const prompt = buildAiReportPrompt(context, summary);
-        output = await callAiChatCompletion(settings, prompt, { maxTokens: 8000 });
-        source = aiProviderPresets[settings.provider]?.name || "大模型";
-      } catch (error) {
-        output = `## 数据摘要（本地生成）\n\n${summary}\n\n---\n\n> 大模型调用失败，已回退为本地统计摘要。错误信息：${error.message}`;
-        source = "本地统计摘要（模型调用失败）";
-      }
-    } else {
-      output = `## 数据摘要（本地生成）\n\n${summary}\n\n---\n\n> 大模型设置未通过校验，已回退为本地统计摘要：${errors.join("；")}`;
-      source = "本地统计摘要（设置未通过校验）";
-    }
-  }
-
-  lastAiReport = output;
-  genButton.disabled = false;
-  copyButton.disabled = false;
-  mdButton.disabled = false;
-  wordButton.disabled = false;
-
-  const html = renderMarkdownPreview(output);
-  result.innerHTML = `
-    <article class="audit-issue">
-      <div class="issue-head">
-        <strong>AI 定量报告</strong>
-        <span class="issue-tag low">${escapeHtml(source)}</span>
-      </div>
-      <div class="markdown-body">${html}</div>
-    </article>
-  `;
 }
 
 async function copyAiReport() {
@@ -7706,6 +10664,86 @@ function exportAiReportMd() {
 function exportAiReportWord() {
   if (!lastAiReport) return;
   downloadBlob("AI定量报告.docx", createDocxBlob(lastAiReport));
+}
+
+function sanitizeDownloadName(name, fallback = "导出文件") {
+  const safe = String(name || fallback).replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim();
+  return safe || fallback;
+}
+
+function createAiReportPptMarkdown(markdown, context = {}) {
+  const projectName = context.projectName || "AI定量研究报告";
+  const projectType = Array.isArray(context.projectType)
+    ? context.projectType.join(" / ")
+    : context.projectType || "定量研究";
+  const objective = context.objective || "基于导入数据输出核心发现、分群差异与行动建议。";
+  const audience = context.targetAudience || "目标样本";
+  const dataPeriod = context.dataPeriod || "未填写";
+  const cleanMarkdown = String(markdown || "")
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/^好的[，,][\s\S]{0,220}?---\s*/m, "")
+    .trim();
+
+  return [
+    `# ${projectName}`,
+    "",
+    "## 报告信息",
+    `- 项目类型：${projectType}`,
+    `- 研究目标：${objective}`,
+    `- 目标人群：${audience}`,
+    `- 数据周期：${dataPeriod}`,
+    "",
+    "## 核心输出",
+    "- 数据结构与样本概况",
+    "- 总体结果与关键指标",
+    "- 主要分群差异",
+    "- 业务解释与行动建议",
+    "",
+    cleanMarkdown
+  ].join("\n");
+}
+
+function createAiReportPptxBlob(markdown, context = {}) {
+  const title = context.projectName || "AI定量研究报告";
+  const slides = markdownToPptSlides(createAiReportPptMarkdown(markdown, context), title);
+  const chartGroups = normalizePptChartGroups(extractCrosstabChartGroups(lastCrosstabDataContext, 10, 8), 10, 8);
+  const chartItems = chartGroups.length ? [] : normalizePptChartItems(getAiReportChartItems(markdown, lastCrosstabDataContext), 8);
+  if (chartGroups.length) {
+    slides.splice(Math.min(2, slides.length), 0, ...chartGroups.map((group, index) => ({
+      title: group.title || `关键指标图表 ${index + 1}`,
+      bullets: ["从交叉表总样本列抽取真实百分比，生成可编辑 PowerPoint 图表。"],
+      chartItems: group.items
+    })));
+  } else if (chartItems.length >= 2) {
+    slides.splice(Math.min(2, slides.length), 0, {
+      title: "关键指标图表",
+      bullets: ["从报告中的百分比指标自动抽取，生成可编辑横向柱状图。"],
+      chartItems
+    });
+  }
+  return createPptxPackage(slides, title, "AI 定量研究报告");
+}
+
+function exportAiReportPpt() {
+  if (!lastAiReport) return;
+  const context = readAiReportContext();
+  const title = context.projectName || "AI定量研究报告";
+  try {
+    downloadBlob(
+      `${sanitizeDownloadName(title, "AI定量研究报告")}.pptx`,
+      createAiReportPptxBlob(lastAiReport, context)
+    );
+  } catch (error) {
+    const result = document.querySelector("#aiReportResults");
+    if (result) {
+      result.insertAdjacentHTML("afterbegin", `
+        <div class="empty-state warning">
+          <strong>PPT 导出失败</strong>
+          <span>${escapeHtml(error.message || "导出过程中发生未知错误，请先导出 Word 或 Markdown。")}</span>
+        </div>
+      `);
+    }
+  }
 }
 
 function buildAiRevisionPrompt(instruction, currentDraft) {
@@ -7825,13 +10863,7 @@ async function testAiSettings() {
     }
     return;
   }
-  if (!settings.apiKey) {
-    if (preview) {
-      preview.innerHTML = `<strong>缺少 API Key</strong><span class="warning-text">测试连接需要先填写 API Key；未填写时 AI 功能会自动使用本地规则。</span>`;
-    }
-    return;
-  }
-  if (preview) preview.innerHTML = `<strong>正在测试连接</strong><span>正在向 ${escapeHtml(aiProviderPresets[settings.provider]?.name || "模型接口")} 发送轻量请求。</span>`;
+  if (preview) preview.innerHTML = `<strong>正在测试连接</strong><span>${escapeHtml(settings.apiKey ? `正在向 ${aiProviderPresets[settings.provider]?.name || "模型接口"} 发送轻量请求。` : "正在通过后端代理测试内置阿里云百炼。")}</span>`;
   try {
     await callAiChatCompletion(settings, [
       { role: "system", content: "你是接口连通性测试助手。" },
@@ -8090,9 +11122,6 @@ function restoreTestRecord() {
   }
 }
 
-document.querySelector("#saveWorkspaceProject").addEventListener("click", saveWorkspaceProject);
-document.querySelector("#applyWorkspaceProject").addEventListener("click", () => applyWorkspaceProject(true));
-document.querySelector("#clearWorkspaceProject").addEventListener("click", clearWorkspaceProject);
 document.querySelector("#questionnaireImportFile").addEventListener("change", (event) => {
   handleQuestionnaireImport(event.target.files?.[0]);
 });
@@ -8108,9 +11137,133 @@ document.querySelectorAll("[data-import-target]").forEach((button) => {
 document.querySelector("#sharedQuestionnaireImportFile").addEventListener("change", (event) => {
   handleQuestionnaireImport(event.target.files?.[0], sharedImportTargetId);
 });
+document.querySelector("#importAiPlanTemplate")?.addEventListener("click", () => {
+  const input = document.querySelector("#aiPlanTemplateFile");
+  input.value = "";
+  input.click();
+});
+document.querySelector("#aiPlanTemplateFile")?.addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    await importAiPlanTemplateFile(file);
+  } catch (error) {
+    const preview = document.querySelector("#aiPlanTemplatePreview");
+    if (preview) preview.innerHTML = `<strong>模板解析失败</strong><span>${escapeHtml(error.message)}</span>`;
+  }
+});
+document.querySelector("#aiPlanTemplateMode")?.addEventListener("change", renderAiPlanTemplatePreview);
+document.querySelector("#aiPlanTemplateSelect")?.addEventListener("change", renderAiPlanTemplatePreview);
+document.querySelector("#importAiQuestionnaireTemplate")?.addEventListener("click", () => {
+  const input = document.querySelector("#aiQuestionnaireTemplateFile");
+  input.value = "";
+  input.click();
+});
+document.querySelector("#aiQuestionnaireTemplateFile")?.addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    await importAiQuestionnaireTemplateFile(file);
+  } catch (error) {
+    const preview = document.querySelector("#aiQuestionnaireTemplatePreview");
+    if (preview) preview.innerHTML = `<strong>模板解析失败</strong><span>${escapeHtml(error.message)}</span>`;
+  }
+});
+document.querySelector("#aiQuestionnaireTemplateMode")?.addEventListener("change", renderAiQuestionnaireTemplatePreview);
+document.querySelector("#aiQuestionnaireTemplateSelect")?.addEventListener("change", renderAiQuestionnaireTemplatePreview);
 document
-  .querySelectorAll("#workspaceProjectName, #workspaceStudyType, #workspaceStage, #workspaceSampleTarget, #workspaceQuestionnaire")
+  .querySelectorAll("#workspaceProjectName, #workspaceStudyType, #workspaceStage, #workspaceSampleTarget, #workspaceQuotaDimensions, #workspaceQuestionnaire")
   .forEach((field) => field.addEventListener("input", renderWorkspaceProject));
+document.querySelector("#archiveProject")?.addEventListener("click", (event) => {
+  markWorkspaceStatus("archive");
+  showButtonSaved(event.currentTarget, "已归档");
+});
+document.querySelector("#exportDashboardAssets")?.addEventListener("click", (event) => {
+  markWorkspaceStatus("exportAssets");
+  const project = workspaceProject || getWorkspaceFormProject();
+  const lines = [
+    "# 项目资产包",
+    "",
+    `- 项目名称：${project.projectName || "未命名项目"}`,
+    `- 研究类型：${project.studyType || "未设置"}`,
+    `- 目标样本：${project.sampleTarget || "未设置"}`,
+    `- 配额维度：${project.quotaDimensions || "未设置"}`,
+    `- 导出时间：${new Date().toLocaleString("zh-CN")}`,
+    "",
+    "## 问卷稿",
+    project.questionnaireText || "未保存问卷稿。",
+    "",
+    "## 清洗状态",
+    workspaceRemovalRateText()
+  ];
+  downloadTextFile("项目资产包_摘要.md", lines.join("\n"), "text/markdown;charset=utf-8");
+  showButtonSaved(event.currentTarget, "已导出");
+});
+document.querySelector("#dashboardSearch")?.addEventListener("input", (event) => {
+  const keyword = event.target.value.trim();
+  const actions = document.querySelectorAll("#dashboardQuickActions button");
+  actions.forEach((button) => {
+    button.style.display = !keyword || button.textContent.includes(keyword) ? "" : "none";
+  });
+});
+
+// === P0-1: Dashboard project form toggle ===
+document.querySelector("#toggleProjectForm")?.addEventListener("click", () => {
+  const panel = document.querySelector(".project-panel");
+  if (!panel) return;
+  panel.classList.toggle("form-expanded");
+  const expanded = panel.classList.contains("form-expanded");
+  const btn = document.querySelector("#toggleProjectForm span");
+  if (btn) btn.textContent = expanded ? "收起项目档案" : "展开编辑项目档案";
+});
+
+// === P1-6: Toast notification system ===
+function showToast(message, type = "info", duration = 2800) {
+  const container = document.querySelector("#toastContainer");
+  if (!container) return;
+  const icons = { success: "\u2713", error: "\u2717", warning: "!", info: "i" };
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `<span class="toast-icon">${icons[type] || "i"}</span><span>${message}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add("leaving");
+    toast.addEventListener("animationend", () => toast.remove());
+  }, duration);
+}
+
+// === P1-6: Enhance showButtonSaved with toast ===
+const _origShowButtonSaved = showButtonSaved;
+showButtonSaved = function(button, text = "已保存") {
+  if (!button) return;
+  const isDanger = button.classList.contains("danger-btn");
+  const toastType = isDanger ? "warning" : "success";
+  showToast(text, toastType);
+  _origShowButtonSaved(button, text);
+};
+
+// === P1-6: Add loading state helper ===
+function setButtonLoading(button, loading) {
+  if (!button) return;
+  if (loading) {
+    button._origDisabled = button.disabled;
+    button.disabled = true;
+    button.classList.add("btn-loading");
+  } else {
+    button.classList.remove("btn-loading");
+    button.disabled = !!button._origDisabled;
+    delete button._origDisabled;
+  }
+}
+
+// === MOBILE-2: Remove loading overlay ===
+window.addEventListener("load", () => {
+  const overlay = document.querySelector("#appLoading");
+  if (overlay) {
+    overlay.classList.add("fade-out");
+    setTimeout(() => overlay.remove(), 350);
+  }
+});
 document
   .querySelectorAll("#questionnaireText, #timeText, #cleaningText, #headerText, #abcText, #aiPlanInput, #aiInput")
   .forEach((field) => field.addEventListener("input", () => syncQuestionnaireToWorkspace(field.value)));
@@ -8134,22 +11287,58 @@ document.querySelector("#loadTimeExample").addEventListener("click", () => {
   renderTimeEstimate();
 });
 
-document.querySelector("#generateCleaning").addEventListener("click", () => {
-  lastCleaningRules = generateCleaningRules(document.querySelector("#cleaningText").value);
-  renderEditableSuggestions(
-    "#cleaningResults",
-    lastCleaningRules,
-    "未生成清洗规则",
-    "请检查问卷稿是否包含明确题号和题目文本。",
-    "cleaning"
-  );
+document.querySelector("#chooseCleaningData")?.addEventListener("click", () => {
+  const input = document.querySelector("#cleaningDataFile");
+  input.value = "";
+  input.click();
+});
+
+document.querySelector("#cleaningUploadZone")?.addEventListener("click", (event) => {
+  if (event.target.closest("button")) return;
+  document.querySelector("#chooseCleaningData")?.click();
+});
+
+document.querySelector("#cleaningUploadZone")?.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  event.currentTarget.classList.add("dragover");
+});
+
+document.querySelector("#cleaningUploadZone")?.addEventListener("dragleave", (event) => {
+  event.currentTarget.classList.remove("dragover");
+});
+
+document.querySelector("#cleaningUploadZone")?.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  event.currentTarget.classList.remove("dragover");
+  const file = event.dataTransfer?.files?.[0];
+  if (file) await handleCleaningDataFile(file);
+});
+
+document.querySelector("#cleaningDataFile")?.addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (file) await handleCleaningDataFile(file);
+});
+
+document.querySelector("#generateCleaningRulesFromData")?.addEventListener("click", () => {
+  if (!cleaningCenterState.parsed) return;
+  cleaningCenterState.rules = generateCleaningCenterRules(cleaningCenterState.parsed);
+  cleaningCenterState.result = null;
+  renderCleaningRules();
+  document.querySelector("#executeCleaning").disabled = false;
+});
+
+document.querySelector("#aiAssistCleaningRules")?.addEventListener("click", aiAssistCleaningRules);
+
+document.querySelector("#executeCleaning")?.addEventListener("click", () => {
+  executeCleaningCenter();
   markWorkspaceStatus("cleaning");
 });
 
-document.querySelector("#loadCleaningExample").addEventListener("click", () => {
-  document.querySelector("#cleaningText").value = exampleQuestionnaire;
-  document.querySelector("#generateCleaning").click();
-});
+document.querySelector("#loadCleaningExample").addEventListener("click", loadCleaningExampleData);
+document.querySelector("#downloadCleaningRules")?.addEventListener("click", downloadCleaningRules);
+document.querySelector("#downloadCleanedData")?.addEventListener("click", () => downloadCleaningCenterData("cleaned"));
+document.querySelector("#downloadRemovedData")?.addEventListener("click", () => downloadCleaningCenterData("removed"));
+document.querySelector("#downloadCleaningReport")?.addEventListener("click", downloadCleaningCenterReport);
 
 document.querySelector("#generateHeader").addEventListener("click", () => {
   const text = document.querySelector("#headerText").value;
@@ -8163,10 +11352,6 @@ document.querySelector("#generateHeader").addEventListener("click", () => {
 document.querySelector("#loadHeaderExample").addEventListener("click", () => {
   document.querySelector("#headerText").value = exampleQuestionnaire;
   document.querySelector("#generateHeader").click();
-});
-
-document.querySelector("#exportCleaningRules").addEventListener("click", () => {
-  exportEditableSuggestions("cleaning");
 });
 
 document.querySelector("#exportHeaderPlan").addEventListener("click", () => {
@@ -8217,8 +11402,16 @@ document.querySelector("#runCrosstab").addEventListener("click", renderCrosstabA
 document.querySelector("#exportCrosstab").addEventListener("click", exportCrosstabAnalysis);
 document.querySelector("#loadCrosstabExample").addEventListener("click", () => {
   document.querySelector("#crosstabData").value = exampleCrosstabData;
-  detectCrosstabFields();
-  renderQuestionPivot();
+  const parsed = detectCrosstabFields();
+  lastCrosstabAnalysis = null;
+  lastQuestionPivot = null;
+  document.querySelector("#exportCrosstab").disabled = true;
+  document.querySelector("#crosstabResults").innerHTML = `
+    <div class="empty-state">
+      <strong>示例数据已载入</strong>
+      <span>已识别 ${parsed.headers.length} 个字段、${parsed.rows.length} 行数据。请按需要选择行/列变量后点击“生成交叉表”，或点击“生成全部交叉表”导出全部题目。</span>
+    </div>
+  `;
 });
 
 document.querySelector("#runWeighting").addEventListener("click", renderWeighting);
@@ -8275,12 +11468,59 @@ function renderAiReportImportState(text, filename) {
 }
 
 function detectAiReportFields() {
-  const parsed = parseDelimitedTable(document.querySelector("#aiReportData").value);
+  const rawText = document.querySelector("#aiReportData").value;
+
+  // --- Crosstab format detection ---
+  if (rawText.startsWith("[CROSSTAB]")) {
+    const crosstabText = rawText.slice("[CROSSTAB]".length).trim();
+    const baseMatches = [...crosstabText.matchAll(/\[(?:样本基数|鏍锋湰鍩烘暟)\/BASE\]\s*(.*)/g)];
+    let baseInfo = "";
+    let totalN = 0;
+    if (baseMatches.length) {
+      const firstBase = baseMatches[0][1];
+      const pairs = firstBase.split("|").map((p) => p.trim()).filter(Boolean);
+      const totalPair = pairs.find((p) => /总计|合计|全部|total/i.test(p));
+      if (totalPair) {
+        const m = totalPair.match(/=([\d.]+)/);
+        if (m) totalN = Number(m[1]);
+      }
+      baseInfo = pairs.join("；");
+    }
+    const captionSet = new Set();
+    const captionRe = /\[(?:题目|棰樼洰)\]\s*(.*)/g;
+    let cm;
+    while ((cm = captionRe.exec(crosstabText)) !== null) {
+      captionSet.add(cm[1]);
+    }
+    lastCrosstabDataContext = {
+      isCrosstab: true,
+      crosstabText,
+      rawHeaders: [],
+      displayHeaders: [],
+      headerInfos: [],
+      rawRows: [],
+      displayRows: [],
+      totalN,
+      questionCount: captionSet.size
+    };
+    const chartGroupCount = normalizePptChartGroups(
+      extractCrosstabChartGroups(lastCrosstabDataContext, 10, 8),
+      10,
+      8
+    ).length;
+    document.querySelector("#aiReportFieldInfo").innerHTML = `
+      <strong>交叉表格式已识别</strong>：检测到 ${captionSet.size} 个题目，${baseInfo ? "样本基数：" + baseInfo : "未提取到 BASE 行"}；可生成 ${chartGroupCount} 页可编辑图表。
+    `;
+    document.querySelector("#generateAiReport").disabled = false;
+    return { headers: [], rows: [], isCrosstab: true };
+  }
+
+  // --- Original raw data format ---
+  const parsed = parseDelimitedTable(rawText);
   if (!parsed.headers.length) {
     document.querySelector("#aiReportFieldInfo").textContent = "未识别到有效字段，请检查数据格式。";
     return parsed;
   }
-  // 复用交叉表的字段识别逻辑
   const headerInfos = parsed.headers.map((header, index) => {
     const values = parsed.rows.map((row) => row[header]).filter((v) => v !== "" && v != null);
     const isLikelyGroup = /性别|年龄|城市|级别|收入|学历|职业|地区|类型|用户|人群|样本|受访者|背景|分群|banner|group|demographic|segment|region|city|gender|age|education|income/i.test(header);
@@ -8297,8 +11537,8 @@ function detectAiReportFields() {
   });
   const groupHeaders = headerInfos.filter((h) => h.type === "group");
   const questionHeaders = headerInfos.filter((h) => h.type === "question");
-  // 构建 lastCrosstabDataContext 供 generateAiReport 使用
   lastCrosstabDataContext = {
+    isCrosstab: false,
     rawHeaders: parsed.headers,
     displayHeaders: parsed.headers,
     headerInfos,
@@ -8353,19 +11593,627 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
   lastCrosstabDataContext = null;
 });
 
+// ═════════════════ PPT 报告生成页 ═══════════════
+(function initPptxReportPage() {
+    const dropzone = document.querySelector("#pptxDropzone");
+    const fileInput = document.querySelector("#pptxFileInput");
+    const fileNameEl = document.querySelector("#pptxFileName");
+    const parseBtn = document.querySelector("#pptxParseBtn");
+    const clearBtn = document.querySelector("#pptxClearFile");
+    const parseStatus = document.querySelector("#pptxParseStatus");
+    const titleInput = document.querySelector("#pptxReportTitle");
+    const segmentDropdown = document.querySelector("#pptxSegmentDropdown");
+    const segmentPanel = document.querySelector("#pptxSegmentPanel");
+    const trigger = segmentDropdown ? segmentDropdown.querySelector(".multiselect-trigger") : null;
+    const textEl = segmentDropdown ? segmentDropdown.querySelector(".multiselect-text") : null;
+    const dimensionDropdown = document.querySelector("#pptxDimensionDropdown");
+    const dimensionPanel = document.querySelector("#pptxDimensionPanel");
+    const dimTrigger = dimensionDropdown ? dimensionDropdown.querySelector(".multiselect-trigger") : null;
+    const dimTextEl = dimensionDropdown ? dimensionDropdown.querySelector(".multiselect-text") : null;
+    const generateBtn = document.querySelector("#pptxGenerateBtn");  // legacy, keep ref
+    const previewBtn = document.querySelector("#pptxPreviewBtn");
+    const previewPanel = document.querySelector("#pptxPreviewPanel");
+    const previewTable = document.querySelector("#pptxPreviewTable");
+    const confirmBtn = document.querySelector("#pptxConfirmBtn");
+    const backToConfigBtn = document.querySelector("#pptxBackToConfig");
+    const confirmStatus = document.querySelector("#pptxConfirmStatus");
+    const progress = document.querySelector("#pptxProgress");
+    const progressFill = document.querySelector("#pptxProgressFill");
+    const progressText = document.querySelector("#pptxProgressText");
+    const genStatus = document.querySelector("#pptxGenStatus");
+    const resultEl = document.querySelector("#pptxResult");
+    if (!dropzone) return;
+
+    let selectedFile = null;
+    let dimensionGroups = [];   // 解析得到的维度分组
+    let currentDimension = "";  // 当前选中的分组名（"" = 全部维度）
+    let pagePlan = null;        // 预览模式返回的页面规划
+    let editedPagePlan = null;  // 用户编辑后的页面规划
+
+    function setFile(file) {
+      if (!file) return;
+      selectedFile = file;
+      fileNameEl.textContent = file.name;
+      parseBtn.disabled = false;
+      clearBtn.disabled = false;
+      parseStatus.textContent = "";
+      if (segmentPanel) segmentPanel.innerHTML = '<p class="panel-note" style="padding:10px;color:#95a1ad;font-size:13px;">解析后将在此列出可对比的人群维度。</p>';
+      if (textEl) { textEl.textContent = "解析后可选"; textEl.style.color = "#95a1ad"; }
+      populateDimensionDropdown([]);
+      if (generateBtn) generateBtn.disabled = true;
+      if (previewBtn) previewBtn.disabled = true;
+      if (previewPanel) previewPanel.style.display = "none";
+      pagePlan = null;
+      editedPagePlan = null;
+    }
+
+    dropzone.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) setFile(f);
+    });
+    ["dragover", "dragenter"].forEach((ev) =>
+      dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add("dragover"); })
+    );
+    ["dragleave", "drop"].forEach((ev) =>
+      dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.remove("dragover"); })
+    );
+    dropzone.addEventListener("drop", (e) => {
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) setFile(f);
+    });
+
+    clearBtn.addEventListener("click", () => {
+      selectedFile = null;
+      fileInput.value = "";
+      fileNameEl.textContent = "未选择文件";
+      parseBtn.disabled = true;
+      clearBtn.disabled = true;
+      if (generateBtn) generateBtn.disabled = true;
+      if (previewBtn) previewBtn.disabled = true;
+      if (previewPanel) previewPanel.style.display = "none";
+      pagePlan = null; editedPagePlan = null;
+      if (segmentPanel) segmentPanel.innerHTML = '<p class="panel-note" style="padding:10px;color:#95a1ad;font-size:13px;">解析后将在此列出可对比的人群维度。</p>';
+      if (textEl) { textEl.textContent = "解析后可选"; textEl.style.color = "#95a1ad"; }
+      populateDimensionDropdown([]);
+      parseStatus.textContent = "";
+    });
+
+    // 多选下拉文本更新
+    function updateMultiselectText() {
+      if (!textEl || !segmentPanel) return;
+      const cbs = segmentPanel.querySelectorAll('input[type="checkbox"]');
+      const checked = Array.from(cbs).filter(cb => cb.checked);
+      if (checked.length === 0) {
+        textEl.textContent = "请选择";
+        textEl.style.color = "#95a1ad";
+      } else if (checked.length === cbs.length) {
+        textEl.textContent = "已全选（" + checked.length + "）";
+        textEl.style.color = "#1e293b";
+      } else {
+        textEl.textContent = "已选 " + checked.length + "/" + cbs.length;
+        textEl.style.color = "#1e293b";
+      }
+    }
+
+    // 下拉面板开关
+    if (trigger) {
+      trigger.addEventListener("click", (e) => { e.stopPropagation(); segmentDropdown.classList.toggle("open"); });
+      trigger.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); segmentDropdown.classList.toggle("open"); } });
+    }
+    document.addEventListener("click", (e) => { if (segmentDropdown && !segmentDropdown.contains(e.target)) segmentDropdown.classList.remove("open"); });
+
+    // 维度分组下拉：点击开关 + 外部关闭
+    if (dimTrigger) {
+      dimTrigger.addEventListener("click", (e) => { e.stopPropagation(); dimensionDropdown.classList.toggle("open"); });
+      dimTrigger.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); dimensionDropdown.classList.toggle("open"); } });
+    }
+    document.addEventListener("click", (e) => { if (dimensionDropdown && !dimensionDropdown.contains(e.target)) dimensionDropdown.classList.remove("open"); });
+
+    let lastAllSegments = [];
+
+    // 填充人群多选（对比人群）
+    function renderSegmentOptions(segs) {
+      if (!segmentPanel) return;
+      segmentPanel.innerHTML = "";
+      segs.forEach((seg) => {
+        const label = document.createElement("label");
+        label.className = "multiselect-option";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = seg;
+        cb.checked = true;
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(" " + seg));
+        segmentPanel.appendChild(label);
+      });
+      // 全选/取消全选
+      const allLabel = document.createElement("label");
+      allLabel.className = "multiselect-option";
+      allLabel.style.borderTop = "1px solid #e5e7eb";
+      allLabel.style.marginTop = "4px";
+      allLabel.style.paddingTop = "6px";
+      const allCb = document.createElement("input");
+      allCb.type = "checkbox";
+      allCb.dataset.role = "selectall";
+      allCb.checked = segs.length > 0;
+      allLabel.appendChild(allCb);
+      allLabel.appendChild(document.createTextNode(" 全选/取消"));
+      segmentPanel.appendChild(allLabel);
+      allCb.addEventListener("change", () => {
+        segmentPanel.querySelectorAll('input[type="checkbox"]:not([data-role])').forEach((cb) => (cb.checked = allCb.checked));
+        updateMultiselectText();
+      });
+      segmentPanel.querySelectorAll('input[type="checkbox"]:not([data-role])').forEach((cb) => {
+        cb.addEventListener("change", () => {
+          const opts = segmentPanel.querySelectorAll('input[type="checkbox"]:not([data-role])');
+          const chk = segmentPanel.querySelectorAll('input[type="checkbox"]:not([data-role]):checked');
+          allCb.checked = opts.length > 0 && chk.length === opts.length;
+          updateMultiselectText();
+        });
+      });
+      updateMultiselectText();
+    }
+
+    // 填充维度分组下拉（多选）
+    function populateDimensionDropdown(groups) {
+      if (!dimensionPanel) return;
+      dimensionGroups = Array.isArray(groups) ? groups : [];
+      currentDimension = "";
+      const field = dimensionDropdown ? dimensionDropdown.closest(".field") : null;
+      dimensionPanel.innerHTML = "";
+      if (dimensionGroups.length === 0) {
+        if (dimTextEl) { dimTextEl.textContent = "无分组"; dimTextEl.style.color = "#95a1ad"; }
+        if (field) field.style.display = "none";
+        return;
+      }
+      if (field) field.style.display = "";
+      // 「全部维度」选项
+      const allLabel = document.createElement("label");
+      allLabel.className = "multiselect-option";
+      allLabel.dataset.role = "dimension-all";
+      const allCb = document.createElement("input");
+      allCb.type = "checkbox"; allCb.value = ""; allCb.checked = true;
+      allLabel.appendChild(allCb);
+      allLabel.appendChild(document.createElement("span")).appendChild(document.createTextNode("全部维度"));
+      dimensionPanel.appendChild(allLabel);
+      // 各维度分组
+      dimensionGroups.forEach((g) => {
+        const label = document.createElement("label");
+        label.className = "multiselect-option";
+        const cb = document.createElement("input");
+        cb.type = "checkbox"; cb.value = g.name; cb.checked = false;
+        label.appendChild(cb);
+        label.appendChild(document.createElement("span")).appendChild(
+          document.createTextNode(g.name + "（" + g.segments.length + "）")
+        );
+        dimensionPanel.appendChild(label);
+      });
+      // 全选/取消行
+      const selAllLabel = document.createElement("label");
+      selAllLabel.className = "multiselect-option";
+      selAllLabel.style.borderTop = "1px solid #e5e7eb";
+      selAllLabel.style.marginTop = "4px";
+      selAllLabel.style.paddingTop = "6px";
+      const selAllCb = document.createElement("input");
+      selAllCb.type = "checkbox";
+      selAllCb.dataset.role = "dim-selectall";
+      selAllCb.checked = true;
+      selAllLabel.appendChild(selAllCb);
+      selAllLabel.appendChild(document.createElement("span")).appendChild(document.createTextNode("全选/取消"));
+      dimensionPanel.appendChild(selAllLabel);
+
+      // 全选联动
+      selAllCb.addEventListener("change", () => {
+        dimensionPanel.querySelectorAll('input[type="checkbox"]:not([data-role])').forEach((cb) => (cb.checked = selAllCb.checked));
+        updateDimensionSelection();
+      });
+      dimensionPanel.querySelectorAll('input[type="checkbox"]:not([data-role])').forEach((cb) => {
+        cb.addEventListener("change", () => {
+          const opts = dimensionPanel.querySelectorAll('input[type="checkbox"]:not([data-role])');
+          const chk = dimensionPanel.querySelectorAll('input[type="checkbox"]:not([data-role]):checked');
+          selAllCb.checked = opts.length > 0 && chk.length === opts.length;
+          updateDimensionSelection();
+        });
+      });
+      updateDimensionSelection();
+    }
+
+    // 维度选择变化后：更新触发文本 + 联动人群多选
+    function updateDimensionSelection() {
+      const cbs = dimensionPanel ? dimensionPanel.querySelectorAll('input[type="checkbox"]:checked:not([data-role])') : [];
+      const checked = Array.from(cbs).map(cb => cb.value);
+      currentDimension = "";
+      if (checked.length > 0 && !checked.includes("")) {
+        // 选了具体分组（多选时合并各分组的 segments）
+        currentDimension = checked.join(",");
+        if (dimTextEl) { dimTextEl.textContent = "已选 " + checked.length + "/" + dimensionGroups.length; dimTextEl.style.color = "#1e293b"; }
+      } else if (checked.includes("")) {
+        // 全部维度
+        if (dimTextEl) { dimTextEl.textContent = "全部维度"; dimTextEl.style.color = "#1e293b"; }
+      } else if (dimTextEl) {
+        dimTextEl.textContent = "请选择"; dimTextEl.style.color = "#95a1ad";
+      }
+      // 联动人群列表
+      if (checked.includes("") || checked.length === 0) {
+        renderSegmentOptions(lastAllSegments);
+      } else {
+        // 合并所有选中分组的 segments（去重保序）
+        const mergedSegs = [];
+        const seen = new Set();
+        for (const dn of checked) {
+          const g = dimensionGroups.find(x => x.name === dn);
+          if (!g) continue;
+          for (const s of g.segments) {
+            if (!seen.has(s)) { seen.add(s); mergedSegs.push(s); }
+          }
+        }
+        renderSegmentOptions(mergedSegs);
+      }
+    }
+
+    parseBtn.addEventListener("click", async () => {
+      if (!selectedFile) return;
+      parseBtn.disabled = true;
+      parseStatus.textContent = "解析中…";
+      try {
+        const buf = await selectedFile.arrayBuffer();
+        const resp = await fetch("/api/pptx-report/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: buf,
+        });
+        if (!resp.ok) {
+          let msg = "解析失败";
+          try { msg = (await resp.json()).error?.message || msg; } catch (_) {}
+          throw new Error(msg);
+        }
+        const data = await resp.json();
+        const segs = data.segments || [];
+        lastAllSegments = segs;
+        // 维度分组下拉（有则展示，默认全部维度）
+        populateDimensionDropdown(data.dimension_groups || []);
+        // 人群多选
+        renderSegmentOptions(segs);
+        updateMultiselectText();
+        parseStatus.textContent =
+          `已识别 ${segs.length} 个人群维度、${data.questions || 0} 道题目。` +
+          (dimensionGroups.length ? `，${dimensionGroups.length} 个维度分组` : "");
+        if (generateBtn) generateBtn.disabled = segs.length === 0;
+        if (previewBtn) previewBtn.disabled = segs.length === 0;
+        if (previewPanel) { previewPanel.style.display = "none"; pagePlan = null; editedPagePlan = null; }
+      } catch (err) {
+        parseStatus.textContent = "解析失败：" + err.message;
+        parseBtn.disabled = false;
+      }
+    });
+
+    if (generateBtn) generateBtn.addEventListener("click", async () => {
+      // legacy: if previewBtn doesn't exist, fall back to direct generate
+      if (previewBtn) { previewBtn.click(); return; }
+      await doGeneratePptx();
+    });
+
+    // ── 预览报告结构（步骤 2.5）──
+    previewBtn && previewBtn.addEventListener("click", async () => {
+      if (!selectedFile) return;
+      if (!segmentPanel) return;
+      const checked = Array.from(segmentPanel.querySelectorAll('input[type="checkbox"]:checked:not([data-role])')).map((cb) => cb.value);
+      if (checked.length === 0) {
+        genStatus.textContent = "请至少选择一个对比人群。";
+        return;
+      }
+      const title = (titleInput.value || "调研分析报告").trim();
+      previewBtn.disabled = true;
+      genStatus.textContent = "正在预览报告结构…";
+      try {
+        const buf = await selectedFile.arrayBuffer();
+        const qs = "segments=" + encodeURIComponent(JSON.stringify(checked)) + "&title=" + encodeURIComponent(title) +
+          (currentDimension ? "&dimension=" + encodeURIComponent(currentDimension) : "");
+        const resp = await fetch("/api/pptx-report/preview?" + qs, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: buf,
+        });
+        if (!resp.ok) {
+          let msg = "预览失败";
+          try { msg = (await resp.json()).error?.message || msg; } catch (_) {}
+          throw new Error(msg);
+        }
+        pagePlan = await resp.json();
+        editedPagePlan = JSON.parse(JSON.stringify(pagePlan));  // deep copy for editing
+        renderPreviewTable(editedPagePlan);
+        if (previewPanel) previewPanel.style.display = "";
+        genStatus.textContent = `预览完成：共 ${pagePlan.total_pages} 页（${pagePlan.renderable_questions} 道可渲染题）。`;
+        // Scroll to preview panel
+        previewPanel && previewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (err) {
+        genStatus.textContent = "预览失败：" + err.message;
+      } finally {
+        previewBtn.disabled = false;
+      }
+    });
+
+    function renderPreviewTable(plan) {
+      if (!previewTable) return;
+      const pages = plan.pages || [];
+      if (pages.length === 0) {
+        previewTable.innerHTML = '<div class="empty-state"><strong>无页面</strong><span>没有可渲染的题目。</span></div>';
+        if (confirmBtn) confirmBtn.disabled = true;
+        return;
+      }
+      if (confirmBtn) confirmBtn.disabled = false;
+
+      // Chart type options
+      const chartTypeOptions = [
+        { value: "bar", label: "条形图（默认）" },
+        { value: "stacked_bar", label: "垞积图" },
+        { value: "radar", label: "雷达图" },
+        { value: "doughnut", label: "环形图" },
+        { value: "pie", label: "饼图" },
+      ];
+
+      // 分维度选项：基于步骤2已选的维度分组（+总体），而非后端全量
+      const dimOptions = [{key: "总体", label: "总体（单题独立图表）"}];
+      // currentDimension 为空表示「全部维度」已选中，非空为具体分组名(逗号分隔)
+      const activeDimNames = currentDimension ? currentDimension.split(",") : [];
+      if (activeDimNames.length > 0) {
+        activeDimNames.forEach(name => {
+          const g = dimensionGroups.find(x => x.name === name);
+          if (g) dimOptions.push({key: g.name, label: g.name + "（" + g.segments.length + "人群对比）"});
+        });
+      } else {
+        dimensionGroups.forEach(g => {
+          dimOptions.push({key: g.name, label: g.name + "（" + g.segments.length + "人群对比）"});
+        });
+      }
+
+      let html = `<table class="compact-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="background:#f1f5f9;">
+          <th style="padding:8px 6px;text-align:left;width:50px;">页码</th>
+          <th style="padding:8px 6px;text-align:left;">页面标题</th>
+          <th style="padding:8px 6px;text-align:left;">题目</th>
+          <th style="padding:8px 6px;text-align:center;width:130px;">图表类型</th>
+          <th style="padding:8px 6px;text-align:center;width:160px;">分维度</th>
+        </tr></thead><tbody>`;
+
+      pages.forEach((p, idx) => {
+        const qTitles = (p.questions || []).map(q =>
+          `<span title="${escapeHtml(q.code || '')}">${escapeHtml(q.title || q.code || "?")}</span>`
+        ).join("<br>");
+        const typeLabel = chartTypeOptions.find(o => o.value === p.chart_type)?.label || p.chart_type;
+
+        html += `<tr style="border-bottom:1px solid #e5e7eb;${idx % 2 ? "" : "background:#fafbfc"}">
+          <td style="padding:8px 6px;font-weight:600;color:#002960;">${p.page_idx}</td>
+          <td style="padding:8px 6px;">${escapeHtml(p.title || "")}</td>
+          <td style="padding:8px 6px;color:#475569;font-size:12px;">${qTitles}</td>
+          <td style="padding:8px 6px;text-align:center;">
+            <select data-preview-idx="${idx}" data-field="chart_type" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;background:white;cursor:pointer;"
+              onchange="window._onPreviewChartTypeChange && window._onPreviewChartTypeChange(${idx}, this.value)">
+              ${chartTypeOptions.map(o =>
+                `<option value="${o.value}" ${o.value === p.chart_type ? "selected" : ""}>${o.label}</option>`
+              ).join("")}
+            </select>
+          </td>
+          <td style="padding:8px 6px;text-align:left;">
+            <div style="display:flex;flex-wrap:wrap;gap:4px;max-width:220px;" data-preview-dims="${idx}">
+              ${dimOptions.map(d => {
+                const isChecked = ((p.dimension_mode === "overall") && (d.key === "总体")) ||
+                  ((p.dimension_mode !== "overall") && (p.dimension_key || "").split(",").includes(d.key));
+                return `<label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;padding:2px 5px;border:1px solid ${isChecked ? "#3b82f6" : "#cbd5e1"};border-radius:10px;background:${isChecked ? "#eff6ff" : "#fff"};cursor:pointer;white-space:nowrap;color:${isChecked ? "#1d4ed8" : "#475569"};">
+                  <input type="checkbox" value="${d.key}" data-preview-idx="${idx}" data-field="dimension_check"
+                    ${isChecked ? "checked" : ""}
+                    onchange="window._onPreviewDimCheck && window._onPreviewDimCheck(${idx}, this.value, this.checked)"
+                    style="margin:0;cursor:pointer;">${d.label.replace("（", "<span style=\"color:#94a3b8\">(").replace("）", ")</span>")}
+                </label>`;
+              }).join("")}
+            </div>
+          </td>
+        </tr>`;
+      });
+
+      html += `</tbody></table>`;
+      if (plan.appendix && plan.appendix.count > 0) {
+        html += `<p style="margin-top:10px;padding:8px;background:#fefce8;border-radius:6px;font-size:12px;color:#854d0e;">
+          📋 另有 <strong>${plan.appendix.count}</strong> 道题目将归入附录表格（甄别/配额/后台类题目，不进入主图表页）。
+        </p>`;
+      }
+      html += `<p style="margin-top:6px;font-size:11px;color:#94a3b8;">提示：您可以修改每行的「图表类型」和「分维度」，调整完成后点击上方「确认生成 PPT」。</p>`;
+
+      previewTable.innerHTML = html;
+    }
+
+    // 全局函数：预览表格中图表类型变更
+    window._onPreviewChartTypeChange = function(idx, newValue) {
+      if (editedPagePlan && editedPagePlan.pages && editedPagePlan.pages[idx]) {
+        editedPagePlan.pages[idx].chart_type = newValue;
+      }
+    };
+    // 全局函数：预览表格分维度多选变更
+    window._onPreviewDimCheck = function(idx, value, checked) {
+      if (!editedPagePlan || !editedPagePlan.pages || !editedPagePlan.pages[idx]) return;
+      const page = editedPagePlan.pages[idx];
+      // 初始化 selected_dimensions 数组
+      if (!page.selected_dimensions) {
+        if (page.dimension_key) {
+          page.selected_dimensions = page.dimension_key.split(",");
+        } else {
+          page.selected_dimensions = [];
+        }
+      }
+      if (checked) {
+        if (!page.selected_dimensions.includes(value)) page.selected_dimensions.push(value);
+      } else {
+        page.selected_dimensions = page.selected_dimensions.filter(v => v !== value);
+      }
+      // 同步 dimension_mode / dimension_key
+      if (page.selected_dimensions.length === 0) {
+        page.dimension_mode = "compare";
+        page.dimension_key = "";
+      } else if (page.selected_dimensions.length === 1 && page.selected_dimensions[0] === "总体") {
+        page.dimension_mode = "overall";
+        page.dimension_key = "总体";
+      } else if (page.selected_dimensions.includes("总体")) {
+        // 总体 + 其他维度 → overall 模式，记录所有 key
+        page.dimension_mode = "overall";
+        page.dimension_key = page.selected_dimensions.join(",");
+      } else {
+        page.dimension_mode = "compare";
+        page.dimension_key = page.selected_dimensions.join(",");
+      }
+    };
+    // 兼容旧接口（单选模式）
+    window._onPreviewDimChange = function(idx, newValue) {
+      if (!editedPagePlan || !editedPagePlan.pages || !editedPagePlan.pages[idx]) return;
+      const page = editedPagePlan.pages[idx];
+      page.selected_dimensions = [newValue];
+      if (newValue === "总体") {
+        page.dimension_mode = "overall";
+        page.dimension_key = "总体";
+      } else {
+        page.dimension_mode = "compare";
+        page.dimension_key = newValue;
+      }
+    };
+
+    // ── 返回修改配置 ──
+    backToConfigBtn && backToConfigBtn.addEventListener("click", () => {
+      if (previewPanel) previewPanel.style.display = "none";
+    });
+
+    // ── 确认生成（从预览表发起最终生成）──
+    async function doGeneratePptx() {
+      if (!selectedFile) return;
+      if (!segmentPanel) return;
+      const checked = Array.from(segmentPanel.querySelectorAll('input[type="checkbox"]:checked:not([data-role])')).map((cb) => cb.value);
+      if (checked.length === 0) {
+        (genStatus || confirmStatus).textContent = "请至少选择一个对比人群。";
+        return;
+      }
+      const title = (titleInput.value || "调研分析报告").trim();
+      if (confirmBtn) confirmBtn.disabled = true;
+      if (generateBtn) generateBtn.disabled = true;
+      progress.classList.remove("hidden");
+      progressFill.style.width = "15%";
+      progressText.textContent = "生成中…";
+      (genStatus || confirmStatus).textContent = "";
+      try {
+        const buf = await selectedFile.arrayBuffer();
+        let qs = "segments=" + encodeURIComponent(JSON.stringify(checked)) + "&title=" + encodeURIComponent(title) +
+          (currentDimension ? "&dimension=" + encodeURIComponent(currentDimension) : "");
+        // 附带用户编辑后的 page_config
+        if (editedPagePlan) {
+          qs += "&page_config=" + encodeURIComponent(JSON.stringify(editedPagePlan));
+        }
+        const resp = await fetch("/api/pptx-report?" + qs, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: buf,
+        });
+        if (!resp.ok) {
+          let msg = "生成失败";
+          try { msg = (await resp.json()).error?.message || msg; } catch (_) {}
+          throw new Error(msg);
+        }
+        progressFill.style.width = "85%";
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = title + ".pptx";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        progressFill.style.width = "100%";
+        progressText.textContent = "完成";
+        (genStatus || confirmStatus).textContent = "已生成并开始下载。";
+        resultEl.innerHTML = `<div class="empty-state"><strong>生成成功</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span></div>`;
+      } catch (err) {
+        (genStatus || confirmStatus).textContent = "生成失败：" + err.message;
+        progressFill.style.width = "0%";
+      } finally {
+        if (confirmBtn) confirmBtn.disabled = false;
+        if (generateBtn) generateBtn.disabled = false;
+        setTimeout(() => progress.classList.add("hidden"), 1500);
+      }
+    }
+
+    confirmBtn && confirmBtn.addEventListener("click", () => doGeneratePptx());
+  })();
+
+function initCheckboxMultiselect(dropdown, labels, placeholder) {
+  if (!dropdown) return;
+  const trigger = dropdown.querySelector(".multiselect-trigger");
+  const text = dropdown.querySelector(".multiselect-text");
+  const checkboxes = dropdown.querySelectorAll('input[type="checkbox"]');
+  if (!trigger || !text || !checkboxes.length) return;
+
+  function updateText() {
+    const checked = Array.from(checkboxes).filter(cb => cb.checked);
+    if (checked.length === 0) {
+      text.textContent = placeholder;
+      text.style.color = "#95a1ad";
+    } else if (checked.length === 1) {
+      text.textContent = labels[checked[0].value] || checked[0].value;
+      text.style.color = "#1e293b";
+    } else {
+      text.textContent = checked.map(cb => labels[cb.value] || cb.value).join("、");
+      text.style.color = "#1e293b";
+    }
+  }
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isOpen = dropdown.classList.toggle("open");
+    trigger.setAttribute("aria-expanded", String(isOpen));
+  });
+
+  trigger.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      const isOpen = dropdown.classList.toggle("open");
+      trigger.setAttribute("aria-expanded", String(isOpen));
+    }
+  });
+
+  checkboxes.forEach(cb => cb.addEventListener("change", updateText));
+
+  document.addEventListener("click", (e) => {
+    if (!dropdown.contains(e.target)) {
+      dropdown.classList.remove("open");
+      trigger.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  updateText();
+}
+
+// 项目类型下拉复选框交互
+function initMultiselectDropdown() {
+  const reportLabels = {
+    general: "通用定量", ua: "U&A", concept: "概念测试", nps: "满意度/NPS",
+    brand: "品牌健康度", launch: "新品上市复盘", ad: "广告测试", mystery: "神秘客"
+  };
+  initCheckboxMultiselect(document.querySelector("#aiReportProjectType"), reportLabels, "请选择项目类型");
+  initCheckboxMultiselect(document.querySelector("#aiStudyType"), aiStudyTypeLabels, "请选择研究类型");
+}
+
+initMultiselectDropdown();
+
 // AI 报告按钮（交叉表页面和独立页面共用）
 document.querySelectorAll("#generateAiReport").forEach((btn) => btn.addEventListener("click", generateAiReport));
 document.querySelectorAll("#copyAiReport").forEach((btn) => btn.addEventListener("click", copyAiReport));
 document.querySelectorAll("#exportAiReportMd").forEach((btn) => btn.addEventListener("click", exportAiReportMd));
 document.querySelectorAll("#exportAiReportWord").forEach((btn) => btn.addEventListener("click", exportAiReportWord));
 
-document.querySelector("#runWeighting").addEventListener("click", renderWeighting);
-document.querySelector("#exportWeighting").addEventListener("click", exportWeightingResult);
-document.querySelector("#loadWeightingExample").addEventListener("click", () => {
-  document.querySelector("#weightingMode").value = "rim";
-  document.querySelector("#weightingSampleData").value = exampleWeightingSampleData;
-  document.querySelector("#weightingTargetData").value = exampleWeightingTargetData;
-  renderWeighting();
+document.querySelectorAll(".ai-report-advanced-toggle").forEach((toggle) => {
+  toggle.addEventListener("click", () => {
+    const wrapper = toggle.closest(".ai-report-advanced");
+    if (!wrapper) return;
+    const isOpen = wrapper.classList.toggle("open");
+    toggle.setAttribute("aria-expanded", String(isOpen));
+  });
 });
 
 document.querySelector("#runPsm").addEventListener("click", () => {
@@ -8478,7 +12326,7 @@ document.querySelector("#clearAiSettings").addEventListener("click", clearAiSett
 document.querySelector("#loadAiExample").addEventListener("click", () => {
   document.querySelector("#aiInput").value = "希望了解18-40岁用户对一款新型便携咖啡产品的概念接受度、核心卖点吸引力、购买意愿、价格接受区间，以及不同城市级别和使用场景下的差异。";
   document.querySelector("#aiContext").value = "便携咖啡新品概念测试";
-  document.querySelector("#aiStudyType").value = "concept";
+  setAiStudyTypeSelection(["concept", "pricing"]);
   document.querySelector("#aiAudience").value = "18-40岁，近3个月购买过即饮咖啡或咖啡相关产品的用户";
   document.querySelector("#aiSampleSize").value = 400;
   document.querySelector("#aiDuration").value = 8;
@@ -8535,6 +12383,8 @@ workspaceProject = loadWorkspaceProject();
 if (workspaceProject) fillWorkspaceProject(workspaceProject);
 renderWorkspaceProject();
 fillAiSettingsForm();
+loadAiPlanTemplates();
+loadAiQuestionnaireTemplates();
 restoreTestRecord();
 calculateSample();
 addQuotaDimension("性别", [["男", 50], ["女", 50]]);
