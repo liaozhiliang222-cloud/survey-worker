@@ -3,9 +3,10 @@
 // 不暴露公网 IP，也避免浏览器跨域问题。
 
 const BACKEND_ENV = "PPTX_BACKEND_URL";
-// 兜底默认值：阿里云 ECS 通过 Cloudflare 代理的域名
-// 使用标准 443 端口，避免 Cloudflare 对非常见端口的限制
-const BACKEND_DEFAULT = "https://api.surveykit.cc";
+// 兜底默认值：阿里云 ECS 后端直连地址（HTTP + 端口 8080）。
+// 直连 IP 不经过 Cloudflare 代理层，彻底规避 403/521 等安全拦截问题。
+// 如需换机器或端口，修改此处或在 Cloudflare Pages 变量 PPTX_BACKEND_URL 中配置。
+const BACKEND_DEFAULT = "http://8.138.201.60:8080";
 
 function jsonResponse(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
@@ -62,8 +63,8 @@ async function upstreamError(upstream) {
   } catch (_) {
     if (text) message = text.slice(0, 400);
   }
-  if (upstream.status === 403 && /1003/.test(message)) {
-    message = "Cloudflare 无法访问当前 PPTX 后端地址（1003）。请不要使用公网 IP:8000 作为后端地址，建议将阿里云 API 绑定到域名并通过 80/443/8080/8443 端口访问，然后在 Cloudflare Pages 变量 PPTX_BACKEND_URL 中填写该域名地址。";
+  if (upstream.status === 403) {
+    message = "PPTX 后端返回 403。请检查阿里云后端服务是否正常运行（curl http://8.138.201.60:8080/healthz）。";
   }
   return jsonResponse(
     {
