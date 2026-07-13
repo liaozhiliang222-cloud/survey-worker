@@ -97,7 +97,11 @@ export async function proxyToBackend(request, env) {
   }
 
   const url = new URL(request.url);
-  const backendPath = url.pathname.endsWith("/healthz") ? "/healthz" : url.pathname;
+  // 路径映射：前端用 /pptx-api/* 绕过 CF /api/ 拦截，转发时还原为后端实际路径 /api/pptx-report/*
+  let backendPath = url.pathname;
+  if (!backendPath.endsWith("/healthz")) {
+    backendPath = backendPath.replace(/^\/pptx-api\//, "/api/pptx-report/");
+  }
   const target = backend.replace(/\/+$/, "") + backendPath + url.search;
 
   const headers = buildForwardHeaders(request);
