@@ -10,7 +10,7 @@ export async function onRequest(context) {
   console.log(`[PPTX Function] Backend URL: ${env.PPTX_BACKEND_URL || 'http://8.138.201.60:8000'}`);
   
   try {
-    const response = await proxyToBackend(context);
+    const response = await proxyToBackend(request, env);
     console.log(`[PPTX Function] Response status: ${response.status}`);
     return response;
   } catch (error) {
