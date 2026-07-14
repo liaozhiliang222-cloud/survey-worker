@@ -7,7 +7,7 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   
   console.log(`[PPTX Function] ${request.method} ${url.pathname}`);
-  console.log(`[PPTX Function] Backend URL: ${env.PPTX_BACKEND_URL || 'http://47.80.25.112'}`);
+  console.log(`[PPTX Function] Backend URL: ${env.PPTX_BACKEND_URL || 'http://ppt-api.surveykit.cc'}`);
   
   try {
     const response = await proxyToBackend(request, env);

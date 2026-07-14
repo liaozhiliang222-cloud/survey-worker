@@ -3,11 +3,11 @@
 // 不暴露公网 IP，也避免浏览器跨域问题。
 
 const BACKEND_ENV = "PPTX_BACKEND_URL";
-// 兜底默认值：首尔节点的阿里云后端直连地址（Nginx HTTP 端口 80）。
-// 直连 IP 不经过 Cloudflare 代理层，彻底规避 403/521 等安全拦截问题。
+// 兜底默认值：首尔节点的阿里云后端域名（Nginx HTTP 端口 80）。
+// 使用域名可让 Nginx 正确命中对应的 server_name，避免以 IP 访问时落入默认站点。
 // 如需换机器或端口，修改此处或在 Cloudflare Pages 变量 PPTX_BACKEND_URL 中配置。
-const BACKEND_DEFAULT = "http://47.80.25.112";
-const LEGACY_BACKENDS = ["8.138.201.60", "api.surveykit.cc", "ppt-api.surveykit.cc"];
+const BACKEND_DEFAULT = "http://ppt-api.surveykit.cc";
+const LEGACY_BACKENDS = ["8.138.201.60", "api.surveykit.cc", "47.80.25.112"];
 
 function jsonResponse(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
@@ -23,7 +23,11 @@ function jsonResponse(payload, status = 200, extraHeaders = {}) {
 function resolveBackend(env) {
   const fromEnv = env && typeof env[BACKEND_ENV] === "string" ? env[BACKEND_ENV].trim() : "";
   const configured = fromEnv.replace(/\/+$/, "");
-  if (!configured || LEGACY_BACKENDS.some((legacy) => configured.includes(legacy))) {
+  if (
+    !configured ||
+    configured.includes("ppt-api.surveykit.cc") ||
+    LEGACY_BACKENDS.some((legacy) => configured.includes(legacy))
+  ) {
     return BACKEND_DEFAULT;
   }
   return configured;
