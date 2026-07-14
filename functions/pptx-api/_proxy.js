@@ -3,10 +3,11 @@
 // 不暴露公网 IP，也避免浏览器跨域问题。
 
 const BACKEND_ENV = "PPTX_BACKEND_URL";
-// 兜底默认值：阿里云 ECS 后端直连地址（HTTP + 端口 8080）。
+// 兜底默认值：首尔节点的阿里云后端直连地址（Nginx HTTP 端口 80）。
 // 直连 IP 不经过 Cloudflare 代理层，彻底规避 403/521 等安全拦截问题。
 // 如需换机器或端口，修改此处或在 Cloudflare Pages 变量 PPTX_BACKEND_URL 中配置。
-const BACKEND_DEFAULT = "http://8.138.201.60:8080";
+const BACKEND_DEFAULT = "http://47.80.25.112";
+const LEGACY_BACKENDS = ["8.138.201.60", "api.surveykit.cc", "ppt-api.surveykit.cc"];
 
 function jsonResponse(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
@@ -21,7 +22,11 @@ function jsonResponse(payload, status = 200, extraHeaders = {}) {
 
 function resolveBackend(env) {
   const fromEnv = env && typeof env[BACKEND_ENV] === "string" ? env[BACKEND_ENV].trim() : "";
-  return (fromEnv || BACKEND_DEFAULT || "").replace(/\/+$/, "");
+  const configured = fromEnv.replace(/\/+$/, "");
+  if (!configured || LEGACY_BACKENDS.some((legacy) => configured.includes(legacy))) {
+    return BACKEND_DEFAULT;
+  }
+  return configured;
 }
 
 function buildForwardHeaders(request) {
@@ -64,7 +69,7 @@ async function upstreamError(upstream) {
     if (text) message = text.slice(0, 400);
   }
   if (upstream.status === 403) {
-    message = "PPTX 后端返回 403。请检查阿里云后端服务是否正常运行（curl http://8.138.201.60:8080/healthz）。";
+    message = "PPTX 后端返回 403。请检查首尔后端服务和 Cloudflare Pages 的 PPTX_BACKEND_URL 配置。";
   }
   return jsonResponse(
     {
@@ -98,10 +103,9 @@ export async function proxyToBackend(request, env) {
 
   const url = new URL(request.url);
   // 路径映射：前端用 /pptx-api/* 绕过 CF /api/ 拦截，转发时还原为后端实际路径 /api/pptx-report/*
-  let backendPath = url.pathname;
-  if (!backendPath.endsWith("/healthz")) {
-    backendPath = backendPath.replace(/^\/pptx-api\//, "/api/pptx-report/");
-  }
+  const backendPath = url.pathname.endsWith("/healthz")
+    ? "/healthz"
+    : url.pathname.replace(/^\/pptx-api(?:\/|$)/, "/api/pptx-report/");
   const target = backend.replace(/\/+$/, "") + backendPath + url.search;
 
   const headers = buildForwardHeaders(request);
