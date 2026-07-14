@@ -12092,6 +12092,37 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     });
 
     // ── 确认生成（从预览表发起最终生成）──
+    // Keep only the fields used by the generator. Preview data also contains
+    // full question metadata, which can make the final request URL too long.
+    function compactPptxPageConfig(plan) {
+      if (!plan || !Array.isArray(plan.pages)) return null;
+      return {
+        pages: plan.pages.map((page) => ({
+          page_idx: page.page_idx,
+          chart_type: page.chart_type,
+          dimension_mode: page.dimension_mode,
+          dimension_key: page.dimension_key,
+          selected_dimensions: Array.isArray(page.selected_dimensions)
+            ? page.selected_dimensions
+            : [],
+          questions: Array.isArray(page.questions)
+            ? page.questions.map((question) => ({ code: question.code }))
+            : [],
+        })),
+      };
+    }
+
+    function packPptxGenerateRequest(fileBuffer, metadata) {
+      const encoder = new TextEncoder();
+      const magic = encoder.encode("SKPPTX1\n");
+      const meta = encoder.encode(JSON.stringify(metadata));
+      const size = new Uint8Array(4);
+      new DataView(size.buffer).setUint32(0, meta.byteLength, false);
+      return new Blob([magic, size, meta, new Uint8Array(fileBuffer)], {
+        type: "application/vnd.surveykit.pptx-request",
+      });
+    }
+
     async function doGeneratePptx() {
       if (!selectedFile) return;
       if (!segmentPanel) return;
@@ -12109,16 +12140,16 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       (genStatus || confirmStatus).textContent = "";
       try {
         const buf = await selectedFile.arrayBuffer();
-        let qs = "segments=" + encodeURIComponent(JSON.stringify(checked)) + "&title=" + encodeURIComponent(title) +
-          (currentDimension ? "&dimension=" + encodeURIComponent(currentDimension) : "");
-        // 附带用户编辑后的 page_config
-        if (editedPagePlan) {
-          qs += "&page_config=" + encodeURIComponent(JSON.stringify(editedPagePlan));
-        }
-        const resp = await fetch("/pptx-api?" + qs, {
+        const payload = packPptxGenerateRequest(buf, {
+          segments: checked,
+          title,
+          dimension: currentDimension || null,
+          page_config: compactPptxPageConfig(editedPagePlan),
+        });
+        const resp = await fetch("/pptx-api", {
           method: "POST",
-          headers: { "Content-Type": "application/octet-stream" },
-          body: buf,
+          headers: { "Content-Type": "application/vnd.surveykit.pptx-request" },
+          body: payload,
         });
         if (!resp.ok) {
           throw new Error(await readPptxApiError(resp, "生成失败"));
