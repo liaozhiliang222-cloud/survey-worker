@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Tuple
 
 import pandas as pd
@@ -113,6 +114,29 @@ def _add_bullets(slide, items, x, y, cx, cy, theme: Theme, size=13, color=None):
         p.space_after = Pt(8)
         run = p.add_run()
         run.text = "• " + str(item)
+        style_font(run.font, theme, size=size, color=color or theme.text_dark)
+    return tb
+
+
+def _add_numbered_insights(slide, items, x, y, cx, cy, theme: Theme,
+                           size=12.5, color=None):
+    """把洞察拆成清晰的编号段落，避免长句挤成一整行。"""
+    tb = slide.shapes.add_textbox(x, y, cx, cy)
+    tf = tb.text_frame
+    tf.word_wrap = True
+    tf.margin_left = Inches(0.04)
+    tf.margin_right = Inches(0.04)
+    tf.margin_top = Inches(0.01)
+    tf.margin_bottom = Inches(0.01)
+    for i, item in enumerate(items, 1):
+        clean = re.sub(r"^\s*(?:[•·●]|\d+[\.、）)])\s*", "", str(item)).strip()
+        if not clean:
+            continue
+        p = tf.paragraphs[0] if len(tf.paragraphs) == 1 and not tf.paragraphs[0].text else tf.add_paragraph()
+        p.space_after = Pt(3)
+        p.line_spacing = 1.05
+        run = p.add_run()
+        run.text = f"{i}. {clean}"
         style_font(run.font, theme, size=size, color=color or theme.text_dark)
     return tb
 
@@ -236,7 +260,7 @@ def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) ->
                   size=28, bold=True, color=theme.primary)
     divider = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE,
-        Inches(PAGE_MARGIN), Inches(1.22),
+        Inches(PAGE_MARGIN), Inches(0.98),
         slide_w - Inches(2 * PAGE_MARGIN), Inches(0.018),
     )
     set_shape_fill(divider, theme.primary)
@@ -262,12 +286,14 @@ def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) ->
         if c.insight and c.insight not in page.title and page.title not in c.insight
     ))
     if insight_texts:
-        insight_body = "；".join(insight_texts)
-        insight_h = 0.48 if _text_width_units(insight_body) <= 75 else 0.7
-        insight_y = Inches(TITLE_TOP + TITLE_HEIGHT + 0.02)
-        _add_textbox(slide, insight_body, Inches(PAGE_MARGIN), insight_y,
-                      slide_w - Inches(2 * PAGE_MARGIN), Inches(insight_h), theme,
-                      size=11, color=theme.text_dark)
+        max_units = max(_text_width_units(text) for text in insight_texts)
+        insight_h = min(0.92, max(0.34, 0.25 * len(insight_texts) + (0.18 if max_units > 70 else 0)))
+        insight_y = Inches(1.05)
+        _add_numbered_insights(
+            slide, insight_texts, Inches(PAGE_MARGIN), insight_y,
+            slide_w - Inches(2 * PAGE_MARGIN), Inches(insight_h), theme,
+            size=12.5, color=theme.text_dark,
+        )
     else:
         insight_h = 0
 
@@ -308,11 +334,11 @@ def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
     slide_w, slide_h = dims
 
     # ── 标题栏 ──
-    _add_textbox(slide, page.title, Inches(0.4), Inches(0.22),
-                  Inches(12.5), Inches(0.5), theme,
+    _add_textbox(slide, page.title, Inches(0.4), Inches(0.10),
+                  Inches(12.5), Inches(0.58), theme,
                   size=20, bold=True, color=theme.primary)
     # 标题下方分隔线
-    divider = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.4), Inches(0.83),
+    divider = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.4), Inches(0.72),
                                      Inches(12.5), Inches(0.02))
     set_shape_fill(divider, theme.primary)
     remove_shape_outline(divider)
@@ -322,13 +348,16 @@ def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
         text for text in (page.insights or [])
         if text and text not in page.title and page.title not in text
     ]
-    insight_y = 0.96
+    insight_y = 0.80
     if insights:
-        insight_body = "；".join(dict.fromkeys(insights))
-        region_h = 0.38 if _text_width_units(insight_body) <= 75 else 0.6
-        _add_textbox(slide, insight_body, Inches(0.4), Inches(insight_y),
-                     Inches(12.5), Inches(region_h), theme,
-                     size=10.5, color=theme.text_dark)
+        insights = list(dict.fromkeys(insights))
+        max_units = max(_text_width_units(text) for text in insights)
+        region_h = min(0.92, max(0.34, 0.25 * len(insights) + (0.18 if max_units > 70 else 0)))
+        _add_numbered_insights(
+            slide, insights, Inches(0.4), Inches(insight_y),
+            Inches(12.5), Inches(region_h), theme,
+            size=12.5, color=theme.text_dark,
+        )
     else:
         region_h = 0
     table_y = insight_y + region_h + 0.08
@@ -500,7 +529,7 @@ def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
         _style_table_cell(cell_1, font_size=8, bold=True, color=dark_gray,
                           align=PP_ALIGN.CENTER, fill="E8E8E8")
         for j, seg in enumerate(segments):
-            cs = tbl.cell(0, 2 + j); cs.text = seg
+            cs = tbl.cell(0, 2 + j); cs.text = "总体" if str(seg).strip().lower() == "total" else seg
             _style_table_cell(cs, font_size=8, bold=True, color=colors[j],
                               align=PP_ALIGN.CENTER, fill="E8E8E8")
 

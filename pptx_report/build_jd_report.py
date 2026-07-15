@@ -404,15 +404,30 @@ def apply_dimension(questions: list, dimension_groups: list, group_name: str = N
         base_by_col = q.get("base_by_col", {})
         stats_by_col = q.get("stats_by_col", {})
         nq = dict(q)
-        nq["segments"] = list(merged_names)
+        # 所有分维度分析都保留总体列，便于把分群结果与市场整体基准直接比较。
+        total_key = next(
+            (name for name in (q.get("segments") or []) if str(name).strip().lower() in {"total", "总体", "整体", "合计", "总计"}),
+            None,
+        )
+        selected_names = list(merged_names)
+        if total_key and total_key not in selected_names:
+            selected_names.insert(0, total_key)
+        nq["segments"] = selected_names
         nq["data"] = {name: by_col.get(col, []) for name, col in zip(merged_names, merged_cols)}
         nq["base"] = {name: base_by_col.get(col) for name, col in zip(merged_names, merged_cols)}
+        if total_key and total_key not in nq["data"]:
+            nq["data"] = {total_key: list((q.get("data") or {}).get(total_key, [])), **nq["data"]}
+            nq["base"] = {total_key: (q.get("base") or {}).get(total_key), **nq["base"]}
         new_stats = {}
         for stat in set().union(*[set(sc.keys()) for sc in stats_by_col.values()]) if stats_by_col else []:
             new_stats[stat] = {}
             for name, col in zip(merged_names, merged_cols):
                 if col in stats_by_col and stat in stats_by_col[col]:
                     new_stats[stat][name] = stats_by_col[col][stat]
+            if total_key:
+                total_stat = (q.get("stats") or {}).get(stat, {}).get(total_key)
+                if total_stat is not None:
+                    new_stats[stat] = {total_key: total_stat, **new_stats[stat]}
         nq["stats"] = new_stats
         out.append(nq)
     return out

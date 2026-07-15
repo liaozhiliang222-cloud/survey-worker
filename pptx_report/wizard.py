@@ -339,6 +339,11 @@ def auto_chart_type(q: dict, cats: list, segs: list) -> ChartType:
     is_trend = any(k in title for k in ("趋势", "变化", "月份", "季度", "年度", "逐年", "时间"))
     short_labels = all(len(str(cat)) <= 10 for cat in cats)
 
+    # 仅当总体 + 分群超过四列且选项较多时，进入多列条形对比页。
+    # 选项较少的构成题仍可使用堆积图，避免规则过于僵硬。
+    if n_seg > 4 and n_cat > 7:
+        return ChartType.BAR
+
     # 场景 / 评分 / 多维评价类 → 雷达图（各人群轮廓对比）
     if 2 <= n_seg <= 6 and 4 <= n_cat <= 8 and any(
         k in title for k in ("评分", "维度", "画像", "评价", "满意", "重要性", "认同")
@@ -911,6 +916,25 @@ def build_auto_report(
                     page_segments,
                 )
             page_segments = list(page_segments or [])
+
+            # 自动模式下，仅“超过四列 + 选项较多”时使用多列条形图页；
+            # 显式手动选图仍可覆盖。
+            has_many_options = any(
+                len(_sort_question(question)[0]) > 7
+                for question in page_batch
+            )
+            if requested == "auto" and len(page_segments) > 4 and has_many_options:
+                configured_page = _build_multi_group_bar_page(
+                    page_batch,
+                    page_segments,
+                    source,
+                    idx + 1,
+                    len(cfg_pages),
+                )
+                if insight_override:
+                    configured_page.title = insight_override
+                configured_pages.append(configured_page)
+                continue
 
             if requested == "bar":
                 configured_page = _build_multi_group_bar_page(

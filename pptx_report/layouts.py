@@ -16,8 +16,8 @@ from .model import ChartPageContent, LayoutType
 
 # ------------------------- 几何常量（英寸） -------------------------
 PAGE_MARGIN = 0.5
-TITLE_TOP = 0.4
-TITLE_HEIGHT = 0.9
+TITLE_TOP = 0.2
+TITLE_HEIGHT = 0.75
 CONTENT_TOP = 1.35
 BOTTOM_MARGIN = 0.5
 CAPTION_H = 0.32      # 每个图表底部留给一句话结论的高度
