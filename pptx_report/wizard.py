@@ -549,7 +549,8 @@ def _extract_kpis(questions: list) -> list:
         for i, v in enumerate(tot):
             if str(q["categories"][i]).strip().upper() in {"T2B", "B2B"}:
                 continue
-            if v and v > best[0]:
+            # 本报告的占比题以 0~1 存储；SUM/评分汇总值不能当成百分比 KPI。
+            if v and 0 <= v <= 1 and v > best[0]:
                 best = (v, q["categories"][i], _norm(q["title"]))
     if best[0]:
         kpis.append(KPI("最高单选项占比", f"{best[0] * 100:.1f}%", delta=best[1][:12]))
@@ -572,6 +573,10 @@ def _is_appendix(q: dict) -> bool:
     if code.startswith("FZ") or "FZS" in code:
         return True
     if any(k in title for k in ("配额", "后台圈选", "甄别", "过滤", "跳题")):
+        return True
+    # best / worst / total 的 SUM 行是派生汇总分值，不是百分比选项；
+    # 当前图表统一使用百分比标签，因此放入附录，避免出现 1656% 等错误口径。
+    if re.search(r"--\s*(?:best|worst|total)\s*--\s*SUM\b", title, flags=re.I):
         return True
     if len(cats) < 2:
         return True
