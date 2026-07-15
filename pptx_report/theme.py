@@ -25,17 +25,37 @@ DEFAULT_PALETTE = ["002960", "0065BD", "E66C37", "404040"]
 
 # 人群对比色板（调研公司标准固定色，可 >4 色，仅用于图表系列着色）
 DEFAULT_SEGMENT_PALETTE = [
-    "808080",  # Total  – 灰
-    "E66C37",  # 橙
-    "C03A2B",  # 红褐
-    "28A745",  # 绿
-    "6C5CB3",  # 紫
-    "17A2B8",  # 青
-    "FFC000",  # 金
-    "007ACC",  # 蓝
-    "E83E8C",  # 粉
-    "20C997",  # 青绿
+    "2563EB", "3B82F6", "60A5FA", "1D4ED8", "0EA5E9",
+    "06B6D4", "14B8A6", "6366F1", "8B5CF6", "93C5FD",
 ]
+
+THEME_PRESETS = {
+    "blue": {
+        "name": "蓝色商务",
+        "palette": ["123B73", "2563EB", "60A5FA", "F59E0B"],
+        "segment_palette": DEFAULT_SEGMENT_PALETTE,
+    },
+    "teal": {
+        "name": "青绿色",
+        "palette": ["075985", "0891B2", "14B8A6", "F59E0B"],
+        "segment_palette": ["0F766E", "14B8A6", "2DD4BF", "0E7490", "06B6D4", "67E8F9", "115E59", "5EEAD4"],
+    },
+    "green": {
+        "name": "自然绿",
+        "palette": ["14532D", "16A34A", "86EFAC", "D97706"],
+        "segment_palette": ["15803D", "22C55E", "4ADE80", "65A30D", "84CC16", "A3E635", "047857", "34D399"],
+    },
+    "orange": {
+        "name": "活力橙",
+        "palette": ["7C2D12", "EA580C", "FB923C", "1D4ED8"],
+        "segment_palette": ["EA580C", "F97316", "FB923C", "C2410C", "F59E0B", "FBBF24", "DC2626", "F87171"],
+    },
+    "purple": {
+        "name": "雅致紫",
+        "palette": ["4C1D95", "7C3AED", "A78BFA", "0EA5E9"],
+        "segment_palette": ["7C3AED", "8B5CF6", "A78BFA", "6D28D9", "C084FC", "D8B4FE", "4F46E5", "818CF8"],
+    },
+}
 
 DEFAULT_FONT = "微软雅黑"
 DEFAULT_DATA_LABEL_COLOR = "404040"
@@ -117,3 +137,13 @@ class Theme:
         if isinstance(hex_value, int):
             return RGBColor(hex_value)
         return RGBColor.from_string(str(hex_value).lstrip("#"))
+
+
+def theme_from_key(key: str | None) -> Theme:
+    """按前端主题键生成主题；未知值安全回退为默认蓝色。"""
+    preset = THEME_PRESETS.get((key or "blue").lower(), THEME_PRESETS["blue"])
+    return Theme(
+        name=preset["name"],
+        palette=list(preset["palette"]),
+        segment_palette=list(preset["segment_palette"]),
+    )

@@ -234,6 +234,13 @@ def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) ->
     _add_textbox(slide, page.title, Inches(PAGE_MARGIN), Inches(TITLE_TOP),
                   slide_w - Inches(2 * PAGE_MARGIN), Inches(TITLE_HEIGHT), theme,
                   size=28, bold=True, color=theme.primary)
+    divider = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(PAGE_MARGIN), Inches(1.22),
+        slide_w - Inches(2 * PAGE_MARGIN), Inches(0.018),
+    )
+    set_shape_fill(divider, theme.primary)
+    divider.line.fill.background()
     if page.subtitle:
         _add_textbox(slide, page.subtitle, Inches(PAGE_MARGIN), Inches(TITLE_TOP + 0.75),
                       slide_w - Inches(2 * PAGE_MARGIN), Inches(0.45), theme,

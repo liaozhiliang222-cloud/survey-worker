@@ -44,7 +44,7 @@ from .model import (
     TocContent,
 )
 from .renderer import ReportRenderer
-from .theme import Theme
+from .theme import theme_from_key
 from .build_jd_report import parse_crosstab, apply_dimension, SEGMENT_ORDER, _norm, _shorten
 from . import build_jd_report
 
@@ -252,9 +252,22 @@ def _sort_question(q: dict):
     - 无序类目：按 ``Total``（无则第一个人群）降序，并反转列表，
       使最大值位于顶部（PPT 横向条形图把 [0] 渲染在底部）。
     """
-    cats = list(q["categories"])
+    raw_cats = list(q["categories"])
     segs = q.get("segments") or []
-    data = q["data"]
+    raw_data = q["data"]
+    # T2B/B2B 是量表衍生汇总指标，不应与原始选项同时出现在图表中。
+    keep_indices = [
+        i for i, cat in enumerate(raw_cats)
+        if str(cat).strip().upper() not in {"T2B", "B2B"}
+    ]
+    cats = [raw_cats[i] for i in keep_indices]
+    data = {
+        s: [
+            raw_data.get(s, [])[i] if i < len(raw_data.get(s, [])) else None
+            for i in keep_indices
+        ]
+        for s in segs
+    }
     if not cats or not segs:
         return cats, {s: list(data.get(s, [])) for s in segs}
 
@@ -287,20 +300,66 @@ def _pct_list(data: dict, seg: str, cats: list) -> list:
     return out
 
 
+def _matrix_item(title: str) -> str:
+    """提取矩阵题 ``-- 11.具体评价项`` 中的可读评价项。"""
+    if "--" not in title:
+        return ""
+    item = title.rsplit("--", 1)[-1].strip()
+    return re.sub(r"^\d+[\.、）)]\s*", "", item).strip()
+
+
+def _chart_title_text(q: dict) -> str:
+    """生成适合图表内显示的短题名，避免截断矩阵题真正的区分信息。"""
+    raw = _norm(q.get("title", "")) or q.get("code", "")
+    item = _matrix_item(raw)
+    if item:
+        base = raw.rsplit("--", 1)[0].strip()
+        brand_match = re.search(r"您认为(.+?)的产品", base)
+        if brand_match:
+            return f"{brand_match.group(1)}形象评价：{item}"
+        if "调味料" in base and ("做以下菜" in base or "菜的时候" in base):
+            return f"{item}场景使用的调味料"
+        label = _extract_group_label(base)
+        return f"{label}：{item}" if label else item
+    if "过去6个月买过以下哪些调味料产品" in raw:
+        return "过去6个月购买的调味料产品"
+    return raw if len(raw) <= 40 else raw[:39].rstrip(" -—") + "…"
+
+
 def auto_chart_type(q: dict, cats: list, segs: list) -> ChartType:
     """按数据特征自动选图表类型（对齐调研公司选图规范）。"""
+    cats, filtered_data = _sort_question(q)
     n_cat = len(cats)
     n_seg = len(segs)
     title = q["title"]
+    ref_seg = "Total" if "Total" in segs else (segs[0] if segs else None)
+    values = [v for v in (filtered_data.get(ref_seg) or []) if v is not None] if ref_seg else []
+    value_sum = sum(values)
+    is_composition = bool(values) and 0.95 <= value_sum <= 1.05
+    is_trend = any(k in title for k in ("趋势", "变化", "月份", "季度", "年度", "逐年", "时间"))
+    short_labels = all(len(str(cat)) <= 10 for cat in cats)
+
     # 场景 / 评分 / 多维评价类 → 雷达图（各人群轮廓对比）
-    if n_seg >= 2 and n_cat >= 4 and any(
-        k in title for k in ("场景", "评分", "维度", "画像", "评价", "偏好", "对比")
+    if 2 <= n_seg <= 6 and 4 <= n_cat <= 8 and any(
+        k in title for k in ("评分", "维度", "画像", "评价", "满意", "重要性", "认同")
     ):
         return ChartType.RADAR
-    # 单人群 + ≤5 类目 → 环形图（构成占比）
+    # 单人群：构成用饼/环，时间序列用折线，短标签用柱状，长标签用条形。
     if n_seg == 1:
-        return ChartType.DOUGHNUT if n_cat <= 5 else ChartType.BAR
-    # 多人群 → 多系列并排条形图（多维度对比）
+        if is_composition and 2 <= n_cat <= 4:
+            return ChartType.DOUGHNUT
+        if is_composition and 5 <= n_cat <= 6:
+            return ChartType.PIE
+        if is_trend and 3 <= n_cat <= 12:
+            return ChartType.LINE
+        if 2 <= n_cat <= 7 and short_labels:
+            return ChartType.COLUMN
+        return ChartType.BAR
+    # 多人群：构成题用 100% 堆积，趋势用折线，其余用条形对比。
+    if is_composition and 2 <= n_cat <= 5:
+        return ChartType.STACKED_COLUMN if n_seg <= 6 and short_labels else ChartType.STACKED_BAR
+    if is_trend and 3 <= n_cat <= 12:
+        return ChartType.LINE
     return ChartType.BAR
 
 
@@ -330,7 +389,20 @@ def _auto_insight(q: dict, cats: list, data: dict, segs: list) -> str:
     best_v = ref_values[best_i]
     if best_v is None:
         return ""
-    prefix = "" if ref_seg == "Total" else f"{ref_seg}中"
+    q_title = _norm(q.get("title", ""))
+    matrix_item = _matrix_item(q_title)
+    context = ""
+    if "最近6个月" in q_title and "购买" in q_title:
+        context = "最近6个月购买中，"
+    elif "过去6个月" in q_title and "购买" in q_title:
+        context = "过去6个月购买中，"
+    elif "听说过" in q_title or "听说" in q_title:
+        context = "品牌认知中，"
+    elif "满意" in q_title:
+        context = "满意度评价中，"
+    elif matrix_item and "形容" in q_title and "维度" in q_title:
+        context = f"{matrix_item}评价中，"
+    prefix = context if ref_seg == "Total" else f"{ref_seg}中，{context}"
     insight = f"{prefix}「{cats[best_i]}」占比最高（{best_v * 100:.1f}%）"
     others = [s for s in segs if s != ref_seg]
     if len(others) >= 2:
@@ -361,11 +433,19 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
         display_segs = _select_segments(segs)
     else:
         display_segs = [s for s in display_segs if s in segs] or list(segs)
+    non_empty_segs = [
+        s for s in display_segs
+        if any(v is not None and abs(v) > 1e-12 for v in (data.get(s) or []))
+    ]
+    if non_empty_segs:
+        display_segs = non_empty_segs
     ctype = forced_chart_type if forced_chart_type is not None else auto_chart_type(q, cats, display_segs)
-    title = _norm(q["title"])[:24] or q["code"]
+    title = _chart_title_text(q)
     insight = _auto_insight(q, cats, data, display_segs)
 
     if ctype == ChartType.RADAR:
+        # 雷达图系列过多会造成图例与轮廓严重拥挤；保留总体及前五个分群。
+        display_segs = list(display_segs[:6])
         short_cats = [_shorten(c) for c in cats]
         series_dict = {s: _pct_list(data, s, cats) for s in display_segs}
         return ChartSpec.radar(
@@ -376,14 +456,14 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
         ref_seg = "Total" if "Total" in display_segs else display_segs[0]
         vals = _pct_list(data, ref_seg, cats)
         return ChartSpec.doughnut(
-            title=f"{title}（{ref_seg}，%）", categories=cats,
+            title=title, categories=cats,
             values=vals, insight=insight,
         )
     if ctype == ChartType.PIE:
         ref_seg = "Total" if "Total" in display_segs else display_segs[0]
         vals = _pct_list(data, ref_seg, cats)
         return ChartSpec.pie(
-            title=f"{title}（{ref_seg}，%）", categories=cats,
+            title=title, categories=cats,
             values=vals, insight=insight,
         )
     if ctype in (ChartType.STACKED_BAR, ChartType.STACKED_COLUMN):
@@ -401,17 +481,42 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
             for idx, cat in enumerate(cats)
         }
         spec = ChartSpec.bar(
-            title=f"{title}（构成，%）", categories=display_segs,
+            title=f"{title}（构成）", categories=display_segs,
             series_dict=series_dict, insight=insight, stacked=True,
         )
         spec.type = ctype
         return spec
-    # 默认：多系列并排条形图（Total + 筛选后分群 → 可读的多维度对比）
+    # 默认：分类比较图。标题不再重复单位，百分号由数据标签表达。
     series_dict = {s: _pct_list(data, s, cats) for s in display_segs}
-    return ChartSpec.bar(
-        title=f"{title}（%）", categories=cats,
-        series_dict=series_dict, insight=insight,
-    )
+    if ctype == ChartType.LINE:
+        return ChartSpec.line(title=title, categories=cats, series_dict=series_dict, insight=insight)
+    spec = ChartSpec.bar(title=title, categories=cats, series_dict=series_dict, insight=insight)
+    if ctype == ChartType.COLUMN:
+        spec.type = ChartType.COLUMN
+    return spec
+
+
+def _harmonize_page_charts(batch: list, charts: list) -> list:
+    """让同页自动图表保持可比较，并给重复题干补充题号。"""
+    if not charts:
+        return charts
+    title_counts = {}
+    for chart in charts:
+        title_counts[chart.title] = title_counts.get(chart.title, 0) + 1
+    for q, chart in zip(batch, charts):
+        if title_counts.get(chart.title, 0) > 1:
+            chart.title = f"{q.get('code', '')} · {chart.title}".strip(" ·")
+    types = {chart.type for chart in charts}
+    # 三张雷达图并排会过小且难以定量读取，改为带直接数据标签的分组条形图。
+    if len(charts) >= 3 and types == {ChartType.RADAR}:
+        for chart in charts:
+            chart.type = ChartType.BAR
+        types = {ChartType.BAR}
+    if ChartType.BAR in types and ChartType.COLUMN in types:
+        for chart in charts:
+            if chart.type == ChartType.COLUMN:
+                chart.type = ChartType.BAR
+    return charts
 
 
 # ───────────────────────── 报告组装 ─────────────────────────
@@ -437,6 +542,8 @@ def _extract_kpis(questions: list) -> list:
             continue
         tot = q["data"].get("Total", [])
         for i, v in enumerate(tot):
+            if str(q["categories"][i]).strip().upper() in {"T2B", "B2B"}:
+                continue
             if v and v > best[0]:
                 best = (v, q["categories"][i], _norm(q["title"]))
     if best[0]:
@@ -500,7 +607,12 @@ def _insight_page_title(group: list, segments: list = None) -> str:
     if not insights:
         return f"{_norm(group[0].get('title', ''))[:28]}呈现明显差异"
     # 标题只保留第一条洞察的核心结论，详细差异放正文，避免标题换行。
-    return insights[0].split("；", 1)[0]
+    title = insights[0].split("；", 1)[0]
+    # 分群名与题目语境叠加时容易过长；页标题保留“分群 + 最高项”，
+    # 具体评价项仍在下方正文和图表标题中完整呈现。
+    if title.count("中，") >= 2:
+        title = title.split("中，", 1)[0] + "中，" + title.rsplit("中，", 1)[1]
+    return title
 
 
 def _page_data_source(group: list, source: str = "") -> str:
@@ -734,7 +846,8 @@ def build_auto_report(
                 configured_pages.append(default_page)
                 continue
 
-            requested = cfg.get("chart_type") or "bar"
+            requested = cfg.get("chart_type") or "auto"
+            insight_override = str(cfg.get("insight_override") or "").strip()
             selected_dimensions = [
                 str(name).strip()
                 for name in (cfg.get("selected_dimensions") or [])
@@ -760,21 +873,21 @@ def build_auto_report(
                 forced = {
                     "pie": ChartType.PIE,
                     "doughnut": ChartType.DOUGHNUT,
-                    "stacked_bar": ChartType.BAR,
-                    "stacked_column": ChartType.BAR,
+                    "column": ChartType.COLUMN,
+                    "line": ChartType.LINE,
                     "radar": ChartType.BAR,
                     "bar": ChartType.BAR,
-                }.get(requested, ChartType.BAR)
-                charts = [
+                }.get(requested)
+                charts = _harmonize_page_charts(batch, [
                     _build_chart_for_question(
                         q, [total_name], forced_chart_type=forced
                     )
                     for q in batch
-                ]
+                ])
                 data_source = _page_data_source(batch, source)
                 configured_pages.append(
                     ChartPageContent(
-                        title=_insight_page_title(batch, [total_name]),
+                        title=insight_override or _insight_page_title(batch, [total_name]),
                         layout=LayoutType.DASHBOARD,
                         charts=charts,
                         data_source=data_source,
@@ -800,37 +913,37 @@ def build_auto_report(
             page_segments = list(page_segments or [])
 
             if requested == "bar":
-                configured_pages.append(
-                    _build_multi_group_bar_page(
-                        page_batch,
-                        page_segments,
-                        source,
-                        idx + 1,
-                        len(cfg_pages),
-                    )
+                configured_page = _build_multi_group_bar_page(
+                    page_batch,
+                    page_segments,
+                    source,
+                    idx + 1,
+                    len(cfg_pages),
                 )
+                if insight_override:
+                    configured_page.title = insight_override
+                configured_pages.append(configured_page)
                 continue
 
             forced = {
+                "column": ChartType.COLUMN,
+                "line": ChartType.LINE,
                 "radar": ChartType.RADAR,
                 "doughnut": ChartType.DOUGHNUT,
                 "pie": ChartType.PIE,
                 "stacked_bar": ChartType.STACKED_BAR,
                 "stacked_column": ChartType.STACKED_COLUMN,
             }.get(requested)
-            if forced is None:
-                configured_pages.append(default_page)
-                continue
-            charts = [
+            charts = _harmonize_page_charts(page_batch, [
                 _build_chart_for_question(
                     q, page_segments, forced_chart_type=forced
                 )
                 for q in page_batch
-            ]
+            ])
             data_source = _page_data_source(page_batch, source)
             configured_pages.append(
                 ChartPageContent(
-                    title=_insight_page_title(page_batch, page_segments),
+                    title=insight_override or _insight_page_title(page_batch, page_segments),
                     layout=LayoutType.DASHBOARD,
                     charts=charts,
                     data_source=data_source,
@@ -923,6 +1036,7 @@ def build_page_plan(
     mgb_batches = _paginate_mgb_questions(mgb_qs, max_per_page)
     n_mgb_pages = max(1, len(mgb_batches))
     for gi, batch in enumerate(mgb_batches):
+        chapter = _categorize_question(batch[0]) if batch else "其他研究"
         pages.append({
             "page_idx": len(pages) + 1,
             "type": "multi_group_bar",
@@ -936,8 +1050,9 @@ def build_page_plan(
                 for q in batch
             ],
             "segments": list(display_segs),
-            "chart_type": "bar",
+            "chart_type": "auto",
             "dimension_mode": "compare",
+            "chapter": chapter,
         })
 
     # 雷达题分页
@@ -945,6 +1060,7 @@ def build_page_plan(
     n_radar_pages = max(1, (len(radar_qs) + radar_per_page - 1) // radar_per_page)
     for gi, i in enumerate(range(0, len(radar_qs), radar_per_page)):
         batch = radar_qs[i:i + radar_per_page]
+        chapter = _categorize_question(batch[0]) if batch else "其他研究"
         pages.append({
             "page_idx": len(pages) + 1,
             "type": "radar_dashboard",
@@ -960,6 +1076,7 @@ def build_page_plan(
             "segments": list(display_segs),
             "chart_type": "radar",
             "dimension_mode": "compare",
+            "chapter": chapter,
         })
 
     appendix_info = {"count": len(appendix_qs)} if appendix_qs else None
@@ -974,6 +1091,22 @@ def build_page_plan(
             "segments": dg.get("segments", []),
         })
 
+    # 预览与最终配置按章节连续排列；页面配置中的题号会驱动最终生成顺序。
+    chapter_order = ["用户画像", "消费行为", "品牌与满意度", "专项研究", "其他研究"]
+    order_index = {name: idx for idx, name in enumerate(chapter_order)}
+    pages.sort(key=lambda page: (order_index.get(page.get("chapter"), 99), page.get("page_idx", 0)))
+    for new_idx, page in enumerate(pages, 1):
+        page["page_idx"] = new_idx
+
+    chapters = []
+    for page in pages:
+        name = page.get("chapter") or "其他研究"
+        chapter = next((item for item in chapters if item["name"] == name), None)
+        if chapter is None:
+            chapter = {"name": name, "page_idxs": []}
+            chapters.append(chapter)
+        chapter["page_idxs"].append(page["page_idx"])
+
     return {
         "total_questions": len(questions),
         "renderable_questions": len(renderable),
@@ -983,6 +1116,7 @@ def build_page_plan(
         "all_segments": all_segs,
         "display_segments": display_segs,
         "available_dimensions": available_dimensions,
+        "chapters": chapters,
     }
 
 
@@ -998,6 +1132,7 @@ def run_wizard(
     segments=None,
     dimension: str = None,
     page_config: dict = None,
+    theme_key: str = "blue",
 ) -> str:
     """端到端：解析交叉表 → 组装 → 渲染成 .pptx。
 
@@ -1036,7 +1171,7 @@ def run_wizard(
         page_config=page_config,
     )
     spec.validate()
-    theme = Theme()  # 调研公司标准：深蓝标题 + 6 色人群色板 + 数据标签
+    theme = theme_from_key(theme_key)
     renderer = ReportRenderer(theme=theme)
     return renderer.render(spec, out_path)
 

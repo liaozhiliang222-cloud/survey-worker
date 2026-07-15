@@ -24,6 +24,7 @@ class ChartType(str, Enum):
     """支持的图表类型。值为字符串，可直接与字典里的 "bar" 等比较。"""
 
     BAR = "bar"                # 条形图（横向）
+    COLUMN = "column"          # 柱状图（纵向）
     LINE = "line"              # 折线图
     PIE = "pie"                # 饼图
     DOUGHNUT = "doughnut"     # 环形图

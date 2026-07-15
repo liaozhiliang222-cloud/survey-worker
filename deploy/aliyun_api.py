@@ -175,6 +175,7 @@ def _generate_core(data: bytes, qs, metadata: dict | None = None) -> Response | 
     title = metadata.get("title") or qs.get("title") or "调研分析报告"
     dimension = metadata.get("dimension") or qs.get("dimension") or None
     page_config = metadata.get("page_config")
+    theme_key = metadata.get("theme") or qs.get("theme") or "blue"
     pc = qs.get("page_config") if page_config is None else None
     if pc:
         try:
@@ -194,6 +195,7 @@ def _generate_core(data: bytes, qs, metadata: dict | None = None) -> Response | 
             dimension=dimension,
             max_per_page=3,
             page_config=page_config,
+            theme_key=theme_key,
         )
         with open(tmp_out.name, "rb") as f:
             content = f.read()

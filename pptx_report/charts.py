@@ -14,13 +14,15 @@ from __future__ import annotations
 from typing import Dict
 
 from pptx.chart.data import CategoryChartData, XyChartData
+from pptx.dml.color import RGBColor
 from pptx.enum.chart import (
     XL_CHART_TYPE,
     XL_LABEL_POSITION,
     XL_LEGEND_POSITION,
+    XL_TICK_MARK,
 )
 from pptx.oxml.ns import qn
-from pptx.util import Inches
+from pptx.util import Inches, Pt
 
 from .exceptions import RenderingError, UnsupportedChartTypeError
 from .model import ChartSpec, ChartType
@@ -31,6 +33,7 @@ from .utils import style_font, style_textframe
 # 图表类型 → python-pptx 原生 XL_CHART_TYPE
 _CHART_TYPE_MAP: Dict[ChartType, XL_CHART_TYPE] = {
     ChartType.BAR: XL_CHART_TYPE.BAR_CLUSTERED,
+    ChartType.COLUMN: XL_CHART_TYPE.COLUMN_CLUSTERED,
     ChartType.LINE: XL_CHART_TYPE.LINE,
     ChartType.PIE: XL_CHART_TYPE.PIE,
     ChartType.DOUGHNUT: XL_CHART_TYPE.DOUGHNUT,
@@ -63,7 +66,7 @@ def add_chart(slide, spec: ChartSpec, x, y, cx, cy, theme: Theme) -> None:
         _color_series(chart, theme)
         # 百分比条形/堆积图固定从 0 起始，避免 PowerPoint 自动截断坐标轴
         # （例如 31%~36% 被放大成 29~37），造成视觉差异被夸大。
-        if ctype == ChartType.BAR:
+        if ctype in (ChartType.BAR, ChartType.COLUMN, ChartType.LINE):
             try:
                 chart.value_axis.minimum_scale = 0.0
                 chart.value_axis.maximum_scale = 100.0
@@ -76,6 +79,12 @@ def add_chart(slide, spec: ChartSpec, x, y, cx, cy, theme: Theme) -> None:
                 chart.value_axis.number_format = "0%"
             except Exception:
                 pass
+        if ctype in (
+            ChartType.BAR, ChartType.COLUMN, ChartType.LINE,
+            ChartType.STACKED_BAR, ChartType.STACKED_COLUMN,
+            ChartType.RADAR,
+        ):
+            _hide_chart_axes(chart, ctype)
         if ctype in (ChartType.PIE, ChartType.DOUGHNUT):
             _style_pie_doughnut(chart, theme)
         else:
@@ -161,12 +170,58 @@ def _style_common(chart, spec: ChartSpec, theme: Theme) -> None:
             pass
 
 
+def _hide_chart_axes(chart, ctype: ChartType) -> None:
+    """保留类目文字，但移除轴线、刻度线与 0–100 数值刻度。"""
+    if ctype == ChartType.RADAR:
+        try:
+            value_axis = chart.value_axis
+            value_axis.visible = True
+            value_axis.minimum_scale = 0.0
+            value_axis.maximum_scale = 100.0
+            value_axis.major_unit = 25.0
+            value_axis.has_major_gridlines = True
+            value_axis.tick_labels.font.size = Pt(1)
+            value_axis.tick_labels.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            value_axis.format.line.fill.background()
+            try:
+                value_axis.major_gridlines.format.line.color.rgb = RGBColor(0xD9, 0xE2, 0xEC)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return
+    try:
+        value_axis = chart.value_axis
+        value_axis.visible = False
+        value_axis.has_major_gridlines = False
+        value_axis.has_minor_gridlines = False
+        value_axis.format.line.fill.background()
+    except Exception:
+        pass
+    try:
+        category_axis = chart.category_axis
+        category_axis.major_tick_mark = XL_TICK_MARK.NONE
+        category_axis.minor_tick_mark = XL_TICK_MARK.NONE
+        category_axis.format.line.fill.background()
+    except Exception:
+        pass
+
+
 def _color_series(chart, theme: Theme) -> None:
     """按主题人群对比色板为各系列着色（自动循环取色）。"""
     for i, s in enumerate(chart.series):
         try:
             s.format.fill.solid()
             s.format.fill.fore_color.rgb = theme.seg_color(i)
+        except Exception:
+            pass
+    # 仅总体时通常只有一个系列。按类目逐点着色，避免整页都是单调灰色；
+    # 色彩仍来自当前主题的同一套色板，因此不会破坏报告一致性。
+    if len(chart.series) == 1:
+        try:
+            for i, point in enumerate(chart.series[0].points):
+                point.format.fill.solid()
+                point.format.fill.fore_color.rgb = theme.seg_color(i)
         except Exception:
             pass
 
