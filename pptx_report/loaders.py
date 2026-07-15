@@ -45,6 +45,7 @@ def crosstab_to_chart(path, sheet_name=0, title="", index_col=0,
         "bar": ChartType.BAR,
         "line": ChartType.LINE,
         "stacked_bar": ChartType.STACKED_BAR,
+        "stacked_column": ChartType.STACKED_COLUMN,
     }.get(chart_type, ChartType.BAR)
 
     return ChartSpec(

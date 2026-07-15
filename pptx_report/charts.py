@@ -34,7 +34,8 @@ _CHART_TYPE_MAP: Dict[ChartType, XL_CHART_TYPE] = {
     ChartType.LINE: XL_CHART_TYPE.LINE,
     ChartType.PIE: XL_CHART_TYPE.PIE,
     ChartType.DOUGHNUT: XL_CHART_TYPE.DOUGHNUT,
-    ChartType.STACKED_BAR: XL_CHART_TYPE.COLUMN_STACKED,
+    ChartType.STACKED_BAR: XL_CHART_TYPE.BAR_STACKED_100,
+    ChartType.STACKED_COLUMN: XL_CHART_TYPE.COLUMN_STACKED_100,
     ChartType.SCATTER: XL_CHART_TYPE.XY_SCATTER,
     ChartType.RADAR: XL_CHART_TYPE.RADAR,
     ChartType.COMBO: XL_CHART_TYPE.COLUMN_CLUSTERED,  # 组合图以柱状为底座
@@ -62,10 +63,17 @@ def add_chart(slide, spec: ChartSpec, x, y, cx, cy, theme: Theme) -> None:
         _color_series(chart, theme)
         # 百分比条形/堆积图固定从 0 起始，避免 PowerPoint 自动截断坐标轴
         # （例如 31%~36% 被放大成 29~37），造成视觉差异被夸大。
-        if ctype in (ChartType.BAR, ChartType.STACKED_BAR):
+        if ctype == ChartType.BAR:
             try:
                 chart.value_axis.minimum_scale = 0.0
                 chart.value_axis.maximum_scale = 100.0
+            except Exception:
+                pass
+        elif ctype in (ChartType.STACKED_BAR, ChartType.STACKED_COLUMN):
+            try:
+                chart.value_axis.minimum_scale = 0.0
+                chart.value_axis.maximum_scale = 1.0
+                chart.value_axis.number_format = "0%"
             except Exception:
                 pass
         if ctype in (ChartType.PIE, ChartType.DOUGHNUT):
@@ -197,6 +205,8 @@ def _apply_data_labels(chart, spec: ChartSpec, theme: Theme) -> None:
         return
     n_series = len(chart.series)
     if n_series == 0:
+        return
+    if ctype in (ChartType.STACKED_BAR, ChartType.STACKED_COLUMN) and n_series >= 4:
         return
     label_all = n_series <= 4
     if n_series >= 5:

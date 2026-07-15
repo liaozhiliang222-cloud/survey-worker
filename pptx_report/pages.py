@@ -249,34 +249,28 @@ def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) ->
         _add_bullets(slide, page.side_insights, sr.x, sr.y + Inches(0.6),
                       sr.cx, sr.cy - Inches(0.6), theme, size=13)
 
-    # 核心结论洞察（图表上方，黑色文字，对齐 skill 规范）
-    insight_texts = [c.insight for c in page.charts if c.insight]
+    # 标题下方直接呈现洞察正文，不再增加“核心洞察/核心结论”标签。
+    insight_texts = list(dict.fromkeys(
+        c.insight for c in page.charts
+        if c.insight and c.insight not in page.title and page.title not in c.insight
+    ))
     if insight_texts:
-        insight_y = Inches(TITLE_TOP + TITLE_HEIGHT + 0.1)  # 标题正下方
-        _add_textbox(slide, "核心结论洞察", Inches(PAGE_MARGIN), insight_y,
-                      slide_w - Inches(2 * PAGE_MARGIN), Inches(0.35), theme,
-                      size=13, bold=True, color=theme.text_dark)
-        insight_body_y = insight_y + Inches(0.38)
-        for idx, txt in enumerate(insight_texts):
-            _add_textbox(slide, f"▸ {txt}", Inches(PAGE_MARGIN),
-                          insight_body_y + Inches(idx * 0.32),
-                          slide_w - Inches(2 * PAGE_MARGIN), Inches(0.3),
-                          theme, size=11, color=theme.text_dark)
-        # 图表区下移，为洞察腾出空间（约 0.35 + N*0.32 英寸）
-        insight_h = 0.38 + len(insight_texts) * 0.32 + 0.15
+        insight_body = "；".join(insight_texts)
+        insight_h = 0.48 if _text_width_units(insight_body) <= 75 else 0.7
+        insight_y = Inches(TITLE_TOP + TITLE_HEIGHT + 0.02)
+        _add_textbox(slide, insight_body, Inches(PAGE_MARGIN), insight_y,
+                      slide_w - Inches(2 * PAGE_MARGIN), Inches(insight_h), theme,
+                      size=11, color=theme.text_dark)
     else:
         insight_h = 0
 
-    # 数据来源标注（页面底部，灰色9pt，对齐 skill 规范 #758D99）
+    # 数据来源统一固定在页面最底部。
     if page.data_source:
-        src_y = float(slide_h) / 914400.0 - Inches(BOTTOM_MARGIN).inches + Inches(0.05)
-        try:
-            src_y_emu = Emu(int(src_y * 914400))
-        except Exception:
-            src_y_emu = Emu(int((float(slide_h) / 914400.0 - 0.55) * 914400))
+        slide_h_in = float(slide_h) / 914400.0
+        src_y_emu = Inches(slide_h_in - 0.38)
         _add_textbox(slide, page.data_source, Inches(PAGE_MARGIN), src_y_emu,
-                      slide_w - Inches(2 * PAGE_MARGIN), Inches(0.35), theme,
-                      size=9, color="758D99")  # 调研公司标准数据来源灰
+                      slide_w - Inches(2 * PAGE_MARGIN), Inches(0.2), theme,
+                      size=8, color="758D99")
 
     # 图表（如有洞察则下移起始位置）
     for slot, spec in zip(layout.slots, page.charts):
@@ -316,25 +310,21 @@ def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
     set_shape_fill(divider, theme.primary)
     remove_shape_outline(divider)
 
-    # ── 顶部分析结论文字区（始终预留，供填写） ──
-    # 无论是否有自动洞察，都在标题下方预留一块可编辑文字区，
-    # 避免整页被表格占满（#45 需求）。
-    insights = page.insights or []
-    insight_y = 0.95
-    _add_textbox(slide, "分析结论", Inches(0.4), Inches(insight_y),
-                 Inches(12.5), Inches(0.28), theme, size=12, bold=True,
-                 color=theme.primary)
+    # 标题下方直接写洞察正文，不显示“分析结论”标签或占位话术。
+    insights = [
+        text for text in (page.insights or [])
+        if text and text not in page.title and page.title not in text
+    ]
+    insight_y = 0.96
     if insights:
-        region_h = max(0.6, len(insights) * 0.26) + 0.32
-        _add_bullets(slide, insights, Inches(0.4), Inches(insight_y + 0.3),
-                     Inches(12.5), Inches(max(0.5, len(insights) * 0.26)),
-                     theme, size=11, color=theme.text_dark)
+        insight_body = "；".join(dict.fromkeys(insights))
+        region_h = 0.38 if _text_width_units(insight_body) <= 75 else 0.6
+        _add_textbox(slide, insight_body, Inches(0.4), Inches(insight_y),
+                     Inches(12.5), Inches(region_h), theme,
+                     size=10.5, color=theme.text_dark)
     else:
-        region_h = 0.62
-        _add_textbox(slide, "（在此填写本页分析结论……）", Inches(0.4),
-                     Inches(insight_y + 0.3), Inches(12.5), Inches(0.3),
-                     theme, size=11, color=RGBColor(0xAE, 0xB3, 0xBA))
-    table_y = insight_y + region_h + 0.12
+        region_h = 0
+    table_y = insight_y + region_h + 0.08
 
     segments = page.segments or []
     n_segs = len(segments)
@@ -422,7 +412,7 @@ def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
 
     # ── 列宽：簇状图(横向条形图)模式下组列+选项列固定 4.5cm（用户指定 v11） ──
     margin_left, margin_right = 0.25, 0.25
-    bottom_limit = 7.5 - 0.35   # 给数据来源留空间
+    bottom_limit = 7.5 - 0.35   # 给底部数据来源留空间
     table_w = 13.333 - margin_left - margin_right
     CM_TO_IN = 1 / 2.54
     LABEL_COL_CM = 4.5
@@ -459,12 +449,15 @@ def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
     USE_STACKED_THRESHOLD = 7   # 选项数阈值：≤此值用堆积图
 
     if n_options <= USE_STACKED_THRESHOLD:
-        # ── 100% 堆积图：无左侧标签区，图表全宽居中 ──
-        chart_y = table_y
-        chart_h = bottom_limit - table_y
+        # ── 100% 堆积图：控制在页面中部，不再铺满整页 ──
+        available_h = bottom_limit - table_y
+        stack_w = min(table_w, 10.2)
+        stack_h = min(4.15, max(2.8, available_h - 0.35))
+        stack_x = margin_left + (table_w - stack_w) / 2
+        chart_y = table_y + max(0.12, (available_h - stack_h) * 0.35)
         _render_stacked_bars(
             slide, merged_rows, segments, all_options,
-            margin_left, table_w, chart_y, chart_h,
+            stack_x, stack_w, chart_y, stack_h,
             colors, theme,
         )
     else:
@@ -551,10 +544,9 @@ def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
     # ── 数据来源 ──
     ds_text = page.data_source or ""
     if ds_text:
-        _add_textbox(slide, ds_text, Inches(margin_left),
-                     Emu(int(bottom_limit * 914400)),
-                     Inches(table_w), Inches(0.22), theme,
-                     size=9, color="758D99")
+        _add_textbox(slide, ds_text, Inches(0.4), Inches(7.12),
+                     Inches(12.5), Inches(0.18), theme,
+                     size=8, color="758D99")
 
 
 # ---- 多组多列条形图辅助函数 ----
@@ -640,8 +632,18 @@ def _render_stacked_bars(slide, merged_rows, segments, all_options,
             vals.append(v)
         chart_data.add_series(opt, tuple(vals))
 
+    # 维度不多且标签较短时用纵向堆积柱状图，否则使用横向堆积条形图。
+    use_column = (
+        len(segments) <= 6
+        and len(all_options) <= 5
+        and max((_text_width_units(s) for s in segments), default=0) <= 9
+    )
+    stacked_type = (
+        XL_CHART_TYPE.COLUMN_STACKED_100 if use_column
+        else XL_CHART_TYPE.BAR_STACKED_100
+    )
     cht_shape = slide.shapes.add_chart(
-        XL_CHART_TYPE.BAR_STACKED_100,
+        stacked_type,
         Inches(actual_cx), Inches(chart_y),
         Inches(actual_cw), Inches(chart_h),
         chart_data

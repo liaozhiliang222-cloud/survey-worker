@@ -306,8 +306,16 @@ def auto_chart_type(q: dict, cats: list, segs: list) -> ChartType:
 
 def _auto_insight(q: dict, cats: list, data: dict, segs: list) -> str:
     """生成一条简短洞察：总体最高项 + （多人群时）偏离最大的人群。"""
-    tot = data.get("Total", [])
-    if not tot:
+    total_values = data.get("Total") or []
+    ref_seg = "Total" if any(v is not None for v in total_values) else next(
+        (
+            s for s in segs
+            if any(v is not None for v in (data.get(s) or []))
+        ),
+        None,
+    )
+    ref_values = data.get(ref_seg, []) if ref_seg else []
+    if not ref_values:
         return ""
     # v10: 跳过"其他"/内部代码类选项，不作为洞察主体
     _SKIP_INSIGHT_KW = ["其他", "其它", "请说明", "t2b", "b2b", "无",
@@ -318,12 +326,13 @@ def _auto_insight(q: dict, cats: list, data: dict, segs: list) -> str:
     ]
     if not valid_indices:
         return ""
-    best_i = max(valid_indices, key=lambda i: tot[i] if tot[i] is not None else -1)
-    best_v = tot[best_i]
+    best_i = max(valid_indices, key=lambda i: ref_values[i] if ref_values[i] is not None else -1)
+    best_v = ref_values[best_i]
     if best_v is None:
         return ""
-    insight = f"「{cats[best_i]}」占比最高（{best_v * 100:.1f}%）"
-    others = [s for s in segs if s != "Total"]
+    prefix = "" if ref_seg == "Total" else f"{ref_seg}中"
+    insight = f"{prefix}「{cats[best_i]}」占比最高（{best_v * 100:.1f}%）"
+    others = [s for s in segs if s != ref_seg]
     if len(others) >= 2:
         diffs = []
         for s in others:
@@ -335,7 +344,8 @@ def _auto_insight(q: dict, cats: list, data: dict, segs: list) -> str:
             d, s, v = diffs[0]
             if abs(d) >= 0.05:  # 差异 ≥5pp 才提，避免无意义噪声
                 cmp = "高于" if d > 0 else "低于"
-                insight += f"；{s}{cmp}总体 {abs(d) * 100:.1f}pp（{v * 100:.1f}%）"
+                ref_label = "总体" if ref_seg == "Total" else ref_seg
+                insight += f"；{s}{cmp}{ref_label} {abs(d) * 100:.1f}pp（{v * 100:.1f}%）"
     return insight
 
 
@@ -376,12 +386,26 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
             title=f"{title}（{ref_seg}，%）", categories=cats,
             values=vals, insight=insight,
         )
-    if ctype == ChartType.STACKED_BAR:
-        series_dict = {s: _pct_list(data, s, cats) for s in display_segs}
-        return ChartSpec.bar(
-            title=f"{title}（%）", categories=cats,
+    if ctype in (ChartType.STACKED_BAR, ChartType.STACKED_COLUMN):
+        # 堆积图使用“人群=类目、答案选项=堆积系列”的构成口径。
+        # 不能把各人群百分比直接相加，否则会超过 100% 并造成误导。
+        values_by_segment = {
+            s: _pct_list(data, s, cats) for s in display_segs
+        }
+        series_dict = {
+            str(cat): [
+                values_by_segment[s][idx]
+                if idx < len(values_by_segment[s]) else 0.0
+                for s in display_segs
+            ]
+            for idx, cat in enumerate(cats)
+        }
+        spec = ChartSpec.bar(
+            title=f"{title}（构成，%）", categories=display_segs,
             series_dict=series_dict, insight=insight, stacked=True,
         )
+        spec.type = ctype
+        return spec
     # 默认：多系列并排条形图（Total + 筛选后分群 → 可读的多维度对比）
     series_dict = {s: _pct_list(data, s, cats) for s in display_segs}
     return ChartSpec.bar(
@@ -463,6 +487,39 @@ def _group_title(group: list, idx: int, total: int) -> str:
     return f"{base} 等 {len(group)} 题 · 人群对比（第{idx}/{total}组）"
 
 
+def _insight_page_title(group: list, segments: list = None) -> str:
+    """用页面数据生成一句话洞察标题，避免把题干或页码当标题。"""
+    insights = []
+    for q in group:
+        cats, data = _sort_question(q)
+        q_segments = q.get("segments") or []
+        display = [s for s in (segments or q_segments) if s in q_segments] or q_segments
+        insight = _auto_insight(q, cats, data, display)
+        if insight and insight not in insights:
+            insights.append(insight)
+    if not insights:
+        return f"{_norm(group[0].get('title', ''))[:28]}呈现明显差异"
+    # 标题只保留第一条洞察的核心结论，详细差异放正文，避免标题换行。
+    return insights[0].split("；", 1)[0]
+
+
+def _page_data_source(group: list, source: str = "") -> str:
+    """生成统一的页脚数据来源文本。"""
+    refs = []
+    for q in group:
+        code = q.get("code", "")
+        title = _norm(q.get("title", ""))[:22]
+        base = q.get("base", {}).get("Total")
+        ref = f"{code}.{title}" if code else title
+        if base:
+            ref += f"（N={base}）"
+        refs.append(ref)
+    details = "；".join(refs)
+    if source:
+        details = f"{details}；{source.replace('数据来源：', '').strip()}" if details else source
+    return f"数据来源：{details}" if details else ""
+
+
 def _paginate_mgb_questions(questions: list, max_per_page: int, max_options: int = 18) -> list:
     """按题数与选项行数共同分页，避免第三题在 20 行上限处被静默截断。"""
     batches = []
@@ -536,26 +593,8 @@ def _build_multi_group_bar_page(group: list, segments: list, source: str,
             all_insights.append(insight)
             ranked_insights.append((peak, insight))
 
-    # 标题用"最显著的单条核心洞察"（占比峰值最高的一题），避免多条拼接过长
-    if ranked_insights:
-        ranked_insights.sort(key=lambda x: x[0], reverse=True)
-        page_title = ranked_insights[0][1]
-    else:
-        page_title = _group_title(group, idx, total)  # 兜底
-
-    # 数据来源格式：数据来源：题干摘要（N=xx）；题干2（N=xx）…  （参考专业调研报告规范）
-    q_refs = []
-    for q in group:
-        code = q.get("code", "")
-        title = _norm(q.get("title", ""))[:25]
-        base = q.get("base", {}).get("Total")
-        n_str = f"N={base}" if base else ""
-        # 单选/多选标记（如有）
-        qtype = q.get("type", "")
-        type_tag = f"（{qtype}）" if qtype else ""
-        q_refs.append(f"{title}（{n_str}{type_tag}）" if n_str else title)
-    q_label = "；".join(q_refs)
-    ds = f"数据来源：{q_label}" if q_refs else source
+    page_title = _insight_page_title(group, segments)
+    ds = _page_data_source(group, source)
 
     return MultiGroupBarPageContent(
         title=page_title,
@@ -661,12 +700,10 @@ def build_auto_report(
     for gi, i in enumerate(range(0, len(radar_qs), radar_per_page)):
         batch = radar_qs[i:i + radar_per_page]
         charts = [_build_chart_for_question(q, display_segs) for q in batch]
-        # 雷达页数据来源也带上题号
-        r_refs = [f'{q.get("code","")}.{_norm(q.get("title",""))[:20]}' for q in batch]
-        r_ds = f"{' | '.join(r_refs)} | {source}" if r_refs else source
+        r_ds = _page_data_source(batch, source)
         chart_pages.append(
             ChartPageContent(
-                title=_group_title(batch, gi + 1, n_radar_pages),
+                title=_insight_page_title(batch, display_segs),
                 layout=LayoutType.DASHBOARD,
                 charts=charts,
                 data_source=r_ds,
@@ -724,6 +761,7 @@ def build_auto_report(
                     "pie": ChartType.PIE,
                     "doughnut": ChartType.DOUGHNUT,
                     "stacked_bar": ChartType.BAR,
+                    "stacked_column": ChartType.BAR,
                     "radar": ChartType.BAR,
                     "bar": ChartType.BAR,
                 }.get(requested, ChartType.BAR)
@@ -733,16 +771,10 @@ def build_auto_report(
                     )
                     for q in batch
                 ]
-                refs = [
-                    f'{q.get("code", "")}.{_norm(q.get("title", ""))[:20]}'
-                    for q in batch
-                ]
-                data_source = f"{' | '.join(refs)} | {source}" if refs else source
+                data_source = _page_data_source(batch, source)
                 configured_pages.append(
                     ChartPageContent(
-                        title=_group_title(batch, idx + 1, len(cfg_pages)).replace(
-                            "人群对比", "总体概览"
-                        ),
+                        title=_insight_page_title(batch, [total_name]),
                         layout=LayoutType.DASHBOARD,
                         charts=charts,
                         data_source=data_source,
@@ -784,6 +816,7 @@ def build_auto_report(
                 "doughnut": ChartType.DOUGHNUT,
                 "pie": ChartType.PIE,
                 "stacked_bar": ChartType.STACKED_BAR,
+                "stacked_column": ChartType.STACKED_COLUMN,
             }.get(requested)
             if forced is None:
                 configured_pages.append(default_page)
@@ -794,14 +827,10 @@ def build_auto_report(
                 )
                 for q in page_batch
             ]
-            refs = [
-                f'{q.get("code", "")}.{_norm(q.get("title", ""))[:20]}'
-                for q in page_batch
-            ]
-            data_source = f"{' | '.join(refs)} | {source}" if refs else source
+            data_source = _page_data_source(page_batch, source)
             configured_pages.append(
                 ChartPageContent(
-                    title=_group_title(page_batch, idx + 1, len(cfg_pages)),
+                    title=_insight_page_title(page_batch, page_segments),
                     layout=LayoutType.DASHBOARD,
                     charts=charts,
                     data_source=data_source,
@@ -897,7 +926,7 @@ def build_page_plan(
         pages.append({
             "page_idx": len(pages) + 1,
             "type": "multi_group_bar",
-            "title": _group_title(batch, gi + 1, n_mgb_pages),
+            "title": _insight_page_title(batch, display_segs),
             "questions": [
                 {
                     "code": q.get("code", ""),
@@ -919,7 +948,7 @@ def build_page_plan(
         pages.append({
             "page_idx": len(pages) + 1,
             "type": "radar_dashboard",
-            "title": _group_title(batch, gi + 1, n_radar_pages),
+            "title": _insight_page_title(batch, display_segs),
             "questions": [
                 {
                     "code": q.get("code", ""),

@@ -27,7 +27,8 @@ class ChartType(str, Enum):
     LINE = "line"              # 折线图
     PIE = "pie"                # 饼图
     DOUGHNUT = "doughnut"     # 环形图
-    STACKED_BAR = "stacked_bar"   # 堆积柱状图
+    STACKED_BAR = "stacked_bar"       # 堆积条形图（横向）
+    STACKED_COLUMN = "stacked_column" # 堆积柱状图（纵向）
     SCATTER = "scatter"        # 散点图
     RADAR = "radar"            # 雷达图
     COMBO = "combo"            # 组合图（柱状 + 折线，双轴）
