@@ -171,7 +171,7 @@ def _style_common(chart, spec: ChartSpec, theme: Theme) -> None:
 
 
 def _hide_chart_axes(chart, ctype: ChartType) -> None:
-    """保留类目文字，但移除轴线、刻度线与 0–100 数值刻度。"""
+    """隐藏数值刻度；柱状/条形图保留一条浅灰零基线。"""
     if ctype == ChartType.RADAR:
         try:
             value_axis = chart.value_axis
@@ -200,9 +200,19 @@ def _hide_chart_axes(chart, ctype: ChartType) -> None:
         pass
     try:
         category_axis = chart.category_axis
+        category_axis.visible = True
         category_axis.major_tick_mark = XL_TICK_MARK.NONE
         category_axis.minor_tick_mark = XL_TICK_MARK.NONE
-        category_axis.format.line.fill.background()
+        if ctype in (
+            ChartType.BAR, ChartType.COLUMN,
+            ChartType.STACKED_BAR, ChartType.STACKED_COLUMN,
+        ):
+            baseline = category_axis.format.line
+            baseline.fill.solid()
+            baseline.fill.fore_color.rgb = RGBColor(0xD0, 0xD0, 0xD0)
+            baseline.width = Pt(0.8)
+        else:
+            category_axis.format.line.fill.background()
     except Exception:
         pass
 

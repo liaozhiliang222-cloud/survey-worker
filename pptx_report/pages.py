@@ -720,6 +720,12 @@ def _render_stacked_bars(slide, merged_rows, segments, all_options,
         cat_axis.tick_labels.font.size = Pt(8)
         cat_axis.tick_labels.font.name = "微软雅黑"
         cat_axis.tick_labels.font.color.rgb = dark_gray
+        # 堆积柱/条形图保留浅灰零基线；多列条形图由另一渲染器生成，仍保持无轴线。
+        cat_axis.visible = True
+        baseline = cat_axis.format.line
+        baseline.fill.solid()
+        baseline.fill.fore_color.rgb = RGBColor(0xD0, 0xD0, 0xD0)
+        baseline.width = Pt(0.8)
     except Exception:
         pass
 
