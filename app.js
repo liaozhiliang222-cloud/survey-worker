@@ -11962,7 +11962,8 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       // Chart type options
       const chartTypeOptions = [
         { value: "bar", label: "条形图（默认）" },
-        { value: "stacked_bar", label: "堆积图" },
+        { value: "stacked_bar", label: "堆积条形图" },
+        { value: "stacked_column", label: "堆积柱状图" },
         { value: "radar", label: "雷达图" },
         { value: "doughnut", label: "环形图" },
         { value: "pie", label: "饼图" },
