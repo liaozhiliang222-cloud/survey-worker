@@ -53,6 +53,8 @@ from pptx_report.build_jd_report import parse_crosstab
 from pptx_report.wizard import build_page_plan, run_wizard
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+REQUEST_ENVELOPE_MAGIC = b"SKPPTX1\n"
+MAX_METADATA_BYTES = 1024 * 1024
 app = FastAPI(title="PPTX Report API")
 
 # CORS：允许前端域名（surveykit.cc）和本地开发直连阿里云
@@ -141,14 +143,39 @@ async def preview(request: Request):
             pass
 
 
-def _generate_core(data: bytes, qs) -> Response | JSONResponse:
+def _unpack_generate_request(data: bytes, content_type: str) -> tuple[bytes, dict]:
+    """Unpack the binary request envelope used by the web client.
+
+    Legacy clients still send raw XLSX bytes and query parameters. The envelope
+    keeps large page plans out of the request URL so Nginx does not reject them.
+    """
+    if not (content_type or "").lower().startswith("application/vnd.surveykit.pptx-request"):
+        return data, {}
+    header_size = len(REQUEST_ENVELOPE_MAGIC) + 4
+    if len(data) < header_size or not data.startswith(REQUEST_ENVELOPE_MAGIC):
+        raise ValueError("invalid PPTX request envelope")
+    meta_size = int.from_bytes(data[len(REQUEST_ENVELOPE_MAGIC):header_size], "big")
+    if meta_size <= 0 or meta_size > MAX_METADATA_BYTES or header_size + meta_size > len(data):
+        raise ValueError("invalid PPTX request metadata length")
+    metadata = json.loads(data[header_size:header_size + meta_size].decode("utf-8"))
+    if not isinstance(metadata, dict):
+        raise ValueError("PPTX request metadata must be an object")
+    return data[header_size + meta_size:], metadata
+
+
+def _generate_core(data: bytes, qs, metadata: dict | None = None) -> Response | JSONResponse:
     if len(data) > MAX_UPLOAD_BYTES:
         return JSONResponse({"error": {"message": "文件过大（>25MB）。"}}, status_code=413)
-    segs = _read_segments(qs.get("segments"))
-    title = qs.get("title") or "调研分析报告"
-    dimension = qs.get("dimension") or None
-    page_config = None
-    pc = qs.get("page_config")
+    metadata = metadata or {}
+    raw_segments = metadata.get("segments")
+    if isinstance(raw_segments, list):
+        segs = [str(item) for item in raw_segments]
+    else:
+        segs = _read_segments(qs.get("segments"))
+    title = metadata.get("title") or qs.get("title") or "调研分析报告"
+    dimension = metadata.get("dimension") or qs.get("dimension") or None
+    page_config = metadata.get("page_config")
+    pc = qs.get("page_config") if page_config is None else None
     if pc:
         try:
             page_config = json.loads(pc)
@@ -195,14 +222,22 @@ def _generate_core(data: bytes, qs) -> Response | JSONResponse:
 
 @app.post("/api/pptx-report")
 async def generate(request: Request):
-    data = await request.body()
-    return _generate_core(data, request.query_params)
+    body = await request.body()
+    try:
+        data, metadata = _unpack_generate_request(body, request.headers.get("content-type", ""))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return JSONResponse({"error": {"message": f"请求格式错误：{exc}"}}, status_code=400)
+    return _generate_core(data, request.query_params, metadata)
 
 
 @app.post("/api/pptx-report/")
 async def generate_slash(request: Request):
-    data = await request.body()
-    return _generate_core(data, request.query_params)
+    body = await request.body()
+    try:
+        data, metadata = _unpack_generate_request(body, request.headers.get("content-type", ""))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return JSONResponse({"error": {"message": f"请求格式错误：{exc}"}}, status_code=400)
+    return _generate_core(data, request.query_params, metadata)
 
 
 if __name__ == "__main__":

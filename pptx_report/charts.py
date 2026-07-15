@@ -60,6 +60,14 @@ def add_chart(slide, spec: ChartSpec, x, y, cx, cy, theme: Theme) -> None:
 
         _style_common(chart, spec, theme)
         _color_series(chart, theme)
+        # 百分比条形/堆积图固定从 0 起始，避免 PowerPoint 自动截断坐标轴
+        # （例如 31%~36% 被放大成 29~37），造成视觉差异被夸大。
+        if ctype in (ChartType.BAR, ChartType.STACKED_BAR):
+            try:
+                chart.value_axis.minimum_scale = 0.0
+                chart.value_axis.maximum_scale = 100.0
+            except Exception:
+                pass
         if ctype in (ChartType.PIE, ChartType.DOUGHNUT):
             _style_pie_doughnut(chart, theme)
         else:
@@ -107,14 +115,19 @@ def _style_common(chart, spec: ChartSpec, theme: Theme) -> None:
     tf.text = spec.title
     style_textframe(tf, theme, size=14, bold=True, color=theme.text_dark)
 
-    # 图例（饼 / 环形图用数据标签代替图例，关闭图例）
-    if spec.type not in (ChartType.PIE, ChartType.DOUGHNUT):
+    # 图例：单系列条形图隐藏冗余的“Total”；饼/环形图保留图例，
+    # 否则只显示百分比时无法判断颜色对应哪个选项。
+    if spec.type in (ChartType.PIE, ChartType.DOUGHNUT):
         chart.has_legend = True
         chart.legend.position = XL_LEGEND_POSITION.BOTTOM
         chart.legend.include_in_layout = False
-        style_font(chart.legend.font, theme, size=10)
+        style_font(chart.legend.font, theme, size=8)
     else:
-        chart.has_legend = False
+        chart.has_legend = len(spec.series) > 1
+        if chart.has_legend:
+            chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+            chart.legend.include_in_layout = False
+            style_font(chart.legend.font, theme, size=10)
 
     # 全局字体（影响坐标轴 / 数据标签等）
     style_font(chart.font, theme, size=10)
@@ -386,4 +399,3 @@ def _build_axis_title(text: str):
     overlay.set("val", "0")
     title.append(overlay)
     return title
-
