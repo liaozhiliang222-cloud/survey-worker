@@ -1156,7 +1156,7 @@
               <p class="eyebrow">PPT 报告生成</p>
               <h2>自分析维度 · 专业图表报告</h2>
             </div>
-            <p class="panel-note">上传腾讯问卷 / SPSS 风格交叉表 Excel，选择要对比的人群维度，一键生成含多组多列条形图的可编辑 PPTX 报告。</p>
+            <p class="panel-note">上传腾讯问卷 / SPSS 风格交叉表 Excel，选择分析维度与主题色，自动匹配条形、柱状、环形、堆积、折线或雷达图，生成可编辑 PPTX 报告。</p>
           </div>
 
           <div class="ai-report-workspace">
@@ -1193,6 +1193,24 @@
                   <label class="span-row field">
                     <span class="field-heading">报告标题</span>
                     <input id="pptxReportTitle" type="text" placeholder="例如：京东常温牛奶消费者调研报告" />
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">PPT 主题色</span>
+                    <select id="pptxThemeColor">
+                      <option value="blue" selected>商务蓝（默认）</option>
+                      <option value="teal">青绿色</option>
+                      <option value="green">自然绿</option>
+                      <option value="orange">活力橙</option>
+                      <option value="purple">雅致紫</option>
+                    </select>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">报告规划模式</span>
+                    <select id="pptxPlanningMode">
+                      <option value="rule" selected>标准规则（快速、稳定）</option>
+                      <option value="ai">AI 建议（章节、维度与洞察草稿）</option>
+                    </select>
+                    <small class="field-note">两种模式使用同一套 PPT 渲染器；AI 仅提供可编辑建议，需要先在“AI设置”中配置模型。</small>
                   </label>
                   <div class="field">
                     <span class="field-heading">维度分组（按合并单元格拆分，如分品牌 / 分平台）</span>
@@ -1236,7 +1254,7 @@
                 <div class="step-badge">2.5</div>
                 <div class="step-body">
                   <h3>预览 & 编辑报告结构</h3>
-                  <p class="panel-note">以下是系统自动规划的报告页面，您可以调整每页的图表类型。确认后点击「确认生成」。</p>
+                  <p class="panel-note">以下是系统自动规划的报告页面。默认按数据类型匹配图表，您也可以逐页手动调整。</p>
                   <div class="ai-report-data-actions" style="margin-bottom:12px;">
                     <button class="primary-btn" id="pptxConfirmBtn" type="button" disabled>确认生成 PPT</button>
                     <button class="ghost-btn" id="pptxBackToConfig" type="button">返回修改配置</button>
@@ -1258,7 +1276,7 @@
                 <div class="step-badge">3</div>
                 <div class="step-body">
                   <h3>下载报告</h3>
-                  <p class="panel-note">生成完成后会自动下载 .pptx 文件。报告含封面、目录、各题多组多列图表（选项少用 100% 堆积图，选项多用横向条形图）。</p>
+                  <p class="panel-note">生成完成后会自动下载 .pptx 文件。报告含封面、目录、洞察标题、可编辑图表及底部数据来源。</p>
                   <div class="audit-results" id="pptxResult">
                     <div class="empty-state">
                       <strong>等待生成</strong>

@@ -11602,6 +11602,8 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     const clearBtn = document.querySelector("#pptxClearFile");
     const parseStatus = document.querySelector("#pptxParseStatus");
     const titleInput = document.querySelector("#pptxReportTitle");
+    const themeInput = document.querySelector("#pptxThemeColor");
+    const planningModeInput = document.querySelector("#pptxPlanningMode");
     const segmentDropdown = document.querySelector("#pptxSegmentDropdown");
     const segmentPanel = document.querySelector("#pptxSegmentPanel");
     const trigger = segmentDropdown ? segmentDropdown.querySelector(".multiselect-trigger") : null;
@@ -11871,6 +11873,68 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       return msg;
     }
 
+    function parseAiPptxPlanOutput(output) {
+      const text = String(output || "").trim();
+      const jsonText = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] || text.match(/\{[\s\S]*\}/)?.[0] || text;
+      const parsed = JSON.parse(jsonText);
+      if (!parsed || !Array.isArray(parsed.chapters)) throw new Error("AI 未返回有效的章节规划。");
+      return parsed;
+    }
+
+    async function enrichPptxPlanWithAi(plan) {
+      const settings = loadAiSettings();
+      const errors = validateAiSettings(settings);
+      if (settings.mode === "local" || errors.length) {
+        throw new Error("AI建议模式需要先在“AI设置”中配置可用的模型与 API Key。当前已保留标准规则方案。");
+      }
+      const availableDimensions = ["总体", ...dimensionGroups.map((item) => item.name)];
+      const compactPages = (plan.pages || []).map((page) => ({
+        page_idx: page.page_idx,
+        chapter: page.chapter || "其他研究",
+        questions: (page.questions || []).map((q) => `${q.code || ""}.${String(q.title || "").slice(0, 28)}`),
+      }));
+      const messages = [
+        {
+          role: "system",
+          content: [
+            "你是资深市场研究报告总监。请基于问卷页面清单优化报告章节、建议各章节默认分析维度，并为每页起草一句数据洞察标题。",
+            "只返回 JSON 对象，不要输出 Markdown。结构必须为：",
+            '{"chapters":[{"name":"章节名","page_idxs":[1,2],"default_dimensions":["年龄"],"page_insights":{"1":"一句话洞察标题"}}]}',
+            "default_dimensions 只能从用户提供的可用维度中选择；每页只能归入一个章节；洞察不得编造未提供的数据，无法判断时留空字符串。",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: `可用维度：${JSON.stringify(availableDimensions)}\n页面清单：${JSON.stringify(compactPages)}`,
+        },
+      ];
+      const output = await callAiChatCompletion(settings, messages, {
+        maxTokens: 6000,
+        timeoutMs: 180000,
+        temperature: 0.2,
+      });
+      const suggestion = parseAiPptxPlanOutput(output);
+      const validDimensions = new Set(availableDimensions);
+      const byIndex = new Map((plan.pages || []).map((page) => [Number(page.page_idx), page]));
+      suggestion.chapters.forEach((chapter) => {
+        const dims = (chapter.default_dimensions || []).filter((name) => validDimensions.has(name));
+        (chapter.page_idxs || []).forEach((pageIdx) => {
+          const page = byIndex.get(Number(pageIdx));
+          if (!page) return;
+          page.chapter = String(chapter.name || page.chapter || "其他研究").slice(0, 24);
+          if (dims.length) {
+            page.selected_dimensions = dims.includes("总体") ? ["总体"] : dims;
+            page.dimension_mode = page.selected_dimensions[0] === "总体" ? "overall" : "compare";
+            page.dimension_key = page.selected_dimensions.join(",");
+          }
+          const insight = chapter.page_insights?.[String(pageIdx)] || chapter.page_insights?.[pageIdx];
+          if (insight) page.insight_override = String(insight).slice(0, 80);
+        });
+      });
+      plan.planning_mode = "ai";
+      return plan;
+    }
+
     parseBtn.addEventListener("click", async () => {
       if (!selectedFile) return;
       parseBtn.disabled = true;
@@ -11936,10 +12000,22 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           throw new Error(await readPptxApiError(resp, "预览失败"));
         }
         pagePlan = await resp.json();
+        if (planningModeInput?.value === "ai") {
+          genStatus.textContent = "本地结构已生成，正在请 AI 建议章节、维度与洞察…";
+          try {
+            pagePlan = await enrichPptxPlanWithAi(pagePlan);
+          } catch (aiError) {
+            pagePlan.planning_mode = "rule";
+            genStatus.textContent = `AI建议未应用：${aiError.message}`;
+          }
+        } else {
+          pagePlan.planning_mode = "rule";
+        }
         editedPagePlan = JSON.parse(JSON.stringify(pagePlan));  // deep copy for editing
         renderPreviewTable(editedPagePlan);
         if (previewPanel) previewPanel.style.display = "";
-        genStatus.textContent = `预览完成：共 ${pagePlan.total_pages} 页（${pagePlan.renderable_questions} 道可渲染题）。`;
+        const modeLabel = pagePlan.planning_mode === "ai" ? "AI建议方案" : "标准规则方案";
+        genStatus.textContent = `预览完成：${modeLabel}，共 ${pagePlan.total_pages} 页（${pagePlan.renderable_questions} 道可渲染题）。`;
         // Scroll to preview panel
         previewPanel && previewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (err) {
@@ -11961,7 +12037,10 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
 
       // Chart type options
       const chartTypeOptions = [
-        { value: "bar", label: "条形图（默认）" },
+        { value: "auto", label: "自动匹配（默认）" },
+        { value: "bar", label: "条形图" },
+        { value: "column", label: "柱状图" },
+        { value: "line", label: "折线图" },
         { value: "stacked_bar", label: "堆积条形图" },
         { value: "stacked_column", label: "堆积柱状图" },
         { value: "radar", label: "雷达图" },
@@ -11987,22 +12066,53 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       let html = `<table class="compact-table" style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead><tr style="background:#f1f5f9;">
           <th style="padding:8px 6px;text-align:left;width:50px;">页码</th>
-          <th style="padding:8px 6px;text-align:left;">页面标题</th>
+          <th style="padding:8px 6px;text-align:left;">洞察标题（可编辑）</th>
           <th style="padding:8px 6px;text-align:left;">题目</th>
           <th style="padding:8px 6px;text-align:center;width:130px;">图表类型</th>
           <th style="padding:8px 6px;text-align:center;width:160px;">分维度</th>
         </tr></thead><tbody>`;
 
+      let lastChapter = null;
       pages.forEach((p, idx) => {
         if (!Array.isArray(p.selected_dimensions) || p.selected_dimensions.length === 0) {
-          p.selected_dimensions = p.dimension_mode === "overall"
-            ? ["总体"]
-            : dimOptions.filter(d => d.key !== "总体").map(d => d.key);
-          p.dimension_mode = p.selected_dimensions.length ? "compare" : "overall";
-          p.dimension_key = p.selected_dimensions.length
-            ? p.selected_dimensions.join(",")
-            : "总体";
-          if (!p.selected_dimensions.length) p.selected_dimensions = ["总体"];
+          const preferredByChapter = {
+            "用户画像": "总体",
+            "消费行为": "年龄",
+            "品牌与满意度": "性别",
+            "专项研究": "省份",
+            "其他研究": "用户类型",
+          };
+          const availableKeys = dimOptions.map((d) => d.key);
+          const preferred = preferredByChapter[p.chapter]
+            || availableKeys.find((key) => key !== "总体")
+            || "总体";
+          const selected = availableKeys.includes(preferred) ? preferred : "总体";
+          p.selected_dimensions = [selected];
+          p.dimension_mode = selected === "总体" ? "overall" : "compare";
+          p.dimension_key = selected;
+        }
+        const chapterName = p.chapter || "其他研究";
+        if (chapterName !== lastChapter) {
+          lastChapter = chapterName;
+          const chapterPages = pages.filter((item) => (item.chapter || "其他研究") === chapterName);
+          const chapterDims = chapterPages[0]?.selected_dimensions || ["总体"];
+          html += `<tr style="background:#eaf1fb;border-top:2px solid #bfd0e5;">
+            <td colspan="5" style="padding:9px 8px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                <strong style="color:#123b73;font-size:14px;">章节：${escapeHtml(chapterName)}</strong>
+                <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+                  <span style="font-size:11px;color:#64748b;">章节默认维度：</span>
+                  ${dimOptions.map((d) => {
+                    const checked = chapterDims.includes(d.key);
+                    return `<label style="font-size:11px;color:${checked ? "#1d4ed8" : "#475569"};white-space:nowrap;">
+                      <input type="checkbox" ${checked ? "checked" : ""}
+                        onchange="window._onPreviewChapterDimCheck && window._onPreviewChapterDimCheck('${encodeURIComponent(chapterName)}', '${encodeURIComponent(d.key)}', this.checked)">${escapeHtml(d.key)}
+                    </label>`;
+                  }).join("")}
+                </div>
+              </div>
+            </td>
+          </tr>`;
         }
         const qTitles = (p.questions || []).map(q =>
           `<span title="${escapeHtml(q.code || '')}">${escapeHtml(q.title || q.code || "?")}</span>`
@@ -12011,7 +12121,11 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
 
         html += `<tr style="border-bottom:1px solid #e5e7eb;${idx % 2 ? "" : "background:#fafbfc"}">
           <td style="padding:8px 6px;font-weight:600;color:#002960;">${p.page_idx}</td>
-          <td style="padding:8px 6px;">${escapeHtml(p.title || "")}</td>
+          <td style="padding:8px 6px;">
+            <textarea rows="2" data-preview-idx="${idx}" data-field="insight_override"
+              onchange="window._onPreviewInsightChange && window._onPreviewInsightChange(${idx}, this.value)"
+              style="width:100%;min-width:220px;resize:vertical;font-size:12px;line-height:1.4;border:1px solid #cbd5e1;border-radius:5px;padding:5px;">${escapeHtml(p.insight_override || p.title || "")}</textarea>
+          </td>
           <td style="padding:8px 6px;color:#475569;font-size:12px;">${qTitles}</td>
           <td style="padding:8px 6px;text-align:center;">
             <select data-preview-idx="${idx}" data-field="chart_type" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;background:white;cursor:pointer;"
@@ -12043,7 +12157,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           📋 另有 <strong>${plan.appendix.count}</strong> 道题目将归入附录表格（甄别/配额/后台类题目，不进入主图表页）。
         </p>`;
       }
-      html += `<p style="margin-top:6px;font-size:11px;color:#94a3b8;">提示：您可以修改每行的「图表类型」和「分维度」，调整完成后点击上方「确认生成 PPT」。</p>`;
+      html += `<p style="margin-top:6px;font-size:11px;color:#94a3b8;">提示：章节维度会批量应用到该章节；每页仍可单独覆盖。洞察标题可手动修改，AI建议模式会先填入草稿。</p>`;
 
       previewTable.innerHTML = html;
     }
@@ -12053,6 +12167,31 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       if (editedPagePlan && editedPagePlan.pages && editedPagePlan.pages[idx]) {
         editedPagePlan.pages[idx].chart_type = newValue;
       }
+    };
+    window._onPreviewInsightChange = function(idx, value) {
+      if (editedPagePlan?.pages?.[idx]) editedPagePlan.pages[idx].insight_override = String(value || "").trim();
+    };
+    window._onPreviewChapterDimCheck = function(encodedChapterName, encodedValue, checked) {
+      const chapterName = decodeURIComponent(encodedChapterName);
+      const value = decodeURIComponent(encodedValue);
+      if (!editedPagePlan?.pages) return;
+      const chapterPages = editedPagePlan.pages.filter((page) => (page.chapter || "其他研究") === chapterName);
+      if (!chapterPages.length) return;
+      let selected = Array.isArray(chapterPages[0].selected_dimensions)
+        ? [...chapterPages[0].selected_dimensions]
+        : ["总体"];
+      if (checked && value === "总体") selected = ["总体"];
+      else if (checked) {
+        selected = selected.filter((item) => item !== "总体");
+        if (!selected.includes(value)) selected.push(value);
+      } else selected = selected.filter((item) => item !== value);
+      if (!selected.length) selected = ["总体"];
+      chapterPages.forEach((page) => {
+        page.selected_dimensions = [...selected];
+        page.dimension_mode = selected.length === 1 && selected[0] === "总体" ? "overall" : "compare";
+        page.dimension_key = selected.join(",");
+      });
+      renderPreviewTable(editedPagePlan);
     };
     // 全局函数：预览表格分维度多选变更
     window._onPreviewDimCheck = function(idx, value, checked) {
@@ -12121,7 +12260,9 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       return {
         pages: plan.pages.map((page) => ({
           page_idx: page.page_idx,
+          chapter: page.chapter,
           chart_type: page.chart_type,
+          insight_override: page.insight_override,
           dimension_mode: page.dimension_mode,
           dimension_key: page.dimension_key,
           selected_dimensions: Array.isArray(page.selected_dimensions)
@@ -12192,6 +12333,8 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         const payload = packPptxGenerateRequest(buf, {
           segments: checked,
           title,
+          theme: themeInput?.value || "blue",
+          planning_mode: planningModeInput?.value || "rule",
           dimension: currentDimension || null,
           page_config: compactPptxPageConfig(editedPagePlan),
         });
@@ -12229,6 +12372,8 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
 
     confirmBtn && confirmBtn.addEventListener("click", () => doGeneratePptx());
     titleInput?.addEventListener("input", () => invalidatePptxPreview());
+    themeInput?.addEventListener("change", () => invalidatePptxPreview("主题色已更新，请重新预览后再生成。"));
+    planningModeInput?.addEventListener("change", () => invalidatePptxPreview("规划模式已更新，请重新预览。"));
   })();
 
 function initCheckboxMultiselect(dropdown, labels, placeholder) {
