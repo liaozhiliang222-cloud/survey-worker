@@ -654,20 +654,6 @@ def _render_stacked_bars(slide, merged_rows, segments, all_options,
     actual_cx = margin_left + inset
     actual_cw = chart_w - 2 * inset
 
-    # 构建数据：categories = 分群名, series = 各选项
-    chart_data = ChartData()
-    chart_data.categories = list(segments)
-    for opt in all_options:
-        vals = []
-        for seg in segments:
-            v = 0.0
-            for row in merged_rows:
-                if row["选项"] == opt:
-                    v = row.get(seg, 0.0)
-                    break
-            vals.append(v)
-        chart_data.add_series(opt, tuple(vals))
-
     # 维度不多且标签较短时用纵向堆积柱状图，否则使用横向堆积条形图。
     use_column = (
         len(segments) <= 6
@@ -678,6 +664,24 @@ def _render_stacked_bars(slide, merged_rows, segments, all_options,
         XL_CHART_TYPE.COLUMN_STACKED_100 if use_column
         else XL_CHART_TYPE.BAR_STACKED_100
     )
+    # 构建数据：categories = 分群名, series = 各选项。
+    # 横向条形图首类目显示在底部，因此反转写入，确保总体视觉上位于最上方。
+    render_segments = list(segments) if use_column else list(reversed(segments))
+    chart_data = ChartData()
+    chart_data.categories = [
+        "总体" if str(seg).strip().lower() == "total" else seg
+        for seg in render_segments
+    ]
+    for opt in all_options:
+        vals = []
+        for seg in render_segments:
+            v = 0.0
+            for row in merged_rows:
+                if row["选项"] == opt:
+                    v = row.get(seg, 0.0)
+                    break
+            vals.append(v)
+        chart_data.add_series(opt, tuple(vals))
     cht_shape = slide.shapes.add_chart(
         stacked_type,
         Inches(actual_cx), Inches(chart_y),
@@ -806,7 +810,10 @@ def _render_clustered_bars(slide, merged_rows, segments,
         chart_data = ChartData()
         chart_data.categories = [r["选项"] for r in reversed(merged_rows)]
         vals = [r.get(seg, 0.0) for r in reversed(merged_rows)]
-        chart_data.add_series(seg, tuple(vals))
+        chart_data.add_series(
+            "总体" if str(seg).strip().lower() == "total" else seg,
+            tuple(vals),
+        )
 
         cht_shape = slide.shapes.add_chart(
             XL_CHART_TYPE.BAR_CLUSTERED,

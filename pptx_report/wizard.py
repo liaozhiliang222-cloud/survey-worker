@@ -249,8 +249,10 @@ def _sort_question(q: dict):
     """返回排序后的 (categories, data)。
 
     - 有序类目：保持原始顺序（年龄 / 收入 / 量表）；
-    - 无序类目：按 ``Total``（无则第一个人群）降序，并反转列表，
-      使最大值位于顶部（PPT 横向条形图把 [0] 渲染在底部）。
+    - 无序类目：按 ``Total``（无则第一个人群）降序，保持逻辑上的第一项在前。
+
+    横向条形图的 PowerPoint 类目轴会把第一个类目绘制在底部，因此仅在
+    ``_build_chart_for_question`` 构造横向条形图时再做渲染顺序反转。
     """
     raw_cats = list(q["categories"])
     segs = q.get("segments") or []
@@ -281,7 +283,6 @@ def _sort_question(q: dict):
         key=lambda i: (ref[i] if ref[i] is not None else -1),
         reverse=True,
     )
-    order = order[::-1]  # 反转：最大在顶部
     new_cats = [cats[i] for i in order]
     new_data = {
         s: [(data[s][i] if i < len(data[s]) else None) for i in order]
@@ -485,8 +486,16 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
             ]
             for idx, cat in enumerate(cats)
         }
+        stack_categories = list(display_segs)
+        if ctype == ChartType.STACKED_BAR:
+            # 横向条形图第一个类目显示在底部：反转写入，使“总体”视觉上位于最上方。
+            stack_categories = list(reversed(stack_categories))
+            series_dict = {
+                name: list(reversed(values))
+                for name, values in series_dict.items()
+            }
         spec = ChartSpec.bar(
-            title=f"{title}（构成）", categories=display_segs,
+            title=f"{title}（构成）", categories=stack_categories,
             series_dict=series_dict, insight=insight, stacked=True,
         )
         spec.type = ctype
@@ -495,7 +504,16 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
     series_dict = {s: _pct_list(data, s, cats) for s in display_segs}
     if ctype == ChartType.LINE:
         return ChartSpec.line(title=title, categories=cats, series_dict=series_dict, insight=insight)
-    spec = ChartSpec.bar(title=title, categories=cats, series_dict=series_dict, insight=insight)
+    render_cats = list(cats)
+    if ctype == ChartType.BAR:
+        # PowerPoint 横向条形图会把第一个类别/系列绘制在底部。
+        # 写入时同时反转，最终视觉顺序仍是“第一选项在上、总体系列在上”。
+        render_cats = list(reversed(render_cats))
+        series_dict = {
+            name: list(reversed(values))
+            for name, values in reversed(list(series_dict.items()))
+        }
+    spec = ChartSpec.bar(title=title, categories=render_cats, series_dict=series_dict, insight=insight)
     if ctype == ChartType.COLUMN:
         spec.type = ChartType.COLUMN
     return spec
@@ -512,15 +530,24 @@ def _harmonize_page_charts(batch: list, charts: list) -> list:
         if title_counts.get(chart.title, 0) > 1:
             chart.title = f"{q.get('code', '')} · {chart.title}".strip(" ·")
     types = {chart.type for chart in charts}
+
+    def convert_to_horizontal_bar(chart):
+        """把非条形 ChartSpec 转成横向条形图，并同步 PowerPoint 的逆序语义。"""
+        chart.categories = list(reversed(chart.categories))
+        chart.series = list(reversed(chart.series))
+        for series in chart.series:
+            series.values = list(reversed(series.values))
+        chart.type = ChartType.BAR
+
     # 三张雷达图并排会过小且难以定量读取，改为带直接数据标签的分组条形图。
     if len(charts) >= 3 and types == {ChartType.RADAR}:
         for chart in charts:
-            chart.type = ChartType.BAR
+            convert_to_horizontal_bar(chart)
         types = {ChartType.BAR}
     if ChartType.BAR in types and ChartType.COLUMN in types:
         for chart in charts:
             if chart.type == ChartType.COLUMN:
-                chart.type = ChartType.BAR
+                convert_to_horizontal_bar(chart)
     return charts
 
 

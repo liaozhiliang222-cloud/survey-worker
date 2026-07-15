@@ -99,12 +99,18 @@ def add_chart(slide, spec: ChartSpec, x, y, cx, cy, theme: Theme) -> None:
 
 
 # ------------------------- 数据构造 -------------------------
+def _display_label(value) -> str:
+    """把内部总体字段 ``Total`` 统一本地化为用户可见的“总体”。"""
+    text = str(value)
+    return "总体" if text.strip().lower() == "total" else text
+
+
 def _build_category_chart(spec: ChartSpec) -> CategoryChartData:
     """通用分类图（柱状 / 条形 / 折线 / 堆积 / 雷达 / 组合底座）。"""
     cd = CategoryChartData()
-    cd.categories = [str(c) for c in spec.categories]
+    cd.categories = [_display_label(c) for c in spec.categories]
     for s in spec.series:
-        cd.add_series(s.name, [float(v) for v in s.values])
+        cd.add_series(_display_label(s.name), [float(v) for v in s.values])
     return cd
 
 
