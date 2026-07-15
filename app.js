@@ -12069,7 +12069,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           <th style="padding:8px 6px;text-align:left;">洞察标题（可编辑）</th>
           <th style="padding:8px 6px;text-align:left;">题目</th>
           <th style="padding:8px 6px;text-align:center;width:130px;">图表类型</th>
-          <th style="padding:8px 6px;text-align:center;width:160px;">分维度</th>
+          <th style="padding:8px 6px;text-align:center;width:180px;">分维度（对比页自动含总体）</th>
         </tr></thead><tbody>`;
 
       let lastChapter = null;
@@ -12101,7 +12101,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
               <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
                 <strong style="color:#123b73;font-size:14px;">章节：${escapeHtml(chapterName)}</strong>
                 <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-                  <span style="font-size:11px;color:#64748b;">章节默认维度：</span>
+                  <span style="font-size:11px;color:#64748b;">章节默认维度（自动含总体）：</span>
                   ${dimOptions.map((d) => {
                     const checked = chapterDims.includes(d.key);
                     return `<label style="font-size:11px;color:${checked ? "#1d4ed8" : "#475569"};white-space:nowrap;">
