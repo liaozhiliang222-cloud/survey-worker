@@ -11629,6 +11629,16 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     let currentDimension = "";  // 当前选中的分组名（"" = 全部维度）
     let pagePlan = null;        // 预览模式返回的页面规划
     let editedPagePlan = null;  // 用户编辑后的页面规划
+    let progressTimer = null;
+
+    function invalidatePptxPreview(message = "配置已更新，请重新预览后再生成。") {
+      const hadPreview = Boolean(editedPagePlan);
+      pagePlan = null;
+      editedPagePlan = null;
+      if (previewPanel) previewPanel.style.display = "none";
+      if (confirmBtn) confirmBtn.disabled = true;
+      if (hadPreview && genStatus) genStatus.textContent = message;
+    }
 
     function setFile(file) {
       if (!file) return;
@@ -11743,6 +11753,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       allCb.addEventListener("change", () => {
         segmentPanel.querySelectorAll('input[type="checkbox"]:not([data-role])').forEach((cb) => (cb.checked = allCb.checked));
         updateMultiselectText();
+        invalidatePptxPreview();
       });
       segmentPanel.querySelectorAll('input[type="checkbox"]:not([data-role])').forEach((cb) => {
         cb.addEventListener("change", () => {
@@ -11750,6 +11761,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           const chk = segmentPanel.querySelectorAll('input[type="checkbox"]:not([data-role]):checked');
           allCb.checked = opts.length > 0 && chk.length === opts.length;
           updateMultiselectText();
+          invalidatePptxPreview();
         });
       });
       updateMultiselectText();
@@ -11774,6 +11786,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       allLabel.dataset.role = "dimension-all";
       const allCb = document.createElement("input");
       allCb.type = "checkbox"; allCb.value = ""; allCb.checked = true;
+      allCb.dataset.role = "dimension-all";
       allLabel.appendChild(allCb);
       allLabel.appendChild(document.createElement("span")).appendChild(document.createTextNode("全部维度"));
       dimensionPanel.appendChild(allLabel);
@@ -11789,30 +11802,20 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         );
         dimensionPanel.appendChild(label);
       });
-      // 全选/取消行
-      const selAllLabel = document.createElement("label");
-      selAllLabel.className = "multiselect-option";
-      selAllLabel.style.borderTop = "1px solid #e5e7eb";
-      selAllLabel.style.marginTop = "4px";
-      selAllLabel.style.paddingTop = "6px";
-      const selAllCb = document.createElement("input");
-      selAllCb.type = "checkbox";
-      selAllCb.dataset.role = "dim-selectall";
-      selAllCb.checked = true;
-      selAllLabel.appendChild(selAllCb);
-      selAllLabel.appendChild(document.createElement("span")).appendChild(document.createTextNode("全选/取消"));
-      dimensionPanel.appendChild(selAllLabel);
-
-      // 全选联动
-      selAllCb.addEventListener("change", () => {
-        dimensionPanel.querySelectorAll('input[type="checkbox"]:not([data-role])').forEach((cb) => (cb.checked = selAllCb.checked));
+      // 「全部维度」与具体维度严格互斥；具体维度之间仍可多选。
+      allCb.addEventListener("change", () => {
+        if (allCb.checked) {
+          dimensionPanel.querySelectorAll('input[type="checkbox"]:not([data-role])').forEach((cb) => (cb.checked = false));
+        } else if (!dimensionPanel.querySelector('input[type="checkbox"]:checked:not([data-role])')) {
+          allCb.checked = true;
+        }
         updateDimensionSelection();
       });
       dimensionPanel.querySelectorAll('input[type="checkbox"]:not([data-role])').forEach((cb) => {
         cb.addEventListener("change", () => {
-          const opts = dimensionPanel.querySelectorAll('input[type="checkbox"]:not([data-role])');
-          const chk = dimensionPanel.querySelectorAll('input[type="checkbox"]:not([data-role]):checked');
-          selAllCb.checked = opts.length > 0 && chk.length === opts.length;
+          if (cb.checked) allCb.checked = false;
+          const checkedSpecific = dimensionPanel.querySelector('input[type="checkbox"]:checked:not([data-role])');
+          if (!checkedSpecific) allCb.checked = true;
           updateDimensionSelection();
         });
       });
@@ -11823,19 +11826,20 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     function updateDimensionSelection() {
       const cbs = dimensionPanel ? dimensionPanel.querySelectorAll('input[type="checkbox"]:checked:not([data-role])') : [];
       const checked = Array.from(cbs).map(cb => cb.value);
+      const allSelected = Boolean(dimensionPanel?.querySelector('input[data-role="dimension-all"]:checked'));
       currentDimension = "";
-      if (checked.length > 0 && !checked.includes("")) {
+      if (checked.length > 0) {
         // 选了具体分组（多选时合并各分组的 segments）
         currentDimension = checked.join(",");
         if (dimTextEl) { dimTextEl.textContent = "已选 " + checked.length + "/" + dimensionGroups.length; dimTextEl.style.color = "#1e293b"; }
-      } else if (checked.includes("")) {
+      } else if (allSelected) {
         // 全部维度
         if (dimTextEl) { dimTextEl.textContent = "全部维度"; dimTextEl.style.color = "#1e293b"; }
       } else if (dimTextEl) {
         dimTextEl.textContent = "请选择"; dimTextEl.style.color = "#95a1ad";
       }
       // 联动人群列表
-      if (checked.includes("") || checked.length === 0) {
+      if (allSelected || checked.length === 0) {
         renderSegmentOptions(lastAllSegments);
       } else {
         // 合并所有选中分组的 segments（去重保序）
@@ -11850,6 +11854,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         }
         renderSegmentOptions(mergedSegs);
       }
+      invalidatePptxPreview();
     }
 
     async function readPptxApiError(resp, fallback) {
@@ -11957,7 +11962,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       // Chart type options
       const chartTypeOptions = [
         { value: "bar", label: "条形图（默认）" },
-        { value: "stacked_bar", label: "垞积图" },
+        { value: "stacked_bar", label: "堆积图" },
         { value: "radar", label: "雷达图" },
         { value: "doughnut", label: "环形图" },
         { value: "pie", label: "饼图" },
@@ -11988,6 +11993,16 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         </tr></thead><tbody>`;
 
       pages.forEach((p, idx) => {
+        if (!Array.isArray(p.selected_dimensions) || p.selected_dimensions.length === 0) {
+          p.selected_dimensions = p.dimension_mode === "overall"
+            ? ["总体"]
+            : dimOptions.filter(d => d.key !== "总体").map(d => d.key);
+          p.dimension_mode = p.selected_dimensions.length ? "compare" : "overall";
+          p.dimension_key = p.selected_dimensions.length
+            ? p.selected_dimensions.join(",")
+            : "总体";
+          if (!p.selected_dimensions.length) p.selected_dimensions = ["总体"];
+        }
         const qTitles = (p.questions || []).map(q =>
           `<span title="${escapeHtml(q.code || '')}">${escapeHtml(q.title || q.code || "?")}</span>`
         ).join("<br>");
@@ -12008,8 +12023,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           <td style="padding:8px 6px;text-align:left;">
             <div style="display:flex;flex-wrap:wrap;gap:4px;max-width:220px;" data-preview-dims="${idx}">
               ${dimOptions.map(d => {
-                const isChecked = ((p.dimension_mode === "overall") && (d.key === "总体")) ||
-                  ((p.dimension_mode !== "overall") && (p.dimension_key || "").split(",").includes(d.key));
+                const isChecked = p.selected_dimensions.includes(d.key);
                 return `<label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;padding:2px 5px;border:1px solid ${isChecked ? "#3b82f6" : "#cbd5e1"};border-radius:10px;background:${isChecked ? "#eff6ff" : "#fff"};cursor:pointer;white-space:nowrap;color:${isChecked ? "#1d4ed8" : "#475569"};">
                   <input type="checkbox" value="${d.key}" data-preview-idx="${idx}" data-field="dimension_check"
                     ${isChecked ? "checked" : ""}
@@ -12051,26 +12065,33 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           page.selected_dimensions = [];
         }
       }
-      if (checked) {
+      if (checked && value === "总体") {
+        page.selected_dimensions = ["总体"];
+      } else if (checked) {
+        page.selected_dimensions = page.selected_dimensions.filter(v => v !== "总体");
         if (!page.selected_dimensions.includes(value)) page.selected_dimensions.push(value);
       } else {
         page.selected_dimensions = page.selected_dimensions.filter(v => v !== value);
       }
+      if (page.selected_dimensions.length === 0) page.selected_dimensions = ["总体"];
       // 同步 dimension_mode / dimension_key
-      if (page.selected_dimensions.length === 0) {
-        page.dimension_mode = "compare";
-        page.dimension_key = "";
-      } else if (page.selected_dimensions.length === 1 && page.selected_dimensions[0] === "总体") {
+      if (page.selected_dimensions.length === 1 && page.selected_dimensions[0] === "总体") {
         page.dimension_mode = "overall";
         page.dimension_key = "总体";
-      } else if (page.selected_dimensions.includes("总体")) {
-        // 总体 + 其他维度 → overall 模式，记录所有 key
-        page.dimension_mode = "overall";
-        page.dimension_key = page.selected_dimensions.join(",");
       } else {
         page.dimension_mode = "compare";
         page.dimension_key = page.selected_dimensions.join(",");
       }
+      const controls = previewTable?.querySelectorAll(`input[data-preview-idx="${idx}"][data-field="dimension_check"]`) || [];
+      controls.forEach((input) => {
+        input.checked = page.selected_dimensions.includes(input.value);
+        const label = input.closest("label");
+        if (!label) return;
+        const active = input.checked;
+        label.style.borderColor = active ? "#3b82f6" : "#cbd5e1";
+        label.style.background = active ? "#eff6ff" : "#fff";
+        label.style.color = active ? "#1d4ed8" : "#475569";
+      });
     };
     // 兼容旧接口（单选模式）
     window._onPreviewDimChange = function(idx, newValue) {
@@ -12123,6 +12144,34 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       });
     }
 
+    function setPptxProgress(percent, text) {
+      const value = Math.max(0, Math.min(100, Math.round(percent)));
+      progressFill.style.width = value + "%";
+      progress.setAttribute("aria-valuenow", String(value));
+      progressText.textContent = `${text} · ${value}%`;
+    }
+
+    function startPptxProgress() {
+      clearInterval(progressTimer);
+      const startedAt = Date.now();
+      setPptxProgress(8, "正在上传文件");
+      progressTimer = setInterval(() => {
+        const elapsed = (Date.now() - startedAt) / 1000;
+        let target = 18 + Math.min(68, elapsed * 1.7);
+        let label = "正在解析交叉表";
+        if (elapsed > 10) label = "正在应用页面与维度配置";
+        if (elapsed > 24) label = "正在绘制图表与排版";
+        if (elapsed > 40) label = "正在打包演示文稿";
+        const current = Number.parseFloat(progressFill.style.width) || 0;
+        setPptxProgress(Math.max(current, Math.min(86, target)), label);
+      }, 1200);
+    }
+
+    function stopPptxProgress() {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+
     async function doGeneratePptx() {
       if (!selectedFile) return;
       if (!segmentPanel) return;
@@ -12135,8 +12184,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       if (confirmBtn) confirmBtn.disabled = true;
       if (generateBtn) generateBtn.disabled = true;
       progress.classList.remove("hidden");
-      progressFill.style.width = "15%";
-      progressText.textContent = "生成中…";
+      startPptxProgress();
       (genStatus || confirmStatus).textContent = "";
       try {
         const buf = await selectedFile.arrayBuffer();
@@ -12154,7 +12202,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         if (!resp.ok) {
           throw new Error(await readPptxApiError(resp, "生成失败"));
         }
-        progressFill.style.width = "85%";
+        setPptxProgress(92, "正在准备下载");
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -12164,14 +12212,14 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         a.click();
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 4000);
-        progressFill.style.width = "100%";
-        progressText.textContent = "完成";
+        setPptxProgress(100, "生成完成");
         (genStatus || confirmStatus).textContent = "已生成并开始下载。";
         resultEl.innerHTML = `<div class="empty-state"><strong>生成成功</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span></div>`;
       } catch (err) {
         (genStatus || confirmStatus).textContent = "生成失败：" + err.message;
-        progressFill.style.width = "0%";
+        setPptxProgress(0, "生成失败");
       } finally {
+        stopPptxProgress();
         if (confirmBtn) confirmBtn.disabled = false;
         if (generateBtn) generateBtn.disabled = false;
         setTimeout(() => progress.classList.add("hidden"), 1500);
@@ -12179,6 +12227,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     }
 
     confirmBtn && confirmBtn.addEventListener("click", () => doGeneratePptx());
+    titleInput?.addEventListener("input", () => invalidatePptxPreview());
   })();
 
 function initCheckboxMultiselect(dropdown, labels, placeholder) {
