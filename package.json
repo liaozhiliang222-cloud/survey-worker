@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test:ai-proxy": "node tests/ai-proxy-smoke.mjs"
   },
   "dependencies": {},
   "devDependencies": {}

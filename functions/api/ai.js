@@ -7,6 +7,8 @@ const PROVIDER_HOSTS = {
 };
 
 const MAX_BODY_BYTES = 1024 * 1024;
+const BUILTIN_QWEN_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const BUILTIN_QWEN_MODEL = "qwen-plus";
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -38,7 +40,15 @@ function validateTarget(provider, rawUrl) {
   return url.toString();
 }
 
-export async function onRequest({ request }) {
+function getBuiltinConfig(env) {
+  return {
+    apiKey: String(env?.DASHSCOPE_API_KEY || env?.BAILIAN_API_KEY || env?.AI_API_KEY || "").trim(),
+    model: String(env?.BAILIAN_MODEL || BUILTIN_QWEN_MODEL).trim(),
+    url: String(env?.BAILIAN_API_URL || BUILTIN_QWEN_URL).trim(),
+  };
+}
+
+export async function onRequest({ request, env }) {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: { message: "Method not allowed" } }, 405);
 
@@ -49,23 +59,34 @@ export async function onRequest({ request }) {
 
   try {
     const payload = await request.json();
-    const targetUrl = validateTarget(payload.provider || "custom", payload.url);
-    const apiKey = String(payload.apiKey || "").trim();
     const body = payload.body;
-    if (!apiKey || !body?.model || !Array.isArray(body.messages)) {
-      return json({ error: { message: "请先在 AI 设置中配置 API Key 与模型。" } }, 400);
+    if (!body?.model || !Array.isArray(body.messages)) {
+      return json({ error: { message: "模型或消息内容不完整。" } }, 400);
     }
+
+    const clientApiKey = String(payload.apiKey || "").trim();
+    const builtin = getBuiltinConfig(env);
+    const useBuiltin = !clientApiKey;
+    const apiKey = useBuiltin ? builtin.apiKey : clientApiKey;
+    if (!apiKey) {
+      return json({ error: { message: "平台内置百炼服务尚未完成配置，请联系管理员。" } }, 503);
+    }
+
+    const targetUrl = useBuiltin
+      ? validateTarget("qwen", builtin.url)
+      : validateTarget(payload.provider || "custom", payload.url);
+    const upstreamBody = useBuiltin ? { ...body, model: builtin.model } : body;
     const upstream = await fetch(targetUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(upstreamBody),
     });
     const text = await upstream.text();
     if (!text.trim()) {
-      return json({ error: { message: "模型返回为空，请检查模型名称、额度或 API Key。" } }, 502);
+      return json({ error: { message: "模型返回为空，请检查模型名称、额度或服务状态。" } }, 502);
     }
     return new Response(text, {
       status: upstream.status,
@@ -73,7 +94,8 @@ export async function onRequest({ request }) {
         "Content-Type": upstream.headers.get("Content-Type") || "application/json; charset=utf-8",
         "Access-Control-Allow-Origin": "*",
         "Cache-Control": "no-store",
-        "X-Actual-Model": upstream.headers.get("X-Actual-Model") || body.model,
+        "X-Actual-Model": upstream.headers.get("X-Actual-Model") || upstreamBody.model,
+        "X-AI-Source": useBuiltin ? "builtin-bailian" : "user-key",
       },
     });
   } catch (error) {

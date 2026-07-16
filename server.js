@@ -12,6 +12,8 @@ const providerHosts = {
   openai: ["api.openai.com"]
 };
 const maxBodyBytes = 1024 * 1024;
+const builtinQwenUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const builtinQwenModel = "qwen-plus";
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -74,20 +76,34 @@ http
       req.on("end", async () => {
         try {
           const payload = JSON.parse(body || "{}");
-          const targetUrl = validateAiTarget(payload.provider || "custom", payload.url);
-          const apiKey = String(payload.apiKey || "").trim();
+          const clientApiKey = String(payload.apiKey || "").trim();
+          const useBuiltin = !clientApiKey;
+          const targetUrl = validateAiTarget(
+            useBuiltin ? "qwen" : (payload.provider || "custom"),
+            useBuiltin ? (process.env.BAILIAN_API_URL || builtinQwenUrl) : payload.url
+          );
+          const apiKey = useBuiltin
+            ? String(process.env.DASHSCOPE_API_KEY || process.env.BAILIAN_API_KEY || process.env.AI_API_KEY || "").trim()
+            : clientApiKey;
           const requestBody = payload.body;
-          if (!apiKey || !requestBody || !requestBody.model || !Array.isArray(requestBody.messages)) {
-            sendJson(res, 400, { error: { message: "Missing apiKey, model or messages." } });
+          if (!requestBody || !requestBody.model || !Array.isArray(requestBody.messages)) {
+            sendJson(res, 400, { error: { message: "Missing model or messages." } });
             return;
           }
+          if (!apiKey) {
+            sendJson(res, 503, { error: { message: "Built-in Bailian service is not configured." } });
+            return;
+          }
+          const upstreamBody = useBuiltin
+            ? { ...requestBody, model: process.env.BAILIAN_MODEL || builtinQwenModel }
+            : requestBody;
           const upstream = await fetch(targetUrl, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${apiKey}`
             },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(upstreamBody)
           });
           const text = await upstream.text();
           if (!text.trim()) {
@@ -101,7 +117,9 @@ http
           res.writeHead(upstream.status, {
             "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
             "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "no-store"
+            "Cache-Control": "no-store",
+            "X-Actual-Model": upstream.headers.get("X-Actual-Model") || upstreamBody.model,
+            "X-AI-Source": useBuiltin ? "builtin-bailian" : "user-key"
           });
           res.end(text);
         } catch (error) {

@@ -8668,7 +8668,6 @@ function readAiSettingsFromForm() {
 function validateAiSettings(settings) {
   const errors = [];
   if (!aiProviderPresets[settings.provider]) errors.push("请选择有效的大模型供应商。");
-  if (!String(settings.apiKey || "").trim()) errors.push("请填写 API Key。");
   if (!settings.model) errors.push("请填写模型名称。");
   if (!settings.url) {
     errors.push("请填写接口地址。");
@@ -8793,6 +8792,9 @@ async function callAiChatCompletion(settings, messages, options = {}) {
     temperature: options.temperature ?? 0.35,
     max_tokens: options.maxTokens ?? 3500
   };
+  if (options.responseFormat === "json_object") {
+    requestBody.response_format = { type: "json_object" };
+  }
   // 设置6分钟超时（比后端5分钟略长），防止大报告生成时524超时
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 360000;
@@ -12547,7 +12549,12 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       const jsonText = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]
         || text.match(/\{[\s\S]*\}/)?.[0]
         || text;
-      const parsed = JSON.parse(jsonText);
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonText.replace(/^\uFEFF/, "").trim());
+      } catch {
+        throw new Error("模型未按要求返回 JSON，系统将自动重试一次。");
+      }
       if (!parsed || !Array.isArray(parsed.pages)) throw new Error("AI 未返回有效的逐页洞察 JSON。");
       return parsed;
     }
@@ -12591,7 +12598,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       const settings = loadAiSettings();
       const errors = validateAiSettings(settings);
       if (settings.mode === "local" || errors.length) {
-        aiWriteStatus.textContent = "请先在“AI 设置”中配置可用的模型和 API Key。";
+        aiWriteStatus.textContent = `AI 设置尚未就绪：${errors.join("；")}`;
         return;
       }
       aiWriteBtn.disabled = true;
@@ -12605,7 +12612,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
 
         for (let i = 0; i < batches.length; i += 1) {
           aiWriteStatus.textContent = `AI 正在写报告：第 ${i + 1}/${batches.length} 批页面…`;
-          const output = await callAiChatCompletion(settings, [
+          const messages = [
             {
               role: "system",
               content: [
@@ -12616,8 +12623,30 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
               ].join("\n"),
             },
             { role: "user", content: JSON.stringify({ pages: batches[i] }) },
-          ], { maxTokens: 6000, timeoutMs: 240000, temperature: 0.15 });
-          generated.push(...parseAiInsightJson(output).pages);
+          ];
+          let output = await callAiChatCompletion(settings, messages, {
+            maxTokens: 6000,
+            timeoutMs: 240000,
+            temperature: 0.15,
+            responseFormat: "json_object",
+          });
+          let parsed;
+          try {
+            parsed = parseAiInsightJson(output);
+          } catch {
+            output = await callAiChatCompletion(settings, [
+              ...messages,
+              { role: "assistant", content: output.slice(0, 12000) },
+              { role: "user", content: "上一次输出不是合法 JSON。请仅按指定结构重新输出 JSON，不要解释或添加 Markdown。" },
+            ], {
+              maxTokens: 6000,
+              timeoutMs: 240000,
+              temperature: 0,
+              responseFormat: "json_object",
+            });
+            parsed = parseAiInsightJson(output);
+          }
+          generated.push(...parsed.pages);
         }
 
         const generatedByPage = new Map(generated.map((page) => [Number(page.page_idx), page]));
@@ -12643,7 +12672,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           const summaryOutput = await callAiChatCompletion(settings, [
             { role: "system", content: "基于逐页洞察，写3句以内的执行摘要，不新增数字。只返回 JSON：{\"summary\":\"...\"}。" },
             { role: "user", content: JSON.stringify(summaryInput) },
-          ], { maxTokens: 1200, timeoutMs: 180000, temperature: 0.15 });
+          ], { maxTokens: 1200, timeoutMs: 180000, temperature: 0.15, responseFormat: "json_object" });
           const summaryText = String(summaryOutput || "").match(/\{[\s\S]*\}/)?.[0] || "{}";
           editedPagePlan.executive_summary = String(JSON.parse(summaryText).summary || "").trim();
         } catch (_) {
