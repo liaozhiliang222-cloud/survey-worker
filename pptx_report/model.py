@@ -233,6 +233,7 @@ class ChartPageContent:
     subtitle: Optional[str] = None
     layout: Any = LayoutType.AUTO
     side_insights: List[str] = field(default_factory=list)  # 仅图文混排使用
+    insights: List[str] = field(default_factory=list)  # 标题下方的编号洞察正文
     data_source: str = ""  # 数据来源标注（页面底部，对齐调研公司规范）
 
 
@@ -349,6 +350,7 @@ class ReportSpec:
                     "subtitle": p.subtitle,
                     "layout": p.layout.value if isinstance(p.layout, LayoutType) else p.layout,
                     "side_insights": list(p.side_insights),
+                    "insights": list(p.insights),
                     "data_source": p.data_source,
                     "charts": [c.to_dict() for c in p.charts],
                 }
@@ -411,6 +413,7 @@ class ReportSpec:
                 subtitle=cp.get("subtitle"),
                 layout=layout,
                 side_insights=[str(s) for s in cp.get("side_insights", [])],
+                insights=[str(s) for s in cp.get("insights", [])],
                 data_source=str(cp.get("data_source", "")),
             ))
 

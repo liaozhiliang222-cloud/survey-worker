@@ -1208,9 +1208,8 @@
                     <span class="field-heading">报告规划模式</span>
                     <select id="pptxPlanningMode">
                       <option value="rule" selected>标准规则（快速、稳定）</option>
-                      <option value="ai">AI 建议（章节、维度与洞察草稿）</option>
                     </select>
-                    <small class="field-note">两种模式使用同一套 PPT 渲染器；AI 仅提供可编辑建议，需要先在“AI设置”中配置模型。</small>
+                    <small class="field-note">先由 Python 稳定生成基础报告；完成后可单独使用“AI 写报告”生成数据化洞察与增强版 PPT。</small>
                   </label>
                   <div class="field">
                     <span class="field-heading">维度分组（按合并单元格拆分，如分品牌 / 分平台）</span>
@@ -1283,6 +1282,11 @@
                       <span>上传并解析交叉表后，选择人群维度即可生成。</span>
                     </div>
                   </div>
+                  <div class="pptx-ai-report-actions">
+                    <button class="primary-btn" id="pptxAiWriteBtn" type="button" disabled>AI 写报告</button>
+                    <span class="panel-note">先生成基础版 PPT；AI 将读取 Python 汇总后的逐页数据，生成可编辑的标题与分点洞察。</span>
+                  </div>
+                  <p class="panel-note" id="pptxAiWriteStatus"></p>
                 </div>
               </div>
             </div>

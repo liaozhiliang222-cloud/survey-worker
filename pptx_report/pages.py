@@ -282,8 +282,11 @@ def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) ->
 
     # 标题下方直接呈现洞察正文，不再增加“核心洞察/核心结论”标签。
     insight_texts = list(dict.fromkeys(
-        c.insight for c in page.charts
-        if c.insight and c.insight not in page.title and page.title not in c.insight
+        text for text in (
+            list(page.insights or [])
+            or [c.insight for c in page.charts]
+        )
+        if text and text not in page.title and page.title not in text
     ))
     if insight_texts:
         max_units = max(_text_width_units(text) for text in insight_texts)

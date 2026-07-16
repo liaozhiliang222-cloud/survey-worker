@@ -3991,3 +3991,193 @@ tr:last-child td {
 #pptxPreviewPanel .step-badge {
   background: linear-gradient(135deg, #f59e0b, #d97706);
 }
+
+.pptx-plan-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1e3a8a;
+  background: #eff6ff;
+  font-size: 12px;
+}
+
+.pptx-ai-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 10px;
+  background: #eef2ff;
+}
+
+.pptx-ai-report-actions .panel-note {
+  margin: 0;
+}
+
+.pptx-add-page-btn {
+  margin-left: auto;
+}
+
+.pptx-preview-question-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 28px;
+}
+
+.pptx-question-chip {
+  padding: 3px 7px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pptx-edit-questions-btn {
+  width: fit-content;
+  margin-top: 6px;
+  padding: 6px 10px;
+}
+
+.pptx-page-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed #dbe4ef;
+}
+
+.ghost-btn.danger {
+  color: #b91c1c;
+}
+
+.pptx-question-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+}
+
+.pptx-question-editor.hidden {
+  display: none;
+}
+
+.pptx-question-editor-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(2px);
+}
+
+.pptx-question-editor-dialog {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: min(920px, calc(100vw - 36px));
+  height: min(760px, calc(100vh - 44px));
+  overflow: hidden;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.pptx-question-editor-dialog > header,
+.pptx-question-editor-dialog > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.pptx-question-editor-dialog > header div {
+  display: grid;
+  gap: 3px;
+}
+
+.pptx-question-editor-dialog > header span,
+.pptx-question-editor-dialog > footer span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.pptx-question-editor-dialog > footer {
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 0;
+}
+
+.pptx-question-editor-tools {
+  display: flex;
+  gap: 10px;
+  padding: 12px 18px;
+  background: #f8fafc;
+}
+
+.pptx-question-editor-tools input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+}
+
+.pptx-question-editor-list {
+  overflow: auto;
+  padding: 8px 18px 18px;
+}
+
+.pptx-question-option {
+  display: grid;
+  grid-template-columns: auto 82px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 8px;
+  border-bottom: 1px solid #eef2f7;
+  cursor: pointer;
+}
+
+.pptx-question-option:hover {
+  background: #f8fafc;
+}
+
+.pptx-question-code {
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.pptx-question-text {
+  overflow: hidden;
+  color: #334155;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pptx-question-option small {
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .pptx-plan-toolbar,
+  .pptx-question-editor-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .pptx-question-option {
+    grid-template-columns: auto 68px minmax(0, 1fr);
+  }
+  .pptx-question-option small {
+    grid-column: 2 / -1;
+  }
+}

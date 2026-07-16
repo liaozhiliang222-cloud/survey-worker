@@ -8668,6 +8668,7 @@ function readAiSettingsFromForm() {
 function validateAiSettings(settings) {
   const errors = [];
   if (!aiProviderPresets[settings.provider]) errors.push("请选择有效的大模型供应商。");
+  if (!String(settings.apiKey || "").trim()) errors.push("请填写 API Key。");
   if (!settings.model) errors.push("请填写模型名称。");
   if (!settings.url) {
     errors.push("请填写接口地址。");
@@ -11624,6 +11625,8 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     const progressText = document.querySelector("#pptxProgressText");
     const genStatus = document.querySelector("#pptxGenStatus");
     const resultEl = document.querySelector("#pptxResult");
+    const aiWriteBtn = document.querySelector("#pptxAiWriteBtn");
+    const aiWriteStatus = document.querySelector("#pptxAiWriteStatus");
     if (!dropzone) return;
 
     let selectedFile = null;
@@ -11631,6 +11634,8 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     let currentDimension = "";  // 当前选中的分组名（"" = 全部维度）
     let pagePlan = null;        // 预览模式返回的页面规划
     let editedPagePlan = null;  // 用户编辑后的页面规划
+    let questionEditorPageIndex = -1;
+    let lastPptxJobId = "";
 
     function invalidatePptxPreview(message = "配置已更新，请重新预览后再生成。") {
       const hadPreview = Boolean(editedPagePlan);
@@ -11638,6 +11643,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       editedPagePlan = null;
       if (previewPanel) previewPanel.style.display = "none";
       if (confirmBtn) confirmBtn.disabled = true;
+      if (aiWriteBtn) aiWriteBtn.disabled = true;
       if (hadPreview && genStatus) genStatus.textContent = message;
     }
 
@@ -11656,6 +11662,8 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       if (previewPanel) previewPanel.style.display = "none";
       pagePlan = null;
       editedPagePlan = null;
+      lastPptxJobId = "";
+      if (aiWriteBtn) aiWriteBtn.disabled = true;
     }
 
     dropzone.addEventListener("click", () => fileInput.click());
@@ -12012,6 +12020,11 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           pagePlan.planning_mode = "rule";
         }
         editedPagePlan = JSON.parse(JSON.stringify(pagePlan));  // deep copy for editing
+        if (confirmBtn) confirmBtn.textContent = "确认生成 PPT";
+        if (aiWriteBtn) {
+          aiWriteBtn.disabled = true;
+          aiWriteBtn.textContent = "AI 写报告";
+        }
         renderPreviewTable(editedPagePlan);
         if (previewPanel) previewPanel.style.display = "";
         const modeLabel = pagePlan.planning_mode === "ai" ? "AI建议方案" : "标准规则方案";
@@ -12024,6 +12037,121 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         previewBtn.disabled = false;
       }
     });
+
+    function getPptxQuestionCatalog(plan = editedPagePlan) {
+      const source = Array.isArray(plan?.question_catalog) ? plan.question_catalog : [];
+      const merged = new Map(source.map((question) => [question.code, question]));
+      (plan?.pages || []).forEach((page) => (page.questions || []).forEach((question) => {
+        if (question?.code && !merged.has(question.code)) merged.set(question.code, question);
+      }));
+      return Array.from(merged.values());
+    }
+
+    function renumberPptxPages() {
+      (editedPagePlan?.pages || []).forEach((page, idx) => { page.page_idx = idx + 1; });
+      if (editedPagePlan) editedPagePlan.total_pages = editedPagePlan.pages.length;
+    }
+
+    function ensurePptxQuestionEditor() {
+      let modal = document.querySelector("#pptxQuestionEditor");
+      if (modal) return modal;
+      modal = document.createElement("div");
+      modal.id = "pptxQuestionEditor";
+      modal.className = "pptx-question-editor hidden";
+      modal.innerHTML = `
+        <div class="pptx-question-editor-backdrop" data-action="close"></div>
+        <section class="pptx-question-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="pptxQuestionEditorTitle">
+          <header>
+            <div><strong id="pptxQuestionEditorTitle">调整本页题目</strong><span id="pptxQuestionEditorMeta"></span></div>
+            <button type="button" class="ghost-btn" data-action="close">关闭</button>
+          </header>
+          <div class="pptx-question-editor-tools">
+            <input id="pptxQuestionSearch" type="search" placeholder="搜索题号或题目关键词" />
+            <button type="button" class="ghost-btn" data-action="select-none">清空本页</button>
+          </div>
+          <div class="pptx-question-editor-list" id="pptxQuestionEditorList"></div>
+          <footer>
+            <span id="pptxQuestionEditorCount"></span>
+            <button type="button" class="primary-btn" data-action="save">应用到本页</button>
+          </footer>
+        </section>`;
+      document.body.appendChild(modal);
+      modal.addEventListener("click", (event) => {
+        const action = event.target.closest("[data-action]")?.dataset.action;
+        if (action === "close") modal.classList.add("hidden");
+        if (action === "select-none") {
+          modal.querySelectorAll('input[type="checkbox"]').forEach((input) => { input.checked = false; });
+          updatePptxQuestionEditorCount();
+        }
+        if (action === "save") {
+          const page = editedPagePlan?.pages?.[questionEditorPageIndex];
+          if (!page) return;
+          const selectedCodes = Array.from(modal.querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
+          if (!selectedCodes.length) {
+            alert("每页至少保留一道题；如不需要该页，请直接删除页面。");
+            return;
+          }
+          const catalog = getPptxQuestionCatalog();
+          const byCode = new Map(catalog.map((question) => [question.code, question]));
+          page.questions = selectedCodes.map((code) => byCode.get(code)).filter(Boolean);
+          modal.classList.add("hidden");
+          renderPreviewTable(editedPagePlan);
+        }
+      });
+      modal.querySelector("#pptxQuestionSearch").addEventListener("input", (event) => {
+        renderPptxQuestionEditorList(event.target.value);
+      });
+      modal.addEventListener("change", (event) => {
+        if (event.target.matches('input[type="checkbox"]')) updatePptxQuestionEditorCount();
+      });
+      return modal;
+    }
+
+    function updatePptxQuestionEditorCount() {
+      const modal = document.querySelector("#pptxQuestionEditor");
+      if (!modal) return;
+      const count = modal.querySelectorAll('input[type="checkbox"]:checked').length;
+      modal.querySelector("#pptxQuestionEditorCount").textContent = `本页已选 ${count} 题`;
+    }
+
+    function renderPptxQuestionEditorList(query = "") {
+      const modal = ensurePptxQuestionEditor();
+      const page = editedPagePlan?.pages?.[questionEditorPageIndex];
+      if (!page) return;
+      const selected = new Set((page.questions || []).map((question) => question.code));
+      const keyword = String(query || "").trim().toLowerCase();
+      const assigned = new Map();
+      (editedPagePlan.pages || []).forEach((candidate, idx) => (candidate.questions || []).forEach((question) => {
+        if (!assigned.has(question.code)) assigned.set(question.code, []);
+        assigned.get(question.code).push(idx + 1);
+      }));
+      const catalog = getPptxQuestionCatalog().filter((question) => {
+        const haystack = `${question.code || ""} ${question.title || ""} ${question.chapter || ""}`.toLowerCase();
+        return !keyword || haystack.includes(keyword);
+      });
+      modal.querySelector("#pptxQuestionEditorList").innerHTML = catalog.map((question) => {
+        const pages = assigned.get(question.code) || [];
+        return `<label class="pptx-question-option">
+          <input type="checkbox" value="${escapeHtml(question.code)}" ${selected.has(question.code) ? "checked" : ""} />
+          <span class="pptx-question-code">${escapeHtml(question.code)}</span>
+          <span class="pptx-question-text">${escapeHtml(question.title || question.code)}</span>
+          <small>${pages.length ? `已在第 ${pages.join("、")} 页` : "尚未安排"}</small>
+        </label>`;
+      }).join("") || '<div class="empty-state"><strong>没有匹配题目</strong><span>请更换关键词。</span></div>';
+      updatePptxQuestionEditorCount();
+    }
+
+    function openPptxQuestionEditor(idx) {
+      questionEditorPageIndex = idx;
+      const modal = ensurePptxQuestionEditor();
+      const page = editedPagePlan?.pages?.[idx];
+      if (!page) return;
+      modal.querySelector("#pptxQuestionEditorTitle").textContent = `调整第 ${idx + 1} 页题目`;
+      modal.querySelector("#pptxQuestionEditorMeta").textContent = `章节：${page.chapter || "其他研究"}`;
+      modal.querySelector("#pptxQuestionSearch").value = "";
+      renderPptxQuestionEditorList();
+      modal.classList.remove("hidden");
+    }
 
     function renderPreviewTable(plan) {
       if (!previewTable) return;
@@ -12090,7 +12218,12 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         chapterGroups.get(chapterName).push({ page, idx });
       });
 
-      let html = `<div class="pptx-preview-chapters">`;
+      const catalog = getPptxQuestionCatalog(plan);
+      const assignedCodes = new Set(pages.flatMap((page) => (page.questions || []).map((question) => question.code)));
+      let html = `<div class="pptx-plan-toolbar">
+        <strong>页面题目覆盖：${assignedCodes.size}/${catalog.length}</strong>
+        <span>${catalog.length - assignedCodes.size} 道题尚未安排；可在任一页面点击“调整题目”加入。</span>
+      </div><div class="pptx-preview-chapters">`;
       chapterGroups.forEach((items, chapterName) => {
         const chapterDims = items[0]?.page?.selected_dimensions || ["总体"];
         html += `<details class="pptx-preview-chapter" open>
@@ -12107,13 +12240,15 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
                   onchange="window._onPreviewChapterDimCheck && window._onPreviewChapterDimCheck('${encodeURIComponent(chapterName)}', '${encodeURIComponent(d.key)}', this.checked)">${escapeHtml(d.key)}
               </label>`;
             }).join("")}
+            <button type="button" class="ghost-btn pptx-add-page-btn"
+              onclick="window._onPreviewAddPage && window._onPreviewAddPage('${encodeURIComponent(chapterName)}')">＋ 新建页面</button>
           </div>
           <div class="pptx-preview-pages">`;
 
         items.forEach(({ page: p, idx }) => {
           const qTitles = (p.questions || []).map(q =>
-            `<span title="${escapeHtml(q.code || '')}">${escapeHtml(q.title || q.code || "?")}</span>`
-          ).join("<br>");
+            `<span class="pptx-question-chip" title="${escapeHtml(q.title || '')}">${escapeHtml(q.code || "?")}</span>`
+          ).join("");
           const typeLabel = chartTypeOptions.find(o => o.value === p.chart_type)?.label || p.chart_type;
           html += `<details class="pptx-preview-page">
             <summary>
@@ -12127,9 +12262,16 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
                 <textarea rows="2" data-preview-idx="${idx}" data-field="insight_override"
                   onchange="window._onPreviewInsightChange && window._onPreviewInsightChange(${idx}, this.value)">${escapeHtml(p.insight_override || p.title || "")}</textarea>
               </label>
+              <label class="pptx-preview-field pptx-preview-field-wide">
+                <span>正文洞察（每行一条，最多4条）</span>
+                <textarea rows="3" data-preview-idx="${idx}" data-field="insight_bullets"
+                  onchange="window._onPreviewBulletsChange && window._onPreviewBulletsChange(${idx}, this.value)">${escapeHtml((p.insight_bullets || []).join("\n"))}</textarea>
+              </label>
               <div class="pptx-preview-field">
-                <span>题目</span>
+                <span>题目（${(p.questions || []).length}）</span>
                 <div class="pptx-preview-question-list">${qTitles}</div>
+                <button type="button" class="secondary-btn pptx-edit-questions-btn"
+                  onclick="window._onPreviewEditQuestions && window._onPreviewEditQuestions(${idx})">调整题目</button>
               </div>
               <label class="pptx-preview-field">
                 <span>图表类型</span>
@@ -12153,6 +12295,11 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
                   }).join("")}
                 </div>
               </div>
+              <div class="pptx-page-actions pptx-preview-field-wide">
+                <button type="button" class="ghost-btn" onclick="window._onPreviewMovePage && window._onPreviewMovePage(${idx}, -1)" ${idx === 0 ? "disabled" : ""}>上移</button>
+                <button type="button" class="ghost-btn" onclick="window._onPreviewMovePage && window._onPreviewMovePage(${idx}, 1)" ${idx === pages.length - 1 ? "disabled" : ""}>下移</button>
+                <button type="button" class="ghost-btn danger" onclick="window._onPreviewDeletePage && window._onPreviewDeletePage(${idx})">删除页面</button>
+              </div>
             </div>
           </details>`;
         });
@@ -12169,6 +12316,55 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       previewTable.innerHTML = html;
     }
 
+    window._onPreviewEditQuestions = function(idx) {
+      openPptxQuestionEditor(idx);
+    };
+
+    window._onPreviewAddPage = function(encodedChapterName) {
+      if (!editedPagePlan?.pages) return;
+      const chapterName = decodeURIComponent(encodedChapterName);
+      const chapterPages = editedPagePlan.pages.filter((page) => (page.chapter || "其他研究") === chapterName);
+      const template = chapterPages[chapterPages.length - 1] || editedPagePlan.pages[0] || {};
+      let insertAt = editedPagePlan.pages.reduce(
+        (last, page, idx) => ((page.chapter || "其他研究") === chapterName ? idx + 1 : last),
+        editedPagePlan.pages.length,
+      );
+      const newPage = {
+        page_idx: insertAt + 1,
+        chapter: chapterName,
+        title: "新建分析页面",
+        insight_override: "",
+        insight_bullets: [],
+        questions: [],
+        chart_type: "auto",
+        selected_dimensions: Array.isArray(template.selected_dimensions) ? [...template.selected_dimensions] : ["总体"],
+        dimension_mode: template.dimension_mode || "overall",
+        dimension_key: template.dimension_key || "总体",
+      };
+      editedPagePlan.pages.splice(insertAt, 0, newPage);
+      renumberPptxPages();
+      renderPreviewTable(editedPagePlan);
+      openPptxQuestionEditor(insertAt);
+    };
+
+    window._onPreviewDeletePage = function(idx) {
+      if (!editedPagePlan?.pages?.[idx]) return;
+      if (!confirm(`确认删除第 ${idx + 1} 页吗？题目仍可从其他页面的题目库重新加入。`)) return;
+      editedPagePlan.pages.splice(idx, 1);
+      renumberPptxPages();
+      renderPreviewTable(editedPagePlan);
+    };
+
+    window._onPreviewMovePage = function(idx, direction) {
+      if (!editedPagePlan?.pages) return;
+      const next = idx + Number(direction || 0);
+      if (next < 0 || next >= editedPagePlan.pages.length) return;
+      const [page] = editedPagePlan.pages.splice(idx, 1);
+      editedPagePlan.pages.splice(next, 0, page);
+      renumberPptxPages();
+      renderPreviewTable(editedPagePlan);
+    };
+
     // 全局函数：预览表格中图表类型变更
     window._onPreviewChartTypeChange = function(idx, newValue) {
       if (editedPagePlan && editedPagePlan.pages && editedPagePlan.pages[idx]) {
@@ -12177,6 +12373,14 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     };
     window._onPreviewInsightChange = function(idx, value) {
       if (editedPagePlan?.pages?.[idx]) editedPagePlan.pages[idx].insight_override = String(value || "").trim();
+    };
+    window._onPreviewBulletsChange = function(idx, value) {
+      if (!editedPagePlan?.pages?.[idx]) return;
+      editedPagePlan.pages[idx].insight_bullets = String(value || "")
+        .split(/\r?\n/)
+        .map((text) => text.trim())
+        .filter(Boolean)
+        .slice(0, 4);
     };
     window._onPreviewChapterDimCheck = function(encodedChapterName, encodedValue, checked) {
       const chapterName = decodeURIComponent(encodedChapterName);
@@ -12263,11 +12467,13 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     function compactPptxPageConfig(plan) {
       if (!plan || !Array.isArray(plan.pages)) return null;
       return {
+        executive_summary: String(plan.executive_summary || "").trim(),
         pages: plan.pages.map((page) => ({
           page_idx: page.page_idx,
           chapter: page.chapter,
           chart_type: page.chart_type,
           insight_override: page.insight_override,
+          insight_bullets: Array.isArray(page.insight_bullets) ? page.insight_bullets : [],
           dimension_mode: page.dimension_mode,
           dimension_key: page.dimension_key,
           selected_dimensions: Array.isArray(page.selected_dimensions)
@@ -12336,6 +12542,128 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       });
     }
 
+    function parseAiInsightJson(output) {
+      const text = String(output || "").trim();
+      const jsonText = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]
+        || text.match(/\{[\s\S]*\}/)?.[0]
+        || text;
+      const parsed = JSON.parse(jsonText);
+      if (!parsed || !Array.isArray(parsed.pages)) throw new Error("AI 未返回有效的逐页洞察 JSON。");
+      return parsed;
+    }
+
+    function evidencePercentages(contextPage) {
+      const values = [];
+      (contextPage?.questions || []).forEach((question) => (question.rows || []).forEach((row) => {
+        Object.values(row.values || {}).forEach((value) => {
+          const numeric = Number(value);
+          if (Number.isFinite(numeric)) values.push(numeric);
+        });
+      }));
+      return values;
+    }
+
+    function isAiInsightSupported(text, contextPage) {
+      const percentages = Array.from(String(text || "").matchAll(/(\d+(?:\.\d+)?)\s*%/g)).map((match) => Number(match[1]));
+      if (!percentages.length) return true;
+      const evidence = evidencePercentages(contextPage);
+      return percentages.every((value) => evidence.some((actual) => Math.abs(actual - value) <= 0.11));
+    }
+
+    async function requestPptxInsightContext() {
+      const buffer = await selectedFile.arrayBuffer();
+      const payload = packPptxGenerateRequest(buffer, {
+        title: (titleInput.value || "调研分析报告").trim(),
+        source: selectedFile.name,
+        page_config: compactPptxPageConfig(editedPagePlan),
+      });
+      const response = await fetch("/pptx-api/insight-context", {
+        method: "POST",
+        headers: { "Content-Type": "application/vnd.surveykit.pptx-request" },
+        body: payload,
+      });
+      if (!response.ok) throw new Error(await readPptxApiError(response, "生成 AI 数据证据失败"));
+      return response.json();
+    }
+
+    async function generatePptxAiReport() {
+      if (!selectedFile || !editedPagePlan?.pages?.length) return;
+      const settings = loadAiSettings();
+      const errors = validateAiSettings(settings);
+      if (settings.mode === "local" || errors.length) {
+        aiWriteStatus.textContent = "请先在“AI 设置”中配置可用的模型和 API Key。";
+        return;
+      }
+      aiWriteBtn.disabled = true;
+      aiWriteStatus.textContent = "正在由 Python 汇总逐页数据证据…";
+      try {
+        const context = await requestPptxInsightContext();
+        const contextByPage = new Map((context.pages || []).map((page) => [Number(page.page_idx), page]));
+        const batches = [];
+        for (let i = 0; i < context.pages.length; i += 10) batches.push(context.pages.slice(i, i + 10));
+        const generated = [];
+
+        for (let i = 0; i < batches.length; i += 1) {
+          aiWriteStatus.textContent = `AI 正在写报告：第 ${i + 1}/${batches.length} 批页面…`;
+          const output = await callAiChatCompletion(settings, [
+            {
+              role: "system",
+              content: [
+                "你是资深市场研究报告总监。请根据逐页结构化数据，为每页写一句话洞察标题和2-3条正文洞察。",
+                "只能使用输入中出现的百分比和样本量，不得推测、改写或编造数字。",
+                "标题应直接表达结论；正文采用观察+数据证据+业务含义，避免空话。",
+                "只返回 JSON：{\"pages\":[{\"page_idx\":1,\"title\":\"一句话标题\",\"bullets\":[\"洞察1\",\"洞察2\"]}]}。",
+              ].join("\n"),
+            },
+            { role: "user", content: JSON.stringify({ pages: batches[i] }) },
+          ], { maxTokens: 6000, timeoutMs: 240000, temperature: 0.15 });
+          generated.push(...parseAiInsightJson(output).pages);
+        }
+
+        const generatedByPage = new Map(generated.map((page) => [Number(page.page_idx), page]));
+        let applied = 0;
+        editedPagePlan.pages.forEach((page) => {
+          const pageIdx = Number(page.page_idx);
+          const suggestion = generatedByPage.get(pageIdx);
+          const evidence = contextByPage.get(pageIdx);
+          if (!suggestion || !evidence) return;
+          const title = String(suggestion.title || "").trim();
+          const bullets = (suggestion.bullets || []).map((text) => String(text || "").trim()).filter(Boolean);
+          if (title && isAiInsightSupported(title, evidence)) page.insight_override = title.slice(0, 90);
+          page.insight_bullets = bullets.filter((text) => isAiInsightSupported(text, evidence)).slice(0, 3);
+          if (page.insight_override || page.insight_bullets.length) applied += 1;
+        });
+
+        const summaryInput = editedPagePlan.pages.map((page) => ({
+          page_idx: page.page_idx,
+          title: page.insight_override || page.title,
+          bullets: page.insight_bullets || [],
+        }));
+        try {
+          const summaryOutput = await callAiChatCompletion(settings, [
+            { role: "system", content: "基于逐页洞察，写3句以内的执行摘要，不新增数字。只返回 JSON：{\"summary\":\"...\"}。" },
+            { role: "user", content: JSON.stringify(summaryInput) },
+          ], { maxTokens: 1200, timeoutMs: 180000, temperature: 0.15 });
+          const summaryText = String(summaryOutput || "").match(/\{[\s\S]*\}/)?.[0] || "{}";
+          editedPagePlan.executive_summary = String(JSON.parse(summaryText).summary || "").trim();
+        } catch (_) {
+          editedPagePlan.executive_summary = "";
+        }
+
+        editedPagePlan.planning_mode = "ai_report";
+        renderPreviewTable(editedPagePlan);
+        previewPanel.style.display = "";
+        if (confirmBtn) confirmBtn.textContent = "生成 AI 增强版 PPT";
+        aiWriteBtn.textContent = "重新生成 AI 洞察";
+        aiWriteStatus.textContent = `AI 已完成 ${applied}/${editedPagePlan.pages.length} 页洞察。请在页面预览中检查或修改，再生成增强版 PPT。`;
+        previewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        aiWriteStatus.textContent = `AI 写报告失败：${error.message}`;
+      } finally {
+        aiWriteBtn.disabled = false;
+      }
+    }
+
     async function doGeneratePptx() {
       if (!selectedFile) return;
       if (!segmentPanel) return;
@@ -12370,6 +12698,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           throw new Error(await readPptxApiError(createResp, "创建生成任务失败"));
         }
         const job = await createResp.json();
+        lastPptxJobId = job.job_id || "";
         setPptxProgress(job.progress || 6, job.message || "任务已创建");
         await waitForPptxJob(job.job_id);
         setPptxProgress(97, "正在下载报告");
@@ -12390,7 +12719,12 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         setTimeout(() => URL.revokeObjectURL(url), 4000);
         setPptxProgress(100, "生成完成");
         (genStatus || confirmStatus).textContent = "已生成并开始下载。";
-        resultEl.innerHTML = `<div class="empty-state"><strong>生成成功</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span></div>`;
+        const isAiEnhanced = editedPagePlan?.planning_mode === "ai_report";
+        resultEl.innerHTML = `<div class="empty-state"><strong>${isAiEnhanced ? "AI 增强版生成成功" : "基础版生成成功"}</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span></div>`;
+        if (aiWriteBtn) aiWriteBtn.disabled = false;
+        if (aiWriteStatus) aiWriteStatus.textContent = isAiEnhanced
+          ? "AI 增强版报告已生成；如需调整，可编辑页面洞察后再次生成。"
+          : "基础版报告已生成；如需数据化洞察，可点击“AI 写报告”。";
       } catch (err) {
         (genStatus || confirmStatus).textContent = "生成失败：" + err.message;
         setPptxProgress(0, "生成失败");
@@ -12402,6 +12736,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     }
 
     confirmBtn && confirmBtn.addEventListener("click", () => doGeneratePptx());
+    aiWriteBtn && aiWriteBtn.addEventListener("click", () => generatePptxAiReport());
     titleInput?.addEventListener("input", () => invalidatePptxPreview());
     themeInput?.addEventListener("change", () => invalidatePptxPreview("主题色已更新，请重新预览后再生成。"));
     planningModeInput?.addEventListener("change", () => invalidatePptxPreview("规划模式已更新，请重新预览。"));

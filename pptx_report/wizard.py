@@ -875,24 +875,31 @@ def build_auto_report(
         configured_pages = []
         dimension_groups = getattr(build_jd_report, "_cached_dimension_groups", []) or []
 
-        for idx, default_page in enumerate(chart_pages):
-            cfg = cfg_pages[idx] if idx < len(cfg_pages) else None
+        default_pages = list(chart_pages)
+        for idx, cfg in enumerate(cfg_pages):
             if not cfg:
-                configured_pages.append(default_page)
+                if idx < len(default_pages):
+                    configured_pages.append(default_pages[idx])
                 continue
 
-            codes = {
+            codes = [
                 item.get("code")
                 for item in (cfg.get("questions") or [])
                 if item.get("code")
-            }
-            batch = [q for q in renderable if q.get("code") in codes]
+            ]
+            questions_by_code = {q.get("code"): q for q in renderable}
+            batch = [questions_by_code[code] for code in codes if code in questions_by_code]
             if not batch:
-                configured_pages.append(default_page)
+                # 用户删除题目后留下的空页面应真正消失，不恢复默认内容。
                 continue
 
             requested = cfg.get("chart_type") or "auto"
             insight_override = str(cfg.get("insight_override") or "").strip()
+            insight_bullets = [
+                str(text).strip()
+                for text in (cfg.get("insight_bullets") or [])
+                if str(text).strip()
+            ][:4]
             selected_dimensions = [
                 str(name).strip()
                 for name in (cfg.get("selected_dimensions") or [])
@@ -935,6 +942,7 @@ def build_auto_report(
                         title=insight_override or _insight_page_title(batch, [total_name]),
                         layout=LayoutType.DASHBOARD,
                         charts=charts,
+                        insights=insight_bullets,
                         data_source=data_source,
                     )
                 )
@@ -973,6 +981,8 @@ def build_auto_report(
                 )
                 if insight_override:
                     configured_page.title = insight_override
+                if insight_bullets:
+                    configured_page.insights = insight_bullets
                 configured_pages.append(configured_page)
                 continue
 
@@ -986,6 +996,8 @@ def build_auto_report(
                 )
                 if insight_override:
                     configured_page.title = insight_override
+                if insight_bullets:
+                    configured_page.insights = insight_bullets
                 configured_pages.append(configured_page)
                 continue
 
@@ -1010,6 +1022,7 @@ def build_auto_report(
                     title=insight_override or _insight_page_title(page_batch, page_segments),
                     layout=LayoutType.DASHBOARD,
                     charts=charts,
+                    insights=insight_bullets,
                     data_source=data_source,
                 )
             )
@@ -1021,6 +1034,8 @@ def build_auto_report(
         f"基于 {len(renderable)} 道题目的交叉分析，覆盖 {len(display_segs)} 类人群；"
         "各题按总体占比降序排列并标注人群差异，详见正文图表。"
     )
+    if page_config and str(page_config.get("executive_summary") or "").strip():
+        conclusion = str(page_config["executive_summary"]).strip()
     appendix = _build_appendix(appendix_qs, source)
 
     # 精简目录：项目概述 / 主要研究发现（含子模块）/ 结论与建议
@@ -1176,11 +1191,128 @@ def build_page_plan(
         "renderable_questions": len(renderable),
         "total_pages": len(pages),
         "pages": pages,
+        "question_catalog": [
+            {
+                "code": q.get("code", ""),
+                "title": _norm(q.get("title", ""))[:80],
+                "categories": list(q.get("categories") or []),
+                "chapter": _categorize_question(q),
+            }
+            for q in renderable
+        ],
         "appendix": appendix_info,
         "all_segments": all_segs,
         "display_segments": display_segs,
         "available_dimensions": available_dimensions,
         "chapters": chapters,
+    }
+
+
+def build_insight_context(
+    questions: list,
+    page_config: dict,
+    *,
+    source: str = "",
+) -> dict:
+    """生成供 AI 写报告使用的逐页结构化数据证据。
+
+    仅包含聚合后的题目比例、样本量和页面配置，不包含原始答卷记录。
+    AI 必须以这里的数字为依据，随后由前端把标题和分点洞察写回
+    ``page_config``，再交给同一个 Python 渲染器生成增强版 PPT。
+    """
+    cfg_pages = list((page_config or {}).get("pages") or [])
+    renderable = [
+        q for q in questions
+        if q.get("segments") and q.get("categories") and not _is_appendix(q)
+    ]
+    by_code = {q.get("code"): q for q in renderable}
+    dimension_groups = getattr(build_jd_report, "_cached_dimension_groups", []) or []
+    pages = []
+
+    for idx, cfg in enumerate(cfg_pages):
+        codes = [
+            item.get("code")
+            for item in (cfg.get("questions") or [])
+            if item.get("code")
+        ]
+        batch = [by_code[code] for code in codes if code in by_code]
+        if not batch:
+            continue
+
+        selected_dimensions = [
+            str(name).strip()
+            for name in (cfg.get("selected_dimensions") or [])
+            if str(name).strip()
+        ]
+        if not selected_dimensions and cfg.get("dimension_key"):
+            selected_dimensions = [
+                name.strip() for name in str(cfg["dimension_key"]).split(",")
+                if name.strip()
+            ]
+
+        page_batch = batch
+        if selected_dimensions and selected_dimensions != ["总体"] and dimension_groups:
+            page_batch = apply_dimension(
+                batch,
+                dimension_groups,
+                ",".join(name for name in selected_dimensions if name != "总体"),
+            )
+
+        question_evidence = []
+        for question in page_batch:
+            categories, data = _sort_question(question)
+            available_segments = list(question.get("segments") or [])
+            if selected_dimensions == ["总体"] or cfg.get("dimension_mode") == "overall":
+                display_segments = [
+                    next((s for s in available_segments if _match_segment("总体", [s])), available_segments[0])
+                ] if available_segments else []
+            else:
+                display_segments = available_segments[:8]
+
+            rows = []
+            for category_index, category in enumerate(categories[:24]):
+                values = {}
+                for segment in display_segments:
+                    segment_values = data.get(segment) or []
+                    value = segment_values[category_index] if category_index < len(segment_values) else None
+                    if value is None:
+                        continue
+                    numeric = float(value)
+                    values["总体" if str(segment).strip().lower() == "total" else str(segment)] = round(
+                        numeric * 100 if abs(numeric) <= 1 else numeric,
+                        1,
+                    )
+                rows.append({"option": str(category), "values": values})
+
+            bases = {}
+            for segment in display_segments:
+                base = (question.get("base") or {}).get(segment)
+                if base is not None:
+                    bases["总体" if str(segment).strip().lower() == "total" else str(segment)] = base
+            question_evidence.append({
+                "code": question.get("code", ""),
+                "title": _norm(question.get("title", "")),
+                "base": bases,
+                "rows": rows,
+            })
+
+        pages.append({
+            "page_idx": cfg.get("page_idx") or idx + 1,
+            "chapter": cfg.get("chapter") or "其他研究",
+            "current_title": cfg.get("insight_override") or cfg.get("title") or "",
+            "chart_type": cfg.get("chart_type") or "auto",
+            "dimensions": selected_dimensions or ["总体"],
+            "questions": question_evidence,
+        })
+
+    return {
+        "pages": pages,
+        "page_count": len(pages),
+        "source": source,
+        "rules": {
+            "title": "一句话数据洞察总结",
+            "bullets": "每页2-3条，必须引用本页数据，不得编造数字",
+        },
     }
 
 

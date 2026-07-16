@@ -52,7 +52,7 @@ for p in (str(HERE), str(PARENT)):
 
 from pptx_report.cli import _collect_segments
 from pptx_report.build_jd_report import parse_crosstab
-from pptx_report.wizard import build_page_plan, run_wizard
+from pptx_report.wizard import build_insight_context, build_page_plan, run_wizard
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 REQUEST_ENVELOPE_MAGIC = b"SKPPTX1\n"
@@ -166,6 +166,45 @@ def _unpack_generate_request(data: bytes, content_type: str) -> tuple[bytes, dic
     if not isinstance(metadata, dict):
         raise ValueError("PPTX request metadata must be an object")
     return data[header_size + meta_size:], metadata
+
+
+@app.post("/api/pptx-report/insight-context")
+async def insight_context(request: Request):
+    """返回 AI 写报告所需的逐页聚合证据，不传输原始答卷。"""
+    body = await request.body()
+    try:
+        data, metadata = _unpack_generate_request(
+            body, request.headers.get("content-type", "")
+        )
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return JSONResponse(
+            {"error": {"message": f"请求格式错误：{exc}"}}, status_code=400
+        )
+    if len(data) > MAX_UPLOAD_BYTES:
+        return JSONResponse({"error": {"message": "文件过大（>25MB）。"}}, status_code=413)
+    page_config = metadata.get("page_config")
+    if not isinstance(page_config, dict) or not page_config.get("pages"):
+        return JSONResponse(
+            {"error": {"message": "请先生成并确认报告页面结构。"}}, status_code=400
+        )
+    tmp = _write_temp(data, ".xlsx")
+    try:
+        questions = parse_crosstab(tmp)
+        context = build_insight_context(
+            questions,
+            page_config,
+            source=str(metadata.get("source") or ""),
+        )
+        return JSONResponse(context, headers={"Cache-Control": "no-store"})
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(
+            {"error": {"message": f"AI 数据证据生成失败：{exc}"}}, status_code=500
+        )
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 def _generate_core(
