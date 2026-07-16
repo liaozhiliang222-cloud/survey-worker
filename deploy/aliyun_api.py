@@ -385,8 +385,12 @@ async def create_generate_job(request: Request):
 def get_generate_job(job_id: str):
     state = _read_job_state(job_id)
     if state is None:
-        return JSONResponse({"error": {"message": "生成任务不存在或已过期。"}}, status_code=404)
-    return JSONResponse(state)
+        return JSONResponse(
+            {"error": {"message": "生成任务不存在或已过期。"}},
+            status_code=404,
+            headers={"Cache-Control": "no-store"},
+        )
+    return JSONResponse(state, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/pptx-report/jobs/{job_id}/download")

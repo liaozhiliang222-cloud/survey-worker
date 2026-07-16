@@ -1,4 +1,4 @@
-const CACHE_NAME = "research-toolbox-v31";
+const CACHE_NAME = "research-toolbox-v32";
 const ASSETS = [
   "./manifest.webmanifest",
   "./icon.svg",
@@ -29,6 +29,14 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+
+  const url = new URL(event.request.url);
+  // PPTX 任务进度与下载地址是动态接口，绝不能进入离线缓存。
+  // 否则轮询会反复命中第一次响应（例如一直显示 12%）。
+  if (/^\/pptx-api(?:\/|$)/.test(url.pathname)) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
+    return;
+  }
 
   if (isAppShellRequest(event.request)) {
     event.respondWith(
