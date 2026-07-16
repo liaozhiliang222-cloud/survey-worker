@@ -17,7 +17,6 @@ from pptx.chart.data import CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import (
     XL_CHART_TYPE,
-    XL_LABEL_POSITION,
     XL_LEGEND_POSITION,
     XL_TICK_MARK,
 )
@@ -136,7 +135,10 @@ def _style_common(chart, spec: ChartSpec, theme: Theme) -> None:
     chart.has_title = True
     tf = chart.chart_title.text_frame
     tf.text = spec.title
-    style_textframe(tf, theme, size=14, bold=True, color=theme.text_dark)
+    # 长题干在小图表标题区容易把最后一个字挤成孤行；按长度轻微缩小，
+    # 保持页面标题字号不变，仅优化图表内部标题。
+    title_size = 11 if len(spec.title) > 24 else (12 if len(spec.title) > 16 else 14)
+    style_textframe(tf, theme, size=title_size, bold=True, color=theme.text_dark)
 
     # 图例：单系列条形图隐藏冗余的“Total”；饼/环形图保留图例，
     # 否则只显示百分比时无法判断颜色对应哪个选项。
@@ -315,11 +317,19 @@ def _style_pie_doughnut(chart, theme: Theme) -> None:
     dl.show_percentage = False
     dl.number_format = theme.pct_format
     dl.number_format_is_linked = False
-    try:
-        dl.position = XL_LABEL_POSITION.BEST_FIT
-    except Exception:
-        pass
-    style_font(dl.font, theme, size=theme.data_label_size, color=theme.data_label_color)
+    # 不要为饼图/环形图写入 ``c:dLblPos val="bestFit"``。PowerPoint 365
+    # 会把 python-pptx 生成的这组标签位置标记视为无效图表内容，并在打开时
+    # 整页修复为空。省略该节点后由 Office 自动选择标签位置，视觉结果一致，
+    # 同时兼容 PowerPoint、WPS 与 LibreOffice。
+    # 标签位于扇区内部时，深色扇区上的深灰文字几乎不可读。
+    # 使用白色粗体，同时不写 dLblPos，继续交给 Office 自动排布。
+    style_font(
+        dl.font,
+        theme,
+        size=theme.data_label_size,
+        bold=True,
+        color=theme.text_light,
+    )
     _no_wrap_data_labels(dl)
 
     # 扇区着色

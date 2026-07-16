@@ -211,6 +211,12 @@ def _match_segment(name: str, segs: list):
     target = _norm(str(name)).strip()
     if not target:
         return None
+    total_aliases = {"total", "总体", "整体", "合计", "总计"}
+    if target.lower() in total_aliases:
+        return next(
+            (s for s in segs if _norm(str(s)).strip().lower() in total_aliases),
+            None,
+        )
     for s in segs:  # 精确匹配优先
         if _norm(s).strip() == target:
             return s
@@ -233,15 +239,15 @@ def _select_segments(segs: list, override=None) -> list:
     if not override:
         return segs
     picked = []
-    if "Total" in segs:
-        picked.append("Total")
+    total_seg = _match_segment("Total", segs)
+    if total_seg:
+        picked.append(total_seg)
     for name in override:
         m = _match_segment(name, segs)
         if m and m not in picked:
             picked.append(m)
-    # 若指定的人群一个都没匹配上 → 退回全展示，避免生成空图
-    non_total = [s for s in picked if s != "Total"]
-    return picked if non_total else segs
+    # 只选择总体也是有效配置；只有一个名字都未匹配时才退回全展示。
+    return picked if picked else segs
 
 
 # ───────────────────────── 数据变换助手 ─────────────────────────
@@ -257,10 +263,12 @@ def _sort_question(q: dict):
     raw_cats = list(q["categories"])
     segs = q.get("segments") or []
     raw_data = q["data"]
-    # T2B/B2B 是量表衍生汇总指标，不应与原始选项同时出现在图表中。
+    # 量表衍生汇总指标不应与原始选项同时出现在图表中，否则会出现
+    # “适中”与 JAR 同值等重复表达。
+    derived_summary_categories = {"T2B", "B2B", "JAR", "TH", "TL"}
     keep_indices = [
         i for i, cat in enumerate(raw_cats)
-        if str(cat).strip().upper() not in {"T2B", "B2B"}
+        if str(cat).strip().upper() not in derived_summary_categories
     ]
     cats = [raw_cats[i] for i in keep_indices]
     data = {
@@ -574,7 +582,7 @@ def _extract_kpis(questions: list) -> list:
             continue
         tot = q["data"].get("Total", [])
         for i, v in enumerate(tot):
-            if str(q["categories"][i]).strip().upper() in {"T2B", "B2B"}:
+            if str(q["categories"][i]).strip().upper() in {"T2B", "B2B", "JAR", "TH", "TL"}:
                 continue
             # 本报告的占比题以 0~1 存储；SUM/评分汇总值不能当成百分比 KPI。
             if v and 0 <= v <= 1 and v > best[0]:
@@ -678,7 +686,7 @@ def _paginate_mgb_questions(questions: list, max_per_page: int, max_options: int
         q_options = sum(
             1
             for value in (q.get("categories") or [])
-            if not any(code in str(value).upper() for code in ("T2B", "B2B"))
+            if str(value).strip().upper() not in {"T2B", "B2B", "JAR", "TH", "TL"}
         )
         q_options = max(1, q_options)
         if current and (
@@ -725,10 +733,10 @@ def _build_multi_group_bar_page(group: list, segments: list, source: str,
             continue
 
         # v10: 过滤掉内部代码选项（T2B/B2B 等），不进入渲染
-        _SKIP_OPTION_KW = ("T2B", "B2B")
+        _SKIP_OPTION_KW = ("T2B", "B2B", "JAR", "TH", "TL")
         if not df.empty:
             mask = df["选项"].apply(
-                lambda x: not any(k.upper() in str(x).strip().upper() for k in _SKIP_OPTION_KW)
+                lambda x: str(x).strip().upper() not in _SKIP_OPTION_KW
             )
             df = df[mask].reset_index(drop=True)
 
@@ -1189,6 +1197,7 @@ def run_wizard(
     dimension: str = None,
     page_config: dict = None,
     theme_key: str = "blue",
+    progress_callback=None,
 ) -> str:
     """端到端：解析交叉表 → 组装 → 渲染成 .pptx。
 
@@ -1204,7 +1213,13 @@ def run_wizard(
     Returns:
         实际保存路径。
     """
+    def progress(percent, message):
+        if progress_callback:
+            progress_callback(percent, message)
+
+    progress(12, "正在解析交叉表")
     questions = parse_crosstab(xlsx)
+    progress(28, "交叉表解析完成")
     print(f"  解析出题目 {len(questions)} 道")
     # 维度分组切换：按列索引抽选对应切片（荣耀各分组列名相同，必须按列区分）
     if dimension:
@@ -1221,14 +1236,16 @@ def run_wizard(
         all_segs = next((q["segments"] for q in renderable if q.get("segments")), [])
         picked = _select_segments(all_segs, override=segments)
         print(f"  指定展示人群: {picked}")
+    progress(36, "正在应用章节与维度配置")
     spec = build_auto_report(
         questions, title=title, client=client, date=date,
         source=source, max_per_page=max_per_page, segments=segments,
         page_config=page_config,
     )
     spec.validate()
+    progress(48, "报告结构校验完成")
     theme = theme_from_key(theme_key)
-    renderer = ReportRenderer(theme=theme)
+    renderer = ReportRenderer(theme=theme, progress_callback=progress_callback)
     return renderer.render(spec, out_path)
 
 

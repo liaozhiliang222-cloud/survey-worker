@@ -23,10 +23,12 @@ def _collect_segments(xlsx: str) -> dict:
     """解析交叉表，收集去重后的人群维度列表与题目数。"""
     questions = parse_crosstab(xlsx)
     segs = []
+    total_aliases = {"total", "总体", "整体", "合计", "总计"}
     for q in questions:
         for s in q.get("segments") or []:
-            if s not in segs:
-                segs.append(s)
+            value = "Total" if str(s).strip().lower() in total_aliases else s
+            if value not in segs:
+                segs.append(value)
     result = {"segments": segs, "questions": len(questions)}
     # 附带维度分组信息（多级表头时每组对应一个分析维度）
     # 注意：必须通过模块属性访问，parse_crosstab 内部会对该全局变量重新赋值，

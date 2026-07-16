@@ -24,7 +24,9 @@ import os
 import re
 import sys
 import tempfile
+import threading
 import time
+import uuid
 from pathlib import Path
 from urllib.parse import quote
 
@@ -55,6 +57,9 @@ from pptx_report.wizard import build_page_plan, run_wizard
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 REQUEST_ENVELOPE_MAGIC = b"SKPPTX1\n"
 MAX_METADATA_BYTES = 1024 * 1024
+JOB_TTL_SECONDS = 2 * 60 * 60
+JOB_DIR = Path(tempfile.gettempdir()) / "surveykit-ppt-jobs"
+JOB_DIR.mkdir(parents=True, exist_ok=True)
 app = FastAPI(title="PPTX Report API")
 
 # CORS：允许前端域名（surveykit.cc）和本地开发直连阿里云
@@ -163,7 +168,12 @@ def _unpack_generate_request(data: bytes, content_type: str) -> tuple[bytes, dic
     return data[header_size + meta_size:], metadata
 
 
-def _generate_core(data: bytes, qs, metadata: dict | None = None) -> Response | JSONResponse:
+def _generate_core(
+    data: bytes,
+    qs,
+    metadata: dict | None = None,
+    progress_callback=None,
+) -> Response | JSONResponse:
     if len(data) > MAX_UPLOAD_BYTES:
         return JSONResponse({"error": {"message": "文件过大（>25MB）。"}}, status_code=413)
     metadata = metadata or {}
@@ -196,6 +206,7 @@ def _generate_core(data: bytes, qs, metadata: dict | None = None) -> Response | 
             max_per_page=3,
             page_config=page_config,
             theme_key=theme_key,
+            progress_callback=progress_callback,
         )
         with open(tmp_out.name, "rb") as f:
             content = f.read()
@@ -240,6 +251,160 @@ async def generate_slash(request: Request):
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return JSONResponse({"error": {"message": f"请求格式错误：{exc}"}}, status_code=400)
     return _generate_core(data, request.query_params, metadata)
+
+
+def _job_state_path(job_id: str) -> Path:
+    return JOB_DIR / f"{job_id}.json"
+
+
+def _job_output_path(job_id: str) -> Path:
+    return JOB_DIR / f"{job_id}.pptx"
+
+
+def _valid_job_id(job_id: str) -> bool:
+    return bool(re.fullmatch(r"[0-9a-f]{32}", job_id or ""))
+
+
+def _write_job_state(job_id: str, payload: dict) -> None:
+    payload = {**payload, "job_id": job_id, "updated_at": time.time()}
+    target = _job_state_path(job_id)
+    temporary = target.with_name(f"{job_id}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    try:
+        for attempt in range(20):
+            try:
+                os.replace(temporary, target)
+                return
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.02)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _read_job_state(job_id: str) -> dict | None:
+    if not _valid_job_id(job_id):
+        return None
+    for _ in range(4):
+        try:
+            return json.loads(_job_state_path(job_id).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            time.sleep(0.01)
+    return None
+
+
+def _cleanup_jobs() -> None:
+    cutoff = time.time() - JOB_TTL_SECONDS
+    for state_path in JOB_DIR.glob("*.json"):
+        try:
+            if state_path.stat().st_mtime >= cutoff:
+                continue
+            job_id = state_path.stem
+            state_path.unlink(missing_ok=True)
+            _job_output_path(job_id).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _run_generate_job(job_id: str, data: bytes, qs: dict, metadata: dict) -> None:
+    def progress(percent, message):
+        try:
+            _write_job_state(
+                job_id,
+                {
+                    "status": "running",
+                    "progress": max(1, min(97, int(percent))),
+                    "message": str(message or "正在生成报告"),
+                },
+            )
+        except OSError:
+            # 进度展示属于旁路能力，状态文件被短暂占用时不能中断 PPT 生成。
+            pass
+
+    try:
+        progress(8, "文件上传完成")
+        response = _generate_core(data, qs, metadata, progress_callback=progress)
+        if response.status_code >= 400:
+            try:
+                error_payload = json.loads(response.body.decode("utf-8"))
+                message = error_payload.get("error", {}).get("message") or "生成失败"
+            except Exception:  # noqa: BLE001
+                message = "生成失败"
+            raise RuntimeError(message)
+        _job_output_path(job_id).write_bytes(response.body)
+        _write_job_state(
+            job_id,
+            {
+                "status": "ready",
+                "progress": 96,
+                "message": "报告已生成，正在准备下载",
+                "filename": _safe_title(metadata.get("title") or qs.get("title") or "调研分析报告") + ".pptx",
+                "size": len(response.body),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        _write_job_state(
+            job_id,
+            {"status": "failed", "progress": 0, "message": str(exc)},
+        )
+
+
+@app.post("/api/pptx-report/jobs")
+async def create_generate_job(request: Request):
+    _cleanup_jobs()
+    body = await request.body()
+    try:
+        data, metadata = _unpack_generate_request(body, request.headers.get("content-type", ""))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return JSONResponse({"error": {"message": f"请求格式错误：{exc}"}}, status_code=400)
+    if len(data) > MAX_UPLOAD_BYTES:
+        return JSONResponse({"error": {"message": "文件过大（>25MB）。"}}, status_code=413)
+    job_id = uuid.uuid4().hex
+    _write_job_state(
+        job_id,
+        {"status": "queued", "progress": 3, "message": "任务已创建"},
+    )
+    worker = threading.Thread(
+        target=_run_generate_job,
+        args=(job_id, data, dict(request.query_params), metadata),
+        daemon=True,
+        name=f"pptx-job-{job_id[:8]}",
+    )
+    worker.start()
+    return JSONResponse(
+        {"job_id": job_id, "status": "queued", "progress": 3, "message": "任务已创建"},
+        status_code=202,
+    )
+
+
+@app.get("/api/pptx-report/jobs/{job_id}")
+def get_generate_job(job_id: str):
+    state = _read_job_state(job_id)
+    if state is None:
+        return JSONResponse({"error": {"message": "生成任务不存在或已过期。"}}, status_code=404)
+    return JSONResponse(state)
+
+
+@app.get("/api/pptx-report/jobs/{job_id}/download")
+def download_generate_job(job_id: str):
+    state = _read_job_state(job_id)
+    output = _job_output_path(job_id)
+    if state is None or state.get("status") != "ready" or not output.exists():
+        return JSONResponse({"error": {"message": "报告尚未生成完成或已过期。"}}, status_code=404)
+    filename = state.get("filename") or "report.pptx"
+    utf8_name = quote(str(filename).encode("utf-8"))
+    return Response(
+        output.read_bytes(),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={
+            "Content-Disposition": f'attachment; filename="report.pptx"; filename*=UTF-8\'\'{utf8_name}',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 if __name__ == "__main__":

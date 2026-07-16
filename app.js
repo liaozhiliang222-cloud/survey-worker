@@ -11631,7 +11631,6 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     let currentDimension = "";  // 当前选中的分组名（"" = 全部维度）
     let pagePlan = null;        // 预览模式返回的页面规划
     let editedPagePlan = null;  // 用户编辑后的页面规划
-    let progressTimer = null;
 
     function invalidatePptxPreview(message = "配置已更新，请重新预览后再生成。") {
       const hadPreview = Boolean(editedPagePlan);
@@ -11736,7 +11735,8 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         cb.value = seg;
         cb.checked = true;
         label.appendChild(cb);
-        label.appendChild(document.createTextNode(" " + seg));
+        const displaySeg = /^(total|总体|整体|合计|总计)$/i.test(String(seg || "").trim()) ? "总体" : seg;
+        label.appendChild(document.createTextNode(" " + displaySeg));
         segmentPanel.appendChild(label);
       });
       // 全选/取消全选
@@ -12063,16 +12063,6 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         });
       }
 
-      let html = `<table class="compact-table" style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead><tr style="background:#f1f5f9;">
-          <th style="padding:8px 6px;text-align:left;width:50px;">页码</th>
-          <th style="padding:8px 6px;text-align:left;">洞察标题（可编辑）</th>
-          <th style="padding:8px 6px;text-align:left;">题目</th>
-          <th style="padding:8px 6px;text-align:center;width:130px;">图表类型</th>
-          <th style="padding:8px 6px;text-align:center;width:180px;">分维度（对比页自动含总体）</th>
-        </tr></thead><tbody>`;
-
-      let lastChapter = null;
       pages.forEach((p, idx) => {
         if (!Array.isArray(p.selected_dimensions) || p.selected_dimensions.length === 0) {
           const preferredByChapter = {
@@ -12091,67 +12081,84 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           p.dimension_mode = selected === "总体" ? "overall" : "compare";
           p.dimension_key = selected;
         }
-        const chapterName = p.chapter || "其他研究";
-        if (chapterName !== lastChapter) {
-          lastChapter = chapterName;
-          const chapterPages = pages.filter((item) => (item.chapter || "其他研究") === chapterName);
-          const chapterDims = chapterPages[0]?.selected_dimensions || ["总体"];
-          html += `<tr style="background:#eaf1fb;border-top:2px solid #bfd0e5;">
-            <td colspan="5" style="padding:9px 8px;">
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-                <strong style="color:#123b73;font-size:14px;">章节：${escapeHtml(chapterName)}</strong>
-                <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-                  <span style="font-size:11px;color:#64748b;">章节默认维度（自动含总体）：</span>
-                  ${dimOptions.map((d) => {
-                    const checked = chapterDims.includes(d.key);
-                    return `<label style="font-size:11px;color:${checked ? "#1d4ed8" : "#475569"};white-space:nowrap;">
-                      <input type="checkbox" ${checked ? "checked" : ""}
-                        onchange="window._onPreviewChapterDimCheck && window._onPreviewChapterDimCheck('${encodeURIComponent(chapterName)}', '${encodeURIComponent(d.key)}', this.checked)">${escapeHtml(d.key)}
+      });
+
+      const chapterGroups = new Map();
+      pages.forEach((page, idx) => {
+        const chapterName = page.chapter || "其他研究";
+        if (!chapterGroups.has(chapterName)) chapterGroups.set(chapterName, []);
+        chapterGroups.get(chapterName).push({ page, idx });
+      });
+
+      let html = `<div class="pptx-preview-chapters">`;
+      chapterGroups.forEach((items, chapterName) => {
+        const chapterDims = items[0]?.page?.selected_dimensions || ["总体"];
+        html += `<details class="pptx-preview-chapter" open>
+          <summary>
+            <span class="pptx-preview-chapter-title">章节：${escapeHtml(chapterName)}</span>
+            <span class="pptx-preview-chapter-count">${items.length} 页</span>
+          </summary>
+          <div class="pptx-preview-chapter-controls">
+            <span>章节默认维度（对比页自动含总体）：</span>
+            ${dimOptions.map((d) => {
+              const checked = chapterDims.includes(d.key);
+              return `<label class="${checked ? "selected" : ""}">
+                <input type="checkbox" ${checked ? "checked" : ""}
+                  onchange="window._onPreviewChapterDimCheck && window._onPreviewChapterDimCheck('${encodeURIComponent(chapterName)}', '${encodeURIComponent(d.key)}', this.checked)">${escapeHtml(d.key)}
+              </label>`;
+            }).join("")}
+          </div>
+          <div class="pptx-preview-pages">`;
+
+        items.forEach(({ page: p, idx }) => {
+          const qTitles = (p.questions || []).map(q =>
+            `<span title="${escapeHtml(q.code || '')}">${escapeHtml(q.title || q.code || "?")}</span>`
+          ).join("<br>");
+          const typeLabel = chartTypeOptions.find(o => o.value === p.chart_type)?.label || p.chart_type;
+          html += `<details class="pptx-preview-page">
+            <summary>
+              <span class="pptx-preview-page-number">第 ${p.page_idx} 页</span>
+              <span class="pptx-preview-page-title">${escapeHtml(p.insight_override || p.title || "未命名页面")}</span>
+              <span class="pptx-preview-page-type">${escapeHtml(typeLabel || "自动匹配")}</span>
+            </summary>
+            <div class="pptx-preview-page-body">
+              <label class="pptx-preview-field pptx-preview-field-wide">
+                <span>洞察标题</span>
+                <textarea rows="2" data-preview-idx="${idx}" data-field="insight_override"
+                  onchange="window._onPreviewInsightChange && window._onPreviewInsightChange(${idx}, this.value)">${escapeHtml(p.insight_override || p.title || "")}</textarea>
+              </label>
+              <div class="pptx-preview-field">
+                <span>题目</span>
+                <div class="pptx-preview-question-list">${qTitles}</div>
+              </div>
+              <label class="pptx-preview-field">
+                <span>图表类型</span>
+                <select data-preview-idx="${idx}" data-field="chart_type"
+                  onchange="window._onPreviewChartTypeChange && window._onPreviewChartTypeChange(${idx}, this.value)">
+                  ${chartTypeOptions.map(o =>
+                    `<option value="${o.value}" ${o.value === p.chart_type ? "selected" : ""}>${o.label}</option>`
+                  ).join("")}
+                </select>
+              </label>
+              <div class="pptx-preview-field pptx-preview-field-wide">
+                <span>分析维度</span>
+                <div class="pptx-preview-dimensions" data-preview-dims="${idx}">
+                  ${dimOptions.map(d => {
+                    const isChecked = p.selected_dimensions.includes(d.key);
+                    return `<label class="${isChecked ? "selected" : ""}">
+                      <input type="checkbox" value="${d.key}" data-preview-idx="${idx}" data-field="dimension_check"
+                        ${isChecked ? "checked" : ""}
+                        onchange="window._onPreviewDimCheck && window._onPreviewDimCheck(${idx}, this.value, this.checked)">${escapeHtml(d.label)}
                     </label>`;
                   }).join("")}
                 </div>
               </div>
-            </td>
-          </tr>`;
-        }
-        const qTitles = (p.questions || []).map(q =>
-          `<span title="${escapeHtml(q.code || '')}">${escapeHtml(q.title || q.code || "?")}</span>`
-        ).join("<br>");
-        const typeLabel = chartTypeOptions.find(o => o.value === p.chart_type)?.label || p.chart_type;
-
-        html += `<tr style="border-bottom:1px solid #e5e7eb;${idx % 2 ? "" : "background:#fafbfc"}">
-          <td style="padding:8px 6px;font-weight:600;color:#002960;">${p.page_idx}</td>
-          <td style="padding:8px 6px;">
-            <textarea rows="2" data-preview-idx="${idx}" data-field="insight_override"
-              onchange="window._onPreviewInsightChange && window._onPreviewInsightChange(${idx}, this.value)"
-              style="width:100%;min-width:220px;resize:vertical;font-size:12px;line-height:1.4;border:1px solid #cbd5e1;border-radius:5px;padding:5px;">${escapeHtml(p.insight_override || p.title || "")}</textarea>
-          </td>
-          <td style="padding:8px 6px;color:#475569;font-size:12px;">${qTitles}</td>
-          <td style="padding:8px 6px;text-align:center;">
-            <select data-preview-idx="${idx}" data-field="chart_type" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;background:white;cursor:pointer;"
-              onchange="window._onPreviewChartTypeChange && window._onPreviewChartTypeChange(${idx}, this.value)">
-              ${chartTypeOptions.map(o =>
-                `<option value="${o.value}" ${o.value === p.chart_type ? "selected" : ""}>${o.label}</option>`
-              ).join("")}
-            </select>
-          </td>
-          <td style="padding:8px 6px;text-align:left;">
-            <div style="display:flex;flex-wrap:wrap;gap:4px;max-width:220px;" data-preview-dims="${idx}">
-              ${dimOptions.map(d => {
-                const isChecked = p.selected_dimensions.includes(d.key);
-                return `<label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;padding:2px 5px;border:1px solid ${isChecked ? "#3b82f6" : "#cbd5e1"};border-radius:10px;background:${isChecked ? "#eff6ff" : "#fff"};cursor:pointer;white-space:nowrap;color:${isChecked ? "#1d4ed8" : "#475569"};">
-                  <input type="checkbox" value="${d.key}" data-preview-idx="${idx}" data-field="dimension_check"
-                    ${isChecked ? "checked" : ""}
-                    onchange="window._onPreviewDimCheck && window._onPreviewDimCheck(${idx}, this.value, this.checked)"
-                    style="margin:0;cursor:pointer;">${d.label.replace("（", "<span style=\"color:#94a3b8\">(").replace("）", ")</span>")}
-                </label>`;
-              }).join("")}
             </div>
-          </td>
-        </tr>`;
+          </details>`;
+        });
+        html += `</div></details>`;
       });
-
-      html += `</tbody></table>`;
+      html += `</div>`;
       if (plan.appendix && plan.appendix.count > 0) {
         html += `<p style="margin-top:10px;padding:8px;background:#fefce8;border-radius:6px;font-size:12px;color:#854d0e;">
           📋 另有 <strong>${plan.appendix.count}</strong> 道题目将归入附录表格（甄别/配额/后台类题目，不进入主图表页）。
@@ -12228,9 +12235,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         const label = input.closest("label");
         if (!label) return;
         const active = input.checked;
-        label.style.borderColor = active ? "#3b82f6" : "#cbd5e1";
-        label.style.background = active ? "#eff6ff" : "#fff";
-        label.style.color = active ? "#1d4ed8" : "#475569";
+        label.classList.toggle("selected", active);
       });
     };
     // 兼容旧接口（单选模式）
@@ -12294,24 +12299,41 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     }
 
     function startPptxProgress() {
-      clearInterval(progressTimer);
-      const startedAt = Date.now();
-      setPptxProgress(8, "正在上传文件");
-      progressTimer = setInterval(() => {
-        const elapsed = (Date.now() - startedAt) / 1000;
-        let target = 18 + Math.min(68, elapsed * 1.7);
-        let label = "正在解析交叉表";
-        if (elapsed > 10) label = "正在应用页面与维度配置";
-        if (elapsed > 24) label = "正在绘制图表与排版";
-        if (elapsed > 40) label = "正在打包演示文稿";
-        const current = Number.parseFloat(progressFill.style.width) || 0;
-        setPptxProgress(Math.max(current, Math.min(86, target)), label);
-      }, 1200);
+      setPptxProgress(2, "正在读取文件");
     }
 
-    function stopPptxProgress() {
-      clearInterval(progressTimer);
-      progressTimer = null;
+    async function waitForPptxJob(jobId) {
+      for (let attempt = 0; attempt < 1200; attempt += 1) {
+        const resp = await fetch(`/pptx-api/jobs/${encodeURIComponent(jobId)}`, {
+          cache: "no-store",
+        });
+        if (!resp.ok) throw new Error(await readPptxApiError(resp, "读取生成进度失败"));
+        const state = await resp.json();
+        setPptxProgress(state.progress || 0, state.message || "正在生成报告");
+        if (state.status === "ready") return state;
+        if (state.status === "failed") throw new Error(state.message || "生成失败");
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
+      throw new Error("生成超时，请稍后重试。");
+    }
+
+    async function readPptxDownload(resp) {
+      if (!resp.body || !resp.body.getReader) return resp.blob();
+      const total = Number(resp.headers.get("Content-Length")) || 0;
+      const reader = resp.body.getReader();
+      const chunks = [];
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.byteLength;
+        const downloadPercent = total ? Math.min(99, 97 + (received / total) * 2) : 98;
+        setPptxProgress(downloadPercent, "正在下载报告");
+      }
+      return new Blob(chunks, {
+        type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      });
     }
 
     async function doGeneratePptx() {
@@ -12330,6 +12352,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       (genStatus || confirmStatus).textContent = "";
       try {
         const buf = await selectedFile.arrayBuffer();
+        setPptxProgress(4, "正在上传文件");
         const payload = packPptxGenerateRequest(buf, {
           segments: checked,
           title,
@@ -12338,16 +12361,25 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           dimension: currentDimension || null,
           page_config: compactPptxPageConfig(editedPagePlan),
         });
-        const resp = await fetch("/pptx-api", {
+        const createResp = await fetch("/pptx-api/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/vnd.surveykit.pptx-request" },
           body: payload,
         });
-        if (!resp.ok) {
-          throw new Error(await readPptxApiError(resp, "生成失败"));
+        if (!createResp.ok) {
+          throw new Error(await readPptxApiError(createResp, "创建生成任务失败"));
         }
-        setPptxProgress(92, "正在准备下载");
-        const blob = await resp.blob();
+        const job = await createResp.json();
+        setPptxProgress(job.progress || 6, job.message || "任务已创建");
+        await waitForPptxJob(job.job_id);
+        setPptxProgress(97, "正在下载报告");
+        const downloadResp = await fetch(`/pptx-api/jobs/${encodeURIComponent(job.job_id)}/download`, {
+          cache: "no-store",
+        });
+        if (!downloadResp.ok) {
+          throw new Error(await readPptxApiError(downloadResp, "下载报告失败"));
+        }
+        const blob = await readPptxDownload(downloadResp);
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -12363,7 +12395,6 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         (genStatus || confirmStatus).textContent = "生成失败：" + err.message;
         setPptxProgress(0, "生成失败");
       } finally {
-        stopPptxProgress();
         if (confirmBtn) confirmBtn.disabled = false;
         if (generateBtn) generateBtn.disabled = false;
         setTimeout(() => progress.classList.add("hidden"), 1500);

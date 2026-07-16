@@ -409,19 +409,32 @@ def apply_dimension(questions: list, dimension_groups: list, group_name: str = N
             (name for name in (q.get("segments") or []) if str(name).strip().lower() in {"total", "总体", "整体", "合计", "总计"}),
             None,
         )
-        selected_names = list(merged_names)
-        if total_key and total_key not in selected_names:
+        total_aliases = {"total", "总体", "整体", "合计", "总计"}
+        selected_pairs = []
+        total_pair_seen = False
+        for name, col in zip(merged_names, merged_cols):
+            is_total = str(name).strip().lower() in total_aliases
+            if is_total and total_key:
+                # 总体基准统一从原题数据读取，避免维度表头中的“总体”与
+                # 原始“Total”同时成为两列。
+                continue
+            if is_total and total_pair_seen:
+                continue
+            selected_pairs.append((name, col))
+            total_pair_seen = total_pair_seen or is_total
+        selected_names = [name for name, _ in selected_pairs]
+        if total_key:
             selected_names.insert(0, total_key)
         nq["segments"] = selected_names
-        nq["data"] = {name: by_col.get(col, []) for name, col in zip(merged_names, merged_cols)}
-        nq["base"] = {name: base_by_col.get(col) for name, col in zip(merged_names, merged_cols)}
+        nq["data"] = {name: by_col.get(col, []) for name, col in selected_pairs}
+        nq["base"] = {name: base_by_col.get(col) for name, col in selected_pairs}
         if total_key and total_key not in nq["data"]:
             nq["data"] = {total_key: list((q.get("data") or {}).get(total_key, [])), **nq["data"]}
             nq["base"] = {total_key: (q.get("base") or {}).get(total_key), **nq["base"]}
         new_stats = {}
         for stat in set().union(*[set(sc.keys()) for sc in stats_by_col.values()]) if stats_by_col else []:
             new_stats[stat] = {}
-            for name, col in zip(merged_names, merged_cols):
+            for name, col in selected_pairs:
                 if col in stats_by_col and stat in stats_by_col[col]:
                     new_stats[stat][name] = stats_by_col[col][stat]
             if total_key:

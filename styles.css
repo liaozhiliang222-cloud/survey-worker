@@ -1874,10 +1874,9 @@ tr:last-child td {
   box-shadow: inset 0 1px 2px rgba(15, 42, 86, 0.08);
 }
 
-.progress-bar span {
+.progress-bar > .progress-fill {
   display: block;
   height: 100%;
-  min-width: 3%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--teal), #2f80ed);
   transition: width 0.24s ease;
@@ -1936,7 +1935,7 @@ tr:last-child td {
   display: block;
   height: 100%;
   width: 0%;
-  min-width: 3%;
+  min-width: 0;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--teal, #2bb3a3), #2f80ed);
   transition: width 0.24s ease;
@@ -1954,6 +1953,199 @@ tr:last-child td {
   font-weight: 600;
   color: #1e293b;
   text-shadow: 0 1px 2px rgba(255, 255, 255, 0.7);
+  background: transparent;
+  pointer-events: none;
+}
+
+#pptxProgress {
+  height: 26px;
+  background: #e6edf6;
+  border: 1px solid #d4dfec;
+}
+
+#pptxProgress .progress-fill {
+  background: linear-gradient(90deg, #1d4ed8, #3b82f6);
+}
+
+.pptx-preview-chapters {
+  display: grid;
+  gap: 12px;
+}
+
+.pptx-preview-chapter {
+  overflow: hidden;
+  border: 1px solid #c8d7e8;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.pptx-preview-chapter > summary,
+.pptx-preview-page > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.pptx-preview-chapter > summary::-webkit-details-marker,
+.pptx-preview-page > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pptx-preview-chapter > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  color: #123b73;
+  background: #eaf1fb;
+  font-weight: 700;
+}
+
+.pptx-preview-chapter > summary::before,
+.pptx-preview-page > summary::before {
+  content: "▸";
+  color: #64748b;
+  transition: transform 0.16s ease;
+}
+
+.pptx-preview-chapter[open] > summary::before,
+.pptx-preview-page[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.pptx-preview-chapter-title {
+  flex: 1;
+}
+
+.pptx-preview-chapter-count,
+.pptx-preview-page-type {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pptx-preview-chapter-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.pptx-preview-chapter-controls label,
+.pptx-preview-dimensions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  color: #475569;
+  background: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pptx-preview-chapter-controls label.selected,
+.pptx-preview-dimensions label.selected {
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.pptx-preview-pages {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.pptx-preview-page {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.pptx-preview-page > summary {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+}
+
+.pptx-preview-page:hover > summary {
+  background: #f8fafc;
+}
+
+.pptx-preview-page-number {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pptx-preview-page-title {
+  overflow: hidden;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pptx-preview-page-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.55fr);
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid #e2e8f0;
+  background: #fafcff;
+}
+
+.pptx-preview-field {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.pptx-preview-field > span {
+  color: #334155;
+  font-weight: 700;
+}
+
+.pptx-preview-field-wide {
+  grid-column: 1 / -1;
+}
+
+.pptx-preview-field textarea,
+.pptx-preview-field select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 7px 8px;
+  color: #1e293b;
+  background: #fff;
+  font: inherit;
+}
+
+.pptx-preview-field textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.pptx-preview-question-list {
+  line-height: 1.55;
+}
+
+.pptx-preview-dimensions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .issue-head {

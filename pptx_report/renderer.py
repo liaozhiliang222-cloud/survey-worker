@@ -33,7 +33,8 @@ class ReportRenderer:
     """把 ReportSpec 渲染为 PowerPoint 文件。"""
 
     def __init__(self, theme: Optional[Theme] = None,
-                 template_path: Optional[str] = None):
+                 template_path: Optional[str] = None,
+                 progress_callback=None):
         """
         Args:
             theme: 视觉主题；为空则用 :class:`~pptx_report.theme.Theme` 默认主题。
@@ -41,6 +42,7 @@ class ReportRenderer:
         """
         self.theme = theme or Theme()
         self.template_path = template_path
+        self.progress_callback = progress_callback
         self._prs = None
         self._slide_w = None
         self._slide_h = None
@@ -54,15 +56,33 @@ class ReportRenderer:
 
         self._prs = self._build_presentation()
         dims = (self._slide_w, self._slide_h)
+        total_units = 3 + len(spec.chart_pages) + (1 if spec.appendix is not None else 0)
+        completed = 0
+
+        def report_page(message):
+            nonlocal completed
+            completed += 1
+            if self.progress_callback:
+                percent = 48 + round(42 * completed / max(1, total_units))
+                self.progress_callback(percent, message)
         try:
             self._add_cover(spec.cover, dims)
+            report_page("正在绘制封面")
             self._add_toc(spec.toc, dims)
+            report_page("正在绘制目录")
             self._add_exec_summary(spec.executive_summary, dims)
-            for page in spec.chart_pages:
+            report_page("正在绘制执行摘要")
+            for index, page in enumerate(spec.chart_pages, 1):
                 self._add_chart_page(page, dims)
+                report_page(f"正在绘制数据页 {index}/{len(spec.chart_pages)}")
             if spec.appendix is not None:
                 self._add_appendix(spec.appendix, dims)
+                report_page("正在绘制附录")
+            if self.progress_callback:
+                self.progress_callback(94, "正在打包演示文稿")
             self._prs.save(output_path)
+            if self.progress_callback:
+                self.progress_callback(97, "演示文稿已生成")
         except RenderingError:
             raise
         except Exception as exc:  # noqa: BLE001
