@@ -12,8 +12,8 @@ const providerHosts = {
   openai: ["api.openai.com"]
 };
 const maxBodyBytes = 1024 * 1024;
-const builtinQwenUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
-const builtinQwenModel = "qwen-plus";
+const builtinBailianUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const defaultBuiltinModels = ["deepseek-v4-flash", "qwen3.7-plus", "glm-5.2"];
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -58,6 +58,46 @@ function sendJson(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+function builtinModels() {
+  const configured = String(process.env.BAILIAN_MODELS || process.env.BAILIAN_MODEL || "")
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+  return configured.length ? configured : defaultBuiltinModels;
+}
+
+function prepareBuiltinBody(body, model) {
+  const next = { ...body, model };
+  if (/^deepseek-/i.test(model)) delete next.response_format;
+  return next;
+}
+
+function responseContainsJson(text) {
+  try {
+    const payload = JSON.parse(text);
+    const content = String(payload?.choices?.[0]?.message?.content || "").trim();
+    const candidate = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]
+      || content.match(/\{[\s\S]*\}/)?.[0]
+      || content;
+    const parsed = JSON.parse(candidate);
+    return Boolean(parsed && typeof parsed === "object" && !Array.isArray(parsed));
+  } catch {
+    return false;
+  }
+}
+
+async function requestModel(targetUrl, apiKey, body) {
+  const upstream = await fetch(targetUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(body)
+  });
+  return { upstream, text: await upstream.text() };
+}
+
 http
   .createServer((req, res) => {
     if (req.url === "/api/ai" && req.method === "OPTIONS") {
@@ -80,7 +120,7 @@ http
           const useBuiltin = !clientApiKey;
           const targetUrl = validateAiTarget(
             useBuiltin ? "qwen" : (payload.provider || "custom"),
-            useBuiltin ? (process.env.BAILIAN_API_URL || builtinQwenUrl) : payload.url
+            useBuiltin ? (process.env.BAILIAN_API_URL || builtinBailianUrl) : payload.url
           );
           const apiKey = useBuiltin
             ? String(process.env.DASHSCOPE_API_KEY || process.env.BAILIAN_API_KEY || process.env.AI_API_KEY || "").trim()
@@ -94,18 +134,22 @@ http
             sendJson(res, 503, { error: { message: "Built-in Bailian service is not configured." } });
             return;
           }
-          const upstreamBody = useBuiltin
-            ? { ...requestBody, model: process.env.BAILIAN_MODEL || builtinQwenModel }
-            : requestBody;
-          const upstream = await fetch(targetUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`
-            },
-            body: JSON.stringify(upstreamBody)
-          });
-          const text = await upstream.text();
+          const wantsJson = requestBody.response_format?.type === "json_object";
+          const models = useBuiltin ? builtinModels() : [requestBody.model];
+          const attempts = [];
+          let result = null;
+          let actualModel = requestBody.model;
+          for (const model of models) {
+            attempts.push(model);
+            const upstreamBody = useBuiltin ? prepareBuiltinBody(requestBody, model) : requestBody;
+            result = await requestModel(targetUrl, apiKey, upstreamBody);
+            actualModel = model;
+            if (!result.upstream.ok || !result.text.trim()) continue;
+            if (useBuiltin && wantsJson && !responseContainsJson(result.text)) continue;
+            break;
+          }
+          const upstream = result.upstream;
+          const text = result.text;
           if (!text.trim()) {
             sendJson(res, upstream.ok ? 502 : upstream.status, {
               error: {
@@ -118,8 +162,9 @@ http
             "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
             "Access-Control-Allow-Origin": "*",
             "Cache-Control": "no-store",
-            "X-Actual-Model": upstream.headers.get("X-Actual-Model") || upstreamBody.model,
-            "X-AI-Source": useBuiltin ? "builtin-bailian" : "user-key"
+            "X-Actual-Model": upstream.headers.get("X-Actual-Model") || actualModel,
+            "X-AI-Source": useBuiltin ? "builtin-bailian" : "user-key",
+            "X-AI-Attempts": attempts.join(",")
           });
           res.end(text);
         } catch (error) {

@@ -11895,52 +11895,94 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       const settings = loadAiSettings();
       const errors = validateAiSettings(settings);
       if (settings.mode === "local" || errors.length) {
-        throw new Error("AI建议模式需要先在“AI设置”中配置可用的模型与 API Key。当前已保留标准规则方案。");
+        throw new Error(`AI 规划暂不可用：${errors.join("；")}。当前已保留标准规则方案。`);
       }
       const availableDimensions = ["总体", ...dimensionGroups.map((item) => item.name)];
-      const compactPages = (plan.pages || []).map((page) => ({
-        page_idx: page.page_idx,
-        chapter: page.chapter || "其他研究",
-        questions: (page.questions || []).map((q) => `${q.code || ""}.${String(q.title || "").slice(0, 28)}`),
+      const catalog = Array.isArray(plan.question_catalog) && plan.question_catalog.length
+        ? plan.question_catalog
+        : (plan.pages || []).flatMap((page) => (page.questions || []).map((question) => ({
+          ...question,
+          chapter: page.chapter || "其他研究",
+        })));
+      const compactCatalog = catalog.map((question) => ({
+        code: question.code,
+        title: String(question.title || "").slice(0, 60),
+        current_chapter: question.chapter || "其他研究",
+        option_count: Array.isArray(question.categories) ? question.categories.length : 0,
       }));
       const messages = [
         {
           role: "system",
           content: [
-            "你是资深市场研究报告总监。请基于问卷页面清单优化报告章节、建议各章节默认分析维度，并为每页起草一句数据洞察标题。",
+            "你是资深市场研究报告总监。请基于问卷题目目录规划完整的量化调研报告框架。",
+            "请设计章节顺序、每页放置的题目组合，以及章节默认分析维度。相关题目可合并在同一页，每页建议1-3题；选项很多的题目应单独成页。",
+            "必须覆盖用户提供的全部题目代码，每个题目只能出现一次，不得创造不存在的题目代码。",
             "只返回 JSON 对象，不要输出 Markdown。结构必须为：",
-            '{"chapters":[{"name":"章节名","page_idxs":[1,2],"default_dimensions":["年龄"],"page_insights":{"1":"一句话洞察标题"}}]}',
-            "default_dimensions 只能从用户提供的可用维度中选择；每页只能归入一个章节；洞察不得编造未提供的数据，无法判断时留空字符串。",
+            '{"chapters":[{"name":"章节名","default_dimensions":["年龄"],"pages":[{"question_codes":["Q1","Q2"],"analysis_focus":"本页分析重点"}]}]}',
+            "default_dimensions 只能从用户提供的可用维度中选择；不得编造数据洞察，本阶段只规划分析结构。",
           ].join("\n"),
         },
         {
           role: "user",
-          content: `可用维度：${JSON.stringify(availableDimensions)}\n页面清单：${JSON.stringify(compactPages)}`,
+          content: `可用维度：${JSON.stringify(availableDimensions)}\n题目目录：${JSON.stringify(compactCatalog)}`,
         },
       ];
       const output = await callAiChatCompletion(settings, messages, {
-        maxTokens: 6000,
-        timeoutMs: 180000,
-        temperature: 0.2,
+        maxTokens: 12000,
+        timeoutMs: 240000,
+        temperature: 0.15,
+        responseFormat: "json_object",
       });
       const suggestion = parseAiPptxPlanOutput(output);
       const validDimensions = new Set(availableDimensions);
-      const byIndex = new Map((plan.pages || []).map((page) => [Number(page.page_idx), page]));
+      const catalogByCode = new Map(catalog.map((question) => [String(question.code), question]));
+      const templateByCode = new Map();
+      (plan.pages || []).forEach((page) => (page.questions || []).forEach((question) => {
+        if (question?.code && !templateByCode.has(String(question.code))) templateByCode.set(String(question.code), page);
+      }));
+      const assigned = new Set();
+      const aiPages = [];
       suggestion.chapters.forEach((chapter) => {
         const dims = (chapter.default_dimensions || []).filter((name) => validDimensions.has(name));
-        (chapter.page_idxs || []).forEach((pageIdx) => {
-          const page = byIndex.get(Number(pageIdx));
-          if (!page) return;
-          page.chapter = String(chapter.name || page.chapter || "其他研究").slice(0, 24);
-          if (dims.length) {
-            page.selected_dimensions = dims.includes("总体") ? ["总体"] : dims;
-            page.dimension_mode = page.selected_dimensions[0] === "总体" ? "overall" : "compare";
-            page.dimension_key = page.selected_dimensions.join(",");
-          }
-          const insight = chapter.page_insights?.[String(pageIdx)] || chapter.page_insights?.[pageIdx];
-          if (insight) page.insight_override = String(insight).slice(0, 80);
+        const selectedDimensions = dims.length ? (dims.includes("总体") ? ["总体"] : dims) : ["总体"];
+        (chapter.pages || []).forEach((pageSuggestion) => {
+          const codes = (pageSuggestion.question_codes || [])
+            .map((code) => String(code))
+            .filter((code) => catalogByCode.has(code) && !assigned.has(code))
+            .slice(0, 3);
+          if (!codes.length) return;
+          codes.forEach((code) => assigned.add(code));
+          const template = templateByCode.get(codes[0]) || plan.pages?.[0] || {};
+          aiPages.push({
+            ...template,
+            page_idx: aiPages.length + 1,
+            chapter: String(chapter.name || template.chapter || "其他研究").slice(0, 24),
+            questions: codes.map((code) => catalogByCode.get(code)),
+            selected_dimensions: selectedDimensions,
+            dimension_mode: selectedDimensions[0] === "总体" ? "overall" : "compare",
+            dimension_key: selectedDimensions.join(","),
+            insight_override: "",
+            insight_bullets: [],
+            analysis_focus: String(pageSuggestion.analysis_focus || "").slice(0, 100),
+          });
         });
       });
+      // AI 漏掉的题目按原规则页面补回，确保全题覆盖。
+      (plan.pages || []).forEach((page) => {
+        const remaining = (page.questions || []).filter((question) => question?.code && !assigned.has(String(question.code)));
+        if (!remaining.length) return;
+        remaining.forEach((question) => assigned.add(String(question.code)));
+        aiPages.push({
+          ...page,
+          page_idx: aiPages.length + 1,
+          questions: remaining,
+          insight_override: "",
+          insight_bullets: [],
+        });
+      });
+      if (!aiPages.length) throw new Error("AI 未生成可用页面，已保留标准规则方案。");
+      plan.pages = aiPages;
+      plan.total_pages = aiPages.length;
       plan.planning_mode = "ai";
       return plan;
     }
