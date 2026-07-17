@@ -13815,8 +13815,8 @@ document.querySelector("#exportAiPlanWord").addEventListener("click", exportAiPl
 document.querySelector("#applyAiPlanToProject").addEventListener("click", applyAiPlanToProject);
 document.querySelector("#reviseAiPlan").addEventListener("click", reviseAiPlan);
 document.querySelector("#loadAiPlanExample").addEventListener("click", () => {
-  document.querySelector("#aiPlanInput").value = "调研目的：某品牌即将推出一款常温纯牛奶，主打常温短保、瞬时杀菌、自有牧场、双活性蛋白等卖点，对标18-45岁离线人群。当前已有初步新品概念，需要基于消费者调研，为新品开发方向、目标人群及营销卖点策略等提供数据支持。";
-  document.querySelector("#aiPlanContext").value = "常温纯牛奶新品概念测试";
+  document.querySelector("#aiPlanInput").value = "调研目的：某智能硬件企业计划推出一款面向城市养宠家庭的智能宠物饮水机，核心功能包括多重过滤、水质监测、远程提醒和静音运行。当前已有产品原型，需要通过消费者调研验证核心需求、功能偏好、价格接受度和购买渠道，为产品迭代、目标人群定位及上市传播策略提供数据支持。";
+  document.querySelector("#aiPlanContext").value = "智能宠物饮水机新品概念测试";
   document.querySelector("#aiPlanMode").value = "detailed";
   document.querySelector("#aiPlanStudyType").value = "concept";
   document.querySelector("#aiPlanAudience").value = "18-45岁，近3个月购买过牛奶/乳制品的消费者";
