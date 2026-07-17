@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Dict
 
 from pptx.chart.data import CategoryChartData, XyChartData
@@ -68,7 +69,14 @@ def add_chart(slide, spec: ChartSpec, x, y, cx, cy, theme: Theme) -> None:
         if ctype in (ChartType.BAR, ChartType.COLUMN, ChartType.LINE):
             try:
                 chart.value_axis.minimum_scale = 0.0
-                chart.value_axis.maximum_scale = 100.0
+                # 单一总体系列使用贴近数据的整十上限，让低占比图表也能有效利用版面；
+                # 多人群对比仍固定 0~100，避免跨组尺度不一致。
+                if len(spec.series) == 1 and ctype in (ChartType.BAR, ChartType.COLUMN):
+                    values = [float(v) for v in spec.series[0].values]
+                    peak = max(values, default=0.0)
+                    chart.value_axis.maximum_scale = min(100.0, max(10.0, math.ceil(peak * 1.2 / 10.0) * 10.0))
+                else:
+                    chart.value_axis.maximum_scale = 100.0
             except Exception:
                 pass
         elif ctype in (ChartType.STACKED_BAR, ChartType.STACKED_COLUMN):

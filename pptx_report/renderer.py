@@ -95,6 +95,12 @@ class ReportRenderer:
             if not os.path.exists(self.template_path):
                 raise TemplateNotFoundError(self.template_path)
             prs = Presentation(self.template_path)
+            # 上传模板只提供母版、版式、背景和主题。移除模板中的示例页，避免旧内容
+            # 出现在新报告前面；版式与母版关系仍会保留。
+            for slide_id in list(prs.slides._sldIdLst):
+                relationship_id = slide_id.rId
+                prs.slides._sldIdLst.remove(slide_id)
+                prs.part.drop_rel(relationship_id)
             self._slide_w = prs.slide_width
             self._slide_h = prs.slide_height
         else:
@@ -123,6 +129,12 @@ class ReportRenderer:
             except IndexError:
                 layout = prs.slide_layouts[0]
         slide = prs.slides.add_slide(layout)
+        # 版式可能带标题/正文占位符。当前报告由原生形状重新绘制，因此清除占位符，
+        # 但保留母版背景、Logo 和页脚等母版级元素。
+        if self.template_path:
+            for shape in list(slide.placeholders):
+                element = shape._element
+                element.getparent().remove(element)
         # 仅无模板时强制背景色，避免覆盖模板设计
         if not self.template_path:
             set_slide_background(slide, self.theme.background)

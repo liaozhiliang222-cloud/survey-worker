@@ -93,7 +93,7 @@ export async function proxyToBackend(request, env) {
       status: 204,
       headers: {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
         "Access-Control-Max-Age": "86400",
       }
@@ -121,7 +121,7 @@ export async function proxyToBackend(request, env) {
     const upstream = await fetch(target, {
       method: request.method,
       headers,
-      body: request.body,
+      body: ["GET", "HEAD"].includes(request.method) ? undefined : request.body,
       duplex: "half",
       signal: controller.signal,
       redirect: "manual",

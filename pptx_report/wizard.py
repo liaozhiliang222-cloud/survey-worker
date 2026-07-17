@@ -1329,6 +1329,7 @@ def run_wizard(
     dimension: str = None,
     page_config: dict = None,
     theme_key: str = "blue",
+    template_path: str = None,
     progress_callback=None,
 ) -> str:
     """端到端：解析交叉表 → 组装 → 渲染成 .pptx。
@@ -1377,7 +1378,14 @@ def run_wizard(
     spec.validate()
     progress(48, "报告结构校验完成")
     theme = theme_from_key(theme_key)
-    renderer = ReportRenderer(theme=theme, progress_callback=progress_callback)
+    if template_path:
+        from .template import theme_from_template
+        theme = theme_from_template(template_path, theme)
+    renderer = ReportRenderer(
+        theme=theme,
+        template_path=template_path,
+        progress_callback=progress_callback,
+    )
     return renderer.render(spec, out_path)
 
 

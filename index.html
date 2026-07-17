@@ -1205,6 +1205,26 @@
                     </select>
                   </label>
                   <label class="span-row field">
+                    <span class="field-heading">PPT 报告模板</span>
+                    <select id="pptxTemplateMode">
+                      <option value="system" selected>使用系统模板</option>
+                      <option value="upload">上传公司 PPTX 模板</option>
+                    </select>
+                    <small class="field-note">上传模板将保留母版、背景、Logo、版式、主题色和字体；模板中的示例页面会在生成时移除。</small>
+                  </label>
+                  <div class="span-row pptx-template-upload hidden" id="pptxTemplateUploadArea">
+                    <input class="hidden" id="pptxTemplateInput" type="file" accept=".pptx" />
+                    <div class="pptx-template-actions">
+                      <label class="ghost-btn" for="pptxTemplateInput">选择 PPTX 模板</label>
+                      <button class="ghost-btn" id="pptxTemplateClear" type="button" disabled>移除模板</button>
+                    </div>
+                    <div class="pptx-template-analysis" id="pptxTemplateAnalysis">
+                      <strong>尚未上传模板</strong>
+                      <span>支持 25MB 以内的 .pptx 文件。上传后会先分析页面比例、版式、主题色和字体。</span>
+                    </div>
+                    <p class="panel-note" id="pptxTemplateStatus"></p>
+                  </div>
+                  <label class="span-row field">
                     <span class="field-heading">报告规划模式</span>
                     <select id="pptxPlanningMode">
                       <option value="rule" selected>标准规则（快速、稳定）</option>

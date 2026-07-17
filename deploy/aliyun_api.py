@@ -28,7 +28,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 # 确保运行日志中的中文 debug print 不会因 stdout 编码非 UTF-8 而崩溃
 # （Windows 默认控制台编码 / 部分 Linux 容器 locale 非 utf-8 时会触发 latin-1 报错）
@@ -53,6 +53,7 @@ for p in (str(HERE), str(PARENT)):
 from pptx_report.cli import _collect_segments
 from pptx_report.build_jd_report import parse_crosstab
 from pptx_report.wizard import build_insight_context, build_page_plan, run_wizard
+from pptx_report.template import analyze_template
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 REQUEST_ENVELOPE_MAGIC = b"SKPPTX1\n"
@@ -60,6 +61,9 @@ MAX_METADATA_BYTES = 1024 * 1024
 JOB_TTL_SECONDS = 2 * 60 * 60
 JOB_DIR = Path(tempfile.gettempdir()) / "surveykit-ppt-jobs"
 JOB_DIR.mkdir(parents=True, exist_ok=True)
+TEMPLATE_DIR = Path(tempfile.gettempdir()) / "surveykit-ppt-templates"
+TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
+TEMPLATE_TTL_SECONDS = 24 * 60 * 60
 app = FastAPI(title="PPTX Report API")
 
 # CORS：允许前端域名（surveykit.cc）和本地开发直连阿里云
@@ -100,6 +104,63 @@ def _write_temp(data: bytes, suffix: str) -> str:
     tmp.write(data)
     tmp.close()
     return tmp.name
+
+
+def _template_path(template_id: str) -> Path | None:
+    if not re.fullmatch(r"[0-9a-f]{32}", str(template_id or "")):
+        return None
+    path = TEMPLATE_DIR / f"{template_id}.pptx"
+    return path if path.exists() else None
+
+
+def _cleanup_templates() -> None:
+    cutoff = time.time() - TEMPLATE_TTL_SECONDS
+    for path in TEMPLATE_DIR.glob("*.pptx"):
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+        except OSError:
+            pass
+
+
+@app.post("/api/pptx-report/templates")
+async def upload_template(request: Request):
+    """上传并分析公司 PPTX 模板，返回 24 小时有效的模板 ID。"""
+    _cleanup_templates()
+    data = await request.body()
+    if not data:
+        return JSONResponse({"error": {"message": "模板文件为空。"}}, status_code=400)
+    if len(data) > MAX_UPLOAD_BYTES:
+        return JSONResponse({"error": {"message": "模板文件过大（>25MB）。"}}, status_code=413)
+    template_id = uuid.uuid4().hex
+    path = TEMPLATE_DIR / f"{template_id}.pptx"
+    path.write_bytes(data)
+    filename = unquote(request.headers.get("X-Template-Name") or "company-template.pptx")
+    try:
+        analysis = analyze_template(str(path), filename=filename[:120])
+        return JSONResponse({
+            "template_id": template_id,
+            "expires_in": TEMPLATE_TTL_SECONDS,
+            **analysis,
+        }, headers={"Cache-Control": "no-store"})
+    except Exception as exc:  # noqa: BLE001
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        return JSONResponse({"error": {"message": f"模板解析失败：{exc}"}}, status_code=400)
+
+
+@app.delete("/api/pptx-report/templates/{template_id}")
+def delete_template(template_id: str):
+    """提前删除用户上传的临时模板；找不到时也按删除成功处理。"""
+    path = _template_path(template_id)
+    if path is not None:
+        try:
+            path.unlink()
+        except OSError as exc:
+            return JSONResponse({"error": {"message": f"模板删除失败：{exc}"}}, status_code=500)
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/healthz")
@@ -225,6 +286,13 @@ def _generate_core(
     dimension = metadata.get("dimension") or qs.get("dimension") or None
     page_config = metadata.get("page_config")
     theme_key = metadata.get("theme") or qs.get("theme") or "blue"
+    template_id = metadata.get("template_id") or qs.get("template_id") or ""
+    template_path = _template_path(str(template_id)) if template_id else None
+    if template_id and template_path is None:
+        return JSONResponse(
+            {"error": {"message": "上传模板不存在或已过期，请重新上传模板。"}},
+            status_code=400,
+        )
     pc = qs.get("page_config") if page_config is None else None
     if pc:
         try:
@@ -240,11 +308,13 @@ def _generate_core(
             tmp_out.name,
             title=title,
             client="调研项目",
+            date=time.strftime("%Y-%m-%d"),
             segments=segs,
             dimension=dimension,
             max_per_page=3,
             page_config=page_config,
             theme_key=theme_key,
+            template_path=str(template_path) if template_path else None,
             progress_callback=progress_callback,
         )
         with open(tmp_out.name, "rb") as f:

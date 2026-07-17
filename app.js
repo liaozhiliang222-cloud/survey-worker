@@ -11606,6 +11606,12 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     const parseStatus = document.querySelector("#pptxParseStatus");
     const titleInput = document.querySelector("#pptxReportTitle");
     const themeInput = document.querySelector("#pptxThemeColor");
+    const templateModeInput = document.querySelector("#pptxTemplateMode");
+    const templateUploadArea = document.querySelector("#pptxTemplateUploadArea");
+    const templateInput = document.querySelector("#pptxTemplateInput");
+    const templateClearBtn = document.querySelector("#pptxTemplateClear");
+    const templateAnalysisEl = document.querySelector("#pptxTemplateAnalysis");
+    const templateStatusEl = document.querySelector("#pptxTemplateStatus");
     const planningModeInput = document.querySelector("#pptxPlanningMode");
     const segmentDropdown = document.querySelector("#pptxSegmentDropdown");
     const segmentPanel = document.querySelector("#pptxSegmentPanel");
@@ -11638,6 +11644,8 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     let editedPagePlan = null;  // 用户编辑后的页面规划
     let questionEditorPageIndex = -1;
     let lastPptxJobId = "";
+    let uploadedTemplateId = "";
+    let uploadedTemplateAnalysis = null;
 
     function invalidatePptxPreview(message = "配置已更新，请重新预览后再生成。") {
       const hadPreview = Boolean(editedPagePlan);
@@ -11648,6 +11656,96 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       if (aiWriteBtn) aiWriteBtn.disabled = true;
       if (hadPreview && genStatus) genStatus.textContent = message;
     }
+
+    function renderTemplateAnalysis(analysis = uploadedTemplateAnalysis) {
+      if (!templateAnalysisEl) return;
+      if (!analysis) {
+        templateAnalysisEl.innerHTML = `<strong>尚未上传模板</strong><span>支持 25MB 以内的 .pptx 文件。上传后会先分析页面比例、版式、主题色和字体。</span>`;
+        return;
+      }
+      const colors = (analysis.theme_colors || []).slice(0, 6).map((color) =>
+        `<i class="pptx-template-color" style="background:#${escapeHtml(color)}" title="#${escapeHtml(color)}"></i>`
+      ).join("");
+      const warnings = (analysis.warnings || []).map((warning) => `<span class="warning-text">${escapeHtml(warning)}</span>`).join("");
+      templateAnalysisEl.innerHTML = `
+        <strong>${escapeHtml(analysis.file_name || "公司模板")}</strong>
+        <div class="pptx-template-meta">
+          <span>${analysis.slide_count || 0} 张示例页</span>
+          <span>${analysis.layout_count || 0} 种版式</span>
+          <span>${analysis.is_widescreen ? "16:9 宽屏" : `页面比例 ${analysis.aspect_ratio || "-"}`}</span>
+          <span>字体：${escapeHtml((analysis.fonts || []).slice(0, 2).join(" / ") || "沿用系统字体")}</span>
+          ${colors ? `<span>主题色：<b class="pptx-template-colors">${colors}</b></span>` : ""}
+        </div>
+        ${warnings}
+      `;
+    }
+
+    async function uploadPptxTemplate(file) {
+      if (!file) return;
+      if (!/\.pptx$/i.test(file.name)) {
+        templateStatusEl.textContent = "请选择 .pptx 格式的模板文件。";
+        return;
+      }
+      if (file.size > 25 * 1024 * 1024) {
+        templateStatusEl.textContent = "模板文件不能超过 25MB。";
+        return;
+      }
+      templateStatusEl.textContent = "正在分析模板的母版、版式、主题色和字体…";
+      if (templateInput) templateInput.disabled = true;
+      try {
+        const response = await fetch("/pptx-api/templates", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "X-Template-Name": encodeURIComponent(file.name),
+          },
+          body: file,
+        });
+        if (!response.ok) throw new Error(await readPptxApiError(response, "模板分析失败"));
+        if (uploadedTemplateId) {
+          fetch(`/pptx-api/templates/${encodeURIComponent(uploadedTemplateId)}`, { method: "DELETE" }).catch(() => {});
+        }
+        uploadedTemplateAnalysis = await response.json();
+        uploadedTemplateId = uploadedTemplateAnalysis.template_id || "";
+        if (themeInput && templateModeInput?.value === "upload" && uploadedTemplateId) themeInput.disabled = true;
+        templateStatusEl.textContent = uploadedTemplateId ? "模板分析完成，生成报告时将自动套用。" : "模板未返回有效标识，请重新上传。";
+        if (templateClearBtn) templateClearBtn.disabled = !uploadedTemplateId;
+        renderTemplateAnalysis();
+        invalidatePptxPreview("报告模板已更新，请重新预览后再生成。");
+      } catch (error) {
+        uploadedTemplateId = "";
+        uploadedTemplateAnalysis = null;
+        renderTemplateAnalysis();
+        templateStatusEl.textContent = `模板上传失败：${error.message}`;
+      } finally {
+        if (templateInput) templateInput.disabled = false;
+      }
+    }
+
+    templateModeInput?.addEventListener("change", () => {
+      const useUpload = templateModeInput.value === "upload";
+      templateUploadArea?.classList.toggle("hidden", !useUpload);
+      if (themeInput) themeInput.disabled = useUpload && Boolean(uploadedTemplateId);
+      invalidatePptxPreview("报告模板模式已更新，请重新预览。");
+    });
+    templateInput?.addEventListener("change", (event) => {
+      const file = event.target.files?.[0];
+      if (file) uploadPptxTemplate(file);
+    });
+    templateClearBtn?.addEventListener("click", () => {
+      const templateIdToDelete = uploadedTemplateId;
+      uploadedTemplateId = "";
+      uploadedTemplateAnalysis = null;
+      if (templateInput) templateInput.value = "";
+      if (templateClearBtn) templateClearBtn.disabled = true;
+      if (themeInput) themeInput.disabled = false;
+      if (templateStatusEl) templateStatusEl.textContent = "模板已移除。";
+      renderTemplateAnalysis();
+      invalidatePptxPreview("上传模板已移除，请重新预览。");
+      if (templateIdToDelete) {
+        fetch(`/pptx-api/templates/${encodeURIComponent(templateIdToDelete)}`, { method: "DELETE" }).catch(() => {});
+      }
+    });
 
     function setFile(file) {
       if (!file) return;
@@ -12744,6 +12842,11 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         return;
       }
       const title = (titleInput.value || "调研分析报告").trim();
+      const useUploadedTemplate = templateModeInput?.value === "upload";
+      if (useUploadedTemplate && !uploadedTemplateId) {
+        (genStatus || confirmStatus).textContent = "请先上传并完成 PPTX 模板分析。";
+        return;
+      }
       if (confirmBtn) confirmBtn.disabled = true;
       if (generateBtn) generateBtn.disabled = true;
       progress.classList.remove("hidden");
@@ -12756,6 +12859,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           segments: checked,
           title,
           theme: themeInput?.value || "blue",
+          template_id: useUploadedTemplate ? uploadedTemplateId : null,
           planning_mode: planningModeInput?.value || "rule",
           dimension: currentDimension || null,
           page_config: compactPptxPageConfig(editedPagePlan),

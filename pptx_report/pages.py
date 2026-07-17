@@ -179,24 +179,28 @@ def build_toc(slide, toc: TocContent, theme: Theme, dims: Dims) -> None:
     _add_textbox(slide, "目录 CONTENTS", Inches(PAGE_MARGIN), Inches(TITLE_TOP),
                   slide_w - Inches(2 * PAGE_MARGIN), Inches(TITLE_HEIGHT), theme,
                   size=32, bold=True, color=theme.primary)
-    y = 1.8
+    # 章节较多时压缩纵向节奏，确保最后一项完整落在安全区内。
+    section_count = max(1, len(toc.sections))
+    y = 1.55 if section_count >= 7 else 1.8
+    step = min(0.85, (float(slide_h) / 914400.0 - y - BOTTOM_MARGIN - 0.18) / section_count)
+    row_h = min(0.6, max(0.45, step - 0.12))
     for i, sec in enumerate(toc.sections):
         num = f"{i + 1:02d}"
         _add_textbox(slide, num, Inches(PAGE_MARGIN), Inches(y),
-                      Inches(1.0), Inches(0.6), theme, size=24, bold=True,
+                      Inches(1.0), Inches(row_h), theme, size=22 if section_count >= 7 else 24, bold=True,
                       color=theme.accent)
         _add_textbox(slide, sec, Inches(PAGE_MARGIN + 1.1), Inches(y),
-                      slide_w - Inches(2 * PAGE_MARGIN + 1.1), Inches(0.6), theme,
-                      size=20, color=theme.text_dark)
+                      slide_w - Inches(2 * PAGE_MARGIN + 1.1), Inches(row_h), theme,
+                      size=19 if section_count >= 7 else 20, color=theme.text_dark)
         # 底部分隔线
-        line_y = y + 0.62
+        line_y = y + row_h + 0.02
         if line_y < slide_h - BOTTOM_MARGIN:
             divider = slide.shapes.add_shape(
                 MSO_SHAPE.RECTANGLE, Inches(PAGE_MARGIN), Inches(line_y),
                 slide_w - Inches(2 * PAGE_MARGIN), Inches(0.012))
             set_shape_fill(divider, "D9D9D9")
             remove_shape_outline(divider)
-        y += 0.85
+        y += step
 
 
 # ------------------------- 执行摘要 -------------------------
@@ -255,9 +259,11 @@ def build_exec_summary(slide, es, theme: Theme, dims: Dims) -> None:
 # ------------------------- 图表分析页 -------------------------
 def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) -> None:
     slide_w, slide_h = dims
+    title_units = _text_width_units(page.title)
+    title_size = 28 if title_units <= 48 else 24 if title_units <= 72 else 21
     _add_textbox(slide, page.title, Inches(PAGE_MARGIN), Inches(TITLE_TOP),
                   slide_w - Inches(2 * PAGE_MARGIN), Inches(TITLE_HEIGHT), theme,
-                  size=28, bold=True, color=theme.primary)
+                  size=title_size, bold=True, color=theme.primary)
     divider = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE,
         Inches(PAGE_MARGIN), Inches(0.98),
