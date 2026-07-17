@@ -1737,7 +1737,7 @@ function savToDelimitedTableText(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
   const view = new DataView(arrayBuffer);
   const magic = decodeSavText(bytes.slice(0, 4));
-  if (magic !== "$FL2" && magic !== "$FL3") throw new Error("当前文件不是标准 SPSS SAV 文件。");
+  if (magic !== "$FL2" && magic !== "$FL3") throw new Error("当前文件不是标准 SAV 文件。");
 
   const littleEndian = view.getInt32(64, true) === 2 || view.getInt32(64, true) === 3;
   const caseSize = view.getInt32(68, littleEndian);
@@ -8383,7 +8383,7 @@ async function generateAiPlan() {
   const steps = [
     { title: "解析业务需求", detail: config.template && config.templateMode !== "none" ? `整理项目背景，并带入模板「${config.template.name}」的结构与风格。` : "整理项目背景、研究类型、目标人群、样本量和约束条件。" },
     { title: "搭建方案框架", detail: "生成研究目标、核心问题、方法路径、方案章节与研究模块。" },
-    { title: "校验模型设置", detail: settings.mode === "local" || !settings.apiKey ? "未填写前端 Key，将通过后端代理调用内置阿里云百炼。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"} 优化方案。` },
+    { title: "校验模型设置", detail: settings.mode === "local" || !settings.apiKey ? "未填写前端 Key，将通过后端代理调用平台内置模型。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"} 优化方案。` },
     { title: "生成可交付方案", detail: "输出可复制、可导出、可同步到项目档案的方案文本。" }
   ];
   renderAiProgress(result, steps, 0, "", "正在生成调研方案");
@@ -8396,10 +8396,10 @@ async function generateAiPlan() {
       try {
         renderAiProgress(result, steps, 2, "正在让大模型把需求改写为完整调研方案。", "正在生成调研方案");
         output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config, localPlan), { maxTokens: config.mode === "detailed" ? 12000 : 5000 });
-        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "阿里云百炼（内置免费模型）";
+        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output = `${localPlan}\n\n---\n\n> 大模型调用失败，已回退为本地方案框架。错误信息：${error.message}`;
-        source = settings.apiKey ? "本地方案框架（模型调用失败）" : "阿里云百炼（内置免费模型，调用失败）";
+        source = settings.apiKey ? "本地方案框架（模型调用失败）" : "平台内置免费模型（调用失败）";
       }
     } else {
       output = `${localPlan}\n\n---\n\n> 大模型设置未通过校验，已回退为本地方案框架：${errors.join("；")}`;
@@ -8464,10 +8464,10 @@ async function reviseAiPlan() {
       try {
         renderAiProgress(result, steps, 2, "正在按你的要求重写方案，通常需要几十秒。", "正在修改调研方案");
         output = await callAiChatCompletion(settings, buildAiPlanRevisionPrompt(instruction, lastAiPlan), { maxTokens: 12000 });
-        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "阿里云百炼（内置免费模型）";
+        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output += `\n\n> 大模型修改失败：${error.message}`;
-        source = settings.apiKey ? "本地方案框架（模型调用失败）" : "阿里云百炼（内置免费模型，调用失败）";
+        source = settings.apiKey ? "本地方案框架（模型调用失败）" : "平台内置免费模型（调用失败）";
       }
     } else {
       output += `\n\n> 大模型设置未通过校验：${errors.join("；")}`;
@@ -8931,7 +8931,7 @@ function validateAiSettings(settings) {
     try {
       const url = new URL(settings.url);
       if (!/^https?:$/.test(url.protocol)) errors.push("接口地址必须以 http 或 https 开头。");
-      if (!/chat\/completions/i.test(url.pathname)) errors.push("接口地址建议使用 OpenAI 兼容的 /chat/completions 路径。");
+      if (!/chat\/completions/i.test(url.pathname)) errors.push("接口地址建议使用兼容的 /chat/completions 路径。");
     } catch {
       errors.push("接口地址格式不正确。");
     }
@@ -8955,19 +8955,19 @@ function renderAiSettingsStatus(settings = loadAiSettings()) {
     preview.innerHTML = `
       <strong>${escapeHtml(preset.name)}</strong>
       <span>${escapeHtml(`模型：${settings.model || "-"}；接口：${settings.url || "-"}`)}</span>
-      ${errors.length ? `<span class="warning-text">${escapeHtml(errors.join("；"))}</span>` : `<span>${escapeHtml(settings.apiKey ? "设置校验通过，可以在 AI 功能中调用。" : "模型与接口已就绪；未填写前端 Key 时会通过后端代理调用内置阿里云百炼。")}</span>`}
+      ${errors.length ? `<span class="warning-text">${escapeHtml(errors.join("；"))}</span>` : `<span>${escapeHtml(settings.apiKey ? "设置校验通过，可以在 AI 功能中调用。" : "模型与接口已就绪；未填写前端 Key 时会通过后端代理调用平台内置模型。")}</span>`}
     `;
   }
   if (hint) {
     hint.innerHTML = `
       <strong>生成方式</strong>
-      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）。` : "已自动使用平台内置免费模型（阿里云百炼）。")}</span>
+      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）。` : "已自动使用平台内置免费模型。")}</span>
     `;
   }
   if (planHint) {
     planHint.innerHTML = `
       <strong>生成方式</strong>
-      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）生成调研方案。` : "已自动使用平台内置免费模型（阿里云百炼）。")}</span>
+      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）生成调研方案。` : "已自动使用平台内置免费模型。")}</span>
     `;
   }
 }
@@ -9250,7 +9250,7 @@ async function renderAiBrief() {
   const design = buildAiQuestionnaireDesign();
   const steps = [
     { title: "整理研究需求", detail: "读取研究类型、目标人群、样本量和期望时长。" },
-    { title: "校验生成方式", detail: settings.mode === "local" || !settings.apiKey ? "已自动使用平台内置免费模型（阿里云百炼）。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}（${settings.model}）。` },
+    { title: "校验生成方式", detail: settings.mode === "local" || !settings.apiKey ? "已自动使用平台内置免费模型。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}（${settings.model}）。` },
     { title: "生成问卷初稿", detail: `按约 ${design.config.duration} 分钟生成偏完整初稿，先覆盖研究模块，后续再人工删减。` },
     { title: "整理可导出结果", detail: "启用复制、Markdown、Word 和同步到项目稿。" }
   ];
@@ -10248,7 +10248,7 @@ async function generateAiWorkbench() {
   const text = document.querySelector("#aiWorkbenchInput").value.trim();
   const result = document.querySelector("#aiWorkbenchResults");
   const settings = loadAiSettings();
-  result.innerHTML = `<div class="empty-state"><strong>正在生成 AI 建议</strong><span>${escapeHtml(settings.mode === "local" || !settings.apiKey ? "正在通过后端代理调用内置阿里云百炼。" : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}。`)}</span></div>`;
+  result.innerHTML = `<div class="empty-state"><strong>正在生成 AI 建议</strong><span>${escapeHtml(settings.mode === "local" || !settings.apiKey ? "正在通过后端代理调用平台内置模型。" : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}。`)}</span></div>`;
   let output = buildLocalAiWorkbenchOutput(task, text);
   let source = "本地规则";
   if (settings.mode !== "local") {
@@ -10835,7 +10835,7 @@ async function generateAiReport() {
   const modelSourceText = settings.provider === "custom" && settings.apiKey
     ? "正在调用自定义/本地大模型..."
     : settings.mode === "local" || !settings.apiKey
-      ? "正在通过后端代理调用内置阿里云百炼..."
+      ? "正在通过后端代理调用平台内置模型..."
       : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}...`;
   result.innerHTML = `<div class="empty-state"><strong>正在生成定量报告</strong><span>${escapeHtml(modelSourceText)}</span></div>`;
   genButton.disabled = true;
@@ -10970,7 +10970,7 @@ function createAiReportPptxBlob(markdown, context = {}) {
   if (chartGroups.length) {
     slides.splice(Math.min(2, slides.length), 0, ...chartGroups.map((group, index) => ({
       title: group.title || `关键指标图表 ${index + 1}`,
-      bullets: ["从交叉表总样本列抽取真实百分比，生成可编辑 PowerPoint 图表。"],
+      bullets: ["从交叉表总样本列抽取真实百分比，生成可编辑 PPT 图表。"],
       chartItems: group.items
     })));
   } else if (chartItems.length >= 2) {
@@ -11053,10 +11053,10 @@ async function reviseAiQuestionnaire() {
       try {
         renderAiProgress(result, steps, 2, "正在按你的要求重写问卷，通常需要几十秒。");
         output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 6000 });
-        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "阿里云百炼（内置免费模型）";
+        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output += `\n\n> 大模型修改失败：${error.message}`;
-        source = settings.apiKey ? "本地规则（模型调用失败）" : "阿里云百炼（内置免费模型，调用失败）";
+        source = settings.apiKey ? "本地规则（模型调用失败）" : "平台内置免费模型（调用失败）";
       }
     } else {
       output += `\n\n> 大模型设置未通过校验：${errors.join("；")}`;
@@ -11122,7 +11122,7 @@ async function testAiSettings() {
     }
     return;
   }
-  if (preview) preview.innerHTML = `<strong>正在测试连接</strong><span>${escapeHtml(settings.apiKey ? `正在向 ${aiProviderPresets[settings.provider]?.name || "模型接口"} 发送轻量请求。` : "正在通过后端代理测试内置阿里云百炼。")}</span>`;
+  if (preview) preview.innerHTML = `<strong>正在测试连接</strong><span>${escapeHtml(settings.apiKey ? `正在向 ${aiProviderPresets[settings.provider]?.name || "模型接口"} 发送轻量请求。` : "正在通过后端代理测试平台内置模型。")}</span>`;
   try {
     await callAiChatCompletion(settings, [
       { role: "system", content: "你是接口连通性测试助手。" },
