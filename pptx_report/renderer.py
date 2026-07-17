@@ -161,6 +161,26 @@ class ReportRenderer:
             "content": (0.035, 0.14, 0.93, 0.79),
             "footer": (0.035, 0.93, 0.93, 0.055),
         }
+        def scale_parts(parts, target_total):
+            """Scale table grid lengths while keeping their sum equal to the frame."""
+            values = [max(1, int(value)) for value in parts]
+            source_total = sum(values)
+            if not values or source_total <= 0:
+                return values
+            scaled = [max(1, round(value / source_total * target_total)) for value in values]
+            scaled[-1] += int(target_total) - sum(scaled)
+            if scaled[-1] < 1:
+                deficit = 1 - scaled[-1]
+                scaled[-1] = 1
+                for index in range(len(scaled) - 2, -1, -1):
+                    available = max(0, scaled[index] - 1)
+                    taken = min(available, deficit)
+                    scaled[index] -= taken
+                    deficit -= taken
+                    if deficit == 0:
+                        break
+            return scaled
+
         def transform(shape, source, target):
             sx, sy, sw, sh = source
             tx, ty, tw, th = target["x"], target["y"], target["w"], target["h"]
@@ -168,10 +188,32 @@ class ReportRenderer:
             ny = int(shape.top) / height
             nw = int(shape.width) / width
             nh = int(shape.height) / height
-            shape.left = int((tx + (nx - sx) / max(sw, 0.001) * tw) * width)
-            shape.top = int((ty + (ny - sy) / max(sh, 0.001) * th) * height)
-            shape.width = max(1, int(nw / max(sw, 0.001) * tw * width))
-            shape.height = max(1, int(nh / max(sh, 0.001) * th * height))
+            new_left = int((tx + (nx - sx) / max(sw, 0.001) * tw) * width)
+            new_top = int((ty + (ny - sy) / max(sh, 0.001) * th) * height)
+            new_width = max(1, int(nw / max(sw, 0.001) * tw * width))
+            new_height = max(1, int(nh / max(sh, 0.001) * th * height))
+            shape.left = new_left
+            shape.top = new_top
+
+            # Resizing a table graphic frame does not resize its internal grid.
+            # Its columns/rows would therefore keep the pre-template dimensions,
+            # while the overlaid charts are mapped correctly. Scale the grid and
+            # the frame from the same target geometry so both layers stay aligned.
+            if getattr(shape, "has_table", False):
+                table = shape.table
+                column_widths = scale_parts(
+                    [column.width for column in table.columns], new_width
+                )
+                row_heights = scale_parts(
+                    [row.height for row in table.rows], new_height
+                )
+                for column, column_width in zip(table.columns, column_widths):
+                    column.width = column_width
+                for row, row_height in zip(table.rows, row_heights):
+                    row.height = row_height
+
+            shape.width = new_width
+            shape.height = new_height
         for shape in list(slide.shapes)[start_index:]:
             center_y = (int(shape.top) + int(shape.height) / 2) / height
             zone_name = "title" if center_y < 0.14 else "footer" if center_y > 0.92 else "content"
@@ -179,7 +221,22 @@ class ReportRenderer:
             # 极小或越界区域通常是装饰物误识别，继续使用安全的系统布局。
             if not target or target.get("w", 0) < 0.25 or target.get("h", 0) < 0.04:
                 continue
-            transform(shape, source_zones[zone_name], target)
+            mapped_target = target
+            if zone_name == "content":
+                # Template content unions can include edge decorations and may
+                # extend almost to the slide boundary. Keep a print-safe right
+                # margin and use the same adjusted zone for every content shape
+                # so tables and their chart overlays remain synchronized.
+                safe_left, safe_right = 0.025, 0.975
+                target_left = max(safe_left, float(target["x"]))
+                target_right = min(safe_right, float(target["x"]) + float(target["w"]))
+                if target_right - target_left >= 0.25:
+                    mapped_target = {
+                        **target,
+                        "x": target_left,
+                        "w": target_right - target_left,
+                    }
+            transform(shape, source_zones[zone_name], mapped_target)
 
     def _add_cover(self, cover, dims):
         slide = self._blank_slide("cover")
