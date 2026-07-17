@@ -244,6 +244,9 @@ let cleaningCenterState = {
 };
 let lastHeaderPlan = null;
 let workspaceProject = null;
+let workspaceLibrary = null;
+const WORKSPACE_LIBRARY_KEY = "surveyWorkspaceLibrary.v2";
+const WORKSPACE_LEGACY_KEY = "surveyWorkspaceProject";
 let pendingQuestionnaireImport = "";
 let sharedImportTargetId = "";
 
@@ -344,8 +347,7 @@ function handleDashboardJumpAction(button) {
     return;
   }
   if (action === "new-project") {
-    showView("overview");
-    document.querySelector("#workspaceProjectName")?.focus();
+    createNewWorkspaceProject();
     return;
   }
   if (action === "import-data") {
@@ -358,8 +360,8 @@ function handleDashboardJumpAction(button) {
     return;
   }
   if (action === "archive-project") {
-    markWorkspaceStatus("archive");
-    showButtonSaved(button, "已归档");
+    archiveWorkspaceProject();
+    showButtonSaved(button, workspaceProject?.archivedAt ? "已归档" : "已恢复");
     return;
   }
   if (action === "save-workspace-project") {
@@ -397,16 +399,152 @@ function formatShortDate(value) {
   });
 }
 
+function createWorkspaceId() {
+  return `project_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeWorkspaceProject(project = {}) {
+  const now = new Date().toISOString();
+  return {
+    id: project.id || createWorkspaceId(),
+    projectName: project.projectName || "",
+    studyType: project.studyType || "概念测试",
+    stage: project.stage || "调研前",
+    sampleTarget: Number(project.sampleTarget) || 0,
+    quotaDimensions: project.quotaDimensions || "",
+    questionnaireText: project.questionnaireText || "",
+    createdAt: project.createdAt || project.updatedAt || now,
+    updatedAt: project.updatedAt || now,
+    archivedAt: project.archivedAt || null,
+    status: { ...(project.status || {}) },
+    assets: { ...(project.assets || {}) },
+    reportPlans: Array.isArray(project.reportPlans) ? project.reportPlans : [],
+    activities: Array.isArray(project.activities) ? project.activities.slice(0, 30) : [],
+  };
+}
+
+function loadWorkspaceLibrary() {
+  if (workspaceLibrary) return workspaceLibrary;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(WORKSPACE_LIBRARY_KEY) || "null");
+    if (parsed?.projects?.length) {
+      workspaceLibrary = {
+        version: 2,
+        activeProjectId: parsed.activeProjectId,
+        projects: parsed.projects.map(normalizeWorkspaceProject),
+      };
+      if (!workspaceLibrary.projects.some((project) => project.id === workspaceLibrary.activeProjectId)) {
+        workspaceLibrary.activeProjectId = workspaceLibrary.projects[0].id;
+      }
+      return workspaceLibrary;
+    }
+  } catch (_) {}
+  let legacy = null;
+  try { legacy = JSON.parse(localStorage.getItem(WORKSPACE_LEGACY_KEY) || "null"); } catch (_) {}
+  const projects = legacy ? [normalizeWorkspaceProject(legacy)] : [];
+  workspaceLibrary = { version: 2, activeProjectId: projects[0]?.id || null, projects };
+  persistWorkspaceLibrary();
+  return workspaceLibrary;
+}
+
+function persistWorkspaceLibrary() {
+  if (!workspaceLibrary) return;
+  try {
+    localStorage.setItem(WORKSPACE_LIBRARY_KEY, JSON.stringify(workspaceLibrary));
+    const active = workspaceLibrary.projects.find((project) => project.id === workspaceLibrary.activeProjectId);
+    if (active) localStorage.setItem(WORKSPACE_LEGACY_KEY, JSON.stringify(active));
+    else localStorage.removeItem(WORKSPACE_LEGACY_KEY);
+  } catch (_) {
+    // 隐私模式或存储空间不足时保持当前会话可用。
+  }
+}
+
+function recordWorkspaceActivity(project, text, type = "update") {
+  if (!project || !text) return;
+  project.activities = [
+    { id: createWorkspaceId(), type, text: String(text), at: new Date().toISOString() },
+    ...(project.activities || []),
+  ].slice(0, 30);
+}
+
+function upsertWorkspaceProject(project, activityText = "") {
+  const library = loadWorkspaceLibrary();
+  const normalized = normalizeWorkspaceProject(project);
+  normalized.updatedAt = new Date().toISOString();
+  if (activityText) recordWorkspaceActivity(normalized, activityText);
+  const index = library.projects.findIndex((item) => item.id === normalized.id);
+  if (index >= 0) library.projects[index] = normalized;
+  else library.projects.unshift(normalized);
+  library.activeProjectId = normalized.id;
+  workspaceProject = normalized;
+  persistWorkspaceLibrary();
+  renderWorkspaceProjectLibrary();
+  return normalized;
+}
+
+function renderWorkspaceProjectLibrary() {
+  const library = loadWorkspaceLibrary();
+  const select = document.querySelector("#workspaceProjectSelect");
+  const showArchived = Boolean(document.querySelector("#workspaceShowArchived")?.checked);
+  const visible = library.projects.filter((project) => showArchived || !project.archivedAt || project.id === library.activeProjectId);
+  if (select) {
+    select.innerHTML = visible.length
+      ? visible.map((project) => `<option value="${escapeHtml(project.id)}" ${project.id === library.activeProjectId ? "selected" : ""}>${escapeHtml(project.projectName || "未命名项目")}${project.archivedAt ? "（已归档）" : ""}</option>`).join("")
+      : '<option value="">尚未创建项目</option>';
+    select.disabled = visible.length === 0;
+  }
+  const count = document.querySelector("#workspaceProjectCount");
+  if (count) count.textContent = `${library.projects.filter((project) => !project.archivedAt).length} 个进行中 · ${library.projects.filter((project) => project.archivedAt).length} 个已归档`;
+  const activeProject = library.projects.find((project) => project.id === library.activeProjectId);
+  const archiveButton = document.querySelector("#archiveProject");
+  if (archiveButton) archiveButton.textContent = activeProject?.archivedAt ? "恢复项目" : "归档";
+  const deleteButton = document.querySelector("#workspaceDeleteProject");
+  if (deleteButton) deleteButton.disabled = !activeProject;
+}
+
+function activateWorkspaceProject(projectId) {
+  const library = loadWorkspaceLibrary();
+  const project = library.projects.find((item) => item.id === projectId);
+  if (!project) return;
+  library.activeProjectId = project.id;
+  workspaceProject = project;
+  resetWorkspaceRuntimeState();
+  persistWorkspaceLibrary();
+  fillWorkspaceProject(project);
+  renderWorkspaceProjectLibrary();
+  renderWorkspaceProject();
+  showToast("已切换项目；问卷和配置已恢复，文件类资产需要按需重新上传", "info", 3600);
+}
+
+function resetWorkspaceRuntimeState() {
+  lastCrosstabDataContext = null;
+  lastWeightingResult = null;
+  lastCleaningRules = null;
+  cleaningCenterState = { parsed: null, rules: [], result: null, fileName: "" };
+  lastHeaderPlan = null;
+  if (typeof lastAiPlan !== "undefined") lastAiPlan = null;
+  if (typeof lastAuditReport !== "undefined") lastAuditReport = null;
+  if (typeof lastAiReport !== "undefined") lastAiReport = null;
+  if (typeof lastPsmAnalysis !== "undefined") lastPsmAnalysis = null;
+  if (typeof lastKanoAnalysis !== "undefined") lastKanoAnalysis = null;
+  if (typeof lastMaxDiffDesign !== "undefined") lastMaxDiffDesign = null;
+  if (typeof lastMaxDiffScore !== "undefined") lastMaxDiffScore = null;
+}
+
 function getWorkspaceFormProject() {
   return {
+    id: workspaceProject?.id || createWorkspaceId(),
     projectName: document.querySelector("#workspaceProjectName").value.trim(),
     studyType: document.querySelector("#workspaceStudyType").value,
     stage: document.querySelector("#workspaceStage").value,
     sampleTarget: Number(document.querySelector("#workspaceSampleTarget").value) || 0,
     quotaDimensions: document.querySelector("#workspaceQuotaDimensions")?.value.trim() || "",
     questionnaireText: document.querySelector("#workspaceQuestionnaire").value.trim(),
+    createdAt: workspaceProject?.createdAt || new Date().toISOString(),
     updatedAt: workspaceProject?.updatedAt || null,
+    archivedAt: workspaceProject?.archivedAt || null,
     status: {
+      ...((workspaceProject || {}).status || {}),
       projectBrief: Boolean(document.querySelector("#workspaceProjectName").value.trim()),
       questionnaire: Boolean(document.querySelector("#workspaceQuestionnaire").value.trim()),
       audit: Boolean(lastAuditReport),
@@ -414,30 +552,22 @@ function getWorkspaceFormProject() {
       cleaning: false,
       header: false,
       models: Boolean(lastPsmAnalysis || lastKanoAnalysis || lastMaxDiffDesign || lastMaxDiffScore || lastAbcSuggestions)
-    }
+    },
+    assets: { ...((workspaceProject || {}).assets || {}) },
+    reportPlans: Array.isArray(workspaceProject?.reportPlans) ? workspaceProject.reportPlans : [],
+    activities: Array.isArray(workspaceProject?.activities) ? workspaceProject.activities : [],
   };
 }
 
 function saveWorkspaceProject() {
-  workspaceProject = getWorkspaceFormProject();
-  workspaceProject.updatedAt = new Date().toISOString();
-  try {
-    localStorage.setItem("surveyWorkspaceProject", JSON.stringify(workspaceProject));
-  } catch {
-    // 隐私模式忽略写入
-  }
+  workspaceProject = upsertWorkspaceProject(getWorkspaceFormProject(), "保存项目档案");
   applyWorkspaceProject(false);
   renderWorkspaceProject();
 }
 
 function loadWorkspaceProject() {
-  const raw = localStorage.getItem("surveyWorkspaceProject");
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  const library = loadWorkspaceLibrary();
+  return library.projects.find((project) => project.id === library.activeProjectId) || null;
 }
 
 function fillWorkspaceProject(project) {
@@ -472,13 +602,9 @@ function applyWorkspaceProject(showStatus = true) {
 }
 
 function clearWorkspaceProject() {
-  workspaceProject = null;
-  try {
-    localStorage.removeItem("surveyWorkspaceProject");
-  } catch {
-    // 隐私模式忽略
-  }
-  fillWorkspaceProject({
+  const cleared = normalizeWorkspaceProject({
+    id: workspaceProject?.id,
+    createdAt: workspaceProject?.createdAt,
     projectName: "",
     studyType: "概念测试",
     stage: "调研前",
@@ -486,6 +612,8 @@ function clearWorkspaceProject() {
     quotaDimensions: "",
     questionnaireText: ""
   });
+  workspaceProject = upsertWorkspaceProject(cleared, "清空项目内容");
+  fillWorkspaceProject(workspaceProject);
   renderWorkspaceProject();
 }
 
@@ -563,14 +691,18 @@ function workspaceRemovalRateText() {
 function dashboardAssets(project, status) {
   const rawRows = cleaningCenterState.parsed?.rows?.length || 0;
   const cleanRows = cleaningCenterState.result?.kept?.length || 0;
+  const savedAssets = project.assets || {};
+  const reportPlan = savedAssets.reportPlan;
+  const pptxReport = savedAssets.pptxReport;
   return [
     { key: "questionnaire", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M5 5h6M5 8h6M5 11h3"/></svg>`, name: "问卷稿", state: project.questionnaireText ? `已保存 · ${parseQuestions(project.questionnaireText).length || "若干"}题` : "待导入", done: status.questionnaire_design, jump: "overview" },
-    { key: "rawData", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 10h6"/></svg>`, name: "原始数据", state: rawRows ? `已导入 · N=${rawRows}` : "待导入", done: status.data_import, jump: "cleaning-rules" },
+    { key: "rawData", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 10h6"/></svg>`, name: "原始数据", state: rawRows ? `已导入 · N=${rawRows}` : savedAssets.crosstabFile ? savedAssets.crosstabFile.fileName : "待导入", done: Boolean(status.data_import || savedAssets.crosstabFile), jump: "cleaning-rules" },
     { key: "cleanData", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4l4-2 4 2 4-2v8l-4 2-4-2-4 2V4z"/><path d="M6 2v8M10 4v8"/></svg>`, name: "清洗后数据", state: cleanRows ? `已就绪 · N=${cleanRows}` : status.cleaning_execution ? "历史完成" : "待执行", done: status.cleaning_execution, jump: "cleaning-rules" },
     { key: "weightedData", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 015.66 4H8V2z"/></svg>`, name: "加权数据", state: status.data_weighting ? "已生成" : "待执行", done: status.data_weighting, jump: "data-weighting" },
-    { key: "crosstab", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="1" width="14" height="14" rx="2"/><path d="M1 6h14M6 1v14"/></svg>`, name: "交叉表", state: status.crosstab ? "已有数据" : "待分析", done: status.crosstab, jump: "crosstab-analysis" },
+    { key: "crosstab", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="1" width="14" height="14" rx="2"/><path d="M1 6h14M6 1v14"/></svg>`, name: "交叉表", state: savedAssets.crosstabFile ? `${savedAssets.crosstabFile.questions || 0}题 · ${savedAssets.crosstabFile.segments || 0}维度` : status.crosstab ? "已有数据" : "待分析", done: Boolean(status.crosstab || savedAssets.crosstabFile), jump: "pptx-report" },
     { key: "models", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 14l4-7 3 3 5-9"/><circle cx="12" cy="4" r="1.5" fill="currentColor"/></svg>`, name: "专项模型", state: status.model_psm || status.model_kano || status.model_maxdiff ? "已有结果" : "未使用", done: status.model_psm || status.model_kano || status.model_maxdiff, jump: "models" },
-    { key: "reports", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M7 5h3M7 8h3M7 11h2"/></svg>`, name: "报告资产", state: status.ai_report ? "1份" : "0份", done: status.ai_report, jump: "ai-report" }
+    { key: "reportPlan", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2h10v12H3z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>`, name: "报告方案", state: reportPlan ? `${reportPlan.pages}页 · 已保存` : "待规划", done: Boolean(reportPlan), jump: "pptx-report" },
+    { key: "reports", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M7 5h3M7 8h3M7 11h2"/></svg>`, name: "报告资产", state: pptxReport ? pptxReport.fileName : status.ai_report ? "已有报告" : "0份", done: Boolean(pptxReport || status.ai_report), jump: "pptx-report" }
   ];
 }
 
@@ -586,7 +718,7 @@ function ensureDashboardHeroShell() {
       </div>
       <div class="dashboard-hero-actions">
         <button class="secondary-btn" type="button" data-jump="overview" data-action="edit-project">编辑档案</button>
-        <button class="secondary-btn" type="button" data-action="archive-project">归档</button>
+        <button class="secondary-btn" id="archiveProject" type="button" data-action="archive-project">归档</button>
       </div>
     </div>
     <div class="dashboard-metric-grid">
@@ -738,13 +870,16 @@ function renderWorkspaceProject() {
       document.querySelector("#dashboardQuickActions").innerHTML = stageActions.map(([label, jump]) => `<button class="secondary-btn" type="button" data-jump="${jump}">${label}</button>`).join("");
     });
   }
-  const logItems = [
+  const fallbackLogItems = [
     project.updatedAt ? `保存项目档案：${project.projectName || "未命名项目"}` : "等待保存项目档案",
     status.cleaning_execution ? `完成数据清洗：${removalRate}` : status.data_import ? "已导入原始数据，等待执行清洗" : "尚未导入原始数据",
     status.ai_report ? "已生成 AI 洞察报告" : "AI 报告待生成",
     status.questionnaire_design ? "问卷稿已保存，可进入上线质检" : "问卷稿待导入或设计"
   ];
-  document.querySelector("#dashboardActivityLog").innerHTML = logItems.map((item, index) => `<li><span>${index === 0 && project.updatedAt ? formatShortDate(project.updatedAt) : "当前"}</span><strong>${escapeHtml(item)}</strong></li>`).join("");
+  const activities = (project.activities || []).slice(0, 6);
+  document.querySelector("#dashboardActivityLog").innerHTML = activities.length
+    ? activities.map((item) => `<li><span>${formatShortDate(item.at)}</span><strong>${escapeHtml(item.text)}</strong></li>`).join("")
+    : fallbackLogItems.map((item, index) => `<li><span>${index === 0 && project.updatedAt ? formatShortDate(project.updatedAt) : "当前"}</span><strong>${escapeHtml(item)}</strong></li>`).join("");
 }
 
 function showButtonSaved(button, text = "已保存") {
@@ -762,13 +897,134 @@ function markWorkspaceStatus(key, value = true) {
     ...(workspaceProject.status || {}),
     [key]: value
   };
-  workspaceProject.updatedAt = new Date().toISOString();
-  try {
-    localStorage.setItem("surveyWorkspaceProject", JSON.stringify(workspaceProject));
-  } catch {
-    // 隐私模式忽略写入
-  }
+  workspaceProject = upsertWorkspaceProject(workspaceProject, `更新项目状态：${key}`);
   fillWorkspaceProject(workspaceProject);
+  renderWorkspaceProject();
+}
+
+function createNewWorkspaceProject() {
+  const project = normalizeWorkspaceProject({ projectName: "", studyType: "概念测试", stage: "调研前" });
+  workspaceProject = upsertWorkspaceProject(project, "创建新项目");
+  resetWorkspaceRuntimeState();
+  fillWorkspaceProject(project);
+  renderWorkspaceProject();
+  showView("overview");
+  document.querySelector(".project-panel")?.classList.add("form-expanded");
+  document.querySelector("#workspaceProjectName")?.focus();
+}
+
+function duplicateWorkspaceProject() {
+  const source = loadWorkspaceProject();
+  if (!source) return createNewWorkspaceProject();
+  const copy = normalizeWorkspaceProject({
+    ...JSON.parse(JSON.stringify(source)),
+    id: createWorkspaceId(),
+    projectName: `${source.projectName || "未命名项目"}（副本）`,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    archivedAt: null,
+  });
+  workspaceProject = upsertWorkspaceProject(copy, "复制项目");
+  resetWorkspaceRuntimeState();
+  fillWorkspaceProject(copy);
+  renderWorkspaceProject();
+}
+
+function archiveWorkspaceProject() {
+  const project = loadWorkspaceProject();
+  if (!project) return;
+  project.archivedAt = project.archivedAt ? null : new Date().toISOString();
+  project.status = { ...(project.status || {}), archive: Boolean(project.archivedAt) };
+  workspaceProject = upsertWorkspaceProject(project, project.archivedAt ? "归档项目" : "恢复项目");
+  fillWorkspaceProject(workspaceProject);
+  renderWorkspaceProject();
+}
+
+function deleteWorkspaceProject() {
+  const library = loadWorkspaceLibrary();
+  const project = library.projects.find((item) => item.id === library.activeProjectId);
+  if (!project) return;
+  if (!window.confirm(`确定删除项目“${project.projectName || "未命名项目"}”吗？项目档案、报告方案和本地资产记录将一并删除。`)) return;
+  library.projects = library.projects.filter((item) => item.id !== project.id);
+  library.activeProjectId = library.projects.find((item) => !item.archivedAt)?.id || library.projects[0]?.id || null;
+  workspaceLibrary = library;
+  workspaceProject = library.projects.find((item) => item.id === library.activeProjectId) || null;
+  persistWorkspaceLibrary();
+  resetWorkspaceRuntimeState();
+  if (workspaceProject) {
+    fillWorkspaceProject(workspaceProject);
+  } else {
+    ["#workspaceProjectName", "#workspaceSampleTarget", "#workspaceQuotaDimensions", "#workspaceQuestionnaire"].forEach((selector) => {
+      const field = document.querySelector(selector);
+      if (field) field.value = "";
+    });
+    const studyType = document.querySelector("#workspaceStudyType");
+    const stage = document.querySelector("#workspaceStage");
+    if (studyType) studyType.value = "概念测试";
+    if (stage) stage.value = "调研前";
+  }
+  renderWorkspaceProjectLibrary();
+  renderWorkspaceProject();
+  showToast("项目已删除", "success");
+}
+
+function saveWorkspaceReportPlan(plan, sourceName = "") {
+  if (!plan?.pages?.length) return null;
+  const project = loadWorkspaceProject() || normalizeWorkspaceProject(getWorkspaceFormProject());
+  const compact = {
+    ...JSON.parse(JSON.stringify(plan)),
+    question_catalog: (plan.question_catalog || []).map((question) => ({
+      code: question.code,
+      title: question.title,
+      chapter: question.chapter,
+      categories: Array.isArray(question.categories) ? question.categories.slice(0, 30) : [],
+    })),
+    pages: plan.pages.map((page) => ({
+      ...JSON.parse(JSON.stringify(page)),
+      questions: (page.questions || []).map((question) => ({
+        code: question.code,
+        title: question.title,
+        chapter: question.chapter,
+        categories: Array.isArray(question.categories) ? question.categories.slice(0, 30) : [],
+      })),
+    })),
+  };
+  const record = {
+    id: `plan_${Date.now().toString(36)}`,
+    name: `${sourceName || "交叉表"} · ${compact.pages.length}页方案`,
+    sourceName,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    plan: compact,
+  };
+  project.reportPlans = [record, ...(project.reportPlans || [])].slice(0, 10);
+  project.assets = {
+    ...(project.assets || {}),
+    reportPlan: { name: record.name, pages: compact.pages.length, updatedAt: record.updatedAt },
+  };
+  workspaceProject = upsertWorkspaceProject(project, `保存报告方案：${compact.pages.length}页`);
+  renderWorkspaceProject();
+  return record;
+}
+
+function recordWorkspaceReportOutput(fileName, size = 0) {
+  const project = loadWorkspaceProject() || normalizeWorkspaceProject(getWorkspaceFormProject());
+  project.assets = {
+    ...(project.assets || {}),
+    pptxReport: { fileName, size, updatedAt: new Date().toISOString() },
+  };
+  project.status = { ...(project.status || {}), aiReport: true, reportDelivery: true };
+  workspaceProject = upsertWorkspaceProject(project, `生成PPT报告：${fileName}`);
+  renderWorkspaceProject();
+}
+
+function recordWorkspaceAsset(key, value, activityText = "") {
+  const project = loadWorkspaceProject() || normalizeWorkspaceProject(getWorkspaceFormProject());
+  project.assets = { ...(project.assets || {}), [key]: { ...value, updatedAt: new Date().toISOString() } };
+  if (key === "crosstabFile") {
+    project.status = { ...(project.status || {}), dataImport: true, header: true };
+  }
+  workspaceProject = upsertWorkspaceProject(project, activityText || `更新项目资产：${key}`);
   renderWorkspaceProject();
 }
 
@@ -11177,9 +11433,38 @@ document.querySelector("#aiQuestionnaireTemplateSelect")?.addEventListener("chan
 document
   .querySelectorAll("#workspaceProjectName, #workspaceStudyType, #workspaceStage, #workspaceSampleTarget, #workspaceQuotaDimensions, #workspaceQuestionnaire")
   .forEach((field) => field.addEventListener("input", renderWorkspaceProject));
-document.querySelector("#archiveProject")?.addEventListener("click", (event) => {
-  markWorkspaceStatus("archive");
-  showButtonSaved(event.currentTarget, "已归档");
+document.querySelector("#workspaceProjectSelect")?.addEventListener("change", (event) => activateWorkspaceProject(event.target.value));
+document.querySelector("#workspaceShowArchived")?.addEventListener("change", renderWorkspaceProjectLibrary);
+document.querySelector("#workspaceNewProject")?.addEventListener("click", createNewWorkspaceProject);
+document.querySelector("#workspaceDuplicateProject")?.addEventListener("click", (event) => {
+  duplicateWorkspaceProject();
+  showButtonSaved(event.currentTarget, "已复制");
+});
+document.querySelector("#workspaceDeleteProject")?.addEventListener("click", deleteWorkspaceProject);
+document.querySelector("#workspaceExportProject")?.addEventListener("click", (event) => {
+  const project = loadWorkspaceProject();
+  if (!project) return showToast("当前没有可导出的项目", "warning");
+  downloadTextFile(`${(project.projectName || "调研项目").replace(/[\\/:*?"<>|]/g, "_")}.survey-project.json`, JSON.stringify({ version: 2, project }, null, 2), "application/json;charset=utf-8");
+  showButtonSaved(event.currentTarget, "已导出");
+});
+document.querySelector("#workspaceImportProject")?.addEventListener("click", () => {
+  const input = document.querySelector("#workspaceProjectImportFile");
+  if (input) { input.value = ""; input.click(); }
+});
+document.querySelector("#workspaceProjectImportFile")?.addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    const source = parsed.project || parsed;
+    const project = normalizeWorkspaceProject({ ...source, id: createWorkspaceId(), archivedAt: null });
+    workspaceProject = upsertWorkspaceProject(project, `导入项目：${file.name}`);
+    fillWorkspaceProject(project);
+    renderWorkspaceProject();
+    showToast("项目导入成功", "success");
+  } catch (error) {
+    showToast(`项目导入失败：${error.message}`, "error", 4200);
+  }
 });
 document.querySelector("#exportDashboardAssets")?.addEventListener("click", (event) => {
   markWorkspaceStatus("exportAssets");
@@ -11626,6 +11911,10 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     const previewPanel = document.querySelector("#pptxPreviewPanel");
     const previewTable = document.querySelector("#pptxPreviewTable");
     const confirmBtn = document.querySelector("#pptxConfirmBtn");
+    const savePlanBtn = document.querySelector("#pptxSavePlanBtn");
+    const loadPlanBtn = document.querySelector("#pptxLoadPlanBtn");
+    const undoPlanBtn = document.querySelector("#pptxUndoPlanBtn");
+    const redoPlanBtn = document.querySelector("#pptxRedoPlanBtn");
     const backToConfigBtn = document.querySelector("#pptxBackToConfig");
     const confirmStatus = document.querySelector("#pptxConfirmStatus");
     const progress = document.querySelector("#pptxProgress");
@@ -11646,11 +11935,45 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     let lastPptxJobId = "";
     let uploadedTemplateId = "";
     let uploadedTemplateAnalysis = null;
+    let planUndoStack = [];
+    let planRedoStack = [];
+    let draggedPageIndex = -1;
+    let draggedQuestion = null;
+
+    function updatePlanHistoryButtons() {
+      if (undoPlanBtn) undoPlanBtn.disabled = planUndoStack.length === 0;
+      if (redoPlanBtn) redoPlanBtn.disabled = planRedoStack.length === 0;
+      if (savePlanBtn) savePlanBtn.disabled = !editedPagePlan?.pages?.length;
+    }
+
+    function snapshotPptxPlan() {
+      return editedPagePlan ? JSON.stringify(editedPagePlan) : "";
+    }
+
+    function pushPptxPlanHistory() {
+      const snapshot = snapshotPptxPlan();
+      if (!snapshot || planUndoStack[planUndoStack.length - 1] === snapshot) return;
+      planUndoStack.push(snapshot);
+      if (planUndoStack.length > 40) planUndoStack.shift();
+      planRedoStack = [];
+      updatePlanHistoryButtons();
+    }
+
+    function restorePptxPlanSnapshot(snapshot) {
+      if (!snapshot) return;
+      editedPagePlan = JSON.parse(snapshot);
+      renumberPptxPages();
+      renderPreviewTable(editedPagePlan);
+      updatePlanHistoryButtons();
+    }
 
     function invalidatePptxPreview(message = "配置已更新，请重新预览后再生成。") {
       const hadPreview = Boolean(editedPagePlan);
       pagePlan = null;
       editedPagePlan = null;
+      planUndoStack = [];
+      planRedoStack = [];
+      updatePlanHistoryButtons();
       if (previewPanel) previewPanel.style.display = "none";
       if (confirmBtn) confirmBtn.disabled = true;
       if (aiWriteBtn) aiWriteBtn.disabled = true;
@@ -12110,6 +12433,13 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         parseStatus.textContent =
           `已识别 ${segs.length} 个人群维度、${data.questions || 0} 道题目。` +
           (dimensionGroups.length ? `，${dimensionGroups.length} 个维度分组` : "");
+        recordWorkspaceAsset("crosstabFile", {
+          fileName: selectedFile.name,
+          size: selectedFile.size,
+          questions: data.questions || 0,
+          segments: segs.length,
+          dimensionGroups: dimensionGroups.length,
+        }, `解析交叉表：${selectedFile.name}`);
         if (generateBtn) generateBtn.disabled = segs.length === 0;
         if (previewBtn) previewBtn.disabled = segs.length === 0;
         if (previewPanel) { previewPanel.style.display = "none"; pagePlan = null; editedPagePlan = null; }
@@ -12162,6 +12492,9 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           pagePlan.planning_mode = "rule";
         }
         editedPagePlan = JSON.parse(JSON.stringify(pagePlan));  // deep copy for editing
+        planUndoStack = [];
+        planRedoStack = [];
+        updatePlanHistoryButtons();
         if (confirmBtn) confirmBtn.textContent = "确认生成 PPT";
         if (aiWriteBtn) {
           aiWriteBtn.disabled = true;
@@ -12193,6 +12526,50 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       (editedPagePlan?.pages || []).forEach((page, idx) => { page.page_idx = idx + 1; });
       if (editedPagePlan) editedPagePlan.total_pages = editedPagePlan.pages.length;
     }
+
+    savePlanBtn?.addEventListener("click", () => {
+      if (!editedPagePlan?.pages?.length) return;
+      const record = saveWorkspaceReportPlan(editedPagePlan, selectedFile?.name || titleInput?.value || "交叉表");
+      if (record) {
+        showButtonSaved(savePlanBtn, "已保存到项目");
+        if (confirmStatus) confirmStatus.textContent = `报告方案已保存到当前项目，共 ${record.plan.pages.length} 页。`;
+      }
+    });
+
+    loadPlanBtn?.addEventListener("click", () => {
+      const plans = loadWorkspaceProject()?.reportPlans || [];
+      if (!plans.length) {
+        showToast("当前项目还没有保存的报告方案", "warning");
+        return;
+      }
+      let selected = plans[0];
+      if (plans.length > 1) {
+        const choice = prompt(`输入要加载的方案序号：\n${plans.map((plan, idx) => `${idx + 1}. ${plan.name}（${formatShortDate(plan.updatedAt)}）`).join("\n")}`, "1");
+        if (choice === null) return;
+        selected = plans[Math.max(0, Math.min(plans.length - 1, Number(choice) - 1))];
+      }
+      if (!selected?.plan?.pages?.length) return;
+      if (editedPagePlan) pushPptxPlanHistory();
+      editedPagePlan = JSON.parse(JSON.stringify(selected.plan));
+      pagePlan = JSON.parse(JSON.stringify(selected.plan));
+      renumberPptxPages();
+      renderPreviewTable(editedPagePlan);
+      if (previewPanel) previewPanel.style.display = "";
+      if (confirmStatus) confirmStatus.textContent = `已加载：${selected.name}。如数据文件已更换，请核对题号覆盖。`;
+      updatePlanHistoryButtons();
+    });
+
+    undoPlanBtn?.addEventListener("click", () => {
+      if (!planUndoStack.length || !editedPagePlan) return;
+      planRedoStack.push(snapshotPptxPlan());
+      restorePptxPlanSnapshot(planUndoStack.pop());
+    });
+
+    redoPlanBtn?.addEventListener("click", () => {
+      if (!planRedoStack.length || !editedPagePlan) return;
+      planUndoStack.push(snapshotPptxPlan());
+      restorePptxPlanSnapshot(planRedoStack.pop());
+    });
 
     function ensurePptxQuestionEditor() {
       let modal = document.querySelector("#pptxQuestionEditor");
@@ -12235,6 +12612,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           }
           const catalog = getPptxQuestionCatalog();
           const byCode = new Map(catalog.map((question) => [question.code, question]));
+          pushPptxPlanHistory();
           page.questions = selectedCodes.map((code) => byCode.get(code)).filter(Boolean);
           modal.classList.add("hidden");
           renderPreviewTable(editedPagePlan);
@@ -12293,6 +12671,109 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       modal.querySelector("#pptxQuestionSearch").value = "";
       renderPptxQuestionEditorList();
       modal.classList.remove("hidden");
+    }
+
+    function renderPptxMiniPreview(page) {
+      const chartType = String(page.chart_type || "auto").replace(/[^a-z_]/g, "auto");
+      const chartCount = Math.max(1, Math.min(3, (page.questions || []).length));
+      const blocks = Array.from({ length: chartCount }, (_, idx) => `
+        <i style="--bar-a:${42 + ((idx * 17) % 43)}%;--bar-b:${28 + ((idx * 23) % 55)}%"></i>`).join("");
+      return `<div class="pptx-page-mini" aria-label="页面布局预览">
+        <b>${escapeHtml(page.insight_override || page.title || "一句话洞察标题")}</b>
+        <span></span><span></span>
+        <div class="pptx-page-mini-charts chart-${chartType}">${blocks}</div>
+        <small>数据来源</small>
+      </div>`;
+    }
+
+    function setupPptxEditorDragDrop() {
+      previewTable.querySelectorAll(".pptx-preview-page[data-page-index]").forEach((card) => {
+        card.addEventListener("dragstart", (event) => {
+          if (!event.target.closest(".pptx-page-drag-handle")) {
+            event.preventDefault();
+            return;
+          }
+          draggedPageIndex = Number(card.dataset.pageIndex);
+          draggedQuestion = null;
+          card.classList.add("dragging");
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", `page:${draggedPageIndex}`);
+        });
+        card.addEventListener("dragend", () => {
+          draggedPageIndex = -1;
+          card.classList.remove("dragging");
+          previewTable.querySelectorAll(".drop-target").forEach((el) => el.classList.remove("drop-target"));
+        });
+        card.addEventListener("dragover", (event) => { event.preventDefault(); card.classList.add("drop-target"); });
+        card.addEventListener("dragleave", () => card.classList.remove("drop-target"));
+        card.addEventListener("drop", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          card.classList.remove("drop-target");
+          const targetIndex = Number(card.dataset.pageIndex);
+          if (draggedQuestion) {
+            const { code, sourceIndex } = draggedQuestion;
+            const sourcePage = sourceIndex >= 0 ? editedPagePlan.pages[sourceIndex] : null;
+            const targetPage = editedPagePlan.pages[targetIndex];
+            if (!targetPage || targetPage.questions?.some((question) => question.code === code)) return;
+            if ((targetPage.questions || []).length >= 3) return showToast("每页建议最多放 3 道题，请先拆分页", "warning");
+            if (sourcePage && sourceIndex !== targetIndex && (sourcePage.questions || []).length <= 1) return showToast("源页面至少保留 1 道题；可先复制或删除该页", "warning");
+            const question = sourcePage
+              ? sourcePage.questions.find((item) => item.code === code)
+              : getPptxQuestionCatalog().find((item) => item.code === code);
+            if (!question) return;
+            pushPptxPlanHistory();
+            if (sourcePage) sourcePage.questions = sourcePage.questions.filter((item) => item.code !== code);
+            targetPage.questions = [...(targetPage.questions || []), question];
+            renderPreviewTable(editedPagePlan);
+            return;
+          }
+          if (draggedPageIndex < 0 || draggedPageIndex === targetIndex) return;
+          pushPptxPlanHistory();
+          const [page] = editedPagePlan.pages.splice(draggedPageIndex, 1);
+          const adjustedTarget = draggedPageIndex < targetIndex ? targetIndex - 1 : targetIndex;
+          page.chapter = editedPagePlan.pages[adjustedTarget]?.chapter || page.chapter;
+          editedPagePlan.pages.splice(adjustedTarget, 0, page);
+          renumberPptxPages();
+          renderPreviewTable(editedPagePlan);
+        });
+      });
+      previewTable.querySelectorAll(".pptx-question-chip[data-question-code]").forEach((chip) => {
+        chip.addEventListener("dragstart", (event) => {
+          event.stopPropagation();
+          draggedQuestion = { code: chip.dataset.questionCode, sourceIndex: Number(chip.dataset.sourceIndex) };
+          draggedPageIndex = -1;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", `question:${draggedQuestion.code}`);
+        });
+        chip.addEventListener("dragend", () => { draggedQuestion = null; });
+      });
+      previewTable.querySelectorAll("[data-chapter-drop]").forEach((container) => {
+        container.addEventListener("dragover", (event) => {
+          if (draggedPageIndex < 0) return;
+          event.preventDefault();
+          container.classList.add("drop-target");
+        });
+        container.addEventListener("dragleave", () => container.classList.remove("drop-target"));
+        container.addEventListener("drop", (event) => {
+          if (draggedPageIndex < 0) return;
+          event.preventDefault();
+          const chapter = decodeURIComponent(container.dataset.chapterDrop);
+          const page = editedPagePlan.pages[draggedPageIndex];
+          if (!page || page.chapter === chapter) return;
+          pushPptxPlanHistory();
+          page.chapter = chapter;
+          editedPagePlan.pages.splice(draggedPageIndex, 1);
+          let insertAt = editedPagePlan.pages.reduce((last, item, idx) => item.chapter === chapter ? idx + 1 : last, editedPagePlan.pages.length);
+          editedPagePlan.pages.splice(insertAt, 0, page);
+          renumberPptxPages();
+          renderPreviewTable(editedPagePlan);
+        });
+      });
+      previewTable.querySelectorAll("[data-pptx-action]").forEach((control) => {
+        control.dataset.pptxBound = "true";
+        control.onclick = handlePptxEditorAction;
+      });
     }
 
     function renderPreviewTable(plan) {
@@ -12362,13 +12843,20 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
 
       const catalog = getPptxQuestionCatalog(plan);
       const assignedCodes = new Set(pages.flatMap((page) => (page.questions || []).map((question) => question.code)));
+      const unassignedQuestions = catalog.filter((question) => !assignedCodes.has(question.code));
       let html = `<div class="pptx-plan-toolbar">
         <strong>页面题目覆盖：${assignedCodes.size}/${catalog.length}</strong>
-        <span>${catalog.length - assignedCodes.size} 道题尚未安排；可在任一页面点击“调整题目”加入。</span>
-      </div><div class="pptx-preview-chapters">`;
+        <span>${catalog.length - assignedCodes.size} 道题尚未安排 · 可拖动页面排序，也可直接拖动题目标签到其他页面。</span>
+      </div><div class="pptx-editor-shell"><aside class="pptx-editor-outline">
+        <strong>报告目录</strong>
+        ${Array.from(chapterGroups.entries()).map(([name, items], chapterIndex) => `<button type="button" data-pptx-action="scroll-chapter" data-target-chapter="chapter-${chapterIndex}"><span>${chapterIndex + 1}</span><b>${escapeHtml(name)}</b><small>${items.length}页</small></button>`).join("")}
+        ${unassignedQuestions.length ? `<div class="pptx-unassigned-bank"><strong>未安排题目（${unassignedQuestions.length}）</strong>${unassignedQuestions.slice(0, 30).map((question) => `<span class="pptx-question-chip" draggable="true" data-question-code="${escapeHtml(question.code)}" data-source-index="-1" title="${escapeHtml(question.title || question.code)}">${escapeHtml(question.code)}</span>`).join("")}${unassignedQuestions.length > 30 ? `<small>另有 ${unassignedQuestions.length - 30} 题，请用“调整题目”搜索</small>` : ""}</div>` : ""}
+        <p>拖动页面可调整顺序或切换章节；拖动题号可移动题目。</p>
+      </aside><div class="pptx-preview-chapters">`;
+      let chapterIndex = 0;
       chapterGroups.forEach((items, chapterName) => {
         const chapterDims = items[0]?.page?.selected_dimensions || ["总体"];
-        html += `<details class="pptx-preview-chapter" open>
+        html += `<details class="pptx-preview-chapter" open data-editor-chapter="chapter-${chapterIndex++}">
           <summary>
             <span class="pptx-preview-chapter-title">章节：${escapeHtml(chapterName)}</span>
             <span class="pptx-preview-chapter-count">${items.length} 页</span>
@@ -12378,50 +12866,56 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
             ${dimOptions.map((d) => {
               const checked = chapterDims.includes(d.key);
               return `<label class="${checked ? "selected" : ""}">
-                <input type="checkbox" ${checked ? "checked" : ""}
-                  onchange="window._onPreviewChapterDimCheck && window._onPreviewChapterDimCheck('${encodeURIComponent(chapterName)}', '${encodeURIComponent(d.key)}', this.checked)">${escapeHtml(d.key)}
+                <input type="checkbox" ${checked ? "checked" : ""} data-field="chapter_dimension"
+                  data-chapter="${escapeHtml(encodeURIComponent(chapterName))}" value="${escapeHtml(encodeURIComponent(d.key))}">${escapeHtml(d.key)}
               </label>`;
             }).join("")}
-            <button type="button" class="ghost-btn pptx-add-page-btn"
-              onclick="window._onPreviewAddPage && window._onPreviewAddPage('${encodeURIComponent(chapterName)}')">＋ 新建页面</button>
+            <button type="button" class="ghost-btn pptx-add-page-btn" data-pptx-action="add-page"
+              data-chapter="${escapeHtml(encodeURIComponent(chapterName))}">＋ 新建页面</button>
+            <button type="button" class="ghost-btn" data-pptx-action="rename-chapter"
+              data-chapter="${escapeHtml(encodeURIComponent(chapterName))}">重命名章节</button>
           </div>
-          <div class="pptx-preview-pages">`;
+          <div class="pptx-preview-pages" data-chapter-drop="${encodeURIComponent(chapterName)}">`;
 
         items.forEach(({ page: p, idx }) => {
           const qTitles = (p.questions || []).map(q =>
-            `<span class="pptx-question-chip" title="${escapeHtml(q.title || '')}">${escapeHtml(q.code || "?")}</span>`
+            `<span class="pptx-question-chip" draggable="true" data-question-code="${escapeHtml(q.code || "")}" data-source-index="${idx}" title="拖动到其他页面：${escapeHtml(q.title || '')}">${escapeHtml(q.code || "?")}</span>`
           ).join("");
           const typeLabel = chartTypeOptions.find(o => o.value === p.chart_type)?.label || p.chart_type;
-          html += `<details class="pptx-preview-page">
+          html += `<details class="pptx-preview-page" data-page-index="${idx}">
             <summary>
+              <span class="pptx-page-drag-handle" draggable="true" title="拖动页面排序" aria-label="拖动第 ${p.page_idx} 页排序">⋮⋮</span>
               <span class="pptx-preview-page-number">第 ${p.page_idx} 页</span>
               <span class="pptx-preview-page-title">${escapeHtml(p.insight_override || p.title || "未命名页面")}</span>
               <span class="pptx-preview-page-type">${escapeHtml(typeLabel || "自动匹配")}</span>
             </summary>
             <div class="pptx-preview-page-body">
+              <div class="pptx-preview-visual">${renderPptxMiniPreview(p)}<small>布局示意会随题目数量和图表类型更新</small></div>
               <label class="pptx-preview-field pptx-preview-field-wide">
                 <span>洞察标题</span>
-                <textarea rows="2" data-preview-idx="${idx}" data-field="insight_override"
-                  onchange="window._onPreviewInsightChange && window._onPreviewInsightChange(${idx}, this.value)">${escapeHtml(p.insight_override || p.title || "")}</textarea>
+                <textarea rows="2" data-preview-idx="${idx}" data-field="insight_override">${escapeHtml(p.insight_override || p.title || "")}</textarea>
               </label>
               <label class="pptx-preview-field pptx-preview-field-wide">
                 <span>正文洞察（每行一条，最多4条）</span>
-                <textarea rows="3" data-preview-idx="${idx}" data-field="insight_bullets"
-                  onchange="window._onPreviewBulletsChange && window._onPreviewBulletsChange(${idx}, this.value)">${escapeHtml((p.insight_bullets || []).join("\n"))}</textarea>
+                <textarea rows="3" data-preview-idx="${idx}" data-field="insight_bullets">${escapeHtml((p.insight_bullets || []).join("\n"))}</textarea>
               </label>
               <div class="pptx-preview-field">
                 <span>题目（${(p.questions || []).length}）</span>
                 <div class="pptx-preview-question-list">${qTitles}</div>
-                <button type="button" class="secondary-btn pptx-edit-questions-btn"
-                  onclick="window._onPreviewEditQuestions && window._onPreviewEditQuestions(${idx})">调整题目</button>
+                <button type="button" class="secondary-btn pptx-edit-questions-btn" data-pptx-action="edit-questions" data-page-index="${idx}">调整题目</button>
               </div>
               <label class="pptx-preview-field">
                 <span>图表类型</span>
-                <select data-preview-idx="${idx}" data-field="chart_type"
-                  onchange="window._onPreviewChartTypeChange && window._onPreviewChartTypeChange(${idx}, this.value)">
+                <select data-preview-idx="${idx}" data-field="chart_type">
                   ${chartTypeOptions.map(o =>
                     `<option value="${o.value}" ${o.value === p.chart_type ? "selected" : ""}>${o.label}</option>`
                   ).join("")}
+                </select>
+              </label>
+              <label class="pptx-preview-field">
+                <span>所属章节</span>
+                <select data-preview-idx="${idx}" data-field="chapter">
+                  ${Array.from(chapterGroups.keys()).map((name) => `<option value="${escapeHtml(name)}" ${name === (p.chapter || "其他研究") ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
                 </select>
               </label>
               <div class="pptx-preview-field pptx-preview-field-wide">
@@ -12431,23 +12925,25 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
                     const isChecked = p.selected_dimensions.includes(d.key);
                     return `<label class="${isChecked ? "selected" : ""}">
                       <input type="checkbox" value="${d.key}" data-preview-idx="${idx}" data-field="dimension_check"
-                        ${isChecked ? "checked" : ""}
-                        onchange="window._onPreviewDimCheck && window._onPreviewDimCheck(${idx}, this.value, this.checked)">${escapeHtml(d.label)}
+                        ${isChecked ? "checked" : ""}>${escapeHtml(d.label)}
                     </label>`;
                   }).join("")}
                 </div>
               </div>
               <div class="pptx-page-actions pptx-preview-field-wide">
-                <button type="button" class="ghost-btn" onclick="window._onPreviewMovePage && window._onPreviewMovePage(${idx}, -1)" ${idx === 0 ? "disabled" : ""}>上移</button>
-                <button type="button" class="ghost-btn" onclick="window._onPreviewMovePage && window._onPreviewMovePage(${idx}, 1)" ${idx === pages.length - 1 ? "disabled" : ""}>下移</button>
-                <button type="button" class="ghost-btn danger" onclick="window._onPreviewDeletePage && window._onPreviewDeletePage(${idx})">删除页面</button>
+                <button type="button" class="ghost-btn" data-pptx-action="duplicate-page" data-page-index="${idx}">复制</button>
+                <button type="button" class="ghost-btn" data-pptx-action="split-page" data-page-index="${idx}" ${(p.questions || []).length < 2 ? "disabled" : ""}>拆分</button>
+                <button type="button" class="ghost-btn" data-pptx-action="merge-page" data-page-index="${idx}" data-direction="-1" ${idx === 0 ? "disabled" : ""}>与上页合并</button>
+                <button type="button" class="ghost-btn" data-pptx-action="move-page" data-page-index="${idx}" data-direction="-1" ${idx === 0 ? "disabled" : ""}>上移</button>
+                <button type="button" class="ghost-btn" data-pptx-action="move-page" data-page-index="${idx}" data-direction="1" ${idx === pages.length - 1 ? "disabled" : ""}>下移</button>
+                <button type="button" class="ghost-btn danger" data-pptx-action="delete-page" data-page-index="${idx}">删除页面</button>
               </div>
             </div>
           </details>`;
         });
         html += `</div></details>`;
       });
-      html += `</div>`;
+      html += `</div></div>`;
       if (plan.appendix && plan.appendix.count > 0) {
         html += `<p style="margin-top:10px;padding:8px;background:#fefce8;border-radius:6px;font-size:12px;color:#854d0e;">
           📋 另有 <strong>${plan.appendix.count}</strong> 道题目将归入附录表格（甄别/配额/后台类题目，不进入主图表页）。
@@ -12456,10 +12952,23 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       html += `<p style="margin-top:6px;font-size:11px;color:#94a3b8;">提示：章节维度会批量应用到该章节；每页仍可单独覆盖。洞察标题可手动修改，AI建议模式会先填入草稿。</p>`;
 
       previewTable.innerHTML = html;
+      setupPptxEditorDragDrop();
+      updatePlanHistoryButtons();
     }
 
     window._onPreviewEditQuestions = function(idx) {
       openPptxQuestionEditor(idx);
+    };
+
+    window._onPreviewRenameChapter = function(encodedChapterName) {
+      const oldName = decodeURIComponent(encodedChapterName);
+      const nextName = prompt("请输入新的章节名称", oldName)?.trim();
+      if (!nextName || nextName === oldName) return;
+      pushPptxPlanHistory();
+      (editedPagePlan?.pages || []).forEach((page) => {
+        if ((page.chapter || "其他研究") === oldName) page.chapter = nextName.slice(0, 30);
+      });
+      renderPreviewTable(editedPagePlan);
     };
 
     window._onPreviewAddPage = function(encodedChapterName) {
@@ -12483,6 +12992,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         dimension_mode: template.dimension_mode || "overall",
         dimension_key: template.dimension_key || "总体",
       };
+      pushPptxPlanHistory();
       editedPagePlan.pages.splice(insertAt, 0, newPage);
       renumberPptxPages();
       renderPreviewTable(editedPagePlan);
@@ -12492,6 +13002,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     window._onPreviewDeletePage = function(idx) {
       if (!editedPagePlan?.pages?.[idx]) return;
       if (!confirm(`确认删除第 ${idx + 1} 页吗？题目仍可从其他页面的题目库重新加入。`)) return;
+      pushPptxPlanHistory();
       editedPagePlan.pages.splice(idx, 1);
       renumberPptxPages();
       renderPreviewTable(editedPagePlan);
@@ -12501,6 +13012,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       if (!editedPagePlan?.pages) return;
       const next = idx + Number(direction || 0);
       if (next < 0 || next >= editedPagePlan.pages.length) return;
+      pushPptxPlanHistory();
       const [page] = editedPagePlan.pages.splice(idx, 1);
       editedPagePlan.pages.splice(next, 0, page);
       renumberPptxPages();
@@ -12510,14 +13022,20 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     // 全局函数：预览表格中图表类型变更
     window._onPreviewChartTypeChange = function(idx, newValue) {
       if (editedPagePlan && editedPagePlan.pages && editedPagePlan.pages[idx]) {
+        pushPptxPlanHistory();
         editedPagePlan.pages[idx].chart_type = newValue;
+        renderPreviewTable(editedPagePlan);
       }
     };
     window._onPreviewInsightChange = function(idx, value) {
-      if (editedPagePlan?.pages?.[idx]) editedPagePlan.pages[idx].insight_override = String(value || "").trim();
+      if (editedPagePlan?.pages?.[idx]) {
+        pushPptxPlanHistory();
+        editedPagePlan.pages[idx].insight_override = String(value || "").trim();
+      }
     };
     window._onPreviewBulletsChange = function(idx, value) {
       if (!editedPagePlan?.pages?.[idx]) return;
+      pushPptxPlanHistory();
       editedPagePlan.pages[idx].insight_bullets = String(value || "")
         .split(/\r?\n/)
         .map((text) => text.trim())
@@ -12530,6 +13048,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       if (!editedPagePlan?.pages) return;
       const chapterPages = editedPagePlan.pages.filter((page) => (page.chapter || "其他研究") === chapterName);
       if (!chapterPages.length) return;
+      pushPptxPlanHistory();
       let selected = Array.isArray(chapterPages[0].selected_dimensions)
         ? [...chapterPages[0].selected_dimensions]
         : ["总体"];
@@ -12550,6 +13069,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     window._onPreviewDimCheck = function(idx, value, checked) {
       if (!editedPagePlan || !editedPagePlan.pages || !editedPagePlan.pages[idx]) return;
       const page = editedPagePlan.pages[idx];
+      pushPptxPlanHistory();
       // 初始化 selected_dimensions 数组
       if (!page.selected_dimensions) {
         if (page.dimension_key) {
@@ -12588,6 +13108,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     window._onPreviewDimChange = function(idx, newValue) {
       if (!editedPagePlan || !editedPagePlan.pages || !editedPagePlan.pages[idx]) return;
       const page = editedPagePlan.pages[idx];
+      pushPptxPlanHistory();
       page.selected_dimensions = [newValue];
       if (newValue === "总体") {
         page.dimension_mode = "overall";
@@ -12597,6 +13118,104 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         page.dimension_key = newValue;
       }
     };
+
+    window._onPreviewChapterChange = function(idx, chapterName) {
+      const page = editedPagePlan?.pages?.[idx];
+      if (!page || page.chapter === chapterName) return;
+      pushPptxPlanHistory();
+      page.chapter = chapterName;
+      editedPagePlan.pages.splice(idx, 1);
+      let insertAt = editedPagePlan.pages.reduce((last, item, pageIndex) => item.chapter === chapterName ? pageIndex + 1 : last, editedPagePlan.pages.length);
+      editedPagePlan.pages.splice(insertAt, 0, page);
+      renumberPptxPages();
+      renderPreviewTable(editedPagePlan);
+    };
+
+    window._onPreviewDuplicatePage = function(idx) {
+      const page = editedPagePlan?.pages?.[idx];
+      if (!page) return;
+      pushPptxPlanHistory();
+      const copy = JSON.parse(JSON.stringify(page));
+      copy.title = `${copy.title || "分析页面"}（副本）`;
+      copy.insight_override = copy.insight_override ? `${copy.insight_override}（副本）` : "";
+      editedPagePlan.pages.splice(idx + 1, 0, copy);
+      renumberPptxPages();
+      renderPreviewTable(editedPagePlan);
+    };
+
+    window._onPreviewSplitPage = function(idx) {
+      const page = editedPagePlan?.pages?.[idx];
+      if (!page || (page.questions || []).length < 2) return;
+      pushPptxPlanHistory();
+      const midpoint = Math.ceil(page.questions.length / 2);
+      const movedQuestions = page.questions.splice(midpoint);
+      const splitPage = JSON.parse(JSON.stringify(page));
+      splitPage.questions = movedQuestions;
+      splitPage.title = `${page.title || "分析页面"}（续）`;
+      splitPage.insight_override = "";
+      splitPage.insight_bullets = [];
+      editedPagePlan.pages.splice(idx + 1, 0, splitPage);
+      renumberPptxPages();
+      renderPreviewTable(editedPagePlan);
+    };
+
+    window._onPreviewMergePage = function(idx, direction) {
+      const targetIndex = idx + Number(direction || -1);
+      const page = editedPagePlan?.pages?.[idx];
+      const target = editedPagePlan?.pages?.[targetIndex];
+      if (!page || !target) return;
+      const combined = [...(target.questions || [])];
+      (page.questions || []).forEach((question) => {
+        if (!combined.some((item) => item.code === question.code)) combined.push(question);
+      });
+      if (combined.length > 3) return showToast("合并后超过 3 道题，建议先移动或拆分题目", "warning");
+      pushPptxPlanHistory();
+      target.questions = combined;
+      target.insight_bullets = [...(target.insight_bullets || []), ...(page.insight_bullets || [])].slice(0, 4);
+      editedPagePlan.pages.splice(idx, 1);
+      renumberPptxPages();
+      renderPreviewTable(editedPagePlan);
+    };
+
+    function handlePptxEditorAction(event) {
+      const control = event.target.closest("[data-pptx-action]");
+      if (!control || !previewTable.contains(control)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const action = control.dataset.pptxAction;
+      const pageIndex = Number(control.dataset.pageIndex);
+      if (action === "scroll-chapter") {
+        previewTable.querySelector(`[data-editor-chapter="${control.dataset.targetChapter}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } else if (action === "add-page") {
+        window._onPreviewAddPage(control.dataset.chapter);
+      } else if (action === "rename-chapter") {
+        window._onPreviewRenameChapter(control.dataset.chapter);
+      } else if (action === "edit-questions") {
+        window._onPreviewEditQuestions(pageIndex);
+      } else if (action === "duplicate-page") {
+        window._onPreviewDuplicatePage(pageIndex);
+      } else if (action === "split-page") {
+        window._onPreviewSplitPage(pageIndex);
+      } else if (action === "merge-page") {
+        window._onPreviewMergePage(pageIndex, Number(control.dataset.direction || -1));
+      } else if (action === "move-page") {
+        window._onPreviewMovePage(pageIndex, Number(control.dataset.direction || 0));
+      } else if (action === "delete-page") {
+        window._onPreviewDeletePage(pageIndex);
+      }
+    }
+
+    previewTable?.addEventListener("change", (event) => {
+      const field = event.target.dataset.field;
+      if (!field) return;
+      const pageIndex = Number(event.target.dataset.previewIdx);
+      if (field === "chart_type") window._onPreviewChartTypeChange(pageIndex, event.target.value);
+      else if (field === "chapter") window._onPreviewChapterChange(pageIndex, event.target.value);
+      else if (field === "dimension_check") window._onPreviewDimCheck(pageIndex, event.target.value, event.target.checked);
+      else if (field === "chapter_dimension") window._onPreviewChapterDimCheck(event.target.dataset.chapter, event.target.value, event.target.checked);
+      else if (field === "insight_override") window._onPreviewInsightChange(pageIndex, event.target.value);
+      else if (field === "insight_bullets") window._onPreviewBulletsChange(pageIndex, event.target.value);
+    });
 
     // ── 返回修改配置 ──
     backToConfigBtn && backToConfigBtn.addEventListener("click", () => {
@@ -12894,6 +13513,8 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         setTimeout(() => URL.revokeObjectURL(url), 4000);
         setPptxProgress(100, "生成完成");
         (genStatus || confirmStatus).textContent = "已生成并开始下载。";
+        recordWorkspaceReportOutput(`${title}.pptx`, blob.size);
+        saveWorkspaceReportPlan(editedPagePlan, selectedFile?.name || title);
         const isAiEnhanced = editedPagePlan?.planning_mode === "ai_report";
         resultEl.innerHTML = `<div class="empty-state"><strong>${isAiEnhanced ? "AI 增强版生成成功" : "基础版生成成功"}</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span></div>`;
         if (aiWriteBtn) aiWriteBtn.disabled = false;
@@ -13156,6 +13777,7 @@ if ("serviceWorker" in navigator) {
 
 workspaceProject = loadWorkspaceProject();
 if (workspaceProject) fillWorkspaceProject(workspaceProject);
+renderWorkspaceProjectLibrary();
 renderWorkspaceProject();
 fillAiSettingsForm();
 loadAiPlanTemplates();
