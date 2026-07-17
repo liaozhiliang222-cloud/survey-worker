@@ -241,13 +241,13 @@ def _color_series(chart, theme: Theme) -> None:
             s.format.fill.fore_color.rgb = theme.seg_color(i)
         except Exception:
             pass
-    # 仅总体时通常只有一个系列。按类目逐点着色，避免整页都是单调灰色；
-    # 色彩仍来自当前主题的同一套色板，因此不会破坏报告一致性。
+    # 仅总体时保持主题主色单色。总体图的颜色承担的是统一识别作用，
+    # 不应让不同类目看起来像不同系列；多色仅用于饼/环图或真正的多人群对比。
     if len(chart.series) == 1:
         try:
-            for i, point in enumerate(chart.series[0].points):
+            for point in chart.series[0].points:
                 point.format.fill.solid()
-                point.format.fill.fore_color.rgb = theme.seg_color(i)
+                point.format.fill.fore_color.rgb = theme.primary
         except Exception:
             pass
 

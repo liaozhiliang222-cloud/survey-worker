@@ -4379,6 +4379,150 @@ tr:last-child td {
   font-weight: 700;
 }
 
+.pptx-question-chip-group {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #eff6ff;
+}
+
+.pptx-question-chip-group .pptx-question-chip {
+  border: 0;
+  border-radius: 0;
+}
+
+.pptx-question-chip-group button {
+  align-self: stretch;
+  padding: 2px 7px;
+  border: 0;
+  border-left: 1px solid #bfdbfe;
+  color: #1e40af;
+  background: #dbeafe;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.pptx-question-move-dialog {
+  height: min(680px, calc(100vh - 44px));
+}
+
+.pptx-question-move-list {
+  overflow: auto;
+  padding: 12px 18px 20px;
+}
+
+.pptx-question-move-list h4 {
+  position: sticky;
+  top: -12px;
+  z-index: 1;
+  margin: 10px -2px 6px;
+  padding: 8px 2px 5px;
+  color: #123b73;
+  background: #fff;
+}
+
+.pptx-question-move-list button {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  border: 1px solid #dbe5f1;
+  border-radius: 9px;
+  color: #334155;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pptx-question-move-list button:hover:not(:disabled) {
+  border-color: #60a5fa;
+  background: #eff6ff;
+}
+
+.pptx-question-move-list button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pptx-question-move-list button small {
+  color: #64748b;
+}
+
+.pptx-question-drop-dock {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 9998;
+  display: none;
+  width: min(560px, calc(100vw - 36px));
+  max-height: min(70vh, 620px);
+  padding: 14px;
+  border: 2px solid #3b82f6;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 60px rgba(15, 23, 42, 0.3);
+}
+
+.pptx-question-drop-dock.active {
+  display: block;
+}
+
+.pptx-question-drop-dock > strong,
+.pptx-question-drop-dock > span {
+  display: block;
+}
+
+.pptx-question-drop-dock > span {
+  margin: 3px 0 10px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.pptx-question-drop-dock > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  max-height: calc(min(70vh, 620px) - 78px);
+  overflow: auto;
+}
+
+.pptx-question-drop-dock button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 2px 7px;
+  padding: 8px;
+  border: 1px solid #dbe5f1;
+  border-radius: 8px;
+  background: #f8fafc;
+  text-align: left;
+}
+
+.pptx-question-drop-dock button b {
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #2563eb;
+}
+
+.pptx-question-drop-dock button small {
+  overflow: hidden;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pptx-question-drop-dock button.drop-target {
+  border-color: #2563eb;
+  background: #dbeafe;
+}
+
 .pptx-edit-questions-btn {
   width: fit-content;
   margin-top: 6px;

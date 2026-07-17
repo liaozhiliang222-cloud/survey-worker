@@ -26,6 +26,7 @@ from .pages import (
     build_toc,
 )
 from .theme import Theme
+from .template import build_template_mapping
 from .utils import set_slide_background
 
 
@@ -46,6 +47,7 @@ class ReportRenderer:
         self._prs = None
         self._slide_w = None
         self._slide_h = None
+        self._template_mapping = None
 
     def render(self, spec: ReportSpec, output_path: str) -> str:
         """渲染并保存到 output_path，返回该路径。"""
@@ -95,6 +97,7 @@ class ReportRenderer:
             if not os.path.exists(self.template_path):
                 raise TemplateNotFoundError(self.template_path)
             prs = Presentation(self.template_path)
+            self._template_mapping = build_template_mapping(prs)
             # 上传模板只提供母版、版式、背景和主题。移除模板中的示例页，避免旧内容
             # 出现在新报告前面；版式与母版关系仍会保留。
             for slide_id in list(prs.slides._sldIdLst):
@@ -112,17 +115,23 @@ class ReportRenderer:
             self._slide_h = prs.slide_height
         return prs
 
-    def _blank_slide(self):
+    def _blank_slide(self, role="chart"):
         prs = self._prs
         layout = None
-        # 优先选择名为 Blank / 空白 的版式
-        for name in ("Blank", "空白", "Office 主题"):  # noqa: S105
-            for lay in prs.slide_layouts:
-                if lay.name == name:
-                    layout = lay
+        if self.template_path and self._template_mapping:
+            role_map = self._template_mapping.get("roles", {}).get(role) or {}
+            layout_index = role_map.get("layout_index")
+            if isinstance(layout_index, int) and 0 <= layout_index < len(prs.slide_layouts):
+                layout = prs.slide_layouts[layout_index]
+        # 未使用语义映射时，优先选择名为 Blank / 空白 的版式。
+        if layout is None:
+            for name in ("Blank", "空白", "Office 主题"):  # noqa: S105
+                for lay in prs.slide_layouts:
+                    if lay.name == name:
+                        layout = lay
+                        break
+                if layout is not None:
                     break
-            if layout is not None:
-                break
         if layout is None:
             try:
                 layout = prs.slide_layouts[6]  # 多数模板的「空白」版式
@@ -140,28 +149,77 @@ class ReportRenderer:
             set_slide_background(slide, self.theme.background)
         return slide
 
+    def _apply_template_geometry(self, slide, start_index: int, role: str) -> None:
+        """把新绘制内容映射到模板识别出的标题/内容/页脚区域。"""
+        if not self.template_path or not self._template_mapping:
+            return
+        role_map = self._template_mapping.get("roles", {}).get(role) or {}
+        zones = role_map.get("zones") or {}
+        width, height = int(self._slide_w), int(self._slide_h)
+        source_zones = {
+            "title": (0.035, 0.01, 0.93, 0.14),
+            "content": (0.035, 0.14, 0.93, 0.79),
+            "footer": (0.035, 0.93, 0.93, 0.055),
+        }
+        def transform(shape, source, target):
+            sx, sy, sw, sh = source
+            tx, ty, tw, th = target["x"], target["y"], target["w"], target["h"]
+            nx = int(shape.left) / width
+            ny = int(shape.top) / height
+            nw = int(shape.width) / width
+            nh = int(shape.height) / height
+            shape.left = int((tx + (nx - sx) / max(sw, 0.001) * tw) * width)
+            shape.top = int((ty + (ny - sy) / max(sh, 0.001) * th) * height)
+            shape.width = max(1, int(nw / max(sw, 0.001) * tw * width))
+            shape.height = max(1, int(nh / max(sh, 0.001) * th * height))
+        for shape in list(slide.shapes)[start_index:]:
+            center_y = (int(shape.top) + int(shape.height) / 2) / height
+            zone_name = "title" if center_y < 0.14 else "footer" if center_y > 0.92 else "content"
+            target = zones.get(zone_name)
+            # 极小或越界区域通常是装饰物误识别，继续使用安全的系统布局。
+            if not target or target.get("w", 0) < 0.25 or target.get("h", 0) < 0.04:
+                continue
+            transform(shape, source_zones[zone_name], target)
+
     def _add_cover(self, cover, dims):
-        self._blank_slide()
-        build_cover(self._prs.slides[-1], cover, self.theme, dims)
+        slide = self._blank_slide("cover")
+        start = len(slide.shapes)
+        build_cover(slide, cover, self.theme, dims)
+        if self.template_path and len(slide.shapes) > start:
+            # 模板母版/版式已经承担封面装饰，移除系统模板额外添加的顶部色带，
+            # 避免两套视觉框架叠加；标题与客户信息继续映射到模板区域。
+            first_new = slide.shapes[start]
+            if first_new.width > self._slide_w * 0.8 and first_new.height < self._slide_h * 0.05:
+                first_new._element.getparent().remove(first_new._element)
+        self._apply_template_geometry(slide, start, "cover")
 
     def _add_toc(self, toc, dims):
-        self._blank_slide()
-        build_toc(self._prs.slides[-1], toc, self.theme, dims)
+        slide = self._blank_slide("toc")
+        start = len(slide.shapes)
+        build_toc(slide, toc, self.theme, dims)
+        self._apply_template_geometry(slide, start, "toc")
 
     def _add_exec_summary(self, es, dims):
-        self._blank_slide()
-        build_exec_summary(self._prs.slides[-1], es, self.theme, dims)
+        slide = self._blank_slide("summary")
+        start = len(slide.shapes)
+        build_exec_summary(slide, es, self.theme, dims)
+        self._apply_template_geometry(slide, start, "summary")
 
     def _add_chart_page(self, page, dims):
-        self._blank_slide()
+        role = "matrix" if isinstance(page, MultiGroupBarPageContent) else "chart"
+        slide = self._blank_slide(role)
+        start = len(slide.shapes)
         if isinstance(page, MultiGroupBarPageContent):
-            build_multi_group_bar_page(self._prs.slides[-1], page, self.theme, dims)
+            build_multi_group_bar_page(slide, page, self.theme, dims)
         else:
-            build_chart_page(self._prs.slides[-1], page, self.theme, dims)
+            build_chart_page(slide, page, self.theme, dims)
+        self._apply_template_geometry(slide, start, role)
 
     def _add_appendix(self, ap, dims):
-        self._blank_slide()
-        build_appendix(self._prs.slides[-1], ap, self.theme, dims)
+        slide = self._blank_slide("appendix")
+        start = len(slide.shapes)
+        build_appendix(slide, ap, self.theme, dims)
+        self._apply_template_geometry(slide, start, "appendix")
 
     # ------------------------- 模板占位符填充 -------------------------
     def fill_named_placeholders(self, slide, mapping: dict) -> None:

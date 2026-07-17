@@ -11939,6 +11939,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     let planRedoStack = [];
     let draggedPageIndex = -1;
     let draggedQuestion = null;
+    let moveQuestionContext = null;
 
     function updatePlanHistoryButtons() {
       if (undoPlanBtn) undoPlanBtn.disabled = planUndoStack.length === 0;
@@ -11990,6 +11991,11 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         `<i class="pptx-template-color" style="background:#${escapeHtml(color)}" title="#${escapeHtml(color)}"></i>`
       ).join("");
       const warnings = (analysis.warnings || []).map((warning) => `<span class="warning-text">${escapeHtml(warning)}</span>`).join("");
+      const mapping = analysis.mapping || {};
+      const mappedRoles = Object.values(mapping.roles || {}).filter((item) => !item.fallback).length;
+      const mappingLabel = mapping.mode === "semantic-layout-zones"
+        ? `深度映射：${mappedRoles} 类页面 · 置信度 ${Math.round((mapping.confidence || 0) * 100)}%`
+        : "基础主题映射";
       templateAnalysisEl.innerHTML = `
         <strong>${escapeHtml(analysis.file_name || "公司模板")}</strong>
         <div class="pptx-template-meta">
@@ -11998,6 +12004,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           <span>${analysis.is_widescreen ? "16:9 宽屏" : `页面比例 ${analysis.aspect_ratio || "-"}`}</span>
           <span>字体：${escapeHtml((analysis.fonts || []).slice(0, 2).join(" / ") || "沿用系统字体")}</span>
           ${colors ? `<span>主题色：<b class="pptx-template-colors">${colors}</b></span>` : ""}
+          <span>${escapeHtml(mappingLabel)}</span>
         </div>
         ${warnings}
       `;
@@ -12673,6 +12680,115 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       modal.classList.remove("hidden");
     }
 
+    function movePptxQuestion(code, sourceIndex, targetIndex) {
+      const pages = editedPagePlan?.pages || [];
+      const sourcePage = sourceIndex >= 0 ? pages[sourceIndex] : null;
+      const targetPage = pages[targetIndex];
+      if (!targetPage || sourceIndex === targetIndex) return false;
+      if ((targetPage.questions || []).some((question) => question.code === code)) {
+        showToast("目标页已经包含这道题", "warning");
+        return false;
+      }
+      if ((targetPage.questions || []).length >= 3) {
+        showToast("目标页已有 3 道题，请先拆分或移走一道题", "warning");
+        return false;
+      }
+      const question = sourcePage
+        ? (sourcePage.questions || []).find((item) => item.code === code)
+        : getPptxQuestionCatalog().find((item) => item.code === code);
+      if (!question) return false;
+      pushPptxPlanHistory();
+      targetPage.questions = [...(targetPage.questions || []), question];
+      if (sourcePage) {
+        sourcePage.questions = (sourcePage.questions || []).filter((item) => item.code !== code);
+        // 移走最后一道题时自动移除空白页，避免用户还要额外清理。
+        if (!sourcePage.questions.length) {
+          pages.splice(sourceIndex, 1);
+        }
+      }
+      renumberPptxPages();
+      renderPreviewTable(editedPagePlan);
+      return true;
+    }
+
+    function ensurePptxQuestionMoveDialog() {
+      let modal = document.querySelector("#pptxQuestionMoveDialog");
+      if (modal) return modal;
+      modal = document.createElement("div");
+      modal.id = "pptxQuestionMoveDialog";
+      modal.className = "pptx-question-editor hidden";
+      modal.innerHTML = `
+        <div class="pptx-question-editor-backdrop" data-action="close"></div>
+        <section class="pptx-question-editor-dialog pptx-question-move-dialog" role="dialog" aria-modal="true">
+          <header>
+            <div><strong id="pptxQuestionMoveTitle">移动题目</strong><span>选择目标页，无需跨长页面拖拽</span></div>
+            <button type="button" class="ghost-btn" data-action="close">关闭</button>
+          </header>
+          <div class="pptx-question-editor-tools">
+            <input id="pptxQuestionMoveSearch" type="search" placeholder="搜索页码、章节或页面标题" />
+          </div>
+          <div class="pptx-question-move-list" id="pptxQuestionMoveList"></div>
+        </section>`;
+      document.body.appendChild(modal);
+      modal.addEventListener("click", (event) => {
+        const close = event.target.closest('[data-action="close"]');
+        if (close) modal.classList.add("hidden");
+        const target = event.target.closest("[data-move-target]");
+        if (!target || !moveQuestionContext) return;
+        if (movePptxQuestion(moveQuestionContext.code, moveQuestionContext.sourceIndex, Number(target.dataset.moveTarget))) {
+          modal.classList.add("hidden");
+        }
+      });
+      modal.querySelector("#pptxQuestionMoveSearch").addEventListener("input", (event) => {
+        renderPptxQuestionMoveTargets(event.target.value);
+      });
+      return modal;
+    }
+
+    function renderPptxQuestionMoveTargets(query = "") {
+      const modal = ensurePptxQuestionMoveDialog();
+      const list = modal.querySelector("#pptxQuestionMoveList");
+      const keyword = String(query || "").trim().toLowerCase();
+      const context = moveQuestionContext;
+      if (!context) return;
+      let lastChapter = "";
+      list.innerHTML = (editedPagePlan?.pages || []).map((page, idx) => {
+        if (idx === context.sourceIndex) return "";
+        const haystack = `${idx + 1} ${page.chapter || ""} ${page.insight_override || page.title || ""}`.toLowerCase();
+        if (keyword && !haystack.includes(keyword)) return "";
+        const chapter = page.chapter || "其他研究";
+        const heading = chapter !== lastChapter ? `<h4>${escapeHtml(chapter)}</h4>` : "";
+        lastChapter = chapter;
+        const count = (page.questions || []).length;
+        const disabled = count >= 3 || (page.questions || []).some((question) => question.code === context.code);
+        return `${heading}<button type="button" data-move-target="${idx}" ${disabled ? "disabled" : ""}>
+          <b>第 ${idx + 1} 页</b><span>${escapeHtml(page.insight_override || page.title || "未命名页面")}</span><small>${count}/3 题</small>
+        </button>`;
+      }).join("") || '<div class="empty-state"><strong>没有可用目标页</strong><span>可先新建页面或移走目标页中的题目。</span></div>';
+    }
+
+    function openPptxQuestionMove(code, sourceIndex) {
+      const modal = ensurePptxQuestionMoveDialog();
+      const question = sourceIndex >= 0
+        ? editedPagePlan?.pages?.[sourceIndex]?.questions?.find((item) => item.code === code)
+        : getPptxQuestionCatalog().find((item) => item.code === code);
+      moveQuestionContext = { code, sourceIndex };
+      modal.querySelector("#pptxQuestionMoveTitle").textContent = `移动 ${code} · ${question?.title || "题目"}`;
+      modal.querySelector("#pptxQuestionMoveSearch").value = "";
+      renderPptxQuestionMoveTargets();
+      modal.classList.remove("hidden");
+    }
+
+    function renderPptxQuestionDropDock() {
+      const pages = editedPagePlan?.pages || [];
+      return `<div class="pptx-question-drop-dock" aria-hidden="true">
+        <strong>拖到目标页</strong><span>松开即可移动；移走最后一道题时会自动删除空页</span>
+        <div>${pages.map((page, idx) => `<button type="button" data-question-drop-target="${idx}">
+          <b>${idx + 1}</b><span>${escapeHtml(page.chapter || "其他研究")}</span><small>${escapeHtml(page.insight_override || page.title || "未命名页面")}</small>
+        </button>`).join("")}</div>
+      </div>`;
+    }
+
     function renderPptxMiniPreview(page) {
       const chartType = String(page.chart_type || "auto").replace(/[^a-z_]/g, "auto");
       const chartCount = Math.max(1, Math.min(3, (page.questions || []).length));
@@ -12713,19 +12829,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           const targetIndex = Number(card.dataset.pageIndex);
           if (draggedQuestion) {
             const { code, sourceIndex } = draggedQuestion;
-            const sourcePage = sourceIndex >= 0 ? editedPagePlan.pages[sourceIndex] : null;
-            const targetPage = editedPagePlan.pages[targetIndex];
-            if (!targetPage || targetPage.questions?.some((question) => question.code === code)) return;
-            if ((targetPage.questions || []).length >= 3) return showToast("每页建议最多放 3 道题，请先拆分页", "warning");
-            if (sourcePage && sourceIndex !== targetIndex && (sourcePage.questions || []).length <= 1) return showToast("源页面至少保留 1 道题；可先复制或删除该页", "warning");
-            const question = sourcePage
-              ? sourcePage.questions.find((item) => item.code === code)
-              : getPptxQuestionCatalog().find((item) => item.code === code);
-            if (!question) return;
-            pushPptxPlanHistory();
-            if (sourcePage) sourcePage.questions = sourcePage.questions.filter((item) => item.code !== code);
-            targetPage.questions = [...(targetPage.questions || []), question];
-            renderPreviewTable(editedPagePlan);
+            movePptxQuestion(code, sourceIndex, targetIndex);
             return;
           }
           if (draggedPageIndex < 0 || draggedPageIndex === targetIndex) return;
@@ -12743,10 +12847,29 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           event.stopPropagation();
           draggedQuestion = { code: chip.dataset.questionCode, sourceIndex: Number(chip.dataset.sourceIndex) };
           draggedPageIndex = -1;
+          previewTable.querySelector(".pptx-question-drop-dock")?.classList.add("active");
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("text/plain", `question:${draggedQuestion.code}`);
         });
-        chip.addEventListener("dragend", () => { draggedQuestion = null; });
+        chip.addEventListener("dragend", () => {
+          draggedQuestion = null;
+          previewTable.querySelector(".pptx-question-drop-dock")?.classList.remove("active");
+        });
+      });
+      previewTable.querySelectorAll("[data-question-drop-target]").forEach((target) => {
+        target.addEventListener("dragover", (event) => {
+          if (!draggedQuestion) return;
+          event.preventDefault();
+          target.classList.add("drop-target");
+        });
+        target.addEventListener("dragleave", () => target.classList.remove("drop-target"));
+        target.addEventListener("drop", (event) => {
+          if (!draggedQuestion) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const { code, sourceIndex } = draggedQuestion;
+          movePptxQuestion(code, sourceIndex, Number(target.dataset.questionDropTarget));
+        });
       });
       previewTable.querySelectorAll("[data-chapter-drop]").forEach((container) => {
         container.addEventListener("dragover", (event) => {
@@ -12844,7 +12967,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       const catalog = getPptxQuestionCatalog(plan);
       const assignedCodes = new Set(pages.flatMap((page) => (page.questions || []).map((question) => question.code)));
       const unassignedQuestions = catalog.filter((question) => !assignedCodes.has(question.code));
-      let html = `<div class="pptx-plan-toolbar">
+      let html = `${renderPptxQuestionDropDock()}<div class="pptx-plan-toolbar">
         <strong>页面题目覆盖：${assignedCodes.size}/${catalog.length}</strong>
         <span>${catalog.length - assignedCodes.size} 道题尚未安排 · 可拖动页面排序，也可直接拖动题目标签到其他页面。</span>
       </div><div class="pptx-editor-shell"><aside class="pptx-editor-outline">
@@ -12879,7 +13002,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
 
         items.forEach(({ page: p, idx }) => {
           const qTitles = (p.questions || []).map(q =>
-            `<span class="pptx-question-chip" draggable="true" data-question-code="${escapeHtml(q.code || "")}" data-source-index="${idx}" title="拖动到其他页面：${escapeHtml(q.title || '')}">${escapeHtml(q.code || "?")}</span>`
+            `<span class="pptx-question-chip-group"><span class="pptx-question-chip" draggable="true" data-question-code="${escapeHtml(q.code || "")}" data-source-index="${idx}" title="拖动到其他页面：${escapeHtml(q.title || '')}">${escapeHtml(q.code || "?")}</span><button type="button" data-pptx-action="move-question" data-page-index="${idx}" data-question-code="${escapeHtml(q.code || "")}" title="选择目标页">移动</button></span>`
           ).join("");
           const typeLabel = chartTypeOptions.find(o => o.value === p.chart_type)?.label || p.chart_type;
           html += `<details class="pptx-preview-page" data-page-index="${idx}">
@@ -13192,6 +13315,8 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         window._onPreviewRenameChapter(control.dataset.chapter);
       } else if (action === "edit-questions") {
         window._onPreviewEditQuestions(pageIndex);
+      } else if (action === "move-question") {
+        openPptxQuestionMove(control.dataset.questionCode, pageIndex);
       } else if (action === "duplicate-page") {
         window._onPreviewDuplicatePage(pageIndex);
       } else if (action === "split-page") {
