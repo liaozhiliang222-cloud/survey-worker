@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import tempfile
+import zipfile
 from copy import deepcopy
 from pathlib import Path
 
@@ -158,6 +159,29 @@ def main():
     assert text_shape_count > 110, text_shape_count
     assert len(chart_shapes) == 4, len(chart_shapes)
     assert all(shape.chart.series for shape in chart_shapes)
+    report_slides = [prs.slides[8], prs.slides[9]]
+    assert all(sum(1 for shape in slide.shapes if getattr(shape, "has_chart", False)) == 2 for slide in report_slides)
+    assert all(not any(getattr(shape, "has_table", False) for shape in slide.shapes) for slide in report_slides)
+    visible_text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if getattr(shape, "has_text_frame", False))
+    for raw_field in ["dataset_id", "metrics", "selling_point_scores", "segment_purchase_intention", "purchase_curve", "start_day", "end_day"]:
+        assert raw_field not in visible_text
+    path_text = "\n".join(shape.text for shape in prs.slides[4].shapes if getattr(shape, "has_text_frame", False))
+    assert "研究动作｜做什么" in path_text
+    assert "阶段产出｜交付什么" in path_text
+    assert "下一阶段输入｜如何被使用" in path_text
+    assert "开展用户深访与场景追问" in path_text
+    assert "统一概念刺激物信息量，完成可测化改写" in path_text
+    assert "标准化概念刺激物与评价维度" in path_text
+    gantt_bar_widths = {
+        round(shape.width / 914400, 2)
+        for shape in prs.slides[11].shapes
+        if .18 <= shape.height / 914400 <= .3 and shape.width / 914400 > .3 and shape.left / 914400 >= 2.9
+    }
+    assert len(gantt_bar_widths) >= 3, gantt_bar_widths
+    with zipfile.ZipFile(output) as package:
+        assert len([name for name in package.namelist() if name.startswith("ppt/charts/chart") and name.endswith(".xml")]) == 4
+        assert len([name for name in package.namelist() if name.startswith("ppt/embeddings/")]) == 4
+        assert not [name for name in package.namelist() if name.startswith("ppt/media/")]
     assert audit["ok"] is True
     assert not [issue for issue in audit["issues"] if issue["level"] == "error"]
     assert deck["illustrative_dataset"]["usable_for_decision"] is False
@@ -173,7 +197,7 @@ def main():
         render_proposal_deck(edited, str(edited_path))
         edited_prs = Presentation(str(edited_path))
         edited_charts = [shape.chart for slide in edited_prs.slides for shape in slide.shapes if getattr(shape, "has_chart", False)]
-        assert 80 in list(edited_charts[0].series[0].values)
+        assert any(80 in list(series.values) for series in edited_charts[0].series)
 
         framework = deepcopy(deck)
         framework["example_output_mode"] = "framework_only"

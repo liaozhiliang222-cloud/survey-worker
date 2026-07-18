@@ -266,8 +266,21 @@ def audit_deck(deck: dict) -> dict:
             if expected != len(slide["content"]):
                 issues.append({"level": "error", "code": "module_count_mismatch", "slide": slide["order"]})
     timeline = next((slide for slide in normalized["slides"] if slide["visual_type"] == "timeline_gantt_risk"), None)
-    if timeline and timeline["timeline_tasks"] and len({task.get("start_day") for task in timeline["timeline_tasks"]}) == 1:
-        issues.append({"level": "error", "code": "gantt_same_start"})
+    if timeline:
+        tasks = timeline["timeline_tasks"]
+        if not tasks:
+            issues.append({"level": "error", "code": "gantt_tasks_missing", "slide": timeline["order"]})
+        else:
+            invalid_bounds = [task for task in tasks if not isinstance(task.get("start_day"), (int, float)) or not isinstance(task.get("end_day"), (int, float))]
+            if invalid_bounds:
+                issues.append({"level": "error", "code": "gantt_bounds_missing", "slide": timeline["order"]})
+            else:
+                if len({int(task["start_day"]) for task in tasks}) == 1:
+                    issues.append({"level": "error", "code": "gantt_same_start", "slide": timeline["order"]})
+                if len({int(task["end_day"]) - int(task["start_day"]) for task in tasks}) == 1:
+                    issues.append({"level": "error", "code": "gantt_same_duration", "slide": timeline["order"]})
+                if any(int(task["start_day"]) < 1 or int(task["end_day"]) > 14 or int(task["end_day"]) < int(task["start_day"]) for task in tasks):
+                    issues.append({"level": "error", "code": "gantt_bounds_invalid", "slide": timeline["order"]})
     return {"deck": normalized, "issues": issues, "slide_scores": scores, "ok": not any(i["level"] == "error" for i in issues)}
 
 
@@ -329,9 +342,9 @@ def _base_slide(prs, slide_data, page_no: int, project_short: str):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     bg = slide.background.fill; bg.solid(); bg.fore_color.rgb = _rgb(PAPER)
     if slide_data["visual_type"] != "cover_product_hero":
-        _textbox(slide, slide_data["title"], .62, .36, 11.85, .55, 25, NAVY, True)
+        _textbox(slide, slide_data["title"], .62, .34, 11.85, .58, 27, NAVY, True)
         if slide_data["key_message"]:
-            _textbox(slide, slide_data["key_message"], .64, .94, 11.7, .42, 12.5, MUTED)
+            _textbox(slide, slide_data["key_message"], .64, .98, 11.7, .38, 11.5, MUTED)
         _textbox(slide, project_short, .62, 7.12, 4.8, .2, 8, MUTED)
         _textbox(slide, str(page_no), 12.05, 7.08, .55, .25, 8, MUTED, align=PP_ALIGN.RIGHT)
     return slide
@@ -380,23 +393,22 @@ def _render_challenge_chain(slide, items):
 
 
 def _render_decision_tree(slide, items):
-    items = items[:5] or [{"headline": "待完善"}]
-    center_y = 3.0 if len(items) == 5 else 2.35
-    center = _rect(slide, 5.1, center_y, 3.1, 1.05, NAVY, NAVY, True)
-    _set_text(center, "核心业务决策", 16, WHITE, True, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE)
-    if len(items) == 5:
-        positions = [(.65, 1.55), (.65, 4.55), (5.18, 5.05), (9.72, 1.55), (9.72, 4.55)]
-    elif len(items) == 3:
-        positions = [(.75, 1.75), (9.65, 1.75), (5.18, 4.72)]
-    else:
-        positions = [(.75, 1.75), (9.65, 1.75), (.75, 4.45), (9.65, 4.45)]
-    for item, (x, y) in zip(items, positions):
-        _node_text(slide, item, x, y, 2.95, 1.35 if len(items) == 5 else 1.55, WHITE, CYAN)
-        start_x = 5.1 if x < 5 else (8.2 if x > 8.2 else 6.65)
-        start_y = center_y + .53 if x < 5 or x > 8.2 else center_y + 1.05
-        target_x = x + 2.95 if x < 5 else (x if x > 8.2 else x + 1.48)
-        target_y = y + .68 if x < 5 or x > 8.2 else y
-        _line(slide, start_x, start_y, target_x - start_x, target_y - start_y, LINE, 1.3)
+    items = items[:5] or [{"headline": "待完善", "description": "待补充决策信息"}]
+    _textbox(slide, "核心业务决策", .72, 1.58, 1.45, .3, 10, CYAN, True)
+    _textbox(slide, "从研究问题到可执行判断", .72, 1.95, 4.9, .55, 22, NAVY, True)
+    _line(slide, 2.05, 3.55, 9.95, 0, "AABCC9", 1.4, True)
+    centers = [2.05 + i * 2.48 for i in range(len(items))]
+    accents = [BLUE, CYAN, NAVY, CYAN, ORANGE]
+    for index, (item, cx) in enumerate(zip(items, centers)):
+        accent = accents[index]
+        node = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx - .18), Inches(3.37), Inches(.36), Inches(.36))
+        node.fill.solid(); node.fill.fore_color.rgb = _rgb(accent); node.line.fill.background()
+        _textbox(slide, f"0{index + 1}", cx - .23, 2.93, .46, .24, 9, accent, True, PP_ALIGN.CENTER)
+        _textbox(slide, item.get("headline") or item.get("label") or "待完善", cx - 1.0, 3.95, 2.0, .5, 13, NAVY, True, PP_ALIGN.CENTER)
+        _textbox(slide, _text(item.get("description") or "形成对应决策证据", 48), cx - 1.0, 4.58, 2.0, .82, 9.5, MUTED, False, PP_ALIGN.CENTER)
+        _rect(slide, cx - .65, 5.65, 1.3, .06, accent, accent)
+    _textbox(slide, "最终输出", .72, 6.18, .75, .26, 9.5, ORANGE, True)
+    _textbox(slide, "明确继续推进、优化迭代或停止投入的决策条件", 1.58, 6.13, 7.6, .34, 12.5, NAVY, True)
 
 
 def _render_matrix(slide, items):
@@ -501,38 +513,59 @@ def _render_risk(slide, items):
 
 
 def _render_product_cover(slide, deck, data):
-    _render_cover(slide, deck, data)
-    # Editable product silhouette: intentionally generic and labelled as an illustration.
-    body = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(9.35), Inches(1.18), Inches(2.25), Inches(3.95))
-    body.fill.solid(); body.fill.fore_color.rgb = _rgb("214661"); body.line.color.rgb = _rgb(CYAN); body.line.width = Pt(1.2)
-    bowl = slide.shapes.add_shape(MSO_SHAPE.ARC, Inches(8.92), Inches(4.36), Inches(3.1), Inches(1.15))
-    bowl.fill.solid(); bowl.fill.fore_color.rgb = _rgb("1C3B55"); bowl.line.color.rgb = _rgb(CYAN)
-    _line(slide, 10.47, 1.55, 0, 2.7, "6BC4CF", 1.0)
-    for y in [2.0, 2.42, 2.84]: _line(slide, 9.8, y, 1.35, 0, "4A7089", .8)
-    _textbox(slide, "产品示意", 9.35, 5.56, 2.25, .25, 9.5, "B7CADB", False, PP_ALIGN.CENTER)
+    slide.background.fill.solid(); slide.background.fill.fore_color.rgb = _rgb(NAVY)
+    # Editorial cover grid: one dominant title block and one large editable product visual.
+    _textbox(slide, "USER RESEARCH PROPOSAL", .82, .72, 4.7, .28, 10, "7ED0D8", True)
+    _textbox(slide, data["title"], .82, 1.42, 6.9, 1.55, 30.5, WHITE, True)
+    subtitle = data.get("subtitle") or deck.get("subtitle") or "从需求洞察到产品与上市决策"
+    _textbox(slide, subtitle, .86, 3.18, 5.95, .68, 15.5, "C9DAEA")
+    _textbox(slide, "研究范围", .86, 4.28, .82, .26, 9.5, "7ED0D8", True)
+    _textbox(slide, "概念验证 · 卖点优先级 · 价格空间 · 目标人群", 1.72, 4.25, 5.2, .32, 11.5, WHITE, True)
+    _textbox(slide, date.today().isoformat(), .86, 6.34, 1.8, .26, 9.5, "B7CADB")
+    _textbox(slide, "SurveyKit · AI 研究方案", 4.45, 6.34, 2.7, .26, 9.5, "B7CADB", True, PP_ALIGN.RIGHT)
+
+    halo = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(8.05), Inches(.65), Inches(4.45), Inches(4.45))
+    halo.fill.solid(); halo.fill.fore_color.rgb = _rgb("1E4663"); halo.line.fill.background()
+    ring = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(8.62), Inches(1.22), Inches(3.3), Inches(3.3))
+    ring.fill.background(); ring.line.color.rgb = _rgb("3E7087"); ring.line.width = Pt(1)
+    # Editable, intentionally generic pet-water-dispenser silhouette.
+    body = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(9.22), Inches(1.25), Inches(2.08), Inches(3.55))
+    body.fill.solid(); body.fill.fore_color.rgb = _rgb("173A55"); body.line.color.rgb = _rgb("71C8D2"); body.line.width = Pt(1.4)
+    window = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(9.58), Inches(1.62), Inches(1.36), Inches(1.95))
+    window.fill.solid(); window.fill.fore_color.rgb = _rgb("24516B"); window.line.fill.background()
+    _line(slide, 10.26, 1.72, 0, 1.62, "6BC4CF", 1.0)
+    for y in [2.02, 2.42, 2.82]: _line(slide, 9.82, y, .88, 0, "4A7089", .75)
+    bowl = slide.shapes.add_shape(MSO_SHAPE.ARC, Inches(8.72), Inches(4.04), Inches(3.15), Inches(1.28))
+    bowl.fill.solid(); bowl.fill.fore_color.rgb = _rgb("173A55"); bowl.line.color.rgb = _rgb("71C8D2"); bowl.line.width = Pt(1.2)
+    drop = slide.shapes.add_shape(MSO_SHAPE.TEAR, Inches(11.55), Inches(3.22), Inches(.48), Inches(.65))
+    drop.fill.solid(); drop.fill.fore_color.rgb = _rgb(CYAN); drop.line.fill.background(); drop.rotation = 20
+    _textbox(slide, "智能饮水管理", 8.15, 5.62, 4.25, .4, 15, WHITE, True, PP_ALIGN.CENTER)
+    _textbox(slide, "产品示意 · 非真实外观", 8.15, 6.08, 4.25, .24, 9, "9CB6C8", False, PP_ALIGN.CENTER)
 
 
 def _render_context(slide, items):
     items = items[:4]
-    x_values = [.62, 3.72, 6.82, 9.92]
-    fills = [LIGHT_BLUE, "F1F4F6", LIGHT_CYAN, LIGHT_ORANGE]
     labels = ["MARKET SIGNAL", "USER TENSION", "PRODUCT OPPORTUNITY", "DECISION RISK"]
-    accents = [BLUE, MUTED, CYAN, ORANGE]
-    for index, (item, x) in enumerate(zip(items, x_values)):
-        card = _rect(slide, x, 1.5, 2.82, 4.55, fills[index], "D8E2EA", True)
-        card.line.width = Pt(.8)
-        _rect(slide, x, 1.5, .08, 4.55, accents[index], accents[index])
-        _textbox(slide, labels[index], x + .2, 1.76, 2.35, .25, 9.5, accents[index], True)
-        _textbox(slide, item["headline"], x + .2, 2.15, 2.35, .72, 15.5, NAVY, True)
+    accents = [BLUE, "718091", CYAN, ORANGE]
+    centers = [1.65, 4.92, 8.18, 11.45]
+    _line(slide, 1.65, 3.44, 9.8, 0, "B9C8D4", 1.5, True)
+    for index, (item, cx) in enumerate(zip(items, centers)):
+        node = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx - .18), Inches(3.26), Inches(.36), Inches(.36))
+        node.fill.solid(); node.fill.fore_color.rgb = _rgb(accents[index]); node.line.fill.background()
+        _textbox(slide, f"0{index + 1}", cx - .16, 2.78, .32, .24, 9, accents[index], True, PP_ALIGN.CENTER)
+        _textbox(slide, labels[index], cx - 1.25, 1.55, 2.5, .25, 9.5, accents[index], True, PP_ALIGN.CENTER)
+        _textbox(slide, item["headline"], cx - 1.28, 1.94, 2.56, .76, 15.5, NAVY, True, PP_ALIGN.CENTER)
         parts = [part.strip() for part in item["description"].split("｜")]
-        section_labels = ["观察信号", "业务含义", "研究响应"]
-        for row, value in enumerate(parts[:3]):
-            y = 3.05 + row * .88
-            _textbox(slide, section_labels[row], x + .2, y, .72, .25, 9.5, accents[index], True)
-            _textbox(slide, value.split("：", 1)[-1], x + .92, y - .02, 1.65, .62, 10.5, MUTED)
-        if index < 3: _textbox(slide, "→", x + 2.83, 3.55, .26, .35, 16, MUTED, True, PP_ALIGN.CENTER)
-    _textbox(slide, "研究判断", .72, 6.34, .85, .28, 10, CYAN, True)
-    _textbox(slide, "验证真实需求 × 持续体验 × 商业边界，形成推进、优化或停止的证据。", 1.62, 6.3, 10.65, .34, 12.5, NAVY, True)
+        signal = parts[0].split("：", 1)[-1] if parts else "待验证"
+        response = parts[-1].split("：", 1)[-1] if parts else "形成决策依据"
+        _line(slide, cx, 3.62, 0, .45, "C5D1DA", .9)
+        _textbox(slide, "关键信号", cx - 1.2, 4.13, .74, .24, 9, accents[index], True)
+        _textbox(slide, signal, cx - .42, 4.08, 1.62, .62, 10.2, MUTED)
+        _textbox(slide, "研究响应", cx - 1.2, 4.96, .74, .24, 9, accents[index], True)
+        _textbox(slide, response, cx - .42, 4.91, 1.62, .72, 10.2, NAVY, True)
+    _rect(slide, .72, 6.08, .08, .58, ORANGE, ORANGE)
+    _textbox(slide, "研究判断", .95, 6.11, .88, .26, 10, ORANGE, True)
+    _textbox(slide, "验证真实需求 × 持续体验 × 商业边界，形成推进、优化或停止的证据。", 1.86, 6.06, 10.4, .38, 12.5, NAVY, True)
 
 
 def _render_evidence_matrix(slide, items):
@@ -560,76 +593,113 @@ def _render_evidence_matrix(slide, items):
 
 
 def _render_dual_flow(slide, items):
-    items = items[:5]; gap = .18; w = 2.25
+    items = items[:5]
+    stage_actions = [
+        "确认业务假设、刺激物与核心决策边界",
+        "开展用户深访与场景追问，识别行为动因与核心张力",
+        "统一概念刺激物信息量，完成可测化改写",
+        "执行概念测试、MaxDiff与价格测量",
+        "整合产品、人群、价格与传播证据",
+    ]
+    stage_meta = [
+        ("经确认的研究简报与刺激物清单", "用于锁定招募、访谈和测量边界"),
+        ("定性小结、用户语言与假设池", "用于优化概念并形成问卷输入"),
+        ("标准化概念刺激物与评价维度", "作为定量刺激物和测量对象"),
+        ("数据底表、优先级与价格模型", "用于形成产品、人群和价格建议"),
+        ("决策结论与上市行动路线图", "进入客户评审与执行规划"),
+    ]
+    _textbox(slide, "研究动作｜做什么", .66, 1.53, 1.6, .25, 9.5, CYAN, True)
+    _textbox(slide, "阶段产出｜交付什么", .66, 3.78, 1.8, .25, 9.5, ORANGE, True)
+    _textbox(slide, "下一阶段输入｜如何被使用", .66, 5.25, 2.3, .25, 9.5, BLUE, True)
+    _line(slide, .68, 3.43, 11.94, 0, "AABCC9", 1.2, True)
+    w = 2.28
     for index, item in enumerate(items):
-        x = .65 + index * (w + gap)
-        _textbox(slide, f"0{index + 1}", x, 1.55, .48, .4, 18, CYAN, True)
-        _textbox(slide, item["headline"], x, 2.05, w, .52, 15, NAVY, True)
-        _textbox(slide, item["description"], x, 2.72, w, 1.25, 10.5, MUTED)
-        _rect(slide, x, 4.2, w, .62, LIGHT_BLUE if index % 2 == 0 else LIGHT_CYAN, LINE)
-        _textbox(slide, "阶段输出", x + .12, 4.32, .7, .25, 9, MUTED, True)
-        _textbox(slide, item["description"].split("，")[-1], x + .84, 4.29, 1.28, .3, 9.5, NAVY, True)
-        if index < len(items) - 1: _line(slide, x + w, 2.32, gap, 0, CYAN, 1.6, True)
-    _textbox(slide, "业务假设", .65, 5.5, 1.5, .3, 11, MUTED, True)
-    _line(slide, 1.75, 5.66, 9.95, 0, LINE, 1.0, True)
-    _textbox(slide, "上市行动", 11.25, 5.5, 1.3, .3, 11, CYAN, True, PP_ALIGN.RIGHT)
+        x = .66 + index * 2.43
+        accent = ORANGE if index == len(items) - 1 else (CYAN if index % 2 else BLUE)
+        output, usage = stage_meta[index]
+        _textbox(slide, f"0{index + 1}", x, 1.92, .45, .28, 12, accent, True)
+        _textbox(slide, item["headline"], x, 2.32, w, .48, 14.5, NAVY, True)
+        _textbox(slide, stage_actions[index], x, 2.84, w, .48, 9.6, MUTED)
+        _line(slide, x + .12, 3.43, 0, .32, accent, 1.5)
+        _textbox(slide, output, x, 4.18, w, .58, 10.3, NAVY, True)
+        _textbox(slide, usage, x, 5.65, w, .52, 9.5, MUTED)
+        _rect(slide, x, 6.28, w, .07, accent, accent)
 
 
 def _render_qualitative(slide, items):
-    groups = [("访问谁", items[:2], .68, BLUE), ("讨论什么", items[2:4], 4.72, CYAN), ("输出什么", items[4:6], 8.76, ORANGE)]
-    for title, values, x, accent in groups:
-        _textbox(slide, title, x, 1.55, 3.35, .36, 15, accent, True)
-        _line(slide, x, 2.0, 3.35, 0, accent, 1.6)
+    groups = [("人群 / WHO", items[:2], .68, BLUE), ("主题 / WHAT", items[2:4], 4.72, CYAN), ("输出 / SO WHAT", items[4:6], 8.76, ORANGE)]
+    for col, (title, values, x, accent) in enumerate(groups):
+        _textbox(slide, f"0{col + 1}", x, 1.52, .45, .3, 12, accent, True)
+        _textbox(slide, title, x + .52, 1.5, 2.8, .34, 15, NAVY, True)
+        _line(slide, x, 2.0, 3.35, 0, accent, 2.0)
         for row, item in enumerate(values or [{"headline": "待完善", "description": ""}]):
-            y = 2.25 + row * 1.62
-            card = _rect(slide, x, y, 3.35, 1.38, WHITE, "D8E2EA", True)
-            card.line.width = Pt(.8)
-            _rect(slide, x, y, .07, 1.38, accent, accent)
-            _textbox(slide, item["headline"], x + .18, y + .16, 2.98, .38, 13.5, NAVY, True)
-            _textbox(slide, item["description"], x + .18, y + .62, 2.98, .58, 10.2, MUTED)
-    _textbox(slide, "→", 4.13, 3.25, .5, .35, 16, MUTED, True, PP_ALIGN.CENTER)
-    _textbox(slide, "→", 8.17, 3.25, .5, .35, 16, MUTED, True, PP_ALIGN.CENTER)
-    _rect(slide, .68, 5.65, 11.43, .86, LIGHT_BLUE, "C9D9EA", True)
-    _textbox(slide, "设计守则", .9, 5.84, .82, .28, 10, BLUE, True)
+            y = 2.38 + row * 1.35
+            _textbox(slide, item["headline"], x, y, 3.25, .38, 13, NAVY, True)
+            _textbox(slide, _text(item["description"], 70), x, y + .48, 3.25, .62, 9.8, MUTED)
+            if row == 0: _line(slide, x, y + 1.17, 3.05, 0, "D8E2EA", .8)
+        if col < 2: _textbox(slide, "→", x + 3.55, 3.05, .35, .32, 15, "90A4B3", True, PP_ALIGN.CENTER)
+    _rect(slide, .68, 5.45, 11.43, .08, NAVY, NAVY)
+    _textbox(slide, "设计守则", .68, 5.78, .82, .28, 10, BLUE, True)
     rules = [("场景真实", "在真实补水与清洁任务中观察行为"), ("刺激可比", "概念、功能与价格材料保持同等信息量"), ("输出可测", "每条发现都转译为问卷选项或待验证假设")]
     for index, (label, value) in enumerate(rules):
         x = 1.82 + index * 3.46
-        _textbox(slide, label, x, 5.79, .78, .28, 10, NAVY, True)
-        _textbox(slide, value, x + .8, 5.75, 2.45, .42, 9.5, MUTED)
+        _textbox(slide, label, x, 5.73, .78, .28, 10, NAVY, True)
+        _textbox(slide, value, x + .8, 5.69, 2.45, .48, 9.5, MUTED)
 
 
 def _render_sample_architecture(slide, items):
     if not items: return
-    _rect(slide, 4.45, 1.52, 4.45, .72, NAVY, NAVY, True); _textbox(slide, f"{items[0]['headline']}  {items[0]['description'].split('；')[0]}", 4.65, 1.72, 4.05, .3, 13, WHITE, True, PP_ALIGN.CENTER)
+    _textbox(slide, items[0]["headline"], .72, 1.56, 3.6, .42, 17, NAVY, True)
+    _textbox(slide, items[0]["description"].split("；")[0], 4.4, 1.6, 3.0, .3, 11, CYAN, True)
+    _line(slide, .72, 2.15, 11.9, 0, NAVY, 1.4)
     branches = items[1:3]
-    for index, item in enumerate(branches):
-        x = 1.0 + index * 6.35
-        _line(slide, 6.67, 2.24, x + 2.4 - 6.67, .55, LINE, 1.3)
-        _rect(slide, x, 2.78, 4.8, 1.1, LIGHT_BLUE if index == 0 else LIGHT_CYAN, BLUE if index == 0 else CYAN)
-        _textbox(slide, item["headline"], x + .2, 2.98, 1.25, .35, 14, NAVY, True)
-        _textbox(slide, item["description"], x + 1.45, 2.92, 3.1, .7, 10.5, MUTED)
+    widths = [6.15, 5.75]
+    starts = [.72, 6.87]
+    for index, (item, x, width) in enumerate(zip(branches, starts, widths)):
+        accent = BLUE if index == 0 else CYAN
+        _rect(slide, x, 2.55, width, .22, accent, accent)
+        _textbox(slide, item["headline"], x, 3.02, 1.7, .38, 14.5, NAVY, True)
+        _textbox(slide, _text(item["description"], 92), x + 1.72, 2.96, width - 1.85, .72, 10, MUTED)
+        _textbox(slide, "主样本" if index == 0 else "机会样本", x, 3.82, 1.1, .26, 9.5, accent, True)
+    _line(slide, 6.55, 2.44, 0, 1.72, "CCD7DF", .8)
     for index, item in enumerate(items[3:6]):
-        x = .8 + index * 4.15
-        _textbox(slide, item["headline"], x, 4.45, 3.7, .38, 13, [BLUE, CYAN, ORANGE][index], True)
-        _textbox(slide, item["description"], x, 4.95, 3.7, 1.05, 10.5, MUTED)
-    _textbox(slide, "样本量来自用户输入或方案计算；概念分配与配额为建议方案，正式执行前待客户确认。", .8, 6.2, 11.7, .3, 9.5, ORANGE, True)
+        x = .72 + index * 4.0
+        accent = [BLUE, CYAN, ORANGE][index]
+        _textbox(slide, f"0{index + 1}", x, 4.55, .42, .26, 10, accent, True)
+        _textbox(slide, item["headline"], x + .52, 4.5, 2.95, .38, 13, NAVY, True)
+        _textbox(slide, _text(item["description"], 90), x + .52, 5.0, 3.0, .72, 9.8, MUTED)
+        _rect(slide, x, 5.92, 3.42, .07, accent, accent)
+    _textbox(slide, "样本量来自用户输入或方案计算；概念分配与配额为建议方案，正式执行前待客户确认。", .72, 6.34, 11.85, .3, 9.5, ORANGE, True)
 
 
 def _render_questionnaire_journey(slide, items):
     items = items[:7]
-    positions = [(.62, 1.52), (3.72, 1.52), (6.82, 1.52), (9.92, 1.52), (2.17, 4.12), (5.27, 4.12), (8.37, 4.12)]
-    for index, (item, (x, y)) in enumerate(zip(items, positions)):
-        fill = LIGHT_BLUE if index % 3 == 0 else (LIGHT_CYAN if index % 3 == 1 else WHITE)
-        card = _rect(slide, x, y, 2.82, 2.2, fill, "D8E2EA", True); card.line.width = Pt(.8)
-        _textbox(slide, str(index + 1).zfill(2), x + .16, y + .16, .42, .28, 10, CYAN, True)
-        _textbox(slide, item["headline"], x + .62, y + .14, 1.96, .38, 13, NAVY, True)
+    centers = [1.08 + index * 1.86 for index in range(7)]
+    _rect(slide, .72, 3.18, 11.9, .34, "E9EFF4", "E9EFF4")
+    _line(slide, .9, 3.35, 11.45, 0, "9DB2C2", 1.25, True)
+    for index, (item, cx) in enumerate(zip(items, centers)):
         parts = [part.strip() for part in item["description"].split("｜")]
-        for row, part in enumerate(parts[:4]):
+        values = {}
+        for part in parts:
             label, _, value = part.partition("：")
-            _textbox(slide, label or ["指标", "决策", "方法", "输出"][row], x + .16, y + .62 + row * .36, .44, .24, 8.5, [BLUE, CYAN, MUTED, ORANGE][row], True)
-            _textbox(slide, value or part, x + .64, y + .59 + row * .36, 1.98, .3, 10, MUTED)
-        if index < 3: _textbox(slide, "→", x + 2.83, y + .9, .26, .3, 14, MUTED, True, PP_ALIGN.CENTER)
-    _textbox(slide, "定量问卷从行为基线出发，经概念与卖点验证，最终落到价格、人群和触达策略。", .72, 6.62, 11.8, .3, 11, NAVY, True, PP_ALIGN.CENTER)
+            values[label] = value or part
+        above = index % 2 == 0
+        node_color = ORANGE if index in (4, 5) else (CYAN if index in (2, 3, 6) else BLUE)
+        node = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(cx - .16), Inches(3.19), Inches(.32), Inches(.32))
+        node.fill.solid(); node.fill.fore_color.rgb = _rgb(node_color); node.line.fill.background()
+        _textbox(slide, str(index + 1).zfill(2), cx - .22, 3.62, .44, .24, 9, node_color, True, PP_ALIGN.CENTER)
+        title_y = 1.58 if above else 4.2
+        detail_y = 2.06 if above else 4.72
+        line_y = 2.72 if above else 3.51
+        _line(slide, cx, line_y, 0, (3.19 - line_y) if above else .62, "C2CFD8", .9)
+        _textbox(slide, item["headline"], cx - .75, title_y, 1.5, .44, 13, NAVY, True, PP_ALIGN.CENTER)
+        _textbox(slide, "指标", cx - .75, detail_y, .36, .22, 8.5, node_color, True)
+        _textbox(slide, values.get("指标", "关键指标"), cx - .37, detail_y - .03, 1.12, .48, 9.3, MUTED)
+        _textbox(slide, "输出", cx - .75, detail_y + .55, .36, .22, 8.5, ORANGE, True)
+        _textbox(slide, values.get("输出", "阶段结论"), cx - .37, detail_y + .52, 1.12, .48, 9.3, NAVY, True)
+    _textbox(slide, "行为基线", .72, 6.24, 1.1, .25, 9.5, MUTED, True)
+    _line(slide, 1.66, 6.36, 9.8, 0, "C5D1DA", 1.0, True)
+    _textbox(slide, "上市策略", 11.55, 6.24, 1.0, .25, 9.5, CYAN, True, PP_ALIGN.RIGHT)
 
 
 def _example_header(slide):
@@ -652,16 +722,14 @@ def _native_bar_chart(slide, categories, values, x, y, w, h, colors, maximum=Non
     ).chart
     chart.has_title = False
     chart.has_legend = False
-    chart.chart_style = 10
+    chart.chart_style = 2
     chart.font.name = "微软雅黑"
     chart.font.size = Pt(9.5)
     series = chart.series[0]
     series.format.fill.solid()
     series.format.fill.fore_color.rgb = _rgb(CYAN)
-    try:
-        series.gap_width = 65
-    except Exception:
-        pass
+    try: chart.plots[0].gap_width = 68
+    except Exception: pass
     for point, color in zip(series.points, render_colors):
         point.format.fill.solid()
         point.format.fill.fore_color.rgb = _rgb(color)
@@ -694,7 +762,51 @@ def _native_bar_chart(slide, categories, values, x, y, w, h, colors, maximum=Non
     return chart
 
 
-def _native_line_chart(slide, categories, values, x, y, w, h, maximum=100):
+def _native_funnel_chart(slide, categories, values, x, y, w, h, colors, maximum=100):
+    """Editable centered-bar funnel built as a native stacked bar chart."""
+    render_categories = list(reversed(categories))
+    render_values = list(reversed(values))
+    render_colors = list(reversed(colors))
+    data = ChartData()
+    data.categories = render_categories
+    data.add_series("居中留白", [(maximum - value) / 2 for value in render_values])
+    data.add_series("指标值", render_values)
+    chart = slide.shapes.add_chart(
+        XL_CHART_TYPE.BAR_STACKED, Inches(x), Inches(y), Inches(w), Inches(h), data
+    ).chart
+    chart.has_title = False
+    chart.has_legend = False
+    chart.chart_style = 2
+    chart.font.name = "微软雅黑"
+    chart.font.size = Pt(9.5)
+    try: chart.plots[0].gap_width = 44
+    except Exception: pass
+    offset, visible = chart.series
+    offset.format.fill.background(); offset.format.line.fill.background()
+    visible.format.fill.solid(); visible.format.fill.fore_color.rgb = _rgb(CYAN)
+    for point, color in zip(visible.points, render_colors):
+        point.format.fill.solid(); point.format.fill.fore_color.rgb = _rgb(color)
+        point.format.line.fill.background()
+    visible.has_data_labels = True
+    labels = visible.data_labels
+    labels.show_value = True
+    labels.position = XL_LABEL_POSITION.CENTER
+    labels.number_format = '0"%"'
+    labels.number_format_is_linked = False
+    labels.font.name = "微软雅黑"; labels.font.size = Pt(9.5); labels.font.bold = True
+    labels.font.color.rgb = _rgb(WHITE)
+    cat_axis = chart.category_axis
+    cat_axis.visible = True
+    cat_axis.major_tick_mark = XL_TICK_MARK.NONE; cat_axis.minor_tick_mark = XL_TICK_MARK.NONE
+    cat_axis.tick_labels.font.name = "微软雅黑"; cat_axis.tick_labels.font.size = Pt(9.5)
+    cat_axis.tick_labels.font.color.rgb = _rgb(NAVY); cat_axis.format.line.fill.background()
+    val_axis = chart.value_axis
+    val_axis.minimum_scale = 0; val_axis.maximum_scale = maximum; val_axis.visible = False
+    val_axis.has_major_gridlines = False; val_axis.format.line.fill.background()
+    return chart
+
+
+def _native_line_chart(slide, categories, values, x, y, w, h, maximum=100, highlight_index=None):
     """Add a PowerPoint-native line chart with editable categories and values."""
     data = ChartData()
     data.categories = categories
@@ -704,7 +816,7 @@ def _native_line_chart(slide, categories, values, x, y, w, h, maximum=100):
     ).chart
     chart.has_title = False
     chart.has_legend = False
-    chart.chart_style = 10
+    chart.chart_style = 2
     chart.font.name = "微软雅黑"
     chart.font.size = Pt(9)
     series = chart.series[0]
@@ -715,6 +827,10 @@ def _native_line_chart(slide, categories, values, x, y, w, h, maximum=100):
     series.marker.format.fill.solid()
     series.marker.format.fill.fore_color.rgb = _rgb(CYAN)
     series.marker.format.line.color.rgb = _rgb(CYAN)
+    if highlight_index is not None and 0 <= highlight_index < len(series.points):
+        point = series.points[highlight_index]
+        point.format.fill.solid(); point.format.fill.fore_color.rgb = _rgb(ORANGE)
+        point.format.line.color.rgb = _rgb(ORANGE)
     series.has_data_labels = True
     labels = series.data_labels
     labels.show_value = True
@@ -744,74 +860,141 @@ def _native_line_chart(slide, categories, values, x, y, w, h, maximum=100):
 
 def _render_concept_example(slide, dataset, framework_only=False):
     _example_header(slide)
-    _textbox(slide, "概念表现漏斗", .7, 1.55, 5.7, .35, 15, NAVY, True)
-    _textbox(slide, "卖点优先级（MaxDiff示例）", 7.05, 1.55, 5.5, .35, 15, NAVY, True)
+    _textbox(slide, "概念表现漏斗", .62, 1.48, 5.9, .35, 14.5, NAVY, True)
+    _textbox(slide, "卖点优先级（MaxDiff）", 6.94, 1.48, 5.7, .35, 14.5, NAVY, True)
     if framework_only or not dataset:
         _textbox(slide, "正确理解 → 相关性 → 独特性 → 可信度 → 购买意愿", .8, 2.35, 5.3, 2.6, 16, MUTED, True, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE)
         _textbox(slide, "未来将展示卖点相对重要性及优先级", 7.15, 2.35, 5.0, 2.6, 15, MUTED, True, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE)
         return
-    metric_labels = ["正确理解", "相关性", "独特性", "技术可信度", "购买意愿"]
-    metric_values = list(dataset["metrics"].values())
-    _native_bar_chart(slide, metric_labels, metric_values, .72, 1.95, 5.65, 4.35,
-                      [CYAN, CYAN, CYAN, CYAN, ORANGE], 100, "%")
-    selling_labels = list(dataset["selling_point_scores"].keys())
-    selling_values = list(dataset["selling_point_scores"].values())
-    _native_bar_chart(slide, selling_labels, selling_values, 7.02, 1.95, 5.2, 4.35,
-                      [CYAN, CYAN, BLUE, BLUE, BLUE], max(selling_values) * 1.2)
+    # Only canonical report metrics are placed in native charts. Dataset keys,
+    # source tables and debugging metadata never become visible slide content.
+    metric_specs = [
+        ("concept_understanding", "正确理解"),
+        ("concept_relevance", "相关性"),
+        ("concept_uniqueness", "独特性"),
+        ("concept_credibility", "技术可信度"),
+        ("purchase_intention_t2b", "购买意愿"),
+    ]
+    metrics = dataset.get("metrics") or {}
+    metric_labels = [label for _, label in metric_specs]
+    metric_values = [float(metrics.get(key) or 0) for key, _ in metric_specs]
+    _native_funnel_chart(slide, metric_labels, metric_values, .6, 1.84, 5.96, 4.12,
+                         [BLUE, "2E76B8", CYAN, "52B9C4", ORANGE], 100)
+    ranked_points = sorted((dataset.get("selling_point_scores") or {}).items(), key=lambda pair: pair[1], reverse=True)[:5]
+    selling_labels = [_text(label, 16) for label, _ in ranked_points]
+    selling_values = [float(value) for _, value in ranked_points]
+    _native_bar_chart(slide, selling_labels, selling_values, 6.88, 1.84, 5.75, 4.12,
+                      [CYAN, CYAN, BLUE, BLUE, BLUE], max(selling_values) * 1.28)
+    gap = metric_values[0] - metric_values[-1]
+    top_two = sum(selling_values[:2])
+    _rect(slide, .68, 6.05, .08, .48, ORANGE, ORANGE)
+    _textbox(slide, "示例解读", .92, 6.08, .88, .25, 9.5, ORANGE, True)
+    _textbox(slide, f"概念漏斗存在 {gap:g}pt 转化落差；排名前两位卖点合计 {top_two:g} 分，应优先验证其组合表达与购买驱动。", 1.8, 6.02, 10.5, .46, 11.2, NAVY, True)
 
 
 def _render_pricing_example(slide, dataset, framework_only=False):
     _example_header(slide)
-    _textbox(slide, "价格—购买意愿曲线", .7, 1.55, 5.8, .35, 15, NAVY, True)
-    _textbox(slide, "机会人群购买意愿", 7.15, 1.55, 5.2, .35, 15, NAVY, True)
+    _textbox(slide, "价格—购买意愿曲线", .62, 1.48, 5.9, .35, 14.5, NAVY, True)
+    _textbox(slide, "机会人群购买意愿", 6.94, 1.48, 5.7, .35, 14.5, NAVY, True)
     if framework_only or not dataset:
         _textbox(slide, "未来将展示不同价格点的购买概率", 1.35, 3.25, 4.7, .6, 14, MUTED, True, PP_ALIGN.CENTER)
         _textbox(slide, "未来将比较机会人群的购买意愿", 7.4, 3.25, 4.7, .6, 14, MUTED, True, PP_ALIGN.CENTER)
         return
-    curve = dataset["pricing"]["purchase_curve"]
+    pricing = dataset.get("pricing") or {}
+    curve = sorted(pricing.get("purchase_curve") or [], key=lambda point: point["price"])
     _native_line_chart(slide, [f"¥{point['price']}" for point in curve],
-                       [point["intention"] for point in curve], 1.0, 1.95, 5.45, 3.85, 70)
-    segments = dataset["segment_purchase_intention"]
-    segment_labels = list(segments.keys())
-    segment_values = list(segments.values())
-    _native_bar_chart(slide, segment_labels, segment_values, 7.08, 1.95, 5.2, 3.85,
+                       [point["intention"] for point in curve], .6, 1.84, 5.96, 3.92, 70, 1)
+    ranked_segments = sorted((dataset.get("segment_purchase_intention") or {}).items(), key=lambda pair: pair[1], reverse=True)[:5]
+    segment_labels = [_text(label, 18) for label, _ in ranked_segments]
+    segment_values = [float(value) for _, value in ranked_segments]
+    _native_bar_chart(slide, segment_labels, segment_values, 6.88, 1.84, 5.75, 3.92,
                       [CYAN, CYAN, BLUE, BLUE], 100, "%")
-    pricing = dataset["pricing"]
-    _textbox(slide, f"测试价位覆盖 ¥{curve[0]['price']}—¥{curve[-1]['price']}｜示例可接受区间 ¥{pricing['acceptable_low']}—¥{pricing['acceptable_high']}｜最优价位 ¥{pricing['optimal_price']}", 1.0, 6.02, 5.7, .42, 9.5, ORANGE, True)
+    key_points = [("可接受下限", pricing["acceptable_low"], NAVY), ("最优价位", pricing["optimal_price"], ORANGE), ("可接受上限", pricing["acceptable_high"], NAVY)]
+    for index, (label, value, color) in enumerate(key_points):
+        x = .72 + index * 1.78
+        _textbox(slide, label, x, 5.91, 1.28, .22, 8.3, ORANGE if index == 1 else MUTED, True, PP_ALIGN.CENTER)
+        _textbox(slide, f"¥{value}", x, 6.15, 1.28, .36, 17.5 if index != 1 else 20, color, True, PP_ALIGN.CENTER)
+        if index < 2: _line(slide, x + 1.32, 6.3, .42, 0, "AABCC9", 1.0)
+    _rect(slide, 6.98, 5.94, .07, .55, CYAN, CYAN)
+    _textbox(slide, "示例解读", 7.24, 5.96, .86, .24, 9.2, CYAN, True)
+    _textbox(slide, f"机会人群购买意愿领先；围绕 ¥{pricing['optimal_price']} 锚点验证溢价，并以 ¥{pricing['acceptable_low']}—¥{pricing['acceptable_high']} 作为可接受区间。", 8.1, 5.9, 4.18, .58, 10.2, NAVY, True)
 
 
 def _render_decision_output(slide, items):
     stages = [("研究指标", "需求、概念、卖点、价格、人群"), ("分析模型", "漏斗、MaxDiff、PSM、驱动、细分"), ("关键发现", "总体规律、差异与关键障碍"), ("业务行动", "产品、价格、人群与营销动作")]
     for index, (label, description) in enumerate(stages):
-        x = .65 + index * 3.0
-        _textbox(slide, f"0{index + 1}  {label}", x, 1.55, 2.65, .38, 14, [BLUE, CYAN, NAVY, ORANGE][index], True)
-        _textbox(slide, description, x, 2.06, 2.65, .7, 10.5, MUTED)
-        if index < 3: _textbox(slide, "→", x + 2.62, 1.72, .35, .3, 14, MUTED, True, PP_ALIGN.CENTER)
-    _textbox(slide, "最终形成七类上市结论", .65, 3.02, 3.2, .35, 13, NAVY, True)
+        x = .68 + index * 3.05
+        _textbox(slide, f"0{index + 1}", x, 1.55, .42, .38, 17, [BLUE, CYAN, NAVY, ORANGE][index], True)
+        _textbox(slide, label, x + .55, 1.57, 1.62, .34, 13.5, NAVY, True)
+        _textbox(slide, description, x, 2.08, 2.62, .55, 10.2, MUTED)
+        if index < 3: _line(slide, x + 2.48, 1.76, .42, 0, "B8C7D2", 1.0, True)
+    band = _rect(slide, .65, 2.88, 12.02, .62, NAVY, NAVY)
+    band.line.fill.background()
+    _textbox(slide, "研究证据最终汇聚为 7 类可执行上市结论", .92, 3.03, 5.6, .28, 13, WHITE, True)
+    _textbox(slide, "从判断到行动", 10.45, 3.04, 1.9, .24, 9.5, "9FD4DA", True, PP_ALIGN.RIGHT)
     for index, item in enumerate(items[:7]):
-        x = .65 + index * 1.73
-        _textbox(slide, str(index + 1).zfill(2), x, 3.62, .35, .28, 10, CYAN, True)
-        _textbox(slide, item["headline"], x, 4.02, 1.5, .62, 12.5, NAVY, True)
-        _textbox(slide, item["description"], x, 4.78, 1.5, 1.25, 9.5, MUTED)
+        x = .65 + index * 1.72
+        accent = ORANGE if index in (4, 6) else (CYAN if index in (2, 5) else BLUE)
+        _rect(slide, x, 3.82, 1.48, .06, accent, accent)
+        _textbox(slide, str(index + 1).zfill(2), x, 4.08, .35, .28, 9.5, accent, True)
+        _textbox(slide, item["headline"], x, 4.48, 1.48, .62, 12.5, NAVY, True)
+        _textbox(slide, item["description"], x, 5.18, 1.48, 1.12, 9.3, MUTED)
+        if index < 6: _line(slide, x + 1.58, 4.12, 0, 1.92, "D7E0E7", .75)
 
 
 def _render_real_gantt(slide, tasks, items):
-    tasks = tasks[:8]; x0, day_w = 3.02, .54; y0, row_h = 1.92, .49
-    _textbox(slide, "阶段", .62, 1.56, 2.15, .28, 10, MUTED, True)
-    for day in range(1, 15): _textbox(slide, f"D{day}", x0 + (day - 1) * day_w, 1.56, day_w, .28, 8.5, MUTED, True, PP_ALIGN.CENTER)
+    clean_tasks = []
+    for task in tasks[:8]:
+        try:
+            start = max(1, min(14, int(task.get("start_day") or 1)))
+            end = max(start, min(14, int(task.get("end_day") or start)))
+        except (TypeError, ValueError):
+            continue
+        clean_tasks.append({**task, "start_day": start, "end_day": end})
+    tasks = clean_tasks
+    x0, day_w = 2.92, .54; y0, row_h = 2.05, .44
+    timeline_w = day_w * 14
+    _textbox(slide, "工作流", .62, 1.55, 1.85, .26, 9.5, MUTED, True)
+    _textbox(slide, "D1", x0, 1.55, .5, .24, 8.5, MUTED, True, PP_ALIGN.CENTER)
+    _textbox(slide, "D5", x0 + day_w * 4, 1.55, .5, .24, 8.5, MUTED, True, PP_ALIGN.CENTER)
+    _textbox(slide, "D10", x0 + day_w * 9, 1.55, .55, .24, 8.5, MUTED, True, PP_ALIGN.CENTER)
+    _textbox(slide, "D14", x0 + day_w * 13, 1.55, .55, .24, 8.5, MUTED, True, PP_ALIGN.CENTER)
+    _textbox(slide, "关键交付", 10.88, 1.55, 1.55, .26, 9.5, MUTED, True)
+    for marker_day in [1, 5, 10, 14]:
+        x = x0 + (marker_day - 1) * day_w + day_w / 2
+        _line(slide, x, 1.86, 0, 3.72, "D8E2EA", .75)
+    # Client gates are semantic milestones, separate from the sparse day guides.
+    for day, _ in [(2, "方案确认"), (5, "工具冻结"), (10, "阶段数据")]:
+        x = x0 + (day - 1) * day_w + day_w / 2
+        _line(slide, x, 1.86, 0, 3.72, "E9A25F", .9)
     for index, task in enumerate(tasks):
         y = y0 + index * row_h
-        _textbox(slide, task.get("task"), .62, y + .05, 2.15, .25, 9.5, NAVY, True)
-        for day in range(1, 15): _rect(slide, x0 + (day - 1) * day_w, y, day_w, .36, "F0F3F6", "E2E8ED")
-        start, end = int(task.get("start_day") or 1), int(task.get("end_day") or 1)
-        _rect(slide, x0 + (start - 1) * day_w + .03, y + .04, (end - start + 1) * day_w - .06, .28, CYAN if index % 2 else BLUE, CYAN if index % 2 else BLUE, True)
-        if task.get("deliverable"): _textbox(slide, task["deliverable"], 10.9, y + .04, 1.55, .25, 8, MUTED)
-    _textbox(slide, "关键交付", 10.9, 1.56, 1.55, .28, 9, MUTED, True)
-    if items:
-        _textbox(slide, "客户确认节点", .65, 6.03, 1.25, .26, 9.5, ORANGE, True)
-        _textbox(slide, "D2 方案｜D5 工具｜D10 阶段数据", 1.95, 6.03, 3.2, .26, 9.5, NAVY, True)
-        _textbox(slide, "风险与依赖", 6.2, 6.03, 1.05, .26, 9.5, ORANGE, True)
-        _textbox(slide, items[-1]["description"], 7.35, 6.03, 5.0, .3, 9, MUTED)
+        if index % 2 == 0:
+            lane = _rect(slide, .58, y - .03, 11.92, .38, "F0F4F7", "F0F4F7")
+            lane.line.fill.background()
+        _textbox(slide, task.get("task"), .66, y + .03, 1.95, .24, 9.3, NAVY, True)
+        start, end = task["start_day"], task["end_day"]
+        bar = _rect(slide, x0 + (start - 1) * day_w + .04, y + .04, (end - start + 1) * day_w - .08, .23,
+                    CYAN if index % 2 else BLUE, CYAN if index % 2 else BLUE)
+        bar.line.fill.background()
+        if task.get("deliverable"):
+            dot = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(10.9), Inches(y + .1), Inches(.1), Inches(.1))
+            dot.fill.solid(); dot.fill.fore_color.rgb = _rgb(ORANGE if index in (0, 2, 7) else CYAN); dot.line.fill.background()
+            _textbox(slide, task["deliverable"], 11.08, y + .02, 1.32, .24, 8.2, MUTED)
+    for day, label in [(2, "方案确认"), (5, "工具冻结"), (10, "阶段数据")]:
+        x = x0 + (day - 1) * day_w + day_w / 2
+        diamond = slide.shapes.add_shape(MSO_SHAPE.DIAMOND, Inches(x - .09), Inches(1.78), Inches(.18), Inches(.18))
+        diamond.fill.solid(); diamond.fill.fore_color.rgb = _rgb(ORANGE); diamond.line.fill.background()
+        _textbox(slide, label, x - .48, 1.39, .96, .2, 7.8, ORANGE, True, PP_ALIGN.CENTER)
+    _line(slide, .66, 5.86, 11.72, 0, "C7D3DC", .8)
+    bottom = [("客户参与", "D2方案确认 · D5工具冻结 · D10阶段数据", BLUE),
+              ("关键交付", "研究方案 · 定性小结 · 数据底表 · 最终报告", CYAN),
+              ("风险控制", items[-1]["description"] if items else "素材变更与确认延迟需前置管理", ORANGE)]
+    for index, (label, value, color) in enumerate(bottom):
+        x = .68 + index * 4.05
+        if index: _line(slide, x - .22, 6.02, 0, .62, "D4DEE6", .8)
+        _textbox(slide, label, x, 6.03, .78, .24, 9, color, True)
+        _textbox(slide, value, x + .82, 5.99, 3.0, .55, 8.8, NAVY if index < 2 else MUTED, index < 2)
 
 
 def render_proposal_deck(deck: dict, output_path: str) -> dict:
