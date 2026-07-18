@@ -419,6 +419,7 @@ function normalizeWorkspaceProject(project = {}) {
     status: { ...(project.status || {}) },
     assets: { ...(project.assets || {}) },
     reportPlans: Array.isArray(project.reportPlans) ? project.reportPlans : [],
+    proposalDecks: Array.isArray(project.proposalDecks) ? project.proposalDecks.slice(0, 20) : [],
     activities: Array.isArray(project.activities) ? project.activities.slice(0, 30) : [],
   };
 }
@@ -555,6 +556,7 @@ function getWorkspaceFormProject() {
     },
     assets: { ...((workspaceProject || {}).assets || {}) },
     reportPlans: Array.isArray(workspaceProject?.reportPlans) ? workspaceProject.reportPlans : [],
+    proposalDecks: Array.isArray(workspaceProject?.proposalDecks) ? workspaceProject.proposalDecks : [],
     activities: Array.isArray(workspaceProject?.activities) ? workspaceProject.activities : [],
   };
 }
@@ -1202,6 +1204,62 @@ async function docxToQuestionnaireText(arrayBuffer) {
   const xml = await readZipText(arrayBuffer, "word/document.xml");
   if (!xml) throw new Error("未识别到 DOCX 正文内容。");
   return docxXmlToText(xml);
+}
+
+function docxParagraphXmlToText(paragraphXml) {
+  const content = String(paragraphXml || "").replace(/<w:pPr\b[\s\S]*?<\/w:pPr>/g, "");
+  return [...content.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<w:tab(?:\s[^>]*)?\/>|<w:(?:br|cr)(?:\s[^>]*)?\/>/g)]
+    .map((match) => match[1] !== undefined
+      ? decodeXmlText(match[1])
+      : /^<w:tab\b/.test(match[0]) ? "\t" : "\n")
+    .join("")
+    .trim();
+}
+
+function docxTableXmlToMarkdown(tableXml) {
+  const rows = [...String(tableXml || "").matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)]
+    .map((rowMatch) => [...rowMatch[0].matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)]
+      .map((cellMatch) => [...cellMatch[0].matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)]
+        .map((paragraphMatch) => docxParagraphXmlToText(paragraphMatch[0]))
+        .filter(Boolean)
+        .join(" / ")
+        .replace(/\|/g, "\\|")
+        .trim()))
+    .filter((row) => row.some(Boolean));
+  if (!rows.length) return "";
+  const width = Math.max(...rows.map((row) => row.length));
+  const normalizedRows = rows.map((row) => Array.from({ length: width }, (_, index) => row[index] || ""));
+  return [
+    `| ${normalizedRows[0].join(" | ")} |`,
+    `| ${Array.from({ length: width }, () => "---").join(" | ")} |`,
+    ...normalizedRows.slice(1).map((row) => `| ${row.join(" | ")} |`)
+  ].join("\n");
+}
+
+function docxXmlToStructuredTemplateText(xml) {
+  const body = String(xml || "").match(/<w:body\b[\s\S]*?<\/w:body>/)?.[0] || String(xml || "");
+  const blocks = [];
+  for (const match of body.matchAll(/<w:(p|tbl)\b[\s\S]*?<\/w:\1>/g)) {
+    if (match[1] === "tbl") {
+      const table = docxTableXmlToMarkdown(match[0]);
+      if (table) blocks.push(table);
+      continue;
+    }
+    const text = docxParagraphXmlToText(match[0]);
+    if (!text) continue;
+    const style = match[0].match(/<w:pStyle[^>]*w:val="([^"]+)"/)?.[1] || "";
+    const isList = /<w:numPr\b/.test(match[0]);
+    const isHeading1 = /(?:Heading1|标题 ?1|Title)/i.test(style) || /^[一二三四五六七八九十]+[、.．]\s*/.test(text);
+    const isHeading2 = /(?:Heading2|标题 ?2)/i.test(style) || /^\d+(?:\.\d+)+[、.．\s]/.test(text);
+    blocks.push(isHeading1 ? `## ${text}` : isHeading2 ? `### ${text}` : isList ? `- ${text}` : text);
+  }
+  return normalizeTemplateText(blocks.join("\n\n"));
+}
+
+async function docxToAiPlanTemplateText(arrayBuffer) {
+  const xml = await readZipText(arrayBuffer, "word/document.xml");
+  if (!xml) throw new Error("未识别到 DOCX 正文内容。");
+  return docxXmlToStructuredTemplateText(xml);
 }
 
 function legacyDocUnsupportedMessage(filename = "该文件") {
@@ -7574,17 +7632,21 @@ function exportAbcScoreResult() {
 
 function getAiPlanConfig() {
   const templateId = document.querySelector("#aiPlanTemplateSelect")?.value || "";
+  const sampleValue = Number(document.querySelector("#aiPlanSampleSize")?.value);
+  const deliverable = document.querySelector("#aiPlanMode")?.value || "word";
   return {
-    project: document.querySelector("#aiPlanContext")?.value.trim() || "未命名调研项目",
+    project: document.querySelector("#aiPlanContext")?.value.trim() || "",
     brief: document.querySelector("#aiPlanInput")?.value.trim() || "",
-    mode: document.querySelector("#aiPlanMode")?.value || "brief",
+    deliverable,
+    mode: "detailed",
     templateMode: document.querySelector("#aiPlanTemplateMode")?.value || "none",
     template: aiPlanTemplates.find((template) => template.id === templateId) || null,
     studyType: document.querySelector("#aiPlanStudyType")?.value || "concept",
-    audience: document.querySelector("#aiPlanAudience")?.value.trim() || "目标品类潜在或现有用户",
-    sampleSize: Number(document.querySelector("#aiPlanSampleSize")?.value) || Number(document.querySelector("#workspaceSampleTarget")?.value) || 400,
-    timeline: document.querySelector("#aiPlanTimeline")?.value.trim() || "建议 2-3 周完成",
-    constraints: document.querySelector("#aiPlanConstraints")?.value.trim() || "暂无特殊限制"
+    additionalModules: getCheckedMultiselectValues("#aiPlanAdditionalModules", []),
+    audience: document.querySelector("#aiPlanAudience")?.value.trim() || "",
+    sampleSize: Number.isFinite(sampleValue) && sampleValue > 0 ? sampleValue : null,
+    timeline: document.querySelector("#aiPlanTimeline")?.value.trim() || "",
+    constraints: document.querySelector("#aiPlanConstraints")?.value.trim() || ""
   };
 }
 
@@ -7598,6 +7660,24 @@ function aiPlanStudyTypeName(type) {
     kano: "KANO 功能需求",
     custom: "综合研究"
   }[type] || "综合研究";
+}
+
+function aiPlanProjectName(config = {}) {
+  return String(config.project || "").trim() || "待命名调研项目";
+}
+
+const aiPlanAdditionalModuleLabels = {
+  pricing: "价格接受度 / PSM",
+  kano: "功能优先级 / KANO",
+  segmentation: "人群细分与画像",
+  competitor: "竞品对标",
+  conversion: "购买转化与阻碍",
+  channel: "渠道与传播",
+  nps: "满意度 / NPS"
+};
+
+function aiPlanAdditionalModuleNames(modules = []) {
+  return modules.map((module) => aiPlanAdditionalModuleLabels[module] || module);
 }
 
 function aiPlanTemplateStorageKey() {
@@ -7627,7 +7707,7 @@ async function pptxToTemplateText(arrayBuffer) {
 async function aiPlanTemplateFileToText(file) {
   const raw = await file.arrayBuffer();
   if (/\.doc$/i.test(file.name)) throw new Error(legacyDocUnsupportedMessage(file.name));
-  if (/\.docx$/i.test(file.name)) return docxToQuestionnaireText(raw);
+  if (/\.docx$/i.test(file.name)) return docxToAiPlanTemplateText(raw);
   if (/\.pptx$/i.test(file.name)) return pptxToTemplateText(raw);
   return normalizeTemplateText(await file.text());
 }
@@ -7690,11 +7770,39 @@ function extractTemplateStyleFingerprint(text, sections) {
   };
 }
 
+function extractTemplateGranularity(text, sections) {
+  const lines = normalizeTemplateText(text).split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const details = sections.slice(0, 24).map((section, index) => {
+    const start = Math.max(0, section.line);
+    const end = sections[index + 1] ? Math.max(start, sections[index + 1].line - 1) : lines.length;
+    const body = lines.slice(start, end);
+    const bullets = body.filter((line) => /^[-*•]\s+/.test(line)).length;
+    const tableRows = body.filter((line) => /^\|.*\|$/.test(line) && !/^\|\s*(?:---\s*\|)+$/.test(line)).length;
+    const childHeadings = body.filter((line) => /^#{2,4}\s+/.test(line)).length;
+    const paragraphs = body.filter((line) => !/^[-*•#|]/.test(line) && line.length >= 10).length;
+    return {
+      title: section.title,
+      bullets,
+      tableRows,
+      childHeadings,
+      contentUnits: bullets + tableRows + paragraphs,
+      sample: body.filter((line) => !/^\|\s*(?:---\s*\|)+$/.test(line)).slice(0, 12).join("\n").slice(0, 1200)
+    };
+  });
+  return {
+    sections: details,
+    totalBullets: lines.filter((line) => /^[-*•]\s+/.test(line)).length,
+    totalTableRows: lines.filter((line) => /^\|.*\|$/.test(line) && !/^\|\s*(?:---\s*\|)+$/.test(line)).length,
+    totalContentUnits: details.reduce((sum, section) => sum + section.contentUnits, 0)
+  };
+}
+
 function analyzeAiPlanTemplate(text, filename) {
   const normalized = normalizeTemplateText(text);
   const sections = inferTemplateSections(normalized);
   const examples = extractTemplateExamples(normalized, sections);
   const style = extractTemplateStyleFingerprint(normalized, sections);
+  const granularity = extractTemplateGranularity(normalized, sections);
   return {
     id: `tpl_${Date.now()}_${Math.random().toString(16).slice(2)}`,
     name: filename.replace(/\.(docx|pptx|md|txt)$/i, ""),
@@ -7703,7 +7811,8 @@ function analyzeAiPlanTemplate(text, filename) {
     sections,
     examples,
     style,
-    rawSummary: normalized.slice(0, 5000)
+    granularity,
+    rawSummary: normalized.slice(0, 16000)
   };
 }
 
@@ -7746,9 +7855,11 @@ function renderAiPlanTemplatePreview() {
   }
   const sectionText = template.sections.slice(0, 8).map((section) => section.title).join(" / ") || "未识别到明确章节";
   const styleText = template.style.tone.join("；");
+  const granularity = template.granularity || extractTemplateGranularity(template.rawSummary || "", template.sections || []);
   preview.innerHTML = `
     <strong>${escapeHtml(template.name)} · ${escapeHtml({ structure: "结构模式", style: "风格模式", hybrid: "混合模式" }[mode] || "模板模式")}</strong>
     <span>章节：${escapeHtml(sectionText)}</span>
+    <span>颗粒度：${granularity.sections.length} 个章节 · ${granularity.totalBullets} 条要点 · ${granularity.totalTableRows} 行表格</span>
     <span>风格：${escapeHtml(styleText)}</span>
   `;
 }
@@ -7761,9 +7872,16 @@ function buildAiPlanTemplatePromptBlock(config) {
     ? template.sections.map((section, index) => `${index + 1}. ${"  ".repeat(Math.max(0, section.level - 1))}${section.title}`).join("\n")
     : "未识别到明确章节，请仅参考模板示例的写法和内容深度。";
   const style = template.style;
-  const exampleLines = template.examples.slice(0, config.templateMode === "hybrid" ? 8 : 5)
+  const granularity = template.granularity || extractTemplateGranularity(template.rawSummary || "", template.sections || []);
+  const granularityLines = granularity.sections.length
+    ? granularity.sections.map((section) => `- ${section.title}：约 ${section.contentUnits} 个内容单元，${section.bullets} 条要点，${section.tableRows} 行表格，${section.childHeadings} 个子标题`).join("\n")
+    : "未识别到稳定的章节颗粒度。";
+  const exampleLines = template.examples.slice(0, config.templateMode === "hybrid" ? 16 : 5)
     .map((example) => `【${example.section}】${example.sample}`)
     .join("\n");
+  const hybridExcerpt = config.templateMode === "hybrid"
+    ? ["", "## 模板原文节选（作为交付规格理解，不得照抄原项目实体）", (template.rawSummary || "").slice(0, 12000)].join("\n")
+    : "";
   return [
     "【方案模板参考】",
     `模板名称：${template.name}`,
@@ -7771,6 +7889,9 @@ function buildAiPlanTemplatePromptBlock(config) {
     "",
     "## 模板结构（按需遵循）",
     sectionLines,
+    "",
+    "## 模板章节颗粒度",
+    granularityLines,
     "",
     "## 模板风格特征",
     `- 章节标题习惯：${style.headingHabits.slice(0, 10).join(" / ") || "未识别到明显标题习惯"}`,
@@ -7780,13 +7901,23 @@ function buildAiPlanTemplatePromptBlock(config) {
     "",
     "## 模板内容示例（用于理解写作深度，不要机械照抄）",
     exampleLines || "未提取到典型段落。",
+    hybridExcerpt,
     "",
     "## 模板适配要求",
     config.templateMode === "structure"
       ? "请优先遵循模板的章节顺序和层级关系；内容必须根据新项目重新生成，不要复用模板原项目内容。"
       : config.templateMode === "style"
         ? "请在遵循模板结构基础上，模仿模板的标题习惯、措辞风格、术语体系、段落长度和洞察表达方式；内容必须根据新项目重新生成。"
-        : "请遵循模板结构和风格；执行流程、质量控制、交付物等通用章节可以参考模板写法进行改写复用，但项目背景、研究目标、样本与研究内容必须根据新项目重新生成。"
+        : [
+          "混合模式下，模板是本次交付规格，不是可选参考。",
+          "1. 保留模板的一级章节顺序、标题句式和主要子层级；不要替换为通用六章式方案。",
+          "2. 逐章匹配模板颗粒度：要点层级、表格数量、列名/字段类型和内容单元数量原则上与模板接近（允许因新项目增减 1 个必要单元）。",
+          "3. 模板使用短句、分层要点或配额/排期表时，生成结果也使用同类表达，不要扩写成泛化的长篇分析模型说明。",
+          "4. 项目背景、目标人群、样本数字、品类、产品、品牌、日期和研究内容必须全部替换为新项目内容；不得残留模板原项目实体。",
+          "5. 执行流程、质量控制和交付物可沿用模板写法，但必须结合新项目改写。",
+          "6. 若模板与后续通用输出规则冲突，以模板的结构、颗粒度和表达方式为最高优先级；通用规则只补足模板缺失的信息。",
+          "7. 输出前自检：章节是否一一对应、颗粒度是否接近、表格是否保留、是否存在旧项目残留。"
+        ].join("\n")
   ].join("\n");
 }
 
@@ -7958,7 +8089,7 @@ async function importAiQuestionnaireTemplateFile(file) {
   showButtonSaved(document.querySelector("#importAiQuestionnaireTemplate"), "已导入");
 }
 
-function aiPlanModules(type) {
+function aiPlanModules(type, additionalModules = []) {
   const common = ["样本甄别与配额确认", "品类/场景使用行为", "需求痛点与选择驱动", "人群画像与背景信息"];
   const map = {
     concept: ["概念理解度", "概念独特性与相关性", "概念吸引力", "购买意愿与使用场景", "卖点/利益点偏好", "价格与上市建议"],
@@ -7969,7 +8100,17 @@ function aiPlanModules(type) {
     kano: ["需求/功能清单梳理", "KANO 属性分类", "重要度与满意度联动", "功能优先级与资源投入建议"],
     custom: ["市场与用户现状诊断", "核心业务假设验证", "关键指标体系", "策略机会与行动建议"]
   };
-  return [...common, ...(map[type] || map.custom)];
+  const additionalMap = {
+    pricing: ["价格认知与当前支付水平", "价格敏感度/PSM", "不同价格点购买意愿", "价格策略建议"],
+    kano: ["需求/功能清单梳理", "KANO 属性分类", "功能优先级与资源投入建议"],
+    segmentation: ["人群细分变量设计", "核心人群画像", "细分人群需求与策略差异"],
+    competitor: ["竞品认知与使用关系", "竞品表现对标", "差异化机会识别"],
+    conversion: ["购买意愿与转化路径", "购买阻碍与流失原因", "转化提升机会"],
+    channel: ["购买渠道与触点", "信息来源与传播内容", "渠道/传播优先级"],
+    nps: ["整体满意度与 NPS/NSS", "推荐/贬损原因", "体验改善优先级"]
+  };
+  const additions = additionalModules.flatMap((module) => additionalMap[module] || []);
+  return [...new Set([...common, ...(map[type] || map.custom), ...additions])];
 }
 
 function aiPlanPrimaryFramework(type) {
@@ -8017,9 +8158,12 @@ function aiPlanPrimaryFramework(type) {
 }
 
 function buildDetailedAiResearchPlan(config) {
-  const modules = aiPlanModules(config.studyType);
+  const modules = aiPlanModules(config.studyType, config.additionalModules);
   const framework = aiPlanPrimaryFramework(config.studyType);
-  const recommendedSample = Math.max(300, config.sampleSize);
+  const recommendedSample = Math.max(300, config.sampleSize || 400);
+  const audience = config.audience || "待确认；建议根据业务背景推导甄别条件并由项目方确认";
+  const timeline = config.timeline || "待确认；可按常规 2-3 周排期估算";
+  const constraints = config.constraints || "暂无；如有预算、地区、样本或交付限制请补充";
   const moduleRows = modules.map((module) => {
     const purpose = /甄别|配额/.test(module)
       ? "确认受访者资格与关键分群口径"
@@ -8068,7 +8212,7 @@ function buildDetailedAiResearchPlan(config) {
     return `| ${module} | ${purpose} | ${indicators} | ${questions} | ${output} |`;
   });
   return [
-    `# ${config.project} 详细调研方案`,
+    `# ${aiPlanProjectName(config)} 详细调研方案`,
     "",
     "## 目录",
     "1. 项目背景及目的",
@@ -8114,7 +8258,7 @@ function buildDetailedAiResearchPlan(config) {
     "| 策略输出 | 目标人群、产品优化、价格建议、传播内容、渠道优先级 | 指导后续产品、营销和上市动作 |",
     "",
     "### 2.3 调查对象与样本条件",
-    `- 目标人群：${config.audience}`,
+    `- 目标人群：${audience}`,
     `- 建议有效样本量：N=${recommendedSample}`,
     "- 样本条件：建议明确年龄、城市、品类购买/使用经历、决策角色和排除条件。",
     "- 配额建议：按城市级别、年龄、性别、用户类型、品牌关系或购买频率设置关键配额。",
@@ -8193,7 +8337,7 @@ function buildDetailedAiResearchPlan(config) {
     "- 输出完整报告、数据表、清洗规则、问卷和必要的附录材料。",
     "",
     "## 05 项目时间进度",
-    `- 当前周期要求：${config.timeline}`,
+    `- 当前周期要求：${timeline}`,
     "| 阶段 | 建议周期 | 关键动作 |",
     "|---|---|---|",
     "| 项目启动 | 1-2 天 | 明确需求、样本、方法、交付物 |",
@@ -8203,19 +8347,22 @@ function buildDetailedAiResearchPlan(config) {
     "| 分析报告 | 3-7 天 | 洞察提炼、报告撰写、汇报材料 |",
     "",
     "## 06 风险与待确认事项",
-    `- 特殊要求：${config.constraints}`,
+    `- 特殊要求：${constraints}`,
     "- 需确认竞品/品牌/产品清单、样本可达性、预算限制和最终交付深度。",
     "- 若详细方案用于对客提案，建议补充案例页、团队分工、报价或商务条款。"
   ].join("\n");
 }
 
 function buildBriefAiResearchPlan(config) {
-  const recommendedSample = Math.max(300, config.sampleSize);
+  const recommendedSample = Math.max(300, config.sampleSize || 400);
   const framework = aiPlanPrimaryFramework(config.studyType);
-  const modules = aiPlanModules(config.studyType);
+  const modules = aiPlanModules(config.studyType, config.additionalModules);
+  const audience = config.audience || "待确认；建议根据业务背景推导甄别条件并由项目方确认";
+  const timeline = config.timeline || "待确认；可按常规 2-3 周排期估算";
+  const constraints = config.constraints || "暂无；如有预算、地区、样本或交付限制请补充";
   const groups = recommendedSample >= 600 ? "建议按核心人群/城市级别/新老用户做交叉配额" : "建议控制 2-3 个关键配额维度，避免样本被切得过碎";
   return [
-    `${config.project} 调研方案`,
+    `${aiPlanProjectName(config)} 调研方案`,
     "",
     "## 1. 项目背景与目的",
     config.brief || "当前尚未填写详细需求。建议补充业务背景、决策场景、目标产品/品牌、需要验证的假设和计划使用结果的业务动作。",
@@ -8223,7 +8370,7 @@ function buildBriefAiResearchPlan(config) {
     `本项目建议围绕「${framework.name}」展开，核心目标是识别目标人群的真实行为、态度认知、需求痛点、购买转化阻碍和策略机会，为后续产品、品牌、传播或运营动作提供依据。`,
     "",
     "## 2. 研究设计与方法",
-    `- 目标人群：${config.audience}`,
+    `- 目标人群：${audience}`,
     `- 建议有效样本量：N=${recommendedSample}`,
     `- 配额建议：${groups}。可优先考虑性别、年龄、城市级别、用户类型、购买/使用频率等维度。`,
     "- 研究方法：以线上定量问卷为主，必要时补充定性访谈/座谈，用于理解原因、语言表达和策略启发。",
@@ -8249,10 +8396,10 @@ function buildBriefAiResearchPlan(config) {
     "- 问卷上线前需检查跳题、排他项、随机/轮换、开放题说明和题号一致性。",
     "- 数据清洗建议包含答题时长、直线作答、注意力检测、逻辑矛盾、开放题质量等规则。",
     "- 如果样本结构与目标人群差异较大，建议使用 RIM 或 Cell 加权进行校准。",
-    "- 特殊要求：" + config.constraints,
+    "- 特殊要求：" + constraints,
     "",
     "## 5. 项目周期",
-    `- 当前周期要求：${config.timeline}`,
+    `- 当前周期要求：${timeline}`,
     "- 建议排期：方案确认 1-2 天，问卷设计与质检 2-3 天，数据回收 3-7 天，清洗制表 1-2 天，报告分析 3-5 天。",
     "- 下一步建议：确认研究目标、样本条件和核心分析框架后，进入样本量计算、配额设计和 AI 问卷设计。"
   ].join("\n");
@@ -8264,6 +8411,12 @@ function buildLocalAiResearchPlan(config = getAiPlanConfig()) {
 function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = buildLocalAiResearchPlan(config)) {
   const framework = aiPlanPrimaryFramework(config.studyType);
   const templateBlock = buildAiPlanTemplatePromptBlock(config);
+  const additionalModuleNames = aiPlanAdditionalModuleNames(config.additionalModules);
+  const audience = config.audience || "未填写；请根据业务背景推导，并将关键甄别条件标记为待确认";
+  const sampleSize = config.sampleSize ? `N=${config.sampleSize}` : "未填写；请给出建议值并说明依据";
+  const timeline = config.timeline || "未填写；请给出合理排期建议";
+  const constraints = config.constraints || "未填写；不要自行虚构硬性限制";
+  const project = config.project || "未填写；请根据业务背景拟定一个简洁、准确的项目名称";
   return [
     {
       role: "system",
@@ -8273,53 +8426,55 @@ function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = build
         "方案必须使用主流市场研究框架，例如 U&A、品牌健康度、概念吸引力、购买转化、满意度/NPS、价格策略、关键驱动分析、分群画像等。",
         "不要机械套用当前工具已有的 PSM/KANO/MaxDiff/ABC；只有当业务问题明确需要价格、功能优先级、相对偏好或用户价值分层时，才把这些作为专项模块。",
         "方案要专业、具体、可落地，覆盖研究背景、目标、核心问题、样本方案、配额建议、问卷模块、分析框架、质量控制、项目排期和交付物。不要泛泛而谈。",
-        "如果用户提供了方案模板参考，必须优先遵循模板的章节顺序、标题习惯、内容深度、措辞风格和术语体系；模板是写法规范，不是内容来源，新项目背景和研究内容必须重新生成。"
+        "如果用户提供了方案模板参考，必须优先遵循模板的章节顺序、标题习惯、内容深度、措辞风格和术语体系；模板是写法规范，不是内容来源，新项目背景和研究内容必须重新生成。混合模式下模板属于最高优先级交付规格，通用方案规则不得覆盖模板颗粒度。"
       ].join("")
     },
     {
       role: "user",
       content: [
-        `项目名称/场景：${config.project}`,
+        `项目名称/场景：${project}`,
         `方案模式：${config.mode === "detailed" ? "详细方案，需覆盖完整研究方案结构" : "简要方案，需适合导出Word"}`,
-        `研究类型：${aiPlanStudyTypeName(config.studyType)}`,
+        `核心研究模块（单选主线）：${aiPlanStudyTypeName(config.studyType)}`,
+        `附加研究模块（仅补充专项）：${additionalModuleNames.join("、") || "未选择"}`,
         `建议主框架：${framework.name}`,
         `建议分析模型：${framework.models.join("、")}`,
-        `目标人群：${config.audience}`,
-        `建议样本量：${config.sampleSize}`,
-        `项目周期：${config.timeline}`,
-        `特殊要求：${config.constraints}`,
+        `目标人群：${audience}`,
+        `建议样本量：${sampleSize}`,
+        `项目周期：${timeline}`,
+        `特殊要求：${constraints}`,
         "",
         "用户需求：",
         config.brief || "用户暂未填写详细需求，请基于输入字段生成一版通用但可执行的方案。",
         "",
         templateBlock,
         templateBlock ? "" : "",
-        "详细方案必须细化到以下层级：",
-        "1. 项目背景与业务问题：说明为什么要做、要回答什么决策问题。",
-        "2. 研究目标与核心假设：每个目标对应可验证的问题和指标。",
-        "3. 研究设计：目标人群、样本条件、样本量、配额、研究方法、执行方式。",
-        "4. 研究内容：按问卷模块展开，必须逐模块写清模块目的、核心指标、建议题目方向、样本/配额注意点、预期图表或输出价值。",
-        "5. 分析框架：针对每个研究目标展开分析思路，聚焦「回答什么业务问题→看什么数据→得出什么结论」的逻辑链，包含：\n",
-        "   - 核心问题：该框架要回答的关键业务决策问题。\n",
-        "   - 分析思路：从哪些角度切入分析（如认知→态度→行为的漏斗逻辑、人群差异对比、驱动因素拆解等），说明分析路径而非罗列统计方法。\n",
-        "   - 关键指标：该框架关注的核心指标（如渗透率、NPS、Top2Box、转换率等），不需要列出所有统计检验方法。\n",
-        "   - 预期结论：说明该框架预期能得出什么类型的结论和建议。\n",
-        "   - 按研究目标分模块展开，每个框架 100-150 字，聚焦策略层面的分析逻辑，不要细化到具体统计操作。",
-        "6. 质量控制：上线前质检、回收监控、数据清洗、开放题编码、加权和交叉分析口径。",
-        "7. 交付物与时间计划：明确每个阶段产出。",
-        "",
-        "详细方案输出要求：",
-        "- 不能只输出目录或原则性描述，每个核心模块至少包含 3-5 条具体研究问题或题目方向。",
-        "- 必须包含至少 2 张 Markdown 表格：\n",
-        "  1) 研究目标 x 核心指标 x 预期结论的框架概览表\n",
-        "  2) 样本配额建议表\n",
-        "- 分析框架部分按研究目标分模块展开，每个框架聚焦核心问题、分析思路、关键指标和预期结论，保持策略层面的简洁，不要细化到具体统计检验方法。\n",
-        "- 需要包含问卷模块建议、分析模型建议、质量控制规则和最终交付清单。",
-        "- 不要把 PSM/KANO/MaxDiff/ABC 作为默认堆叠模型；除非用户明确需要，否则优先使用 U&A、品牌健康度、概念吸引力、购买转化、关键驱动等主流模型。",
-        "- 方案字数不少于 2500 字，分析框架部分不少于 500 字。",
-        "",
-        "可参考但不要机械照抄的本地方案框架：",
-        localPlan
+        ...(config.templateMode === "hybrid"
+          ? [
+            "混合模式生成要求：",
+            "- 严格按模板章节和每章内容单元生成；模板有表格则保留同用途、同字段类型的表格。",
+            "- 不强制扩写为通用详细方案，不强制达到固定字数，也不额外堆叠模板没有的分析框架章节。",
+            "- 核心研究模块决定内容主线，附加模块只嵌入模板中最合适的位置，不得破坏模板结构。",
+            "- 模板缺少但项目执行必需的信息，可在对应章节内精简补足，不另起大段通用章节。"
+          ]
+          : [
+            "详细方案必须细化到以下层级：",
+            "1. 项目背景与业务问题：说明为什么要做、要回答什么决策问题。",
+            "2. 研究目标与核心假设：每个目标对应可验证的问题和指标。",
+            "3. 研究设计：目标人群、样本条件、样本量、配额、研究方法、执行方式。",
+            "4. 研究内容：按问卷模块展开，必须逐模块写清模块目的、核心指标、建议题目方向、样本/配额注意点、预期图表或输出价值。",
+            "5. 分析框架：针对每个研究目标展开分析思路，聚焦「回答什么业务问题→看什么数据→得出什么结论」的逻辑链。",
+            "6. 质量控制：上线前质检、回收监控、数据清洗、开放题编码、加权和交叉分析口径。",
+            "7. 交付物与时间计划：明确每个阶段产出。",
+            "",
+            "详细方案输出要求：",
+            "- 不能只输出目录或原则性描述，每个核心模块至少包含 3-5 条具体研究问题或题目方向。",
+            "- 必须包含研究框架概览表和样本配额建议表。",
+            "- 不要把 PSM/KANO/MaxDiff/ABC 作为默认堆叠模型；仅在核心或附加模块明确选择时加入。",
+            "- 方案字数不少于 2500 字，分析框架部分不少于 500 字。",
+            "",
+            "可参考但不要机械照抄的本地方案框架：",
+            localPlan
+          ])
       ].join("\n")
     }
   ];
@@ -8379,12 +8534,21 @@ async function generateAiPlan() {
   const result = document.querySelector("#aiPlanResults");
   const settings = loadAiSettings();
   const config = getAiPlanConfig();
+  const wantsWord = config.deliverable !== "ppt";
+  const wantsPpt = config.deliverable !== "word";
+  const missing = [];
+  if (!config.brief) missing.push({ label: "用户需求 / 业务背景", selector: "#aiPlanInput" });
+  if (missing.length) {
+    result.innerHTML = `<div class="empty-state"><strong>请先填写必填项</strong><span>还缺少：${missing.map((item) => escapeHtml(item.label)).join("、")}</span></div>`;
+    document.querySelector(missing[0].selector)?.focus();
+    return;
+  }
   const localPlan = buildLocalAiResearchPlan(config);
   const steps = [
     { title: "解析业务需求", detail: config.template && config.templateMode !== "none" ? `整理项目背景，并带入模板「${config.template.name}」的结构与风格。` : "整理项目背景、研究类型、目标人群、样本量和约束条件。" },
     { title: "搭建方案框架", detail: "生成研究目标、核心问题、方法路径、方案章节与研究模块。" },
     { title: "校验模型设置", detail: settings.mode === "local" || !settings.apiKey ? "未填写前端 Key，将通过后端代理调用平台内置模型。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"} 优化方案。` },
-    { title: "生成可交付方案", detail: "输出可复制、可导出、可同步到项目档案的方案文本。" }
+    { title: "生成可交付方案", detail: wantsPpt ? "生成 Word 方案内容源，并进一步规划 Deck JSON 与可编辑 PPT。" : "输出可复制、可导出、可同步到项目档案的方案文本。" }
   ];
   renderAiProgress(result, steps, 0, "", "正在生成调研方案");
   let output = localPlan;
@@ -8395,7 +8559,8 @@ async function generateAiPlan() {
     if (!errors.length) {
       try {
         renderAiProgress(result, steps, 2, "正在让大模型把需求改写为完整调研方案。", "正在生成调研方案");
-        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config, localPlan), { maxTokens: config.mode === "detailed" ? 12000 : 5000 });
+        const maxTokens = config.templateMode === "hybrid" && config.mode === "detailed" ? 16000 : config.mode === "detailed" ? 12000 : 5000;
+        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config, localPlan), { maxTokens });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output = `${localPlan}\n\n---\n\n> 大模型调用失败，已回退为本地方案框架。错误信息：${error.message}`;
@@ -8409,12 +8574,19 @@ async function generateAiPlan() {
   renderAiProgress(result, steps, 3, "", "正在生成调研方案");
   output = sanitizeAiPlanOutput(output);
   lastAiPlan = output;
-  document.querySelector("#copyAiPlan").disabled = false;
-  document.querySelector("#exportAiPlanMd").disabled = false;
-  document.querySelector("#exportAiPlanWord").disabled = false;
+  document.querySelector("#copyAiPlan").disabled = !wantsWord;
+  document.querySelector("#exportAiPlanMd").disabled = !wantsWord;
+  document.querySelector("#exportAiPlanWord").disabled = !wantsWord;
   document.querySelector("#applyAiPlanToProject").disabled = false;
   document.querySelector("#reviseAiPlan").disabled = false;
-  renderAiPlanOutput(output, source);
+  if (wantsWord) {
+    renderAiPlanOutput(output, source);
+  } else {
+    result.innerHTML = `<article class="audit-issue"><div class="issue-head"><strong>PPT 内容源已准备</strong><span class="issue-tag low">Planner</span></div><p>正在基于项目 Brief 与研究方案内容规划 PPT 故事线和 Deck JSON。</p></article>`;
+  }
+  if (wantsPpt && window.ProposalDeck?.generate) {
+    await window.ProposalDeck.generate(undefined, output);
+  }
 }
 
 function buildAiPlanRevisionPrompt(instruction, currentDraft) {
@@ -8505,7 +8677,7 @@ function exportAiPlanWord() {
 function exportAiPlanPpt() {
   if (!lastAiPlan) return;
   const config = getAiPlanConfig();
-  downloadBlob("AI详细调研方案.pptx", createPptxBlob(lastAiPlan, config.project));
+  downloadBlob("AI详细调研方案.pptx", createPptxBlob(lastAiPlan, aiPlanProjectName(config)));
 }
 
 function applyAiPlanToProject() {
@@ -8515,7 +8687,7 @@ function applyAiPlanToProject() {
   const studyType = document.querySelector("#workspaceStudyType");
   const sampleTarget = document.querySelector("#workspaceSampleTarget");
   const questionnaire = document.querySelector("#workspaceQuestionnaire");
-  if (projectName && (!projectName.value.trim() || projectName.value === "未命名调研项目")) projectName.value = config.project;
+  if (projectName && (!projectName.value.trim() || projectName.value === "未命名调研项目")) projectName.value = aiPlanProjectName(config);
   if (studyType) studyType.value = aiPlanStudyTypeName(config.studyType);
   if (sampleTarget && config.sampleSize) sampleTarget.value = config.sampleSize;
   if (questionnaire) {
@@ -13718,9 +13890,31 @@ function initMultiselectDropdown() {
   };
   initCheckboxMultiselect(document.querySelector("#aiReportProjectType"), reportLabels, "请选择项目类型");
   initCheckboxMultiselect(document.querySelector("#aiStudyType"), aiStudyTypeLabels, "请选择研究类型");
+  initCheckboxMultiselect(document.querySelector("#aiPlanAdditionalModules"), aiPlanAdditionalModuleLabels, "不添加");
 }
 
 initMultiselectDropdown();
+
+function syncAiPlanAdditionalModules() {
+  const core = document.querySelector("#aiPlanStudyType")?.value || "concept";
+  const dropdown = document.querySelector("#aiPlanAdditionalModules");
+  if (!dropdown) return;
+  dropdown.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+    const duplicate = checkbox.value === core;
+    checkbox.disabled = duplicate;
+    if (duplicate) checkbox.checked = false;
+    checkbox.closest(".multiselect-option")?.classList.toggle("disabled", duplicate);
+  });
+  setCheckedMultiselectValues(
+    "#aiPlanAdditionalModules",
+    getCheckedMultiselectValues("#aiPlanAdditionalModules", []),
+    aiPlanAdditionalModuleLabels,
+    "不添加"
+  );
+}
+
+document.querySelector("#aiPlanStudyType")?.addEventListener("change", syncAiPlanAdditionalModules);
+syncAiPlanAdditionalModules();
 
 // AI 报告按钮（交叉表页面和独立页面共用）
 document.querySelectorAll("#generateAiReport").forEach((btn) => btn.addEventListener("click", generateAiReport));
@@ -13817,12 +14011,20 @@ document.querySelector("#reviseAiPlan").addEventListener("click", reviseAiPlan);
 document.querySelector("#loadAiPlanExample").addEventListener("click", () => {
   document.querySelector("#aiPlanInput").value = "调研目的：某智能硬件企业计划推出一款面向城市养宠家庭的智能宠物饮水机，核心功能包括多重过滤、水质监测、远程提醒和静音运行。当前已有产品原型，需要通过消费者调研验证核心需求、功能偏好、价格接受度和购买渠道，为产品迭代、目标人群定位及上市传播策略提供数据支持。";
   document.querySelector("#aiPlanContext").value = "智能宠物饮水机新品概念测试";
-  document.querySelector("#aiPlanMode").value = "detailed";
+  document.querySelector("#aiPlanMode").value = "both";
+  document.querySelector("#aiPlanMode").dispatchEvent(new Event("change"));
   document.querySelector("#aiPlanStudyType").value = "concept";
-  document.querySelector("#aiPlanAudience").value = "18-45岁，近3个月购买过牛奶/乳制品的消费者";
-  document.querySelector("#aiPlanSampleSize").value = 1000;
+  document.querySelector("#aiPlanAudience").value = "18-50岁，家中饲养猫或狗，且本人参与宠物用品或饮水设备购买决策的城市消费者";
+  document.querySelector("#aiPlanSampleSize").value = 700;
   document.querySelector("#aiPlanTimeline").value = "2周内完成问卷、回收、清洗和初步报告";
-  document.querySelector("#aiPlanConstraints").value = "需要包含概念吸引力、卖点偏好、购买意愿、价格接受度、目标人群分层和营销建议。";
+  document.querySelector("#aiPlanConstraints").value = "需区分现有宠物饮水设备用户与潜在用户，并输出产品迭代和上市建议。";
+  setCheckedMultiselectValues(
+    "#aiPlanAdditionalModules",
+    ["pricing", "segmentation", "conversion", "channel"],
+    aiPlanAdditionalModuleLabels,
+    "不添加"
+  );
+  syncAiPlanAdditionalModules();
 });
 
 document.querySelector("#generateAiBrief").addEventListener("click", renderAiBrief);

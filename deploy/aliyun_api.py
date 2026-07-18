@@ -54,6 +54,7 @@ from pptx_report.cli import _collect_segments
 from pptx_report.build_jd_report import parse_crosstab
 from pptx_report.wizard import build_insight_context, build_page_plan, run_wizard
 from pptx_report.template import analyze_template
+from pptx_report.proposal_deck import DeckValidationError, audit_deck, render_proposal_deck
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 REQUEST_ENVELOPE_MAGIC = b"SKPPTX1\n"
@@ -166,6 +167,75 @@ def delete_template(template_id: str):
 @app.get("/healthz")
 def healthz():
     return {"ok": True, "service": "pptx-report"}
+
+
+def _proposal_project_guard(request: Request, deck: dict) -> JSONResponse | None:
+    """Project-scoped guard used until SurveyKit adds a real login backend."""
+    header_project = str(request.headers.get("X-Project-Id") or "").strip()
+    deck_project = str(deck.get("project_id") or "").strip()
+    if not header_project or not deck_project or header_project != deck_project:
+        return JSONResponse(
+            {"error": {"message": "无权访问该项目的 PPT 方案。"}},
+            status_code=403,
+            headers={"Cache-Control": "no-store"},
+        )
+    return None
+
+
+@app.post("/api/pptx-report/proposal-deck/validate")
+async def validate_proposal_deck(request: Request):
+    try:
+        deck = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"error": {"message": "Deck JSON 格式无效。"}}, status_code=400)
+    guard = _proposal_project_guard(request, deck if isinstance(deck, dict) else {})
+    if guard:
+        return guard
+    try:
+        return JSONResponse(audit_deck(deck), headers={"Cache-Control": "no-store"})
+    except DeckValidationError as exc:
+        return JSONResponse({"error": {"message": str(exc)}}, status_code=400)
+
+
+@app.post("/api/pptx-report/proposal-deck")
+async def generate_proposal_deck(request: Request):
+    try:
+        deck = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"error": {"message": "Deck JSON 格式无效。"}}, status_code=400)
+    guard = _proposal_project_guard(request, deck if isinstance(deck, dict) else {})
+    if guard:
+        return guard
+    tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
+    tmp_out.close()
+    try:
+        audit = render_proposal_deck(deck, tmp_out.name)
+        if not audit.get("ok"):
+            return JSONResponse(
+                {"error": {"message": "Deck JSON 未通过质量检查。", "issues": audit.get("issues", [])}},
+                status_code=400,
+            )
+        content = Path(tmp_out.name).read_bytes()
+        filename = _safe_title(audit["deck"].get("title") or "AI调研方案") + ".pptx"
+        utf8_name = quote(filename.encode("utf-8"))
+        return Response(
+            content,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={
+                "Content-Disposition": f'attachment; filename="proposal.pptx"; filename*=UTF-8\'\'{utf8_name}',
+                "Cache-Control": "no-store",
+                "X-Deck-Issue-Count": str(len(audit.get("issues", []))),
+            },
+        )
+    except DeckValidationError as exc:
+        return JSONResponse({"error": {"message": str(exc)}}, status_code=400)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": {"message": f"PPT 导出失败：{exc}"}}, status_code=500)
+    finally:
+        try:
+            os.unlink(tmp_out.name)
+        except OSError:
+            pass
 
 
 @app.post("/api/pptx-report/parse")

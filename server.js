@@ -14,6 +14,7 @@ const providerHosts = {
 const maxBodyBytes = 1024 * 1024;
 const builtinBailianUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 const defaultBuiltinModels = ["deepseek-v4-flash", "qwen3.7-plus", "glm-5.2"];
+const pptxBackendUrl = String(process.env.PPTX_BACKEND_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -100,6 +101,37 @@ async function requestModel(targetUrl, apiKey, body) {
 
 http
   .createServer((req, res) => {
+    if (req.url.startsWith("/pptx-api")) {
+      const targetPath = req.url.replace(/^\/pptx-api(?:\/|$)/, "/api/pptx-report/");
+      const chunks = [];
+      let size = 0;
+      req.on("data", (chunk) => {
+        size += chunk.length;
+        if (size > 30 * 1024 * 1024) req.destroy();
+        else chunks.push(chunk);
+      });
+      req.on("end", async () => {
+        try {
+          const headers = { ...req.headers };
+          delete headers.host;
+          delete headers["content-length"];
+          const upstream = await fetch(pptxBackendUrl + targetPath, {
+            method: req.method,
+            headers,
+            body: ["GET", "HEAD"].includes(req.method) ? undefined : Buffer.concat(chunks)
+          });
+          const body = Buffer.from(await upstream.arrayBuffer());
+          const responseHeaders = Object.fromEntries(upstream.headers.entries());
+          responseHeaders["access-control-allow-origin"] = "*";
+          res.writeHead(upstream.status, responseHeaders);
+          res.end(body);
+        } catch (error) {
+          sendJson(res, 502, { error: { message: `PPTX 后端连接失败：${error.message}` } });
+        }
+      });
+      return;
+    }
+
     if (req.url === "/api/ai" && req.method === "OPTIONS") {
       sendJson(res, 200, { ok: true });
       return;

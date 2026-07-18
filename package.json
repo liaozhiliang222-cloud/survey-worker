@@ -1,7 +1,9 @@
 {
   "scripts": {
     "dev": "node server.js",
-    "test:ai-proxy": "node tests/ai-proxy-smoke.mjs"
+    "test:ai-proxy": "node tests/ai-proxy-smoke.mjs",
+    "test:ai-plan-template": "node tests/ai-plan-template-smoke.mjs",
+    "test:proposal-deck": "node tests/proposal-deck-smoke.mjs"
   },
   "dependencies": {},
   "devDependencies": {}

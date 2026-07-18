@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SurveyKit Proposal Deck v2",
+  "type": "object",
+  "required": ["deck_id", "project_id", "title", "theme", "aspect_ratio", "page_size", "purpose", "example_output_mode", "slides"],
+  "properties": {
+    "deck_id": {"type": "string", "minLength": 1},
+    "project_id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1, "maxLength": 80},
+    "theme": {"const": "modern_insight_v2"},
+    "aspect_ratio": {"const": "16:9"},
+    "page_size": {"type": "integer", "minimum": 1, "maximum": 20},
+    "purpose": {"enum": ["internal_review", "client_proposal", "project_bid", "kickoff"]},
+    "example_output_mode": {"enum": ["illustrative", "framework_only", "none"]},
+    "illustrative_dataset_id": {"type": "string"},
+    "illustrative_dataset": {"type": ["object", "null"]},
+    "content_density": {"enum": ["compact", "standard", "professional"]},
+    "target_canvas_occupancy": {"type": "number", "minimum": 0.5, "maximum": 0.85},
+    "slides": {
+      "type": "array", "minItems": 1, "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": ["id", "order", "slide_type", "title", "slide_question", "unique_purpose", "key_message", "visual_type", "layout_variant", "relation_type", "content_density", "target_canvas_occupancy", "content", "charts", "source_references", "data_status", "example_output", "locked"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "order": {"type": "integer", "minimum": 1},
+          "slide_type": {"type": "string", "minLength": 1},
+          "title": {"type": "string", "minLength": 1, "maxLength": 40},
+          "subtitle": {"type": "string", "maxLength": 100},
+          "slide_question": {"type": "string", "maxLength": 100},
+          "unique_purpose": {"type": "string", "maxLength": 140},
+          "previous_slide_relation": {"type": "string", "maxLength": 140},
+          "next_slide_relation": {"type": "string", "maxLength": 140},
+          "key_message": {"type": "string", "maxLength": 80},
+          "visual_type": {"enum": ["cover_product_hero", "context_tension_map", "decision_tree", "evidence_threshold_matrix", "dual_track_research_flow", "qualitative_design_canvas", "quantitative_sample_architecture", "questionnaire_decision_journey", "concept_funnel_maxdiff_example", "pricing_segment_example", "decision_output_map", "timeline_gantt_risk", "risk_matrix", "plan_comparison", "deliverable_map", "pricing_table"]},
+          "layout_variant": {"type": "string"},
+          "relation_type": {"enum": ["hero", "causal", "hierarchy", "matrix", "sequence", "input_output", "data", "time", "comparison"]},
+          "content_density": {"enum": ["compact", "standard", "professional"]},
+          "target_canvas_occupancy": {"type": "number", "minimum": 0.5, "maximum": 0.85},
+          "content": {"type": "array", "maxItems": 7},
+          "charts": {"type": "array"},
+          "timeline_tasks": {"type": "array"},
+          "source_references": {"type": "array"},
+          "data_status": {"enum": ["verified", "illustrative", "framework_only"]},
+          "example_output": {"type": "boolean"},
+          "locked": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}
