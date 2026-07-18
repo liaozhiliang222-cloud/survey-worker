@@ -1,4 +1,4 @@
-const CACHE_NAME = "research-toolbox-v45";
+const CACHE_NAME = "research-toolbox-v46";
 const ASSETS = [
   "./manifest.webmanifest",
   "./icon.svg",
@@ -8,7 +8,8 @@ const ASSETS = [
 function isAppShellRequest(request) {
   const url = new URL(request.url);
   if (request.mode === "navigate") return true;
-  return ["/", "/index.html", "/app.js", "/proposal-deck.js", "/styles.css", "/sw.js"].some((path) => url.pathname.endsWith(path));
+  return ["/", "/index.html", "/app.js", "/proposal-deck.js", "/styles.css", "/sw.js"]
+    .some((path) => url.pathname.endsWith(path));
 }
 
 self.addEventListener("install", (event) => {
@@ -31,8 +32,7 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const url = new URL(event.request.url);
-  // PPTX 任务进度与下载地址是动态接口，绝不能进入离线缓存。
-  // 否则轮询会反复命中第一次响应（例如一直显示 12%）。
+  // PPTX task progress and download endpoints are dynamic and must never be cached.
   if (/^\/pptx-api(?:\/|$)/.test(url.pathname)) {
     event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
@@ -41,7 +41,6 @@ self.addEventListener("fetch", (event) => {
   if (isAppShellRequest(event.request)) {
     event.respondWith(
       fetch(event.request, { cache: "no-store" })
-        .then((response) => response)
         .catch(() => caches.match(event.request))
     );
     return;

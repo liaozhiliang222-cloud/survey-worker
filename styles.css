@@ -3799,3 +3799,819 @@ tr:last-child td {
 #pptxPreviewPanel .step-badge {
   background: linear-gradient(135deg, #f59e0b, #d97706);
 }
+
+/* Restored PPT report preview/editor styles (kept in sync with app.js). */
+#pptxProgress {
+  height: 26px;
+  background: #e6edf6;
+  border: 1px solid #d4dfec;
+}
+
+#pptxProgress .progress-fill {
+  background: linear-gradient(90deg, #1d4ed8, #3b82f6);
+}
+
+.pptx-preview-chapters {
+  display: grid;
+  gap: 12px;
+}
+
+.pptx-editor-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.pptx-editor-outline {
+  position: static;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid #d7e1ed;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.pptx-editor-outline > strong {
+  grid-column: 1 / -1;
+  color: #173b72;
+  font-size: 13px;
+}
+
+.pptx-editor-outline button {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 7px;
+  color: #334155;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pptx-editor-outline button:hover {
+  background: #eaf2ff;
+}
+
+.pptx-editor-outline button span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #2f63db;
+  font-size: 10px;
+}
+
+.pptx-editor-outline button b {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pptx-editor-outline button small,
+.pptx-editor-outline p {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.pptx-unassigned-bank {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 190px;
+  overflow: auto;
+  padding-top: 8px;
+  border-top: 1px solid #dbe5f1;
+}
+
+.pptx-unassigned-bank > strong,
+.pptx-unassigned-bank > small {
+  flex-basis: 100%;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.pptx-question-chip[draggable="true"] {
+  cursor: grab;
+}
+
+.pptx-editor-outline p {
+  grid-column: 1 / -1;
+  margin: 5px 0 0;
+  line-height: 1.5;
+}
+
+.pptx-preview-chapter {
+  overflow: hidden;
+  border: 1px solid #c8d7e8;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.pptx-preview-chapter > summary,
+.pptx-preview-page > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.pptx-preview-chapter > summary::-webkit-details-marker,
+.pptx-preview-page > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pptx-preview-chapter > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  color: #123b73;
+  background: #eaf1fb;
+  font-weight: 700;
+}
+
+.pptx-preview-chapter > summary::before,
+.pptx-preview-page > summary::before {
+  content: "▸";
+  color: #64748b;
+  transition: transform 0.16s ease;
+}
+
+.pptx-preview-chapter[open] > summary::before,
+.pptx-preview-page[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.pptx-preview-chapter-title {
+  flex: 1;
+}
+
+.pptx-preview-chapter-count,
+.pptx-preview-page-type {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pptx-preview-chapter-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.pptx-preview-chapter-controls label,
+.pptx-preview-dimensions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  color: #475569;
+  background: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pptx-preview-chapter-controls label.selected,
+.pptx-preview-dimensions label.selected {
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.pptx-preview-pages {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.pptx-preview-page {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.pptx-page-drag-handle {
+  display: inline-grid;
+  width: 22px;
+  height: 28px;
+  place-items: center;
+  border-radius: 5px;
+  color: #94a3b8;
+  cursor: grab;
+  user-select: none;
+}
+
+.pptx-page-drag-handle:hover {
+  color: #2563eb;
+  background: #eaf2ff;
+}
+
+.pptx-preview-page.dragging {
+  opacity: 0.45;
+}
+
+.pptx-preview-page.drop-target,
+.pptx-preview-pages.drop-target {
+  border-color: #2563eb;
+  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.16);
+}
+
+.pptx-preview-page > summary {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+}
+
+.pptx-preview-page:hover > summary {
+  background: #f8fafc;
+}
+
+.pptx-preview-page-number {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pptx-preview-page-title {
+  overflow: hidden;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pptx-preview-page-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.55fr);
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid #e2e8f0;
+  background: #fafcff;
+}
+
+.pptx-preview-visual {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #dbe5f1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.pptx-preview-visual > small {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.pptx-page-mini {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 3px 3px 1fr auto;
+  gap: 4px;
+  width: 230px;
+  aspect-ratio: 16 / 9;
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.08);
+}
+
+.pptx-page-mini b {
+  overflow: hidden;
+  color: #173b72;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pptx-page-mini > span {
+  width: 58%;
+  border-radius: 2px;
+  background: #dbe5f1;
+}
+
+.pptx-page-mini > span + span {
+  width: 42%;
+}
+
+.pptx-page-mini-charts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  align-items: end;
+  min-height: 0;
+}
+
+.pptx-page-mini-charts i {
+  position: relative;
+  display: block;
+  height: var(--bar-a);
+  max-height: 100%;
+  border-radius: 2px 2px 0 0;
+  background: #3b82f6;
+}
+
+.pptx-page-mini-charts.chart-bar,
+.pptx-page-mini-charts.chart-stacked_bar {
+  grid-template-columns: 1fr;
+  align-items: center;
+}
+
+.pptx-page-mini-charts.chart-bar i,
+.pptx-page-mini-charts.chart-stacked_bar i {
+  width: var(--bar-b);
+  height: 7px;
+  border-radius: 0 2px 2px 0;
+}
+
+.pptx-page-mini-charts.chart-doughnut i,
+.pptx-page-mini-charts.chart-pie i {
+  width: 42px;
+  height: 42px;
+  margin: auto;
+  border-radius: 50%;
+  background: conic-gradient(#2563eb 0 62%, #93c5fd 62% 82%, #dbeafe 82%);
+}
+
+.pptx-page-mini-charts.chart-doughnut i::after {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.pptx-page-mini small {
+  color: #94a3b8;
+  font-size: 6px;
+}
+
+.pptx-preview-field {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.pptx-preview-field > span {
+  color: #334155;
+  font-weight: 700;
+}
+
+.pptx-preview-field-wide {
+  grid-column: 1 / -1;
+}
+
+.pptx-preview-field textarea,
+.pptx-preview-field select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 7px 8px;
+  color: #1e293b;
+  background: #fff;
+  font: inherit;
+}
+
+.pptx-preview-field textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.pptx-preview-question-list {
+  line-height: 1.55;
+}
+
+.pptx-preview-dimensions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.pptx-template-upload {
+  padding: 14px;
+  border: 1px dashed #bfd0ea;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.pptx-template-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pptx-template-actions label.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.pptx-template-analysis {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #eef5ff;
+  color: #334155;
+}
+
+.pptx-template-analysis strong {
+  color: #173b72;
+}
+
+.pptx-template-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 13px;
+}
+
+.pptx-template-colors {
+  display: inline-flex;
+  gap: 5px;
+  vertical-align: middle;
+}
+
+.pptx-template-color {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1px solid rgba(15, 23, 42, 0.15);
+}
+
+.pptx-plan-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1e3a8a;
+  background: #eff6ff;
+  font-size: 12px;
+}
+
+.pptx-ai-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 10px;
+  background: #eef2ff;
+}
+
+.pptx-ai-report-actions .panel-note {
+  margin: 0;
+}
+
+.pptx-add-page-btn {
+  margin-left: auto;
+}
+
+.pptx-preview-question-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 28px;
+}
+
+.pptx-question-chip {
+  padding: 3px 7px;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pptx-question-chip-group {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #eff6ff;
+}
+
+.pptx-question-chip-group .pptx-question-chip {
+  border: 0;
+  border-radius: 0;
+}
+
+.pptx-question-chip-group button {
+  align-self: stretch;
+  padding: 2px 7px;
+  border: 0;
+  border-left: 1px solid #bfdbfe;
+  color: #1e40af;
+  background: #dbeafe;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.pptx-question-move-dialog {
+  height: min(680px, calc(100vh - 44px));
+}
+
+.pptx-question-move-list {
+  overflow: auto;
+  padding: 12px 18px 20px;
+}
+
+.pptx-question-move-list h4 {
+  position: sticky;
+  top: -12px;
+  z-index: 1;
+  margin: 10px -2px 6px;
+  padding: 8px 2px 5px;
+  color: #123b73;
+  background: #fff;
+}
+
+.pptx-question-move-list button {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  border: 1px solid #dbe5f1;
+  border-radius: 9px;
+  color: #334155;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pptx-question-move-list button:hover:not(:disabled) {
+  border-color: #60a5fa;
+  background: #eff6ff;
+}
+
+.pptx-question-move-list button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pptx-question-move-list button small {
+  color: #64748b;
+}
+
+.pptx-question-drop-dock {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 9998;
+  display: none;
+  width: min(560px, calc(100vw - 36px));
+  max-height: min(70vh, 620px);
+  padding: 14px;
+  border: 2px solid #3b82f6;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 60px rgba(15, 23, 42, 0.3);
+}
+
+.pptx-question-drop-dock.active {
+  display: block;
+}
+
+.pptx-question-drop-dock > strong,
+.pptx-question-drop-dock > span {
+  display: block;
+}
+
+.pptx-question-drop-dock > span {
+  margin: 3px 0 10px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.pptx-question-drop-dock > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  max-height: calc(min(70vh, 620px) - 78px);
+  overflow: auto;
+}
+
+.pptx-question-drop-dock button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 2px 7px;
+  padding: 8px;
+  border: 1px solid #dbe5f1;
+  border-radius: 8px;
+  background: #f8fafc;
+  text-align: left;
+}
+
+.pptx-question-drop-dock button b {
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #2563eb;
+}
+
+.pptx-question-drop-dock button small {
+  overflow: hidden;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pptx-question-drop-dock button.drop-target {
+  border-color: #2563eb;
+  background: #dbeafe;
+}
+
+.pptx-edit-questions-btn {
+  width: fit-content;
+  margin-top: 6px;
+  padding: 6px 10px;
+}
+
+.pptx-page-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed #dbe4ef;
+}
+
+.ghost-btn.danger {
+  color: #b91c1c;
+}
+
+.pptx-question-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+}
+
+.pptx-question-editor.hidden {
+  display: none;
+}
+
+.pptx-question-editor-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(2px);
+}
+
+.pptx-question-editor-dialog {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: min(920px, calc(100vw - 36px));
+  height: min(760px, calc(100vh - 44px));
+  overflow: hidden;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.pptx-question-editor-dialog > header,
+.pptx-question-editor-dialog > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.pptx-question-editor-dialog > header div {
+  display: grid;
+  gap: 3px;
+}
+
+.pptx-question-editor-dialog > header span,
+.pptx-question-editor-dialog > footer span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.pptx-question-editor-dialog > footer {
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 0;
+}
+
+.pptx-question-editor-tools {
+  display: flex;
+  gap: 10px;
+  padding: 12px 18px;
+  background: #f8fafc;
+}
+
+.pptx-question-editor-tools input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+}
+
+.pptx-question-editor-list {
+  overflow: auto;
+  padding: 8px 18px 18px;
+}
+
+.pptx-question-option {
+  display: grid;
+  grid-template-columns: auto 82px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 8px;
+  border-bottom: 1px solid #eef2f7;
+  cursor: pointer;
+}
+
+.pptx-question-option:hover {
+  background: #f8fafc;
+}
+
+.pptx-question-code {
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.pptx-question-text {
+  overflow: hidden;
+  color: #334155;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pptx-question-option small {
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .pptx-editor-shell {
+    grid-template-columns: 1fr;
+  }
+  .pptx-editor-outline {
+    position: static;
+  }
+  .pptx-preview-visual {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .pptx-page-mini {
+    width: min(100%, 280px);
+  }
+  .pptx-plan-toolbar,
+  .pptx-question-editor-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .pptx-question-option {
+    grid-template-columns: auto 68px minmax(0, 1fr);
+  }
+  .pptx-question-option small {
+    grid-column: 2 / -1;
+  }
+}
