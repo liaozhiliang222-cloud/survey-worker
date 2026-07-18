@@ -81,23 +81,6 @@
 
           <div class="dashboard-workspace v2">
             <input class="hidden" id="sharedQuestionnaireImportFile" type="file" accept=".docx,.doc,.xlsx,.xls,.md,.txt,.csv" />
-            <input class="hidden" id="workspaceProjectImportFile" type="file" accept=".json" />
-
-            <section class="panel workspace-library-bar">
-              <div class="workspace-library-select">
-                <span>当前项目</span>
-                <select id="workspaceProjectSelect" aria-label="切换项目"></select>
-                <small id="workspaceProjectCount">0 个项目</small>
-              </div>
-              <div class="workspace-library-actions">
-                <button class="primary-btn" id="workspaceNewProject" type="button">＋ 新建项目</button>
-                <button class="ghost-btn" id="workspaceDuplicateProject" type="button">复制项目</button>
-                <button class="ghost-btn" id="workspaceExportProject" type="button">导出项目</button>
-                <button class="ghost-btn" id="workspaceImportProject" type="button">导入项目</button>
-                <button class="danger-btn" id="workspaceDeleteProject" type="button">删除项目</button>
-                <label class="workspace-archived-toggle"><input id="workspaceShowArchived" type="checkbox" />显示已归档</label>
-              </div>
-            </section>
 
             <section class="panel dashboard-hero">
               <div class="dashboard-hero-head">
@@ -155,7 +138,7 @@
               </button>
 
               <div class="project-form dashboard-project-form">
-                <label class="field">项目名称<input id="workspaceProjectName" type="text" placeholder="例如：智能宠物饮水机新品调研" /></label>
+                <label class="field">项目名称<input id="workspaceProjectName" type="text" placeholder="例如：常温短保牛奶新品调研" /></label>
                 <label class="field">研究类型<select id="workspaceStudyType"><option value="概念测试">概念测试</option><option value="U&A 研究">U&A 研究</option><option value="品牌健康度追踪">品牌健康度追踪</option><option value="满意度/NPS">满意度/NPS</option><option value="价格研究">价格研究</option><option value="产品体验研究">产品体验研究</option><option value="其他">其他</option></select></label>
                 <label class="field">当前阶段<select id="workspaceStage"><option value="调研前">调研前</option><option value="数据清洗">数据清洗</option><option value="分析产出">分析产出</option><option value="交付归档">交付归档</option></select></label>
                 <label class="field">目标有效样本量<input id="workspaceSampleTarget" type="number" min="1" placeholder="例如：400" /></label>
@@ -244,7 +227,7 @@
               <div class="section-heading compact">
                 <div>
                   <h3>模型供应商</h3>
-                  <p>选择常用大模型并填写自己的 API Key（可选）。未配置时自动使用平台内置免费模型；配置自己的 Key 后可使用更高质量的大模型。</p>
+                  <p>选择常用大模型并填写自己的 API Key（可选）。未配置时自动使用平台内置免费模型（阿里云百炼）；配置自己的 Key 后可使用更高质量的大模型。</p>
                 </div>
               </div>
               <div class="form-grid two">
@@ -272,7 +255,7 @@
                 </label>
                 <label>
                   接口地址
-                  <input id="aiApiBaseUrl" type="url" placeholder="兼容 chat/completions 的接口地址" />
+                  <input id="aiApiBaseUrl" type="url" placeholder="OpenAI 兼容 chat/completions 地址" />
                 </label>
                 <label class="span-row">
                   API Key
@@ -284,7 +267,7 @@
                 <button class="secondary-btn" id="testAiSettings" type="button">测试连接</button>
                 <button class="secondary-btn" id="clearAiSettings" type="button">清空设置</button>
               </div>
-              <p class="panel-note">注意：未配置 API Key 时自动使用平台内置免费模型；配置自己的 Key 后可使用更高质量的大模型。API Key 仅保存在浏览器本地。</p>
+              <p class="panel-note">注意：未配置 API Key 时自动使用平台内置免费模型（阿里云百炼）；配置自己的 Key 后可使用更高质量的大模型。API Key 仅保存在浏览器本地。</p>
             </section>
 
             <section class="panel">
@@ -1173,7 +1156,7 @@
               <p class="eyebrow">PPT 报告生成</p>
               <h2>自分析维度 · 专业图表报告</h2>
             </div>
-            <p class="panel-note">上传标准交叉表 Excel，选择分析维度与主题色，自动匹配条形、柱状、环形、堆积、折线或雷达图，生成可编辑 PPTX 报告。</p>
+            <p class="panel-note">上传腾讯问卷 / SPSS 风格交叉表 Excel，选择要对比的人群维度，一键生成含多组多列条形图的可编辑 PPTX 报告。</p>
           </div>
 
           <div class="ai-report-workspace">
@@ -1183,7 +1166,7 @@
                 <div class="step-badge">1</div>
                 <div class="step-body">
                   <h3>上传交叉表</h3>
-                  <p class="panel-note">支持常见问卷平台或统计软件导出的交叉表（含百分比与人群列）。单文件 ≤ 25MB。</p>
+                  <p class="panel-note">支持腾讯问卷 / SPSS 导出的交叉表（含百分比与人群列）。单文件 ≤ 25MB。</p>
                   <div class="import-dropzone" id="pptxDropzone">
                     <input class="hidden" id="pptxFileInput" type="file" accept=".xlsx,.xls" />
                     <div class="dropzone-inner">
@@ -1209,45 +1192,7 @@
                   <h3>选择分析维度</h3>
                   <label class="span-row field">
                     <span class="field-heading">报告标题</span>
-                    <input id="pptxReportTitle" type="text" placeholder="例如：某品牌常温牛奶消费者调研报告" />
-                  </label>
-                  <label class="span-row field">
-                    <span class="field-heading">PPT 主题色</span>
-                    <select id="pptxThemeColor">
-                      <option value="blue" selected>商务蓝（默认）</option>
-                      <option value="teal">青绿色</option>
-                      <option value="green">自然绿</option>
-                      <option value="orange">活力橙</option>
-                      <option value="purple">雅致紫</option>
-                    </select>
-                  </label>
-                  <label class="span-row field">
-                    <span class="field-heading">PPT 报告模板</span>
-                    <select id="pptxTemplateMode">
-                      <option value="system" selected>使用系统模板</option>
-                      <option value="upload">上传公司 PPTX 模板</option>
-                    </select>
-                    <small class="field-note">上传模板将保留母版、背景、Logo、版式、主题色和字体；模板中的示例页面会在生成时移除。</small>
-                  </label>
-                  <div class="span-row pptx-template-upload hidden" id="pptxTemplateUploadArea">
-                    <input class="hidden" id="pptxTemplateInput" type="file" accept=".pptx" />
-                    <div class="pptx-template-actions">
-                      <label class="ghost-btn" for="pptxTemplateInput">选择 PPTX 模板</label>
-                      <button class="ghost-btn" id="pptxTemplateClear" type="button" disabled>移除模板</button>
-                    </div>
-                    <div class="pptx-template-analysis" id="pptxTemplateAnalysis">
-                      <strong>尚未上传模板</strong>
-                      <span>支持 25MB 以内的 .pptx 文件。上传后会先分析页面比例、版式、主题色和字体。</span>
-                    </div>
-                    <p class="panel-note" id="pptxTemplateStatus"></p>
-                  </div>
-                  <label class="span-row field">
-                    <span class="field-heading">报告规划模式</span>
-                    <select id="pptxPlanningMode">
-                      <option value="rule" selected>标准规则（快速、稳定）</option>
-                      <option value="ai">AI 规划（智能组织章节与页面）</option>
-                    </select>
-                    <small class="field-note">标准规则适合快速出稿；AI 规划会在确保题目全覆盖的基础上，重组章节、页面题目组合与默认分析维度，完成后仍可手动调整。</small>
+                    <input id="pptxReportTitle" type="text" placeholder="例如：京东常温牛奶消费者调研报告" />
                   </label>
                   <div class="field">
                     <span class="field-heading">维度分组（按合并单元格拆分，如分品牌 / 分平台）</span>
@@ -1291,13 +1236,9 @@
                 <div class="step-badge">2.5</div>
                 <div class="step-body">
                   <h3>预览 & 编辑报告结构</h3>
-                  <p class="panel-note">以下是系统自动规划的报告页面。分维度对比会自动包含总体列；图表按列数与选项数量匹配，您也可以逐页手动调整。</p>
+                  <p class="panel-note">以下是系统自动规划的报告页面，您可以调整每页的图表类型。确认后点击「确认生成」。</p>
                   <div class="ai-report-data-actions" style="margin-bottom:12px;">
                     <button class="primary-btn" id="pptxConfirmBtn" type="button" disabled>确认生成 PPT</button>
-                    <button class="secondary-btn" id="pptxSavePlanBtn" type="button" disabled>保存报告方案</button>
-                    <button class="ghost-btn" id="pptxLoadPlanBtn" type="button">加载已保存方案</button>
-                    <button class="ghost-btn" id="pptxUndoPlanBtn" type="button" disabled>撤销</button>
-                    <button class="ghost-btn" id="pptxRedoPlanBtn" type="button" disabled>重做</button>
                     <button class="ghost-btn" id="pptxBackToConfig" type="button">返回修改配置</button>
                   </div>
                   <div class="audit-results" id="pptxPreviewTable">
@@ -1317,18 +1258,13 @@
                 <div class="step-badge">3</div>
                 <div class="step-body">
                   <h3>下载报告</h3>
-                  <p class="panel-note">生成完成后会自动下载 .pptx 文件。报告含封面、目录、洞察标题、可编辑图表及底部数据来源。</p>
+                  <p class="panel-note">生成完成后会自动下载 .pptx 文件。报告含封面、目录、各题多组多列图表（选项少用 100% 堆积图，选项多用横向条形图）。</p>
                   <div class="audit-results" id="pptxResult">
                     <div class="empty-state">
                       <strong>等待生成</strong>
                       <span>上传并解析交叉表后，选择人群维度即可生成。</span>
                     </div>
                   </div>
-                  <div class="pptx-ai-report-actions">
-                    <button class="primary-btn" id="pptxAiWriteBtn" type="button" disabled>AI 写报告</button>
-                    <span class="panel-note">先生成基础版 PPT；AI 将读取 Python 汇总后的逐页数据，生成可编辑的标题与分点洞察。</span>
-                  </div>
-                  <p class="panel-note" id="pptxAiWriteStatus"></p>
                 </div>
               </div>
             </div>
@@ -1782,7 +1718,7 @@
                 <div>
                   <span class="section-pill">方案模板库</span>
                   <h3>导入公司方案模板</h3>
-                  <p>支持 Word、PPT、Markdown、TXT。导入后 AI 会识别章节层级、列表、表格、内容颗粒度和措辞风格，让新方案更贴近不同公司的交付要求。</p>
+                  <p>支持 Word、PPT、Markdown、TXT。导入后 AI 会识别章节结构、典型写法和措辞风格，让新方案更贴近不同公司的交付要求。</p>
                 </div>
                 <button class="secondary-btn" id="importAiPlanTemplate" type="button">导入模板</button>
               </div>
@@ -1793,7 +1729,7 @@
                     <option value="none">不使用模板</option>
                     <option value="structure">结构模式：只套用章节骨架</option>
                     <option value="style">风格模式：结构 + 措辞风格</option>
-                    <option value="hybrid">混合模式：结构 + 风格 + 颗粒度复刻</option>
+                    <option value="hybrid">混合模式：结构 + 风格 + 固定内容复用</option>
                   </select>
                 </label>
                 <label>
@@ -1810,26 +1746,25 @@
 
               <label>
                 <span class="label-action">
-                  <span class="field-heading">用户需求 / 业务背景 <span class="field-badge required">必填</span><small>说明产品背景和希望解决的核心问题即可</small></span>
+                  <span>用户需求 / 业务背景</span>
                   <button class="secondary-btn mini-import-btn" type="button" data-import-target="aiPlanInput">导入需求文档</button>
                 </span>
                 <textarea id="aiPlanInput" placeholder="粘贴客户需求、业务问题、产品背景、目标人群、已有假设、预算/周期限制等。例如：某即饮咖啡新品计划上市，希望评估18-40岁消费者对概念、卖点、价格和购买意愿的反馈。"></textarea>
               </label>
               <label>
-                <span class="field-heading">项目名称 / 业务场景 <span class="field-badge optional">选填</span></span>
-                <input id="aiPlanContext" type="text" placeholder="不填时 AI 会根据业务背景拟定项目名称" />
+                项目名称 / 业务场景
+                <input id="aiPlanContext" type="text" placeholder="例如：新品概念测试、品牌健康度追踪、电商NPS诊断" />
               </label>
               <div class="form-grid two">
                 <label>
                   方案模式
                   <select id="aiPlanMode">
-                    <option value="word">详细方案（Word）</option>
-                    <option value="ppt">PPT提案版（PPTX）</option>
-                    <option value="both">Word详细方案 + PPT提案版</option>
+                    <option value="brief">简要方案（Word）</option>
+                    <option value="detailed">详细方案（Word）</option>
                   </select>
                 </label>
                 <label>
-                  <span class="field-heading">核心研究模块 <span class="field-badge required">必填</span><small>单选，决定方案主线</small></span>
+                  研究类型
                   <select id="aiPlanStudyType">
                     <option value="concept">概念/新品测试</option>
                     <option value="ua">U&A 使用习惯与态度</option>
@@ -1840,104 +1775,26 @@
                     <option value="custom">综合研究</option>
                   </select>
                 </label>
-                <label class="span-row">
-                  <span class="field-heading">附加研究模块 <span class="field-badge optional">选填</span><small>可多选，只添加确有需要的专项内容</small></span>
-                  <div class="multiselect-dropdown" id="aiPlanAdditionalModules">
-                    <div class="multiselect-trigger" tabindex="0" aria-expanded="false">
-                      <span class="multiselect-text">不添加</span>
-                      <svg class="multiselect-arrow" width="12" height="12" viewBox="0 0 12 12"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
-                    </div>
-                    <div class="multiselect-panel">
-                      <label class="multiselect-option"><input type="checkbox" value="pricing"> <span>价格接受度 / PSM</span></label>
-                      <label class="multiselect-option"><input type="checkbox" value="kano"> <span>功能优先级 / KANO</span></label>
-                      <label class="multiselect-option"><input type="checkbox" value="segmentation"> <span>人群细分与画像</span></label>
-                      <label class="multiselect-option"><input type="checkbox" value="competitor"> <span>竞品对标</span></label>
-                      <label class="multiselect-option"><input type="checkbox" value="conversion"> <span>购买转化与阻碍</span></label>
-                      <label class="multiselect-option"><input type="checkbox" value="channel"> <span>渠道与传播</span></label>
-                      <label class="multiselect-option"><input type="checkbox" value="nps"> <span>满意度 / NPS</span></label>
-                    </div>
-                  </div>
+                <label>
+                  目标人群
+                  <input id="aiPlanAudience" type="text" placeholder="例如：18-40岁，近3个月购买过该品类的用户" />
+                </label>
+                <label>
+                  建议样本量
+                  <input id="aiPlanSampleSize" type="number" min="1" placeholder="例如：400" />
+                </label>
+                <label>
+                  项目周期
+                  <input id="aiPlanTimeline" type="text" placeholder="例如：2周、10个工作日、月底前交付" />
                 </label>
               </div>
-              <div class="ai-plan-ppt-settings" id="aiPlanPptSettings" hidden>
-                <div class="form-grid three">
-                  <label>
-                    PPT页数
-                    <select id="aiPlanPptPageSize">
-                      <option value="8">精简版 · 8页</option>
-                      <option value="12" selected>标准版 · 12页</option>
-                      <option value="16">完整版 · 14—16页</option>
-                    </select>
-                  </label>
-                  <label>
-                    使用场景
-                    <select id="aiPlanPptPurpose">
-                      <option value="internal_review">内部方案评审</option>
-                      <option value="client_proposal" selected>客户正式提案</option>
-                      <option value="project_bid">项目竞标</option>
-                      <option value="kickoff">项目启动会</option>
-                    </select>
-                  </label>
-                  <label>
-                    PPT风格
-                    <select id="aiPlanPptTheme">
-                      <option value="modern_insight_v2">现代洞察咨询风</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="form-grid two ai-plan-ppt-v2-settings">
-                  <label>
-                    报告输出示例
-                    <select id="aiPlanPptExampleMode">
-                      <option value="illustrative" selected>展示报告示例数据</option>
-                      <option value="framework_only">只展示分析框架</option>
-                      <option value="none">不展示报告输出示例</option>
-                    </select>
-                  </label>
-                  <label>
-                    内容密度
-                    <select id="aiPlanPptDensity">
-                      <option value="compact">精简</option>
-                      <option value="standard">标准</option>
-                      <option value="professional" selected>专业详细</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="ai-plan-ppt-options">
-                  <label><input type="checkbox" id="aiPlanPptQuota" checked /> 详细样本配额</label>
-                  <label><input type="checkbox" id="aiPlanPptRisks" checked /> 风险与待确认事项</label>
-                  <label><input type="checkbox" id="aiPlanPptOutputs" checked /> 研究输出示例</label>
-                  <label><input type="checkbox" id="aiPlanPptPricing" /> 项目报价</label>
-                  <label><input type="checkbox" id="aiPlanPptTeam" /> 团队介绍</label>
-                </div>
-              </div>
-              <div class="ai-report-advanced">
-                <button class="ai-report-advanced-toggle" type="button" aria-expanded="false">
-                  <span>更多设置（均为选填）</span>
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
-                <div class="ai-report-advanced-body form-grid two">
-                  <label>
-                    <span class="field-heading">目标人群 <span class="field-badge optional">选填</span></span>
-                    <input id="aiPlanAudience" type="text" placeholder="不填时 AI 会根据业务背景推导并标记待确认" />
-                  </label>
-                  <label>
-                    <span class="field-heading">初步样本量 <span class="field-badge optional">选填</span></span>
-                    <input id="aiPlanSampleSize" type="number" min="1" placeholder="例如：400" />
-                  </label>
-                  <label>
-                    <span class="field-heading">项目周期 <span class="field-badge optional">选填</span></span>
-                    <input id="aiPlanTimeline" type="text" placeholder="例如：2周、10个工作日、月底前交付" />
-                  </label>
-                  <label class="span-row">
-                    <span class="field-heading">特殊要求 <span class="field-badge optional">选填</span></span>
-                    <textarea id="aiPlanConstraints" placeholder="例如：预算有限；需要区分新老用户；需要适合线上问卷执行。"></textarea>
-                  </label>
-                </div>
-              </div>
+              <label>
+                特殊要求
+                <textarea id="aiPlanConstraints" placeholder="例如：需要输出配额建议；必须包含PSM/KANO/NPS；预算有限；需要区分新老用户；需要适合线上问卷执行。"></textarea>
+              </label>
               <div class="import-preview compact-import-preview" id="aiPlanProviderHint">
                 <strong>生成方式</strong>
-                <span>未配置 API Key 时自动使用平台内置免费模型；配置自己的 Key 后可使用更高质量的大模型。</span>
+                <span>未配置 API Key 时自动使用平台内置免费模型（阿里云百炼）；配置自己的 Key 后可使用更高质量的大模型。</span>
               </div>
               <div class="button-row">
                 <button class="primary-btn" id="generateAiPlan" type="button">生成调研方案</button>
@@ -1945,7 +1802,6 @@
                 <button class="secondary-btn" id="copyAiPlan" type="button" disabled>复制方案</button>
                 <button class="secondary-btn" id="exportAiPlanMd" type="button" disabled>导出 Markdown</button>
                 <button class="secondary-btn" id="exportAiPlanWord" type="button" disabled>导出 Word</button>
-                <button class="secondary-btn" id="exportAiPlanPpt" type="button" disabled>导出 PPT</button>
                 <button class="secondary-btn" id="applyAiPlanToProject" type="button" disabled>同步到项目档案</button>
               </div>
               <div class="ai-revise-panel">
@@ -1972,47 +1828,6 @@
                 </ul>
               </article>
             </div>
-            <section class="proposal-deck-editor" id="aiPlanDeckEditor" hidden>
-              <div class="proposal-deck-toolbar">
-                <div>
-                  <span class="section-pill">Deck JSON · 唯一内容源</span>
-                  <h3 id="proposalDeckTitle">AI 调研方案 PPT</h3>
-                  <p id="proposalDeckStatus">等待生成</p>
-                </div>
-                <div class="button-row compact">
-                  <button class="secondary-btn" id="proposalDeckSave" type="button">保存到项目档案</button>
-                  <button class="secondary-btn" id="proposalDeckDiff" type="button">查看修改差异</button>
-                  <select id="proposalDeckVersionSelect" aria-label="历史版本"><option value="">历史版本</option></select>
-                  <button class="secondary-btn" id="proposalDeckRestore" type="button">恢复版本</button>
-                </div>
-              </div>
-              <div class="proposal-deck-workspace">
-                <aside class="proposal-deck-thumbs" id="proposalDeckThumbs"></aside>
-                <div class="proposal-deck-canvas-wrap">
-                  <div class="proposal-deck-canvas" id="proposalDeckCanvas"></div>
-                </div>
-                <aside class="proposal-deck-inspector">
-                  <label>页面标题<input id="proposalSlideTitle" type="text" maxlength="38" /></label>
-                  <label>核心信息<textarea id="proposalSlideMessage" maxlength="65"></textarea></label>
-                  <label>页面正文<textarea id="proposalSlideContent" placeholder="每行一项；可用“标题｜说明”"></textarea></label>
-                  <label>可视化版式<select id="proposalSlideVisual"></select></label>
-                  <label>内容密度<select id="proposalSlideDensity"><option value="compact">精简</option><option value="standard">标准</option><option value="professional">专业详细</option></select></label>
-                  <label id="proposalDatasetField" hidden>示例数据（JSON）<textarea id="proposalSlideDataset" placeholder="编辑后将用于当前 Deck 的所有示例页"></textarea></label>
-                  <div class="button-row compact" id="proposalDatasetActions" hidden>
-                    <button class="secondary-btn" id="proposalDatasetReset" type="button">重置示例数据</button>
-                    <button class="secondary-btn" id="proposalDatasetFramework" type="button">切换为纯框架</button>
-                  </div>
-                  <label class="proposal-lock"><input id="proposalSlideLocked" type="checkbox" /> 锁定当前页</label>
-                  <div class="button-row compact">
-                    <button class="secondary-btn" id="proposalSlideUp" type="button">上移</button>
-                    <button class="secondary-btn" id="proposalSlideDown" type="button">下移</button>
-                    <button class="secondary-btn" id="proposalSlideRegenerate" type="button">重新生成</button>
-                    <button class="danger-btn" id="proposalSlideDelete" type="button">删除</button>
-                  </div>
-                  <div class="proposal-deck-issues" id="proposalDeckIssues"></div>
-                </aside>
-              </div>
-            </section>
           </div>
         </section>
 
@@ -2103,7 +1918,7 @@
               </div>
               <div class="import-preview compact-import-preview" id="aiProviderHint">
                 <strong>生成方式</strong>
-                <span>未配置 API Key 时自动使用平台内置免费模型；配置自己的 Key 后可使用更高质量的大模型。</span>
+                <span>未配置 API Key 时自动使用平台内置免费模型（阿里云百炼）；配置自己的 Key 后可使用更高质量的大模型。</span>
               </div>
               <div class="button-row">
                 <button class="primary-btn" id="generateAiBrief" type="button">生成问卷初稿</button>
@@ -2175,7 +1990,7 @@
                 <button class="secondary-btn" id="exportAiWorkbenchMd" type="button" disabled>导出 Markdown</button>
                 <button class="secondary-btn" id="exportAiWorkbenchWord" type="button" disabled>导出 Word</button>
               </div>
-              <p class="panel-note">未配置 API Key 时自动使用平台内置免费模型；配置自己的 Key 后可使用更高质量的大模型。AI 调用经过本站后端代理转发，API Key 仅保存在浏览器本地。</p>
+              <p class="panel-note">未配置 API Key 时自动使用平台内置免费模型（阿里云百炼）；配置自己的 Key 后可使用更高质量的大模型。AI 调用经过本站后端代理转发，API Key 仅保存在浏览器本地。</p>
             </div>
 
             <div class="audit-results" id="aiWorkbenchResults" aria-live="polite">
@@ -2210,6 +2025,5 @@
     })();
     </script>
     <script src="./app.js"></script>
-    <script src="./proposal-deck.js"></script>
   </body>
 </html>
