@@ -9270,6 +9270,7 @@ async function callAiChatCompletion(settings, messages, options = {}) {
   // 设置6分钟超时（比后端5分钟略长），防止大报告生成时524超时
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 360000;
+  const timeoutSeconds = Math.max(1, Math.round(timeoutMs / 1000));
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const response = await fetch("./api/ai", {
     method: "POST",
@@ -9284,7 +9285,7 @@ async function callAiChatCompletion(settings, messages, options = {}) {
   }).catch((error) => {
     clearTimeout(timeout);
     if (error.name === "AbortError") {
-      throw new Error("AI 请求超时（6分钟），可能因数据量过大或模型响应缓慢。建议减少数据量后重试，或选择更快的模型档位。");
+      throw new Error("AI 请求超时（" + timeoutSeconds + "秒），可能因数据量过大或模型响应缓慢。已为当前生成阶段启用安全降级。");
     }
     throw new Error(`AI 后端代理连接失败：${error.message}`);
   });

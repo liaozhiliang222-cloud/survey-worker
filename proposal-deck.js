@@ -57,6 +57,8 @@
     lastIssues: [],
     generating: false
   };
+  const STORY_TIMEOUT_MS = 180000;
+  const PAGE_CONTENT_TIMEOUT_MS = 300000;
 
   function uid(prefix = "deck") {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -533,34 +535,60 @@
     let deck = fallbackDeck;
     const sourceText = wordPlan || config.brief;
     try {
-      emitProgress(options, 1, "\u6b63\u5728\u5206\u6790\u8c03\u7814\u65b9\u6848");
+      emitProgress(options, 0, "\u6b63\u5728\u5206\u6790\u8c03\u7814\u65b9\u6848");
       setStatus("1/5 正在解析调研方案");
       const settings = loadAiSettings();
-      emitProgress(options, 2, "\u6b63\u5728\u89c4\u5212 PPT \u6545\u4e8b\u7ebf");
+      emitProgress(options, 1, "\u6b63\u5728\u89c4\u5212 PPT \u6545\u4e8b\u7ebf");
       setStatus("2/5 正在规划 PPT 故事线");
-      const storyOutput = await callAiChatCompletion(settings, storyPrompt(config, sourceText), { responseFormat: "json_object", maxTokens: 4500, temperature: 0.25 });
       try {
-        const parsedStory = parseJsonCandidate(storyOutput);
-        if (Array.isArray(parsedStory.slides) && parsedStory.slides.length) story = parsedStory.slides;
-      } catch {
+        const storyOutput = await callAiChatCompletion(settings, storyPrompt(config, sourceText), {
+          responseFormat: "json_object", maxTokens: 4500, temperature: 0.25, timeoutMs: STORY_TIMEOUT_MS
+        });
+        try {
+          const parsedStory = parseJsonCandidate(storyOutput);
+          if (Array.isArray(parsedStory.slides) && parsedStory.slides.length) story = parsedStory.slides;
+        } catch {
+          story = fallbackStory;
+          emitProgress(options, 1, "AI 故事线格式异常，已采用本地安全故事线继续。");
+        }
+      } catch (error) {
         story = fallbackStory;
+        const timedOut = /超时|timeout/i.test(String(error?.message || ""));
+        const message = timedOut
+          ? "故事线规划已达到 180 秒，已采用本地安全故事线继续生成页面。"
+          : "AI 故事线规划失败，已采用本地安全故事线继续：" + error.message;
+        emitProgress(options, 1, message);
+        setStatus("2/5 " + message, true);
       }
-      emitProgress(options, 3, "\u6b63\u5728\u751f\u6210\u9875\u9762\u5185\u5bb9");
+      emitProgress(options, 2, "\u6b63\u5728\u751f\u6210\u9875\u9762\u5185\u5bb9");
       setStatus("3/5 正在生成页面内容");
-      const deckOutput = await callAiChatCompletion(settings, deckPrompt(config, story, sourceText, fallbackDeck), { responseFormat: "json_object", maxTokens: 12000, temperature: 0.2 });
       try {
-        deck = normalizeDeck(parseJsonCandidate(deckOutput), { projectId: projectIdForDeck(), purpose: config.ppt.purpose, exampleOutputMode: config.ppt.exampleOutputMode, contentDensity: config.ppt.contentDensity });
-        deck.illustrative_dataset = deck.illustrative_dataset || fallbackDeck.illustrative_dataset;
-        deck.illustrative_dataset_id = deck.illustrative_dataset_id || fallbackDeck.illustrative_dataset_id;
-        deck.example_output_mode = config.ppt.exampleOutputMode;
-      } catch {
+        const deckOutput = await callAiChatCompletion(settings, deckPrompt(config, story, sourceText, fallbackDeck), {
+          responseFormat: "json_object", maxTokens: 12000, temperature: 0.2, timeoutMs: PAGE_CONTENT_TIMEOUT_MS
+        });
+        try {
+          deck = normalizeDeck(parseJsonCandidate(deckOutput), { projectId: projectIdForDeck(), purpose: config.ppt.purpose, exampleOutputMode: config.ppt.exampleOutputMode, contentDensity: config.ppt.contentDensity });
+          deck.illustrative_dataset = deck.illustrative_dataset || fallbackDeck.illustrative_dataset;
+          deck.illustrative_dataset_id = deck.illustrative_dataset_id || fallbackDeck.illustrative_dataset_id;
+          deck.example_output_mode = config.ppt.exampleOutputMode;
+        } catch {
+          deck = fallbackDeck;
+          emitProgress(options, 2, "AI 页面内容格式异常，已采用本地安全页面内容继续。");
+        }
+      } catch (error) {
         deck = fallbackDeck;
+        const timedOut = /超时|timeout/i.test(String(error?.message || ""));
+        const message = timedOut
+          ? "页面内容生成已达到 300 秒，已采用本地安全页面内容继续。"
+          : "AI 页面内容生成失败，已采用本地安全页面内容继续：" + error.message;
+        emitProgress(options, 2, message);
+        setStatus("3/5 " + message, true);
       }
     } catch (error) {
       deck = fallbackDeck;
       setStatus(`AI 生成未完成，已使用本地安全故事线：${error.message}`, true);
     }
-    emitProgress(options, 4, "\u6b63\u5728\u68c0\u67e5\u9875\u9762\u8d28\u91cf");
+    emitProgress(options, 3, "\u6b63\u5728\u68c0\u67e5\u9875\u9762\u8d28\u91cf");
     setStatus("4/5 正在检查页面质量");
     state.deck = normalizeDeck(deck, { projectId: projectIdForDeck(), purpose: config.ppt.purpose, exampleOutputMode: config.ppt.exampleOutputMode, contentDensity: config.ppt.contentDensity });
     const blocking = validateDeck(state.deck).filter((issue) => issue.level === "error");
@@ -573,7 +601,7 @@
     state.selectedSlideId = state.deck.slides[0]?.id || "";
     state.history = [];
     pushHistory("初始生成");
-    emitProgress(options, 5, "PPT \u65b9\u6848\u5df2\u751f\u6210\uff0c\u53ef\u5bfc\u51fa PPT\u3002");
+    emitProgress(options, 4, "PPT \u65b9\u6848\u5df2\u751f\u6210\uff0c\u53ef\u5bfc\u51fa PPT\u3002");
     setStatus("5/5 生成完成，可逐页编辑并导出");
     state.generating = false;
     renderAll();
@@ -801,6 +829,8 @@
 
   window.ProposalDeck = {
     VISUAL_TYPES,
+    STORY_TIMEOUT_MS,
+    PAGE_CONTENT_TIMEOUT_MS,
     state,
     parseJsonCandidate,
     normalizeDeck,
