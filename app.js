@@ -8514,6 +8514,50 @@ function renderAiPlanOutput(output, source) {
   `;
 }
 
+function setAiPlanActionButtons({ word = false, ppt = false, project = false } = {}) {
+  const states = {
+    "#copyAiPlan": word,
+    "#exportAiPlanMd": word,
+    "#exportAiPlanWord": word,
+    "#exportAiPlanPpt": ppt,
+    "#applyAiPlanToProject": project,
+    "#reviseAiPlan": word || ppt || project
+  };
+  Object.entries(states).forEach(([selector, enabled]) => {
+    const button = document.querySelector(selector);
+    if (button) button.disabled = !enabled;
+  });
+}
+
+function renderAiPlanPptProgress(activeIndex = 0, note = "") {
+  const result = document.querySelector("#aiPlanResults");
+  const steps = [
+    { title: "\u51c6\u5907\u5185\u5bb9\u6e90", detail: "\u4f7f\u7528\u5df2\u751f\u6210\u7684\u65b9\u6848\u6587\u672c\u4f5c\u4e3a PPT \u6545\u4e8b\u7ebf\u8f93\u5165\u3002" },
+    { title: "\u89c4\u5212 PPT \u6545\u4e8b\u7ebf", detail: "\u751f\u6210\u9875\u9762\u7ed3\u6784\u3001\u7ae0\u8282\u8282\u594f\u4e0e Deck JSON\u3002" },
+    { title: "\u751f\u6210\u9875\u9762\u5185\u5bb9", detail: "\u8865\u9f50\u6bcf\u9875\u6807\u9898\u3001\u6838\u5fc3\u4fe1\u606f\u3001\u8282\u70b9\u548c\u793a\u4f8b\u56fe\u8868\u5b9a\u4e49\u3002" },
+    { title: "\u8d28\u91cf\u68c0\u67e5", detail: "\u68c0\u67e5\u9875\u9762\u7ed3\u6784\u3001\u5185\u5bb9\u5bc6\u5ea6\u548c\u6a21\u677f\u9002\u914d\u7ed3\u679c\u3002" },
+    { title: "\u542f\u7528 PPT \u5bfc\u51fa", detail: "\u53ef\u7ee7\u7eed\u7f16\u8f91\u5355\u9875\u3001\u4e5f\u53ef\u4ee5\u76f4\u63a5\u5bfc\u51fa\u53ef\u7f16\u8f91 PPT\u3002" }
+  ];
+  renderAiProgress(result, steps, activeIndex, note, "\u6b63\u5728\u751f\u6210 PPT \u65b9\u6848");
+}
+
+function renderAiPlanPptReadySummary({ wantsWord = false } = {}) {
+  setAiPlanActionButtons({ word: wantsWord, ppt: true, project: true });
+  const status = document.querySelector("#proposalDeckStatus")?.textContent || "PPT \u65b9\u6848\u5df2\u751f\u6210\uff0c\u53ef\u7f16\u8f91\u6216\u5bfc\u51fa\u3002";
+  const result = document.querySelector("#aiPlanResults");
+  if (!result) return;
+  if (wantsWord) {
+    result.insertAdjacentHTML("afterbegin", `
+      <article class="audit-issue">
+        <div class="issue-head"><strong>PPT \u65b9\u6848\u5df2\u51c6\u5907</strong><span class="issue-tag low">Planner</span></div>
+        <p>${escapeHtml(status)}</p>
+      </article>
+    `);
+  } else {
+    renderAiPlanPptProgress(5, status);
+  }
+}
+
 async function importAiPlanTemplateFile(file) {
   const preview = document.querySelector("#aiPlanTemplatePreview");
   if (preview) {
@@ -8571,21 +8615,21 @@ async function generateAiPlan() {
       source = "本地方案框架（设置未通过校验）";
     }
   }
-  renderAiProgress(result, steps, 3, "", "正在生成调研方案");
+  renderAiProgress(result, steps, 3, "", "\u6b63\u5728\u751f\u6210\u8c03\u7814\u65b9\u6848");
   output = sanitizeAiPlanOutput(output);
   lastAiPlan = output;
-  document.querySelector("#copyAiPlan").disabled = !wantsWord;
-  document.querySelector("#exportAiPlanMd").disabled = !wantsWord;
-  document.querySelector("#exportAiPlanWord").disabled = !wantsWord;
-  document.querySelector("#applyAiPlanToProject").disabled = false;
-  document.querySelector("#reviseAiPlan").disabled = false;
+  setAiPlanActionButtons({ word: wantsWord, ppt: false, project: true });
   if (wantsWord) {
     renderAiPlanOutput(output, source);
-  } else {
-    result.innerHTML = `<article class="audit-issue"><div class="issue-head"><strong>PPT 内容源已准备</strong><span class="issue-tag low">Planner</span></div><p>正在基于项目 Brief 与研究方案内容规划 PPT 故事线和 Deck JSON。</p></article>`;
   }
   if (wantsPpt && window.ProposalDeck?.generate) {
-    await window.ProposalDeck.generate(undefined, output);
+    renderAiPlanPptProgress(0, wantsWord ? "Word \u65b9\u6848\u5df2\u751f\u6210\uff0c\u6b63\u5728\u7ee7\u7eed\u751f\u6210 PPT\u3002" : "\u6b63\u5728\u57fa\u4e8e\u9879\u76ee Brief \u4e0e\u7814\u7a76\u65b9\u6848\u5185\u5bb9\u89c4\u5212 PPT\u3002");
+    await window.ProposalDeck.generate(undefined, output, {
+      onProgress: ({ step = 0, message = "" } = {}) => renderAiPlanPptProgress(step, message)
+    });
+    renderAiPlanPptReadySummary({ wantsWord });
+  } else {
+    setAiPlanActionButtons({ word: wantsWord, ppt: false, project: true });
   }
 }
 

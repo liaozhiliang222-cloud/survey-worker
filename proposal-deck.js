@@ -518,7 +518,11 @@
     }
   }
 
-  async function generate(config = configFromPage(), wordPlan = "") {
+  function emitProgress(options, step, message) {
+    if (typeof options?.onProgress === "function") options.onProgress({ step, message });
+  }
+
+  async function generate(config = configFromPage(), wordPlan = "", options = {}) {
     if (state.generating) return state.deck;
     state.generating = true;
     const editor = document.querySelector("#aiPlanDeckEditor");
@@ -529,8 +533,10 @@
     let deck = fallbackDeck;
     const sourceText = wordPlan || config.brief;
     try {
+      emitProgress(options, 1, "\u6b63\u5728\u5206\u6790\u8c03\u7814\u65b9\u6848");
       setStatus("1/5 正在解析调研方案");
       const settings = loadAiSettings();
+      emitProgress(options, 2, "\u6b63\u5728\u89c4\u5212 PPT \u6545\u4e8b\u7ebf");
       setStatus("2/5 正在规划 PPT 故事线");
       const storyOutput = await callAiChatCompletion(settings, storyPrompt(config, sourceText), { responseFormat: "json_object", maxTokens: 4500, temperature: 0.25 });
       try {
@@ -539,6 +545,7 @@
       } catch {
         story = fallbackStory;
       }
+      emitProgress(options, 3, "\u6b63\u5728\u751f\u6210\u9875\u9762\u5185\u5bb9");
       setStatus("3/5 正在生成页面内容");
       const deckOutput = await callAiChatCompletion(settings, deckPrompt(config, story, sourceText, fallbackDeck), { responseFormat: "json_object", maxTokens: 12000, temperature: 0.2 });
       try {
@@ -553,6 +560,7 @@
       deck = fallbackDeck;
       setStatus(`AI 生成未完成，已使用本地安全故事线：${error.message}`, true);
     }
+    emitProgress(options, 4, "\u6b63\u5728\u68c0\u67e5\u9875\u9762\u8d28\u91cf");
     setStatus("4/5 正在检查页面质量");
     state.deck = normalizeDeck(deck, { projectId: projectIdForDeck(), purpose: config.ppt.purpose, exampleOutputMode: config.ppt.exampleOutputMode, contentDensity: config.ppt.contentDensity });
     const blocking = validateDeck(state.deck).filter((issue) => issue.level === "error");
@@ -565,6 +573,7 @@
     state.selectedSlideId = state.deck.slides[0]?.id || "";
     state.history = [];
     pushHistory("初始生成");
+    emitProgress(options, 5, "PPT \u65b9\u6848\u5df2\u751f\u6210\uff0c\u53ef\u5bfc\u51fa PPT\u3002");
     setStatus("5/5 生成完成，可逐页编辑并导出");
     state.generating = false;
     renderAll();
