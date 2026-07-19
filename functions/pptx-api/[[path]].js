@@ -1,34 +1,27 @@
-// Catch-all route for /api/pptx-report and /api/pptx-report/*
-// Keeping one Pages Function avoids file/folder route conflicts during deployment.
+// Catch-all Cloudflare Pages Function for /pptx-api and /pptx-api/*.
 import { proxyToBackend } from "./_proxy.js";
 
-export async function onRequest(context) {
-  const { request, env } = context;
+export async function onRequest({ request, env }) {
   const url = new URL(request.url);
-  
-  console.log(`[PPTX Function] ${request.method} ${url.pathname}`);
-  console.log(`[PPTX Function] Backend URL: ${env.PPTX_BACKEND_URL || 'http://ppt-api.surveykit.cc'}`);
-  
+  const backendConfigured = Boolean(String(env?.PPTX_BACKEND_URL || "").trim());
+  console.log(`[PPTX Function] ${request.method} ${url.pathname} backend_configured=${backendConfigured}`);
+
   try {
     const response = await proxyToBackend(request, env);
     console.log(`[PPTX Function] Response status: ${response.status}`);
     return response;
   } catch (error) {
-    console.error(`[PPTX Function] Error: ${error.message}`);
+    console.error(`[PPTX Function] Unhandled error: ${error.message}`);
     return new Response(
-      JSON.stringify({ 
-        error: { 
-          message: `Function error: ${error.message}`,
-          stack: error.stack 
-        } 
-      }),
-      { 
+      JSON.stringify({ error: { message: "PPTX 代理发生未处理错误。" } }),
+      {
         status: 500,
-        headers: { 
-          "Content-Type": "application/json",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
           "Access-Control-Allow-Origin": "*",
-        }
-      }
+          "Cache-Control": "no-store",
+        },
+      },
     );
   }
 }

@@ -8,3 +8,7 @@ Thumbs.db
 .idea/
 .wrangler/
 .test-deps/
+__pycache__/
+*.py[cod]
+tests/output/
+/qa_template_alignment_fixed.pptx
