@@ -34,6 +34,7 @@ def main() -> None:
         title="[上海] 占比最高（44.0%）",
         groups_data=[{"title": "省份", "data": pd.DataFrame(rows)}],
         segments=segments,
+        insights=["测试洞察一", "2. 测试洞察二"],
         data_source="数据来源：测试数据",
     )
     build_multi_group_bar_page(
@@ -51,6 +52,7 @@ def main() -> None:
     renderer._template_mapping = {
         "roles": {
             "matrix": {
+                "has_title_divider": True,
                 "zones": {
                     "title": {"x": 0.03, "y": 0.01, "w": 0.68, "h": 0.12},
                     "content": {"x": 0.041, "y": 0.17, "w": 0.95, "h": 0.76},
@@ -59,7 +61,22 @@ def main() -> None:
             }
         }
     }
+    before_cleanup = len(slide.shapes)
+    renderer._remove_duplicate_title_divider(slide, 0, "matrix")
+    if len(slide.shapes) != before_cleanup - 1:
+        raise AssertionError("Expected the renderer title divider to be removed")
     renderer._apply_template_geometry(slide, 0, "matrix")
+
+    insight_shape = next(
+        shape for shape in slide.shapes
+        if getattr(shape, "has_text_frame", False) and "测试洞察一" in shape.text
+    )
+    for paragraph in insight_shape.text_frame.paragraphs:
+        paragraph_xml = paragraph._p.xml
+        if "buChar" not in paragraph_xml or "buAutoNum" in paragraph_xml:
+            raise AssertionError("Expected insight paragraphs to use round bullets")
+        if paragraph.text.lstrip().startswith(("1.", "2.", "3.")):
+            raise AssertionError("Insight text still contains numeric segment markers")
 
     table_shape = next(shape for shape in slide.shapes if getattr(shape, "has_table", False))
     chart_shapes = [shape for shape in slide.shapes if getattr(shape, "has_chart", False)]

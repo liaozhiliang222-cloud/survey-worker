@@ -118,9 +118,9 @@ def _add_bullets(slide, items, x, y, cx, cy, theme: Theme, size=13, color=None):
     return tb
 
 
-def _add_numbered_insights(slide, items, x, y, cx, cy, theme: Theme,
+def _add_bulleted_insights(slide, items, x, y, cx, cy, theme: Theme,
                            size=12.5, color=None):
-    """把洞察拆成清晰的编号段落，避免长句挤成一整行。"""
+    """把洞察拆成圆点段落，避免产生“分段 1/2/3”的机械编号感。"""
     tb = slide.shapes.add_textbox(x, y, cx, cy)
     tf = tb.text_frame
     tf.word_wrap = True
@@ -128,15 +128,23 @@ def _add_numbered_insights(slide, items, x, y, cx, cy, theme: Theme,
     tf.margin_right = Inches(0.04)
     tf.margin_top = Inches(0.01)
     tf.margin_bottom = Inches(0.01)
-    for i, item in enumerate(items, 1):
-        clean = re.sub(r"^\s*(?:[•·●]|\d+[\.、）)])\s*", "", str(item)).strip()
+    for item in items:
+        clean = re.sub(r"^\s*(?:[•·▪●]|\d+[\.、）)])\s*", "", str(item)).strip()
         if not clean:
             continue
         p = tf.paragraphs[0] if len(tf.paragraphs) == 1 and not tf.paragraphs[0].text else tf.add_paragraph()
         p.space_after = Pt(3)
         p.line_spacing = 1.05
+        p_pr = p._p.get_or_add_pPr()
+        p_pr.set("marL", str(Inches(0.18)))
+        p_pr.set("indent", str(-Inches(0.12)))
+        for bullet_tag in ("buNone", "buAutoNum", "buChar"):
+            existing = p_pr.find(qn(f"a:{bullet_tag}"))
+            if existing is not None:
+                p_pr.remove(existing)
+        p_pr.append(parse_xml(f'<a:buChar xmlns:a="{A_NS}" char="•"/>'))
         run = p.add_run()
-        run.text = f"{i}. {clean}"
+        run.text = clean
         style_font(run.font, theme, size=size, color=color or theme.text_dark)
     return tb
 
@@ -298,7 +306,7 @@ def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) ->
         max_units = max(_text_width_units(text) for text in insight_texts)
         insight_h = min(0.92, max(0.34, 0.25 * len(insight_texts) + (0.18 if max_units > 70 else 0)))
         insight_y = Inches(1.05)
-        _add_numbered_insights(
+        _add_bulleted_insights(
             slide, insight_texts, Inches(PAGE_MARGIN), insight_y,
             slide_w - Inches(2 * PAGE_MARGIN), Inches(insight_h), theme,
             size=12.5, color=theme.text_dark,
@@ -362,7 +370,7 @@ def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
         insights = list(dict.fromkeys(insights))
         max_units = max(_text_width_units(text) for text in insights)
         region_h = min(0.92, max(0.34, 0.25 * len(insights) + (0.18 if max_units > 70 else 0)))
-        _add_numbered_insights(
+        _add_bulleted_insights(
             slide, insights, Inches(0.4), Inches(insight_y),
             Inches(12.5), Inches(region_h), theme,
             size=12.5, color=theme.text_dark,

@@ -238,6 +238,29 @@ class ReportRenderer:
                     }
             transform(shape, source_zones[zone_name], mapped_target)
 
+    def _remove_duplicate_title_divider(self, slide, start_index: int, role: str) -> None:
+        """Remove the renderer line when the selected template layout owns one."""
+        if not self.template_path or not self._template_mapping:
+            return
+        role_map = self._template_mapping.get("roles", {}).get(role) or {}
+        if not role_map.get("has_title_divider"):
+            return
+        width, height = int(self._slide_w), int(self._slide_h)
+        for shape in list(slide.shapes)[start_index:]:
+            try:
+                is_generated_divider = (
+                    not str(getattr(shape, "text", "") or "").strip()
+                    and not getattr(shape, "has_chart", False)
+                    and not getattr(shape, "has_table", False)
+                    and int(shape.width) >= width * 0.45
+                    and abs(int(shape.height)) <= height * 0.01
+                    and height * 0.06 <= int(shape.top) <= height * 0.18
+                )
+            except (AttributeError, TypeError, ValueError):
+                is_generated_divider = False
+            if is_generated_divider:
+                shape._element.getparent().remove(shape._element)
+
     def _add_cover(self, cover, dims):
         slide = self._blank_slide("cover")
         start = len(slide.shapes)
@@ -270,6 +293,7 @@ class ReportRenderer:
             build_multi_group_bar_page(slide, page, self.theme, dims)
         else:
             build_chart_page(slide, page, self.theme, dims)
+        self._remove_duplicate_title_divider(slide, start, role)
         self._apply_template_geometry(slide, start, role)
 
     def _add_appendix(self, ap, dims):

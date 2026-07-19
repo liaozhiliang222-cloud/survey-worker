@@ -61,6 +61,32 @@ def _union_rect(shapes, width: int, height: int) -> dict | None:
     return _norm_rect(rect, width, height)
 
 
+def _has_title_divider(layout, width: int, height: int) -> bool:
+    """Return whether a layout/master already draws a wide line below the title.
+
+    Uploaded report templates often keep their title separator on the layout
+    instead of the slide itself. Adding our own separator on top of that
+    produces the visually obvious double-line defect.
+    """
+    for owner in (layout, layout.slide_master):
+        for shape in owner.shapes:
+            try:
+                left = int(shape.left)
+                top = int(shape.top)
+                shape_width = int(shape.width)
+                shape_height = abs(int(shape.height))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if (
+                shape_width >= width * 0.45
+                and shape_height <= height * 0.035
+                and height * 0.06 <= top <= height * 0.22
+                and left <= width * 0.35
+            ):
+                return True
+    return False
+
+
 def _classify_slide(slide, index: int) -> tuple[str, float]:
     texts = " ".join(_shape_text(shape) for shape in slide.shapes if _shape_text(shape)).lower()
     charts = sum(1 for shape in slide.shapes if getattr(shape, "has_chart", False))
@@ -117,6 +143,7 @@ def build_template_mapping(prs: Presentation) -> dict:
             "layout_index": layout_index,
             "layout_name": slide.slide_layout.name or "未命名版式",
             "confidence": round(confidence, 2),
+            "has_title_divider": _has_title_divider(slide.slide_layout, width, height),
             "zones": {
                 "title": _union_rect(title_shapes, width, height),
                 "content": _union_rect(content_shapes, width, height),

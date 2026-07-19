@@ -233,7 +233,7 @@ class ChartPageContent:
     subtitle: Optional[str] = None
     layout: Any = LayoutType.AUTO
     side_insights: List[str] = field(default_factory=list)  # 仅图文混排使用
-    insights: List[str] = field(default_factory=list)  # 标题下方的编号洞察正文
+    insights: List[str] = field(default_factory=list)  # 标题下方的圆点洞察正文
     data_source: str = ""  # 数据来源标注（页面底部，对齐调研公司规范）
 
 
