@@ -1,0 +1,526 @@
+[
+  {
+    "template_id": "background_chain_v1",
+    "family": "project_background",
+    "slide_type": [
+      "project_background"
+    ],
+    "variant": "A",
+    "primary_structure": "causal_chain",
+    "relation_type": [
+      "causal_chain",
+      "sequential"
+    ],
+    "content_density": [
+      "low",
+      "medium",
+      "high",
+      "compact",
+      "standard",
+      "professional"
+    ],
+    "node_range": [
+      3,
+      5
+    ],
+    "editable_level": "high",
+    "renderer": "render_project_background",
+    "template_file": "background_chain_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_NODE_01_TITLE",
+      "SK_NODE_01_BODY",
+      "SK_NODE_02_TITLE",
+      "SK_NODE_02_BODY",
+      "SK_NODE_03_TITLE",
+      "SK_NODE_03_BODY",
+      "SK_NODE_04_TITLE",
+      "SK_NODE_04_BODY"
+    ],
+    "metadata": {}
+  },
+  {
+    "template_id": "background_contrast_v1",
+    "family": "project_background",
+    "slide_type": [
+      "project_background"
+    ],
+    "variant": "B",
+    "primary_structure": "contrast",
+    "relation_type": [
+      "contrast"
+    ],
+    "content_density": [
+      "low",
+      "medium",
+      "high",
+      "compact",
+      "standard",
+      "professional"
+    ],
+    "node_range": [
+      2,
+      6
+    ],
+    "editable_level": "high",
+    "renderer": "render_project_background",
+    "template_file": "background_contrast_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_BODY_01",
+      "SK_BODY_02",
+      "SK_BODY_03"
+    ],
+    "metadata": {}
+  },
+  {
+    "template_id": "decision_3up_v1",
+    "family": "key_business_decisions",
+    "slide_type": [
+      "key_business_decisions"
+    ],
+    "variant": "A",
+    "primary_structure": "three_decisions",
+    "relation_type": [],
+    "content_density": [
+      "low",
+      "medium",
+      "high",
+      "compact",
+      "standard",
+      "professional"
+    ],
+    "node_range": [
+      1,
+      3
+    ],
+    "editable_level": "high",
+    "renderer": "render_key_decisions",
+    "template_file": "decision_3up_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_NODE_01_TITLE",
+      "SK_NODE_01_BODY",
+      "SK_NODE_02_TITLE",
+      "SK_NODE_02_BODY",
+      "SK_NODE_03_TITLE",
+      "SK_NODE_03_BODY"
+    ],
+    "metadata": {}
+  },
+  {
+    "template_id": "decision_radial_v1",
+    "family": "key_business_decisions",
+    "slide_type": [
+      "key_business_decisions"
+    ],
+    "variant": "B",
+    "primary_structure": "radial_decisions",
+    "relation_type": [],
+    "content_density": [
+      "low",
+      "medium",
+      "high",
+      "compact",
+      "standard",
+      "professional"
+    ],
+    "node_range": [
+      4,
+      6
+    ],
+    "editable_level": "high",
+    "renderer": "render_key_decisions",
+    "template_file": "decision_radial_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_NODE_01_TITLE",
+      "SK_NODE_01_BODY",
+      "SK_NODE_02_TITLE",
+      "SK_NODE_02_BODY",
+      "SK_NODE_03_TITLE",
+      "SK_NODE_03_BODY",
+      "SK_NODE_04_TITLE",
+      "SK_NODE_04_BODY",
+      "SK_NODE_05_TITLE",
+      "SK_NODE_05_BODY"
+    ],
+    "metadata": {}
+  },
+  {
+    "template_id": "research_path_linear_v1",
+    "family": "research_path",
+    "slide_type": [
+      "research_path"
+    ],
+    "variant": "A",
+    "primary_structure": "linear_stages",
+    "relation_type": [
+      "sequential"
+    ],
+    "content_density": [
+      "low",
+      "medium",
+      "high",
+      "compact",
+      "standard",
+      "professional"
+    ],
+    "node_range": [
+      3,
+      5
+    ],
+    "editable_level": "high",
+    "renderer": "render_research_path",
+    "template_file": "research_path_linear_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_STAGE_01_TITLE",
+      "SK_STAGE_01_ACTION",
+      "SK_STAGE_01_OUTPUT",
+      "SK_STAGE_02_TITLE",
+      "SK_STAGE_02_ACTION",
+      "SK_STAGE_02_OUTPUT",
+      "SK_STAGE_03_TITLE",
+      "SK_STAGE_03_ACTION",
+      "SK_STAGE_03_OUTPUT",
+      "SK_STAGE_04_TITLE",
+      "SK_STAGE_04_ACTION",
+      "SK_STAGE_04_OUTPUT"
+    ],
+    "metadata": {}
+  },
+  {
+    "template_id": "research_path_dualtrack_v1",
+    "family": "research_path",
+    "slide_type": [
+      "research_path"
+    ],
+    "variant": "B",
+    "primary_structure": "dual_track",
+    "relation_type": [],
+    "content_density": [
+      "low",
+      "medium",
+      "high",
+      "compact",
+      "standard",
+      "professional"
+    ],
+    "node_range": [
+      3,
+      6
+    ],
+    "editable_level": "high",
+    "renderer": "render_research_path",
+    "template_file": "research_path_dualtrack_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_STAGE_01_TITLE",
+      "SK_STAGE_01_ACTION",
+      "SK_STAGE_01_OUTPUT",
+      "SK_STAGE_02_TITLE",
+      "SK_STAGE_02_ACTION",
+      "SK_STAGE_02_OUTPUT",
+      "SK_STAGE_03_TITLE",
+      "SK_STAGE_03_ACTION",
+      "SK_STAGE_03_OUTPUT",
+      "SK_STAGE_04_TITLE",
+      "SK_STAGE_04_ACTION",
+      "SK_STAGE_04_OUTPUT"
+    ],
+    "metadata": {
+      "requires_parallel_tracks": true
+    }
+  },
+  {
+    "template_id": "sample_tree_v1",
+    "family": "sample_design",
+    "slide_type": [
+      "sample_design"
+    ],
+    "variant": "A",
+    "primary_structure": "sample_tree",
+    "relation_type": [],
+    "content_density": [
+      "low",
+      "medium",
+      "high",
+      "compact",
+      "standard",
+      "professional"
+    ],
+    "node_range": [
+      3,
+      8
+    ],
+    "editable_level": "high",
+    "renderer": "render_sample_design",
+    "template_file": "sample_tree_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_TOTAL_SAMPLE",
+      "SK_BRANCH_01_TITLE",
+      "SK_BRANCH_01_BODY",
+      "SK_BRANCH_02_TITLE",
+      "SK_BRANCH_02_BODY",
+      "SK_BRANCH_03_TITLE",
+      "SK_BRANCH_03_BODY",
+      "SK_ADDON_TITLE",
+      "SK_ADDON_BODY"
+    ],
+    "metadata": {}
+  },
+  {
+    "template_id": "execution_canvas_v1",
+    "family": "sample_design",
+    "slide_type": [
+      "execution_design",
+      "sample_design"
+    ],
+    "variant": "B",
+    "primary_structure": "execution_canvas",
+    "relation_type": [],
+    "content_density": [
+      "low",
+      "medium",
+      "high",
+      "compact",
+      "standard",
+      "professional"
+    ],
+    "node_range": [
+      2,
+      6
+    ],
+    "editable_level": "high",
+    "renderer": "render_sample_design",
+    "template_file": "execution_canvas_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_BODY_01",
+      "SK_BODY_02",
+      "SK_BODY_03",
+      "SK_NOTE_01",
+      "SK_NOTE_02",
+      "SK_NODE_01_TITLE",
+      "SK_NODE_01_BODY",
+      "SK_NODE_02_TITLE",
+      "SK_NODE_02_BODY",
+      "SK_NODE_03_TITLE",
+      "SK_NODE_03_BODY",
+      "SK_NODE_04_TITLE",
+      "SK_NODE_04_BODY"
+    ],
+    "metadata": {}
+  },
+  {
+    "template_id": "chart_insight_v1",
+    "family": "report_example",
+    "slide_type": [
+      "report_example"
+    ],
+    "variant": "A",
+    "primary_structure": "single_chart_with_insights",
+    "relation_type": [],
+    "content_density": [
+      "low",
+      "medium",
+      "high",
+      "compact",
+      "standard",
+      "professional"
+    ],
+    "node_range": [
+      0,
+      4
+    ],
+    "editable_level": "high",
+    "renderer": "render_report_example",
+    "template_file": "chart_insight_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_CHART_01",
+      "SK_CHART_02",
+      "SK_CHART_TITLE_01",
+      "SK_CHART_TITLE_02",
+      "SK_INSIGHT_01",
+      "SK_INSIGHT_02",
+      "SK_INSIGHT_03",
+      "SK_EXAMPLE_TAG",
+      "SK_DISCLAIMER"
+    ],
+    "metadata": {}
+  },
+  {
+    "template_id": "dual_chart_v1",
+    "family": "report_example",
+    "slide_type": [
+      "report_example"
+    ],
+    "variant": "B",
+    "primary_structure": "dual_chart",
+    "relation_type": [],
+    "content_density": [
+      "low",
+      "medium",
+      "high",
+      "compact",
+      "standard",
+      "professional"
+    ],
+    "node_range": [
+      0,
+      4
+    ],
+    "editable_level": "high",
+    "renderer": "render_report_example",
+    "template_file": "dual_chart_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_CHART_01",
+      "SK_CHART_02",
+      "SK_CHART_TITLE_01",
+      "SK_CHART_TITLE_02",
+      "SK_INSIGHT_01",
+      "SK_INSIGHT_02",
+      "SK_INSIGHT_03",
+      "SK_EXAMPLE_TAG",
+      "SK_DISCLAIMER"
+    ],
+    "metadata": {}
+  },
+  {
+    "template_id": "gantt_standard_v1",
+    "family": "gantt",
+    "slide_type": [
+      "gantt"
+    ],
+    "variant": "A",
+    "primary_structure": "standard_gantt",
+    "relation_type": [],
+    "content_density": [
+      "low",
+      "medium",
+      "compact",
+      "standard",
+      "professional"
+    ],
+    "node_range": [
+      0,
+      99
+    ],
+    "editable_level": "high",
+    "renderer": "render_gantt",
+    "template_file": "gantt_standard_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_TIMELINE",
+      "SK_TASK_01",
+      "SK_TASK_02",
+      "SK_TASK_03",
+      "SK_TASK_04",
+      "SK_TASK_05",
+      "SK_DELIVERABLE_01",
+      "SK_DELIVERABLE_02",
+      "SK_RISK_01",
+      "SK_RISK_02"
+    ],
+    "metadata": {}
+  },
+  {
+    "template_id": "gantt_risk_v1",
+    "family": "gantt",
+    "slide_type": [
+      "gantt"
+    ],
+    "variant": "B",
+    "primary_structure": "gantt_with_risks",
+    "relation_type": [],
+    "content_density": [
+      "high",
+      "professional"
+    ],
+    "node_range": [
+      0,
+      99
+    ],
+    "editable_level": "high",
+    "renderer": "render_gantt",
+    "template_file": "gantt_risk_v1.pptx",
+    "required_placeholders": [
+      "SK_TITLE",
+      "SK_SUBTITLE",
+      "SK_KICKER",
+      "SK_FOOTNOTE",
+      "SK_PAGE_NO",
+      "SK_BRAND",
+      "SK_TIMELINE",
+      "SK_TASK_01",
+      "SK_TASK_02",
+      "SK_TASK_03",
+      "SK_TASK_04",
+      "SK_TASK_05",
+      "SK_DELIVERABLE_01",
+      "SK_DELIVERABLE_02",
+      "SK_RISK_01",
+      "SK_RISK_02"
+    ],
+    "metadata": {}
+  }
+]

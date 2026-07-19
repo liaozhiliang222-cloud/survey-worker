@@ -31,11 +31,22 @@ from .model import (
     TableData,
     TocContent,
 )
-from .renderer import ReportRenderer
 from .theme import Theme
 
+try:
+    from .renderer import ReportRenderer
+except ModuleNotFoundError as exc:  # pragma: no cover - environment dependent
+    if exc.name != "pandas":
+        raise
+    ReportRenderer = None
+
 # 子模块亦可单独导入
-from . import charts, layouts, loaders, pages, utils
+try:
+    from . import charts, layouts, loaders, pages, utils
+except ModuleNotFoundError as exc:  # pragma: no cover - environment dependent
+    if exc.name != "pandas":
+        raise
+    charts = layouts = loaders = pages = utils = None
 
 __version__ = "0.1.0"
 

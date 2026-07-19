@@ -20,6 +20,7 @@ from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
 from pptx_report.illustrative_dataset import DISCLAIMER, EXAMPLE_LABEL, audit_illustrative_dataset, normalize_illustrative_dataset
+from pptx_report.proposal_templates import plan_deck_templates
 
 
 VISUAL_TYPES = {
@@ -104,6 +105,25 @@ def _items(slide: dict) -> list[dict]:
 
 def _fallback_visual(value: str) -> str:
     value = _text(value).lower()
+    aliases = {
+        "project_background": "context_tension_map",
+        "opportunity_context": "context_tension_map",
+        "key_business_decisions": "decision_tree",
+        "decision_framework": "decision_tree",
+        "research_path": "dual_track_research_flow",
+        "methodology_flow": "dual_track_research_flow",
+        "execution_design": "qualitative_design_canvas",
+        "qualitative_design": "qualitative_design_canvas",
+        "sample_design": "quantitative_sample_architecture",
+        "quantitative_design": "quantitative_sample_architecture",
+        "report_example": "concept_funnel_maxdiff_example",
+        "concept_result_example": "concept_funnel_maxdiff_example",
+        "pricing_result_example": "pricing_segment_example",
+        "gantt": "timeline_gantt_risk",
+        "timeline": "timeline_gantt_risk",
+        "delivery_plan": "timeline_gantt_risk",
+    }
+    value = aliases.get(value, value)
     if value in VISUAL_TYPES:
         return value
     for token, fallback in VISUAL_FALLBACKS.items():
@@ -140,7 +160,7 @@ def normalize_deck(deck: dict) -> tuple[dict, list[dict]]:
         if title in seen_titles:
             issues.append({"level": "warning", "code": "duplicate_title", "slide": index + 1})
         seen_titles.add(title)
-        visual = _fallback_visual(raw.get("visual_type"))
+        visual = _fallback_visual(raw.get("visual_type") or raw.get("slide_type"))
         if visual != raw.get("visual_type"):
             issues.append({"level": "warning", "code": "visual_type_repaired", "slide": index + 1, "value": visual})
         content = _items(raw)
@@ -155,6 +175,7 @@ def normalize_deck(deck: dict) -> tuple[dict, list[dict]]:
             issues.append({"level": "warning", "code": "unreferenced_number", "slide": index + 1})
         normalized_slides.append({
             "id": slide_id,
+            "slide_id": _text(raw.get("slide_id")) or slide_id,
             "order": index + 1,
             "slide_type": _text(raw.get("slide_type")) or ("cover" if index == 0 else visual),
             "title": title,
@@ -168,6 +189,9 @@ def normalize_deck(deck: dict) -> tuple[dict, list[dict]]:
             "layout_variant": _text(raw.get("layout_variant")) or "default",
             "relation_type": _text(raw.get("relation_type")) or "sequence",
             "content_density": _text(raw.get("content_density")) or "professional",
+            "node_count": int(raw.get("node_count") or len(content)),
+            "has_stage_output": bool(raw.get("has_stage_output")),
+            "has_parallel_tracks": bool(raw.get("has_parallel_tracks") or visual == "dual_track_research_flow"),
             "target_canvas_occupancy": min(.85, max(.5, float(raw.get("target_canvas_occupancy") or .72))),
             "content": content,
             "charts": raw.get("charts") if isinstance(raw.get("charts"), list) else [],
@@ -203,6 +227,9 @@ def normalize_deck(deck: dict) -> tuple[dict, list[dict]]:
         "source_summary": result.get("source_summary") if isinstance(result.get("source_summary"), dict) else {},
         "slides": normalized_slides,
     }
+    planned_slides, template_issues = plan_deck_templates(normalized_slides)
+    normalized["slides"] = planned_slides
+    issues.extend(template_issues)
     return normalized, issues
 
 
@@ -997,6 +1024,77 @@ def _render_real_gantt(slide, tasks, items):
         _textbox(slide, value, x + .82, 5.99, 3.0, .55, 8.8, NAVY if index < 2 else MUTED, index < 2)
 
 
+
+def render_project_background(slide, deck, data) -> dict:
+    items = data["content"]
+    if data.get("primary_structure") == "contrast":
+        _render_relationship(slide, items)
+    else:
+        _render_context(slide, items)
+    return {"renderer": "render_project_background", "template_id": data.get("template_id")}
+
+
+def render_key_decisions(slide, deck, data) -> dict:
+    _render_decision_tree(slide, data["content"])
+    return {"renderer": "render_key_decisions", "template_id": data.get("template_id")}
+
+
+def render_research_path(slide, deck, data) -> dict:
+    if data.get("has_parallel_tracks") or data.get("primary_structure") == "dual_track":
+        _render_dual_flow(slide, data["content"])
+    else:
+        _render_timeline(slide, data["content"])
+    return {"renderer": "render_research_path", "template_id": data.get("template_id")}
+
+
+def render_sample_design(slide, deck, data) -> dict:
+    if data.get("page_family") == "sample_design" and data.get("primary_structure") == "execution_canvas":
+        _render_qualitative(slide, data["content"])
+    else:
+        _render_sample_architecture(slide, data["content"])
+    return {"renderer": "render_sample_design", "template_id": data.get("template_id")}
+
+
+def render_report_example(slide, deck, data) -> dict:
+    visual = data["visual_type"]
+    if visual == "pricing_segment_example":
+        _render_pricing_example(slide, deck.get("illustrative_dataset"), data["data_status"] != "illustrative")
+    else:
+        _render_concept_example(slide, deck.get("illustrative_dataset"), data["data_status"] != "illustrative")
+    return {"renderer": "render_report_example", "template_id": data.get("template_id")}
+
+
+def render_gantt(slide, deck, data) -> dict:
+    _render_real_gantt(slide, data.get("timeline_tasks") or [], data["content"])
+    return {"renderer": "render_gantt", "template_id": data.get("template_id")}
+
+
+def _render_by_template(slide, deck, data) -> dict:
+    renderer = data.get("renderer")
+    if data["visual_type"] == "cover_product_hero":
+        _render_product_cover(slide, deck, data)
+        return {"renderer": "render_cover", "template_id": data.get("template_id")}
+    dispatch = {
+        "render_project_background": render_project_background,
+        "render_key_decisions": render_key_decisions,
+        "render_research_path": render_research_path,
+        "render_sample_design": render_sample_design,
+        "render_report_example": render_report_example,
+        "render_gantt": render_gantt,
+    }
+    if renderer in dispatch:
+        return dispatch[renderer](slide, deck, data)
+    visual = data["visual_type"]
+    items = data["content"]
+    if visual == "evidence_threshold_matrix": _render_evidence_matrix(slide, items)
+    elif visual == "questionnaire_decision_journey": _render_questionnaire_journey(slide, items)
+    elif visual == "decision_output_map": _render_decision_output(slide, items)
+    elif visual in {"plan_comparison", "pricing_table"}: _render_matrix(slide, items)
+    elif visual == "risk_matrix": _render_risk(slide, items)
+    else: _render_deliverables(slide, items)
+    return {"renderer": "legacy_visual_renderer", "template_id": data.get("template_id")}
+
+
 def render_proposal_deck(deck: dict, output_path: str) -> dict:
     audit = audit_deck(deck)
     normalized = audit["deck"]
@@ -1009,22 +1107,7 @@ def render_proposal_deck(deck: dict, output_path: str) -> dict:
     project_short = normalized["title"][:18]
     for page_no, data in enumerate(normalized["slides"], 1):
         slide = _base_slide(prs, data, page_no, project_short)
-        visual = data["visual_type"]
-        items = data["content"]
-        if visual == "cover_product_hero": _render_product_cover(slide, normalized, data)
-        elif visual == "context_tension_map": _render_context(slide, items)
-        elif visual == "decision_tree": _render_decision_tree(slide, items)
-        elif visual == "evidence_threshold_matrix": _render_evidence_matrix(slide, items)
-        elif visual == "dual_track_research_flow": _render_dual_flow(slide, items)
-        elif visual == "qualitative_design_canvas": _render_qualitative(slide, items)
-        elif visual == "quantitative_sample_architecture": _render_sample_architecture(slide, items)
-        elif visual == "questionnaire_decision_journey": _render_questionnaire_journey(slide, items)
-        elif visual == "concept_funnel_maxdiff_example": _render_concept_example(slide, normalized.get("illustrative_dataset"), data["data_status"] != "illustrative")
-        elif visual == "pricing_segment_example": _render_pricing_example(slide, normalized.get("illustrative_dataset"), data["data_status"] != "illustrative")
-        elif visual == "decision_output_map": _render_decision_output(slide, items)
-        elif visual == "timeline_gantt_risk": _render_real_gantt(slide, data.get("timeline_tasks") or [], items)
-        elif visual in {"plan_comparison", "pricing_table"}: _render_matrix(slide, items)
-        elif visual == "risk_matrix": _render_risk(slide, items)
-        else: _render_deliverables(slide, items)
+        diagnostics = _render_by_template(slide, normalized, data)
+        data.setdefault("render_diagnostics", diagnostics)
     prs.save(output_path)
     return audit

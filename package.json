@@ -13,7 +13,8 @@
     "test:server-routes": "node tests/server-routes-smoke.mjs",
     "test:cloudflare-proxy": "node tests/cloudflare-proxy-smoke.mjs",
     "test:python:deps": "python tests/python-deps-smoke.py",
-    "test:python": "npm run test:python:deps && python tests/template_geometry_smoke.py && python tests/proposal_deck_smoke.py"
+    "test:python": "npm run test:python:deps && python tests/template_geometry_smoke.py && python tests/proposal_templates_smoke.py && python tests/proposal_deck_smoke.py",
+    "test:python:proposal-templates": "python tests/proposal_templates_smoke.py"
   },
   "dependencies": {},
   "devDependencies": {}
