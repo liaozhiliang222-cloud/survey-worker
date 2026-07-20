@@ -8,6 +8,7 @@ let calls = [];
 globalThis.fetch = async (url, options) => {
   const body = JSON.parse(options.body);
   calls.push({ url, options, body });
+  if (mode === "network" && body.model === "deepseek-v4-pro") throw new TypeError("socket reset");
   if (mode === "quota" && body.model === "deepseek-v4-pro") {
     return new Response(JSON.stringify({ error: { code: "AllocationQuota.FreeTierOnly" } }), {
       status: 403,
@@ -76,6 +77,15 @@ response = await mod.onRequest({
 if (response.status !== 200 || response.headers.get("X-Actual-Model") !== "deepseek-v4-flash") throw new Error("quota fallback failed");
 
 // 用户 Key 始终优先，且不进入平台模型链。
+calls = [];
+mode = "network";
+response = await mod.onRequest({
+  request: makeRequest(),
+  env: { DASHSCOPE_API_KEY: "server-secret" },
+});
+if (response.status !== 200 || response.headers.get("X-Actual-Model") !== "deepseek-v4-flash") throw new Error("network fallback failed");
+if (calls.length !== 2 || !calls[0].options.signal) throw new Error("network fallback did not preserve timeout signal");
+
 calls = [];
 mode = "normal";
 response = await mod.onRequest({

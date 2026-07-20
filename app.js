@@ -9537,9 +9537,10 @@ async function renderAiBrief() {
     const errors = validateAiSettings(settings);
     if (!errors.length) {
       try {
-        renderAiProgress(result, steps, 2, "大模型生成可能需要几十秒，页面没有卡住。");
+        renderAiProgress(result, steps, 2, design.config.lengthMode === "long" ? "专业长卷通常需要 2–6 分钟，正在持续生成，请勿关闭页面。" : "大模型正在生成精简短卷，页面没有卡住。");
         output = await callAiChatCompletion(settings, buildAiQuestionnairePrompt(), {
-          maxTokens: 32000
+          maxTokens: 32000,
+          timeoutMs: design.config.lengthMode === "long" ? 600000 : 360000
         });
         source = aiProviderPresets[settings.provider]?.name || "大模型";
       } catch (error) {
@@ -11345,7 +11346,7 @@ async function reviseAiQuestionnaire() {
     if (!errors.length) {
       try {
         renderAiProgress(result, steps, 2, "正在按你的要求重写问卷，通常需要几十秒。");
-        output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 32000 });
+        output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 32000, timeoutMs: 600000 });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output += `\n\n> 大模型修改失败：${error.message}`;

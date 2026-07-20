@@ -100,18 +100,24 @@ function prepareBuiltinBody(body, model) {
   return next;
 }
 
-async function callUpstream(targetUrl, apiKey, body) {
-  const upstream = await fetch(targetUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
-  return { upstream, text: await upstream.text() };
+async function callUpstream(targetUrl, apiKey, body, timeoutMs = 240_000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const upstream = await fetch(targetUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    return { upstream, text: await upstream.text() };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
-
 function upstreamResponse(text, upstream, model, source, attempts = []) {
   return new Response(text, {
     status: upstream.status,
@@ -152,7 +158,7 @@ export async function onRequest({ request, env }) {
 
     if (!useBuiltin) {
       const targetUrl = validateTarget(payload.provider || "custom", payload.url);
-      const { upstream, text } = await callUpstream(targetUrl, apiKey, body);
+      const { upstream, text } = await callUpstream(targetUrl, apiKey, body, 540_000);
       if (!text.trim()) return json({ error: { message: "模型返回为空，请检查模型名称、额度或服务状态。" } }, 502);
       return upstreamResponse(text, upstream, body.model, "user-key", [body.model]);
     }
@@ -161,17 +167,25 @@ export async function onRequest({ request, env }) {
     const wantsJson = body.response_format?.type === "json_object";
     const attempts = [];
     let lastResult = null;
+    let lastError = null;
     for (const model of builtin.models) {
       attempts.push(model);
       const upstreamBody = prepareBuiltinBody(body, model);
-      const result = await callUpstream(targetUrl, apiKey, upstreamBody);
+      let result;
+      try {
+        result = await callUpstream(targetUrl, apiKey, upstreamBody);
+      } catch (error) {
+        lastError = error;
+        continue;
+      }
       lastResult = { ...result, model };
       if (!result.upstream.ok || !result.text.trim()) continue;
       if (wantsJson && !containsJsonObject(result.text)) continue;
       return upstreamResponse(result.text, result.upstream, model, "builtin-bailian", attempts);
     }
     if (!lastResult?.text?.trim()) {
-      return json({ error: { message: "内置模型均未返回有效内容，请稍后重试。" } }, 502);
+      const reason = lastError?.name === "AbortError" ? "模型响应超时" : (lastError?.message || "未返回有效内容");
+      return json({ error: { message: `内置模型均未返回有效内容：${reason}，请稍后重试。` } }, 502);
     }
     return upstreamResponse(lastResult.text, lastResult.upstream, lastResult.model, "builtin-bailian", attempts);
   } catch (error) {
