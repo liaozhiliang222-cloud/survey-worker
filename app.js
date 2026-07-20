@@ -8827,17 +8827,28 @@ function getAiDesignerConfig() {
     template: aiQuestionnaireTemplates.find((template) => template.id === templateId) || null,
     audience: document.querySelector("#aiAudience")?.value.trim() || "目标品类潜在或现有用户",
     sampleSize: Number(document.querySelector("#aiSampleSize")?.value) || 400,
-    duration: Number(document.querySelector("#aiDuration")?.value) || 8
+    lengthMode: document.querySelector("#aiQuestionnaireLengthMode")?.value === "short" ? "short" : "long"
   };
 }
 
-function targetAiQuestionCount(duration) {
-  const minutes = Math.max(3, Math.min(30, Number(duration) || 8));
-  if (minutes <= 5) return { min: 10, max: 14, target: 12, level: "短问卷初稿" };
-  if (minutes <= 8) return { min: 16, max: 22, target: 19, level: "标准短问卷初稿" };
-  if (minutes <= 12) return { min: 24, max: 32, target: 28, level: "标准问卷初稿" };
-  if (minutes <= 18) return { min: 34, max: 45, target: 40, level: "深度问卷初稿" };
-  return { min: 46, max: 60, target: 52, level: "长问卷初稿" };
+function targetAiQuestionCount(studyTypes, lengthMode = "long") {
+  const selectedTypeCount = aiStudyTypeValues(studyTypes).length;
+  if (lengthMode === "short") {
+    const target = Math.min(36, 29 + Math.max(0, selectedTypeCount - 1) * 3);
+    return {
+      min: Math.max(25, target - 4),
+      max: Math.min(40, target + 5),
+      target,
+      level: "精简短卷"
+    };
+  }
+  const target = Math.min(64, 54 + Math.max(0, selectedTypeCount - 1) * 5);
+  return {
+    min: Math.max(48, target - 5),
+    max: Math.min(70, target + 6),
+    target,
+    level: "专业长卷"
+  };
 }
 
 function aiStudyTypeName(type) {
@@ -8852,22 +8863,45 @@ function aiQuestion(code, type, title, options, note = "") {
 function baseAiQuestions(config) {
   return [
     aiQuestion("S1", "单选题", "请问您的年龄是？", [
-      ["1", "18岁以下", "终止"],
+      ["1", "18岁以下", "按目标人群条件判断"],
       ["2", "18-24岁", "继续"],
-      ["3", "25-34岁", "继续"],
-      ["4", "35-44岁", "继续"],
-      ["5", "45岁及以上", "按项目要求确认是否继续"]
-    ], "背景分层题，不随机。"),
-    aiQuestion("S2", "单选题", "请问您目前所在城市级别是？", [
+      ["3", "25-29岁", "继续"],
+      ["4", "30-34岁", "继续"],
+      ["5", "35-39岁", "继续"],
+      ["6", "40-44岁", "继续"],
+      ["7", "45-54岁", "按目标人群条件判断"],
+      ["8", "55岁及以上", "按目标人群条件判断"]
+    ], "客观人口属性甄别；按项目人群边界设置终止条件，不在题干中暴露招募标准。"),
+    aiQuestion("S2", "单选题", "请问您目前长期居住在哪类地区？", [
       ["1", "一线城市", ""],
       ["2", "新一线城市", ""],
       ["3", "二线城市", ""],
-      ["4", "三线及以下城市", ""]
-    ], "可作为配额或交叉分析表头，不随机。"),
-    aiQuestion("S3", "单选题", `请问您是否属于本次研究目标人群：${config.audience}？`, [
-      ["1", "是", "继续"],
-      ["2", "否", "终止"]
-    ], "用于样本准入，正式上线前应替换为更客观的行为判断题。")
+      ["4", "三线城市", ""],
+      ["5", "四线及以下城市或县城", ""],
+      ["6", "乡镇或农村地区", ""],
+      ["97", "其他地区（请注明）", "置底"]
+    ], "用于配额和交叉分析；不要仅凭城市级别终止，除非研究范围明确限制。"),
+    aiQuestion("S3", "多选题", "过去3个月内，您对该品类有过哪些实际行为？", [
+      ["1", "本人购买并使用过", "继续"],
+      ["2", "本人购买给他人使用过", "继续"],
+      ["3", "使用过但不是本人购买", "继续或进入使用者路径"],
+      ["4", "主动了解、搜索或比较过相关产品", "进入潜在用户路径"],
+      ["5", "有购买计划，但尚未采取行动", "进入潜在用户路径"],
+      ["98", "以上均无", "置底、排他；按研究范围判断是否终止"]
+    ], "将目标人群拆成可回忆的客观行为，不得直接询问受访者是否“属于目标人群”；选项1-5随机，98置底且排他。"),
+    aiQuestion("S4", "单选题", "在购买该品类产品时，您通常扮演什么角色？", [
+      ["1", "主要由我决定并购买", "继续"],
+      ["2", "我与他人共同决定", "继续"],
+      ["3", "我会提出建议，但不负责最终决定", "按研究目标分层或继续"],
+      ["4", "我通常只使用，不参与选择或购买", "进入使用者路径或按研究目标判断"],
+      ["5", "我既不使用，也不参与选择或购买", "通常终止"]
+    ], "用决策参与度判断样本价值，避免把非主决策者一律排除。"),
+    aiQuestion("S5", "多选题", "请问您本人或共同居住的家人是否从事以下相关工作？", [
+      ["1", "市场研究、广告、公关或媒体", "视项目保密要求排除"],
+      ["2", "该品类的生产、品牌、经销或零售", "视项目保密要求排除"],
+      ["3", "与本研究主题直接相关的专业岗位", "视项目保密要求排除"],
+      ["98", "以上均无", "置底、排他"]
+    ], "行业排除仅覆盖确有偏差或保密风险的人群；选项1-3随机，98置底且排他。")
   ];
 }
 
@@ -8993,7 +9027,7 @@ function renderAiQuestionTable(question) {
 function buildAiQuestionnaireDesign() {
   const config = getAiDesignerConfig();
   const brief = config.brief || "用户暂未填写详细研究需求，以下基于研究类型和目标人群生成通用版问卷初稿。";
-  const target = targetAiQuestionCount(config.duration);
+  const target = targetAiQuestionCount(config.studyTypes || config.studyType, config.lengthMode);
   const screener = baseAiQuestions(config);
   const baseBody = bodyAiQuestions(config);
   const backgroundPool = backgroundAiQuestions();
@@ -9004,15 +9038,14 @@ function buildAiQuestionnaireDesign() {
   const body = recodeAiBodyQuestions([...baseBody, ...optional].slice(0, bodyTarget));
   const background = backgroundPool.slice(0, backgroundCount);
   const allQuestions = [...screener, ...body, ...background];
-  const estimatedMinutes = config.duration || Math.max(5, Math.min(20, Math.ceil((allQuestions.length + 1) * 0.55 + body.length * 0.25)));
   const questionnaireText = [
-    `${config.project} 调研问卷`,
+    `# ${config.project} 调研问卷`,
     "",
     "一、问卷说明",
     `- 研究类型：${aiStudyTypeName(config.studyTypes || config.studyType)}`,
     `- 目标人群：${config.audience}`,
     `- 目标样本量：N=${config.sampleSize}`,
-    `- 期望/建议时长：约 ${estimatedMinutes} 分钟`,
+    "- 设计标准：面向专业调研公司交付的可编程完整版初稿，优先保证研究问题覆盖与后续分析价值。",
     "- 质量控件：建议保留1道注意力检测题，并记录答题时长用于清洗。",
     "",
     "二、问卷正文",
@@ -9055,7 +9088,7 @@ function buildAiQuestionnaireDesign() {
     brief
   ].join("\n");
 
-  return { config, questions: allQuestions, questionnaireText, estimatedMinutes };
+  return { config, questions: allQuestions, questionnaireText };
 }
 
 function renderAiQuestionnaireHtml(result) {
@@ -9067,7 +9100,7 @@ function renderAiQuestionnaireHtml(result) {
         <span class="issue-tag low">${aiStudyTypeName(result.config.studyTypes || result.config.studyType)}</span>
       </div>
       <div class="metric-grid compact-metrics">
-        <div><span>建议时长</span><strong>${result.estimatedMinutes} 分钟</strong></div>
+        <div><span>问卷模式</span><strong>${result.config.lengthMode === "short" ? "精简短卷" : "专业长卷"}</strong></div>
         <div><span>目标样本</span><strong>${result.config.sampleSize}</strong></div>
         <div><span>生成来源</span><strong>${escapeHtml(result.source || "本地规则")}</strong></div>
       </div>
@@ -9340,17 +9373,23 @@ function normalizeAiResponseContent(content) {
 function buildAiQuestionnairePrompt() {
   const config = getAiDesignerConfig();
   const design = buildAiQuestionnaireDesign();
-  const target = targetAiQuestionCount(config.duration);
+  const target = targetAiQuestionCount(config.studyTypes || config.studyType, config.lengthMode);
   const localDraft = design.questionnaireText;
   const templateBlock = buildAiQuestionnaireTemplatePromptBlock(config);
   return [
     {
       role: "system",
       content: [
-        "你是一名资深市场研究问卷设计专家。请输出严谨、中立、可编程、便于后续统计分析的正式定量问卷。必须使用中文。",
-        "直接从问卷标题开始输出，不要写“好的”“作为专家”“我将”“思考过程”“设计思路如下”等开场白或推理过程。",
-        "每道选择题必须包含三列表格：编码、选项内容、逻辑与备注。必须标注跳题、随机、置底、质量控制和数据清洗提示。",
-        "必须根据用户期望答题时长控制题量，不要固定输出13题。当前生成的是研究问卷初稿/题库草案，应先尽可能完整覆盖研究模块，允许后续人工删减。"
+        "你是一名资深市场研究问卷设计专家，输出质量须对齐主流专业调研公司的正式定量问卷交付习惯。必须使用中文，并形成可直接交给问卷程序员继续加工的完整初稿。",
+        "直接从Markdown一级标题开始输出，第一行必须是“# 项目名称 调研问卷”。不要写“好的”“作为专家”“我将”“思考过程”“设计思路如下”等开场白或推理过程。",
+        "甄别题不得直接询问受访者是否属于目标人群，也不得把用户填写的目标人群描述照抄成是/否题。必须拆成可回忆、可验证的客观问题，例如近期品类行为、购买或使用时间、决策角色、地域配额、行业排除和同类调研参与情况。",
+        "甄别逻辑要兼顾现有用户、潜在用户、购买者、使用者和影响者；只有与研究范围明确冲突时才终止，其他情况优先分层或跳转，避免过度筛选。",
+        "主体问卷必须围绕业务决策形成完整链路：品类行为与场景、需求与痛点、认知和选择驱动、方案或概念评价、购买转化、价格或功能、品牌/渠道、细分变量、背景资料。根据研究类型增删模块，但不得只输出少量通用题。",
+        "题目与选项必须具体、全面、互斥且尽量穷尽。多选题通常提供6-12个有业务含义的选项；矩阵属性通常提供8-15项；必要时设置其他、以上均无、不知道/不适用，并明确排他、随机、轮换和置底规则。",
+        "量表必须写明完整端点、方向和适用对象；避免双重问题、诱导措辞、主观假设和无法回答的回忆周期。概念测试、PSM、KANO、NPS等研究方法必须遵守其标准问法与分析要求。",
+        "每道选择题必须包含三列表格：编码、选项内容、逻辑与备注。必须标注跳题、终止、引用前题、随机、轮换、置底、排他、质量控制和数据清洗提示。",
+        "能根据项目背景合理推导的品牌、渠道、场景、需求、痛点、功能和属性要主动补齐；只有确实依赖客户素材的信息才使用【待客户确认】标记，不要大量使用品牌A、功能A、XX元等空泛占位符。",
+        "依据用户选择的短卷或长卷模式控制内容深度。无论哪种模式，都应优先保证研究问题覆盖和后续分析价值，不得按固定答题时长压缩内容。"
       ].join("")
     },
     {
@@ -9361,20 +9400,26 @@ function buildAiQuestionnairePrompt() {
         `已选择研究类型代码：${aiStudyTypeValues(config.studyTypes || config.studyType).join("、")}`,
         `目标人群：${config.audience}`,
         `目标样本量：N=${config.sampleSize}`,
-        `期望时长：约 ${config.duration} 分钟`,
-        `题量要求：${target.level}，总题数建议 ${target.min}-${target.max} 题，优先接近 ${target.target} 题。总题数包含甄别题、主体题、背景题和质量控制题。`,
-        "组合类型规则：如果研究类型包含多个方向，必须融合多个模块设计，不要只按第一个类型生成。例如概念/新品测试+价格研究需要同时包含概念理解、吸引力、购买意愿、卖点偏好和PSM/价格接受相关题目。",
-        "题量调整规则：即使是短问卷初稿，也要先覆盖核心研究模块；时长越长，越应增加U&A、品牌健康度、概念吸引力、购买转化、关键驱动、价格/功能、背景分层等模块。请把结果当作可删减的完整初稿，而不是最终上线精简版。不要无视时长字段。",
+        `问卷模式：${config.lengthMode === "short" ? "精简短卷" : "专业长卷"}`,
+        `完整度建议：${target.level}，建议形成约${target.min}-${target.max}个主问题编号；可通过子题、矩阵行和路径分流提高覆盖度，不要为了凑数量重复提问。`,
+        config.lengthMode === "short"
+          ? "短卷规则：保留完整甄别和核心业务决策链，减少重复诊断与低优先级背景题；不能为了缩短而删除关键KPI、必要分流和方法标准题。"
+          : "长卷规则：按照正式调研项目深度展开，充分覆盖行为、需求、痛点、驱动、概念/品牌/价格/功能评价、转化、细分和背景信息；通常形成约50-65个主问题编号，组合多个研究类型时可扩展至70题左右。",
+        "研究架构规则：先从业务目标反推分析指标和决策，再设计题目。即使用户需求模糊，也要主动补足专业问卷常见的诊断维度，并把真正需要客户确认的信息集中标注。",
+        "组合类型规则：如果研究类型包含多个方向，必须融合多个模块设计，不要只按第一个类型生成。例如概念/新品测试+价格研究需要同时覆盖品类基础、概念理解、吸引力、相关性、独特性、可信度、卖点取舍、购买意愿、改进方向以及PSM/价格接受。",
+        "甄别设计规则：不得出现“您是否属于以下目标人群”之类自我确认题；将年龄、地域、近期品类行为、决策角色、行业排除等拆开询问。潜在用户和非主购买者如仍有研究价值，应进入独立路径而不是直接终止。",
+        "选项完备规则：结合项目品类主动生成真实选项。渠道、场景、需求、痛点、选择因素和信息来源等多选题应充分覆盖主流情况；涉及先后顺序、频次、金额和比例时，档位必须连续且无重叠。",
+        "编程交付规则：题号体系稳定；所有选项有编码；明确单选/多选/限选/排序/矩阵/开放/数值题；标注引用答案、显示条件、跳转、终止、随机、轮换、排他、置底和必答/可拒答。",
         templateBlock ? "模板参考规则：用户已导入问卷模板，请优先学习模板的题号体系、题型结构、选项编码、跳题备注和随机/置底写法；但不要机械复制模板中的旧项目品牌、产品、价格和人群信息。" : "",
         "",
         "研究需求：",
-        config.brief || "用户未填写详细需求，请基于研究类型生成通用版问卷。",
+        config.brief || "用户未填写详细需求，请根据项目背景与研究类型主动推导研究架构和完整题目，不要要求用户补填额外表单。",
         templateBlock ? `\n${templateBlock}` : "",
         "",
         "请输出以下结构：",
-        "一、问卷说明",
-        "二、问卷正文：模块A开场白与甄别、模块B问卷主体、模块C背景信息、模块D结束语",
-        "三、质量自查清单",
+        "一、问卷说明与编程约定",
+        "二、问卷正文：模块A开场白与客观甄别、模块B品类与行为基础、模块C核心研究模块、模块D转化/价格/功能模块、模块E背景信息、模块F结束语",
+        "三、质量自查清单：覆盖度、措辞中立性、选项完备性、逻辑闭环、量表一致性和待客户确认项",
         "",
         "可参考但不要机械照抄的本地初稿：",
         localDraft
@@ -9459,6 +9504,18 @@ function buildAiResearchBrief(text, context) {
 async function renderAiBrief() {
   {
   const result = document.querySelector("#aiResults");
+  const selectedStudyTypes = Array.from(document.querySelectorAll('#aiStudyType input[type="checkbox"]:checked'));
+  const missing = [];
+  if (!document.querySelector("#aiInput")?.value.trim()) missing.push({ label: "研究需求", selector: "#aiInput" });
+  if (!document.querySelector("#aiContext")?.value.trim()) missing.push({ label: "项目名称 / 业务背景", selector: "#aiContext" });
+  if (!selectedStudyTypes.length) missing.push({ label: "研究类型", selector: "#aiStudyType .multiselect-trigger" });
+  if (!document.querySelector("#aiAudience")?.value.trim()) missing.push({ label: "目标人群", selector: "#aiAudience" });
+  if (!document.querySelector("#aiQuestionnaireLengthMode")?.value) missing.push({ label: "问卷模式", selector: "#aiQuestionnaireLengthMode" });
+  if (missing.length) {
+    result.innerHTML = `<div class="empty-state"><strong>请先填写必填项</strong><span>还缺少：${missing.map((item) => escapeHtml(item.label)).join("、")}</span></div>`;
+    document.querySelector(missing[0].selector)?.focus();
+    return;
+  }
   const copyButton = document.querySelector("#copyAiPrompt");
   const exportButton = document.querySelector("#exportAiPrompt");
   const wordButton = document.querySelector("#exportAiWord");
@@ -9467,9 +9524,9 @@ async function renderAiBrief() {
   const settings = loadAiSettings();
   const design = buildAiQuestionnaireDesign();
   const steps = [
-    { title: "整理研究需求", detail: "读取研究类型、目标人群、样本量和期望时长。" },
+    { title: "整理研究需求", detail: "读取研究类型、目标人群、样本量和业务目标。" },
     { title: "校验生成方式", detail: settings.mode === "local" || !settings.apiKey ? "已自动使用平台内置免费模型。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}（${settings.model}）。` },
-    { title: "生成问卷初稿", detail: `按约 ${design.config.duration} 分钟生成偏完整初稿，先覆盖研究模块，后续再人工删减。` },
+    { title: "生成问卷初稿", detail: `按${design.config.lengthMode === "short" ? "精简短卷" : "专业长卷"}模式生成完整、可编程的问卷初稿。` },
     { title: "整理可导出结果", detail: "启用复制、Markdown、Word 和同步到项目稿。" }
   ];
   renderAiProgress(result, steps, 0);
@@ -9481,7 +9538,9 @@ async function renderAiBrief() {
     if (!errors.length) {
       try {
         renderAiProgress(result, steps, 2, "大模型生成可能需要几十秒，页面没有卡住。");
-        output = await callAiChatCompletion(settings, buildAiQuestionnairePrompt(), { maxTokens: 5000 });
+        output = await callAiChatCompletion(settings, buildAiQuestionnairePrompt(), {
+          maxTokens: 32000
+        });
         source = aiProviderPresets[settings.provider]?.name || "大模型";
       } catch (error) {
         output = `${design.questionnaireText}\n\n---\n\n> 大模型调用失败，已回退为本地初稿。错误信息：${error.message}`;
@@ -9740,12 +9799,24 @@ function parseMarkdownTable(lines, start) {
 function markdownToWordDocumentXml(text) {
   const lines = text.split(/\r?\n/);
   const body = [];
+  let firstContent = true;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index].trim();
     if (!line) {
       body.push(wordParagraph(""));
       continue;
     }
+    if (/^---+$/.test(line)) continue;
+    if (firstContent && !/^\|/.test(line)) {
+      const title = line
+        .replace(/^#{1,6}\s+/, "")
+        .replace(/^\*\*(.+)\*\*$/, "$1")
+        .replace(/\*\*/g, "");
+      body.push(wordParagraph(title, "Heading1"));
+      firstContent = false;
+      continue;
+    }
+    firstContent = false;
     if (/^\|/.test(line)) {
       const table = parseMarkdownTable(lines, index);
       if (table.rows.length) body.push(wordTable(table.rows));
@@ -9757,6 +9828,10 @@ function markdownToWordDocumentXml(text) {
       const cleanText = line.replace(/^#{1,6}\s+/, "").replace(/\*\*/g, "");
       const style = level === 1 ? "Heading1" : level === 2 ? "Heading2" : "Heading3";
       body.push(wordParagraph(cleanText, style));
+      continue;
+    }
+    if (/^(?:[一二三四五六七八九十]+、|模块[A-ZＡ-Ｚ]|第[一二三四五六七八九十]+部分)/.test(line)) {
+      body.push(wordParagraph(line.replace(/\*\*/g, ""), "Heading2"));
       continue;
     }
     if (/^\*\*.+\*\*/.test(line)) {
@@ -9773,7 +9848,7 @@ function createDocxBlob(markdown) {
     { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>` },
     { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>` },
     { name: "word/_rels/document.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>` },
-    { name: "word/styles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:jc w:val="center"/><w:spacing w:before="240" w:after="120"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:spacing w:before="220" w:after="100"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:pPr><w:spacing w:before="180" w:after="80"/></w:pPr><w:rPr><w:b/><w:sz w:val="24"/></w:rPr></w:style><w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:color="auto"/><w:left w:val="single" w:sz="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:color="auto"/><w:right w:val="single" w:sz="4" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:color="auto"/></w:tblBorders></w:tblPr></w:style></w:styles>` },
+    { name: "word/styles.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Microsoft YaHei"/><w:sz w:val="21"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:pPr><w:jc w:val="center"/><w:spacing w:before="240" w:after="240"/></w:pPr><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Microsoft YaHei"/><w:b/><w:sz w:val="44"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:pPr><w:spacing w:before="220" w:after="100"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:pPr><w:spacing w:before="180" w:after="80"/></w:pPr><w:rPr><w:b/><w:sz w:val="24"/></w:rPr></w:style><w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:color="auto"/><w:left w:val="single" w:sz="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:color="auto"/><w:right w:val="single" w:sz="4" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:color="auto"/></w:tblBorders></w:tblPr></w:style></w:styles>` },
     { name: "word/document.xml", content: markdownToWordDocumentXml(markdown) }
   ]);
 }
@@ -11227,7 +11302,7 @@ function buildAiRevisionPrompt(instruction, currentDraft) {
   return [
     {
       role: "system",
-      content: "你是一名资深市场研究问卷设计专家。请根据用户修改要求，直接输出修改后的完整问卷初稿。保留正式问卷结构、题目编码、三列表格、逻辑备注、随机/置底规则和质量自查清单。不要只输出修改摘要。"
+      content: "你是一名资深市场研究问卷设计专家。请根据用户修改要求，直接输出符合专业调研公司交付标准的完整问卷。第一行必须是Markdown一级标题。保留客观甄别、正式模块结构、稳定题号、三列表格、完整选项、量表端点、跳题/终止/引用前题、随机/轮换/排他/置底规则和质量自查清单。甄别题不得直接询问是否属于目标人群，修改时也不得把完整问卷压缩成摘要。"
     },
     {
       role: "user",
@@ -11270,7 +11345,7 @@ async function reviseAiQuestionnaire() {
     if (!errors.length) {
       try {
         renderAiProgress(result, steps, 2, "正在按你的要求重写问卷，通常需要几十秒。");
-        output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 6000 });
+        output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 32000 });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output += `\n\n> 大模型修改失败：${error.message}`;
@@ -14098,7 +14173,7 @@ document.querySelector("#loadAiExample").addEventListener("click", () => {
   setAiStudyTypeSelection(["concept", "pricing"]);
   document.querySelector("#aiAudience").value = "18-40岁，近3个月购买过即饮咖啡或咖啡相关产品的用户";
   document.querySelector("#aiSampleSize").value = 400;
-  document.querySelector("#aiDuration").value = 8;
+  document.querySelector("#aiQuestionnaireLengthMode").value = "long";
 });
 document.querySelector("#generateAiWorkbench").addEventListener("click", generateAiWorkbench);
 document.querySelector("#loadAiWorkbenchProject").addEventListener("click", loadAiWorkbenchProject);

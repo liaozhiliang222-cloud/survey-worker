@@ -61,7 +61,7 @@ try {
     body: JSON.stringify(payload({ response_format: { type: "json_object" } })),
   });
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-actual-model"), "qwen3.7-plus");
+  assert.equal(response.headers.get("x-actual-model"), "qwen3.7-max");
   assert.equal(calls.length, 3);
   assert.equal(calls[0].body.response_format, undefined);
   assert.equal(calls[1].body.response_format, undefined);

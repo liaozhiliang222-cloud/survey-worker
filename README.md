@@ -18,7 +18,7 @@ npm run dev
 - `PPTX_PROXY_MAX_BODY_BYTES`：本地 PPTX 代理请求体上限，默认 30 MiB。
 - `AI_PROXY_MAX_BODY_BYTES`：本地 AI 代理请求体上限，默认 1 MiB。
 - `DASHSCOPE_API_KEY` / `BAILIAN_API_KEY`：内置 AI 服务密钥。
-- `BAILIAN_MODELS`：逗号分隔的模型回退顺序。
+- `BAILIAN_MODELS`：逗号分隔的模型回退顺序；未配置时默认使用 `deepseek-v4-pro → deepseek-v4-flash → qwen3.7-max → qwen3.7-plus → glm-5.2 → kimi-k2.6 → qwen3.6-plus → qwen3-max → deepseek-v3.2 → glm-5.1 → qwen3.5-plus`。
 
 ## 接口约定
 

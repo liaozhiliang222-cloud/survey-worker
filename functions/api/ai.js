@@ -8,7 +8,19 @@ const PROVIDER_HOSTS = {
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const BUILTIN_BAILIAN_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
-const DEFAULT_BUILTIN_MODELS = ["deepseek-v4-pro", "deepseek-v4-flash", "qwen3.7-plus", "glm-5.2"];
+const DEFAULT_BUILTIN_MODELS = [
+  "deepseek-v4-pro",
+  "deepseek-v4-flash",
+  "qwen3.7-max",
+  "qwen3.7-plus",
+  "glm-5.2",
+  "kimi-k2.6",
+  "qwen3.6-plus",
+  "qwen3-max",
+  "deepseek-v3.2",
+  "glm-5.1",
+  "qwen3.5-plus",
+];
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {

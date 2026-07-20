@@ -411,6 +411,17 @@ h3 {
   display: block;
 }
 
+#aiStudyType,
+#aiStudyType .multiselect-trigger,
+#aiStudyType .multiselect-text {
+  min-width: 0;
+}
+
+#aiStudyType .multiselect-trigger {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .multiselect-option {
   display: flex;
   align-items: center;

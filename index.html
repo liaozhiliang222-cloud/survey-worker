@@ -2018,18 +2018,18 @@
 
               <label>
                 <span class="label-action">
-                  <span>研究需求</span>
+                  <span class="field-heading">研究需求 <span class="field-badge required">必填</span></span>
                   <button class="secondary-btn mini-import-btn" type="button" data-import-target="aiInput">导入需求文档</button>
                 </span>
                 <textarea id="aiInput" placeholder="粘贴研究背景、业务问题、需要验证的假设、产品/品牌信息或已有问卷片段。例如：想了解18-40岁用户对新品概念的接受度、购买意愿、价格敏感度和核心卖点偏好。"></textarea>
               </label>
               <label>
-                项目名称 / 业务背景
+                <span class="field-heading">项目名称 / 业务背景 <span class="field-badge required">必填</span></span>
                 <input id="aiContext" type="text" placeholder="例如：新品概念测试、品牌健康度追踪、电商NPS诊断" />
               </label>
               <div class="form-grid two">
                 <div class="field">
-                  <span>研究类型</span>
+                  <span class="field-heading">研究类型 <span class="field-badge required">必填</span></span>
                   <div class="multiselect-dropdown" id="aiStudyType">
                     <div class="multiselect-trigger" tabindex="0" role="button" aria-expanded="false">
                       <span class="multiselect-text">概念/新品测试</span>
@@ -2048,16 +2048,19 @@
                   </div>
                 </div>
                 <label>
-                  目标人群
+                  <span class="field-heading">目标人群 <span class="field-badge required">必填</span></span>
                   <input id="aiAudience" type="text" placeholder="例如：18-40岁，近3个月购买过该品类的用户" />
                 </label>
                 <label>
-                  目标样本量
-                  <input id="aiSampleSize" type="number" min="1" placeholder="例如：400" />
+                  <span class="field-heading">问卷模式 <span class="field-badge required">必填</span></span>
+                  <select id="aiQuestionnaireLengthMode">
+                    <option value="short">精简短卷｜约25-35题，聚焦核心决策</option>
+                    <option value="long" selected>专业长卷｜约50-65题，完整诊断</option>
+                  </select>
                 </label>
                 <label>
-                  期望时长（分钟）
-                  <input id="aiDuration" type="number" min="3" max="30" placeholder="例如：8" />
+                  <span class="field-heading">目标样本量 <span class="field-badge optional">选填</span></span>
+                  <input id="aiSampleSize" type="number" min="1" placeholder="例如：400" />
                 </label>
               </div>
               <div class="import-preview compact-import-preview" id="aiProviderHint">

@@ -60,11 +60,11 @@ response = await mod.onRequest({
   request: makeRequest({ structured: true }),
   env: { DASHSCOPE_API_KEY: "server-secret" },
 });
-if (response.status !== 200 || response.headers.get("X-Actual-Model") !== "qwen3.7-plus") throw new Error("structured fallback failed");
+if (response.status !== 200 || response.headers.get("X-Actual-Model") !== "qwen3.7-max") throw new Error("structured fallback failed");
 if (calls.length !== 3) throw new Error("structured request did not traverse both DeepSeek tiers before Qwen");
 if (calls[0].body.response_format) throw new Error("unsupported DeepSeek response_format was not removed");
 if (calls[1].body.response_format) throw new Error("DeepSeek Flash received unsupported response_format");
-if (calls[2].body.response_format?.type !== "json_object") throw new Error("Qwen did not receive response_format");
+if (calls[2].body.response_format?.type !== "json_object") throw new Error("Qwen Max did not receive response_format");
 
 // 免费额度或权限错误时自动切换后备模型。
 calls = [];
