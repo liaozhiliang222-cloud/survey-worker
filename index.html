@@ -57,9 +57,8 @@
               <span>调研后</span>
               <small>分析与报告</small>
             </div>
-            <button class="nav-item" data-view="models">专项模型</button>
-            <button class="nav-item" data-view="ai-report">AI 报告生成</button>
             <button class="nav-item" data-view="pptx-report">PPT 报告生成</button>
+            <button class="nav-item" data-view="ai-report">AI 报告生成</button>
             <button class="nav-item" data-view="ai-workbench" style="display:none">AI 辅助面板</button>
             <button class="nav-item" data-view="psm">PSM 分析</button>
             <button class="nav-item" data-view="kano">KANO 分析</button>
@@ -1332,46 +1331,6 @@
                 </div>
               </div>
             </div>
-          </div>
-        </section>
-
-        <section class="view" id="models">
-          <div class="page-title">
-            <div>
-              <p class="eyebrow">专项模型</p>
-              <h2>专项模型路线</h2>
-            </div>
-          </div>
-
-          <div class="model-grid">
-            <article>
-              <span>PSM</span>
-              <h3>PSM 价格敏感度</h3>
-              <p>导入四个价格问题，输出可接受价格区间、最优价格点和价格曲线。</p>
-              <button class="model-open" data-jump="psm">打开工具</button>
-              <button class="model-open ai-inline-btn" data-ai-task="model-interpretation" data-ai-source="psmData">AI 解读结果</button>
-            </article>
-            <article>
-              <span>KANO</span>
-              <h3>KANO 模型</h3>
-              <p>正向/反向题自动分类，生成 Better-Worse 系数和优先级图。</p>
-              <button class="model-open" data-jump="kano">打开工具</button>
-              <button class="model-open ai-inline-btn" data-ai-task="model-interpretation" data-ai-source="kanoData">AI 解读结果</button>
-            </article>
-            <article>
-              <span>MaxDiff</span>
-              <h3>MaxDiff</h3>
-              <p>先支持设计模板和简单计分，再扩展 MNL/HB 等专业模型。</p>
-              <button class="model-open" data-jump="maxdiff">打开工具</button>
-              <button class="model-open ai-inline-btn" data-ai-task="model-interpretation" data-ai-source="maxdiffScoreData">AI 解读结果</button>
-            </article>
-            <article style="display:none">
-              <span>众言模型</span>
-              <h3>ABC 用户价值模型</h3>
-              <p>按态度、行为、消费三类指标识别高价值用户分群。</p>
-              <button class="model-open" data-jump="abc-value">打开工具</button>
-              <button class="model-open ai-inline-btn" data-ai-task="model-interpretation" data-ai-source="abcText">AI 解读结果</button>
-            </article>
           </div>
         </section>
 
