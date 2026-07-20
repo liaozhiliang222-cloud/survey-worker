@@ -18,6 +18,9 @@ vm.createContext(sandbox);
 vm.runInContext(source, sandbox);
 const api = sandbox.window.ProposalDeck;
 
+assert.equal(api.STORY_TIMEOUT_MS, 180000);
+assert.equal(api.PAGE_CONTENT_TIMEOUT_MS, 300000);
+
 const repaired = api.parseJsonCandidate('```json\n{"slides": [{"title": "测试",}],}\n```');
 assert.equal(repaired.slides[0].title, "测试");
 
@@ -61,6 +64,23 @@ assert.deepEqual(Object.values(localDeck.illustrative_dataset.metrics), [82, 68,
 assert.equal(Object.values(localDeck.illustrative_dataset.selling_point_scores).reduce((a, b) => a + b, 0), 100);
 assert.ok(new Set(localDeck.slides[11].timeline_tasks.map((task) => task.start_day)).size > 1, "Gantt tasks must not all start together.");
 assert.equal(api.validateDeck(localDeck).filter((issue) => issue.level === "error").length, 0);
+
+const aiCalls = [];
+const progress = [];
+sandbox.loadAiSettings = () => ({ mode: "proxy", model: "test" });
+sandbox.callAiChatCompletion = async (_settings, _messages, options) => {
+  aiCalls.push(options);
+  throw new Error("AI 请求超时");
+};
+api.state.generating = false;
+await api.generate(config, "已确认的 Word 详细方案", {
+  onProgress: (entry) => progress.push(entry)
+});
+assert.deepEqual(aiCalls.map((entry) => entry.timeoutMs), [180000, 300000]);
+assert.deepEqual([...new Set(progress.map((entry) => entry.step))], [0, 1, 2, 3, 4]);
+assert.match(progress.findLast((entry) => entry.step === 1).message, /180 秒/);
+assert.match(progress.findLast((entry) => entry.step === 2).message, /300 秒/);
+assert.equal(api.state.generating, false);
 
 const previewCanvas = { className: "", innerHTML: "" };
 sandbox.document.querySelector = (selector) => selector === "#proposalDeckCanvas" ? previewCanvas : null;

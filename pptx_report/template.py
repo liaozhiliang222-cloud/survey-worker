@@ -36,10 +36,10 @@ def _shape_text(shape) -> str:
 
 def _is_title_shape(shape, height: int) -> bool:
     try:
-        if shape.is_placeholder and shape.placeholder_format.type in {
-            PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE,
-        }:
-            return True
+        if shape.is_placeholder:
+            return shape.placeholder_format.type in {
+                PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE,
+            }
     except Exception:  # noqa: BLE001
         pass
     text = _shape_text(shape)

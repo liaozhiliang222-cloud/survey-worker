@@ -93,7 +93,9 @@ def add_chart(slide, spec: ChartSpec, x, y, cx, cy, theme: Theme) -> None:
         ):
             _hide_chart_axes(chart, ctype)
         if ctype in (ChartType.PIE, ChartType.DOUGHNUT):
-            _style_pie_doughnut(chart, theme)
+            aspect_ratio = float(cx) / max(1.0, float(cy))
+            _style_pie_doughnut(chart, theme, compact=aspect_ratio >= 2.0)
+            _set_compact_pie_plot_layout(chart, aspect_ratio)
         else:
             # 分类图（柱状 / 条形 / 折线 / 堆积 / 雷达 / 组合底座）统一加数据标签
             if ctype == ChartType.COMBO:
@@ -153,7 +155,9 @@ def _style_common(chart, spec: ChartSpec, theme: Theme) -> None:
     if spec.type in (ChartType.PIE, ChartType.DOUGHNUT):
         chart.has_legend = True
         chart.legend.position = XL_LEGEND_POSITION.BOTTOM
-        chart.legend.include_in_layout = False
+        # 饼图/环图使用手动 plotArea 时，图例必须参与布局并占据独立的
+        # 底部空间，否则 PowerPoint 会把图例覆盖在放大的圆环上。
+        chart.legend.include_in_layout = True
         style_font(chart.legend.font, theme, size=8)
     else:
         chart.has_legend = len(spec.series) > 1
@@ -315,7 +319,7 @@ def _apply_data_labels(chart, spec: ChartSpec, theme: Theme) -> None:
             pass
 
 
-def _style_pie_doughnut(chart, theme: Theme) -> None:
+def _style_pie_doughnut(chart, theme: Theme, compact: bool = False) -> None:
     """饼 / 环形图：显示百分比数据标签，每个扇区独立着色。"""
     plot = chart.plots[0]
     plot.has_data_labels = True
@@ -334,11 +338,22 @@ def _style_pie_doughnut(chart, theme: Theme) -> None:
     style_font(
         dl.font,
         theme,
-        size=theme.data_label_size,
+        size=max(6, theme.data_label_size - 2) if compact else theme.data_label_size,
         bold=True,
         color=theme.text_light,
     )
     _no_wrap_data_labels(dl)
+
+    if compact:
+        try:
+            doughnut_chart = chart._chartSpace.chart.plotArea.find(qn("c:doughnutChart"))
+            hole_size = doughnut_chart.find(qn("c:holeSize")) if doughnut_chart is not None else None
+            if hole_size is not None:
+                # 默认 50% 孔径会遮住紧凑环图的标签首位；25% 可为完整
+                # 百分比提供足够的环体宽度，同时仍保留清晰的环形识别。
+                hole_size.set("val", "25")
+        except Exception:
+            pass
 
     # 扇区着色
     series = chart.series[0]
@@ -349,6 +364,65 @@ def _style_pie_doughnut(chart, theme: Theme) -> None:
         except Exception:
             pass
 
+
+def _set_compact_pie_plot_layout(chart, aspect_ratio: float) -> None:
+    """Enlarge pie/doughnut plots inside wide, short dashboard chart frames."""
+    if aspect_ratio < 2.0:
+        return
+    try:
+        from pptx.oxml.xmlchemy import OxmlElement
+
+        plot_area = chart._chartSpace.chart.plotArea
+        existing = plot_area.find(qn("c:layout"))
+        if existing is not None:
+            plot_area.remove(existing)
+        layout = OxmlElement("c:layout")
+        manual = OxmlElement("c:manualLayout")
+        for tag, value in (
+            ("c:layoutTarget", "inner"),
+            ("c:xMode", "factor"),
+            ("c:yMode", "factor"),
+            ("c:wMode", "factor"),
+            ("c:hMode", "factor"),
+            ("c:x", "0.22"),
+            ("c:y", "0.10"),
+            ("c:w", "0.56"),
+            ("c:h", "0.38"),
+        ):
+            element = OxmlElement(tag)
+            element.set("val", value)
+            manual.append(element)
+        layout.append(manual)
+        plot_area.insert(0, layout)
+
+        legend = chart._chartSpace.chart.legend
+        if legend is not None:
+            existing_legend_layout = legend.find(qn("c:layout"))
+            if existing_legend_layout is not None:
+                legend.remove(existing_legend_layout)
+            legend_layout = OxmlElement("c:layout")
+            legend_manual = OxmlElement("c:manualLayout")
+            for tag, value in (
+                ("c:xMode", "factor"),
+                ("c:yMode", "factor"),
+                ("c:wMode", "factor"),
+                ("c:hMode", "factor"),
+                ("c:x", "0.12"),
+                ("c:y", "0.93"),
+                ("c:w", "0.76"),
+                ("c:h", "0.07"),
+            ):
+                element = OxmlElement(tag)
+                element.set("val", value)
+                legend_manual.append(element)
+            legend_layout.append(legend_manual)
+            legend_position = legend.find(qn("c:legendPos"))
+            insert_at = legend.index(legend_position) + 1 if legend_position is not None else 0
+            legend.insert(insert_at, legend_layout)
+    except Exception:
+        # Keep the native chart valid if an Office implementation rejects
+        # manual plot-area geometry.
+        pass
 
 def _apply_combo(chart, spec: ChartSpec, theme: Theme) -> None:
     """组合图：把标记为副轴的系列改为折线并挪到次坐标轴。

@@ -322,20 +322,36 @@ def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) ->
                       slide_w - Inches(2 * PAGE_MARGIN), Inches(0.2), theme,
                       size=8, color="758D99")
 
-    # 图表（如有洞察则下移起始位置）
-    for slot, spec in zip(layout.slots, page.charts):
-        chart_h = slot.cy - Inches(CAPTION_H)
-        if insight_h > 0:
-            # 把 slot 整体下移洞察高度
-            slot_top = slot.y + Emu(int(insight_h * 914400))
-            slot_cy = chart_h - Emu(int(insight_h * 914400))
-            if slot_cy > Emu(0):
-                charts.add_chart(slide, spec, slot.x, slot_top, slot.cx, slot_cy, theme)
-            else:
-                charts.add_chart(slide, spec, slot.x, slot.y, slot.cx, chart_h, theme)
-        else:
-            charts.add_chart(slide, spec, slot.x, slot.y, slot.cx, chart_h, theme)
+    # 图表（如有洞察，将整个图表网格压缩到洞察下方）。
+    # 旧逻辑会对 2x2/3x2 网格中的每一行都重复扣减 insight_h，造成行间
+    # 出现大块空白，饼图/环图的实际绘图区被压缩成很小的圆点。
+    slots = list(layout.slots)
+    insight_offset = Inches(insight_h)
+    if insight_h > 0 and slots:
+        grid_top = min(int(slot.y) for slot in slots)
+        grid_bottom = max(int(slot.y) + int(slot.cy) for slot in slots)
+        grid_height = max(1, grid_bottom - grid_top)
+        fitted_height = max(1, grid_height - int(insight_offset))
+        vertical_scale = fitted_height / grid_height
+    else:
+        grid_top = 0
+        vertical_scale = 1.0
 
+    for slot, spec in zip(slots, page.charts):
+        if insight_h > 0:
+            slot_top = Emu(
+                grid_top
+                + int(insight_offset)
+                + round((int(slot.y) - grid_top) * vertical_scale)
+            )
+            slot_height = Emu(max(1, round(int(slot.cy) * vertical_scale)))
+        else:
+            slot_top = slot.y
+            slot_height = slot.cy
+        chart_h = slot_height - Inches(CAPTION_H)
+        if chart_h <= Emu(0):
+            chart_h = slot_height
+        charts.add_chart(slide, spec, slot.x, slot_top, slot.cx, chart_h, theme)
 
 # ------------------------- 多组多列条形图页（表格+图表叠加） -------------------------
 def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,

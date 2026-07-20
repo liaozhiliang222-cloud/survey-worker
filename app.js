@@ -8408,7 +8408,7 @@ function buildLocalAiResearchPlan(config = getAiPlanConfig()) {
   return config.mode === "detailed" ? buildDetailedAiResearchPlan(config) : buildBriefAiResearchPlan(config);
 }
 
-function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = buildLocalAiResearchPlan(config)) {
+function buildAiResearchPlanPrompt(config = getAiPlanConfig()) {
   const framework = aiPlanPrimaryFramework(config.studyType);
   const templateBlock = buildAiPlanTemplatePromptBlock(config);
   const additionalModuleNames = aiPlanAdditionalModuleNames(config.additionalModules);
@@ -8421,11 +8421,17 @@ function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = build
     {
       role: "system",
       content: [
-        "你是一名资深市场研究方案架构师，擅长根据客户品牌调性、咨询公司/研究公司的内部文档规范输出研究方案。请把用户的业务需求转化为策略层面可执行的调研方案，输出中文 Markdown。分析框架部分聚焦策略逻辑和分析思路，不要过度细化到统计检验方法和执行操作层面。",
+        "你是一名资深市场研究方案架构师，擅长把清晰或模糊的业务需求转化为策略层面可执行的调研方案，输出中文 Markdown。",
+        "在正式写作前，请在内部完成需求理解和研究架构规划：识别 3-5 个最需要支持的业务决策，梳理待验证假设，判断证据需求、研究方法、先后依赖和模块优先级。不要输出思考过程或单独的研究架构草稿，直接输出完整方案。",
+        "需求信息模糊时，应结合行业常规做合理推断并继续生成，不要要求用户额外填写表单；但必须区分用户已确认信息、AI 建议和待确认事项。只有存在根本性执行冲突时，才在风险部分明确提示。",
+        "只保留能直接支持业务决策的必要模块。每个核心模块应形成“业务决策—待验证问题—所需证据—研究方法—分析输出”的闭环，不要为了形式完整堆叠 U&A、品牌、概念、传播或统计模型。",
+        "研究方法必须说明选择理由和阶段关系。仅在确有必要时采用定性加定量的组合，不要默认同时加入定量问卷、定性访谈和桌面研究。",
+        "不得在缺少依据时预设研究结论、具体阈值、价格点、配额比例或细分人群；需要给出数字时标记为建议值并说明依据或标记待确认。",
+        "方案应先保证决策逻辑、方法适配和执行可行，再补充必要细节。分析框架聚焦策略逻辑和分析思路，不要过度细化到统计检验方法和执行操作层面。",
         "直接从方案标题开始输出，不要写“好的”“作为专家”“我将”“思考过程”“分析如下”等开场白或推理过程。",
-        "方案必须使用主流市场研究框架，例如 U&A、品牌健康度、概念吸引力、购买转化、满意度/NPS、价格策略、关键驱动分析、分群画像等。",
-        "不要机械套用当前工具已有的 PSM/KANO/MaxDiff/ABC；只有当业务问题明确需要价格、功能优先级、相对偏好或用户价值分层时，才把这些作为专项模块。",
-        "方案要专业、具体、可落地，覆盖研究背景、目标、核心问题、样本方案、配额建议、问卷模块、分析框架、质量控制、项目排期和交付物。不要泛泛而谈。",
+        "可按需使用 U&A、品牌健康度、概念吸引力、购买转化、满意度/NPS、价格策略、关键驱动分析、分群画像等主流框架，但框架必须服务于当前业务问题。",
+        "PSM/KANO/MaxDiff/ABC 等专项模型只有在业务问题明确需要价格、功能优先级、相对偏好或用户价值分层时才加入。",
+        "方案要专业、具体、可落地。详细程度应与项目复杂度匹配，避免用篇幅和模块数量代替逻辑质量。",
         "如果用户提供了方案模板参考，必须优先遵循模板的章节顺序、标题习惯、内容深度、措辞风格和术语体系；模板是写法规范，不是内容来源，新项目背景和研究内容必须重新生成。混合模式下模板属于最高优先级交付规格，通用方案规则不得覆盖模板颗粒度。"
       ].join("")
     },
@@ -8436,8 +8442,8 @@ function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = build
         `方案模式：${config.mode === "detailed" ? "详细方案，需覆盖完整研究方案结构" : "简要方案，需适合导出Word"}`,
         `核心研究模块（单选主线）：${aiPlanStudyTypeName(config.studyType)}`,
         `附加研究模块（仅补充专项）：${additionalModuleNames.join("、") || "未选择"}`,
-        `建议主框架：${framework.name}`,
-        `建议分析模型：${framework.models.join("、")}`,
+        `研究主线参考：${framework.name}；请结合业务决策判断是否采用或调整`,
+        `可能适用的分析模型：${framework.models.join("、")}；仅保留确有必要的模型`,
         `目标人群：${audience}`,
         `建议样本量：${sampleSize}`,
         `项目周期：${timeline}`,
@@ -8457,23 +8463,19 @@ function buildAiResearchPlanPrompt(config = getAiPlanConfig(), localPlan = build
             "- 模板缺少但项目执行必需的信息，可在对应章节内精简补足，不另起大段通用章节。"
           ]
           : [
-            "详细方案必须细化到以下层级：",
-            "1. 项目背景与业务问题：说明为什么要做、要回答什么决策问题。",
-            "2. 研究目标与核心假设：每个目标对应可验证的问题和指标。",
-            "3. 研究设计：目标人群、样本条件、样本量、配额、研究方法、执行方式。",
-            "4. 研究内容：按问卷模块展开，必须逐模块写清模块目的、核心指标、建议题目方向、样本/配额注意点、预期图表或输出价值。",
-            "5. 分析框架：针对每个研究目标展开分析思路，聚焦「回答什么业务问题→看什么数据→得出什么结论」的逻辑链。",
-            "6. 质量控制：上线前质检、回收监控、数据清洗、开放题编码、加权和交叉分析口径。",
-            "7. 交付物与时间计划：明确每个阶段产出。",
+            "详细方案组织原则：",
+            "- 先交代业务背景和需要支持的核心决策，再展开研究目标、方法和内容，确保读者能看懂为什么这样设计。",
+            "- 每个研究目标对应可验证的问题、所需证据和可能支持的业务动作。",
+            "- 研究设计需包含必要的目标人群、样本条件、样本量、配额、研究方法和执行方式，并说明关键选择理由。",
+            "- 研究内容按决策链组织，只展开必要模块；模块数量通常控制在 5-8 个，项目确有需要时可调整。",
+            "- 分析框架聚焦「回答什么业务问题→看什么证据→如何形成判断→支持什么决策」，不得提前写出未经研究验证的结论。",
+            "- 质量控制、交付物和时间计划按实际方法与周期精简配置，不照搬通用清单。",
             "",
             "详细方案输出要求：",
-            "- 不能只输出目录或原则性描述，每个核心模块至少包含 3-5 条具体研究问题或题目方向。",
-            "- 必须包含研究框架概览表和样本配额建议表。",
+            "- 不能只输出目录或原则性描述，但内容密度应服从项目需要，不设置机械字数和条目数量。",
+            "- 表格仅在能提升研究逻辑、样本设计或模块对应关系的可读性时使用。",
             "- 不要把 PSM/KANO/MaxDiff/ABC 作为默认堆叠模型；仅在核心或附加模块明确选择时加入。",
-            "- 方案字数不少于 2500 字，分析框架部分不少于 500 字。",
-            "",
-            "可参考但不要机械照抄的本地方案框架：",
-            localPlan
+            "- 方案末尾用简短清单汇总关键假设、AI 建议值和待确认事项，不要在正文反复打断阅读。"
           ])
       ].join("\n")
     }
@@ -8604,7 +8606,7 @@ async function generateAiPlan() {
       try {
         renderAiProgress(result, steps, 2, "正在让大模型把需求改写为完整调研方案。", "正在生成调研方案");
         const maxTokens = config.templateMode === "hybrid" && config.mode === "detailed" ? 16000 : config.mode === "detailed" ? 12000 : 5000;
-        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config, localPlan), { maxTokens });
+        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config), { maxTokens });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output = `${localPlan}\n\n---\n\n> 大模型调用失败，已回退为本地方案框架。错误信息：${error.message}`;

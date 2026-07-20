@@ -67,6 +67,14 @@ if (referencePath) {
 assert.match(source, /混合模式下，模板是本次交付规格/);
 assert.match(source, /不强制扩写为通用详细方案/);
 assert.match(source, /家中饲养猫或狗/);
+const promptStart = source.indexOf("function buildAiResearchPlanPrompt(");
+const promptEnd = source.indexOf("function sanitizeAiPlanOutput(", promptStart);
+const planPrompt = source.slice(promptStart, promptEnd);
+assert.match(planPrompt, /内部完成需求理解和研究架构规划/);
+assert.match(planPrompt, /需求信息模糊时，应结合行业常规做合理推断并继续生成/);
+assert.match(planPrompt, /只保留能直接支持业务决策的必要模块/);
+assert.match(planPrompt, /关键假设、AI 建议值和待确认事项/);
+assert.doesNotMatch(planPrompt, /方案字数不少于|可参考但不要机械照抄的本地方案框架|\blocalPlan\b/);
 const exampleStart = source.indexOf('document.querySelector("#loadAiPlanExample")');
 const exampleEnd = source.indexOf('document.querySelector("#generateAiBrief")', exampleStart);
 const exampleHandler = source.slice(exampleStart, exampleEnd);

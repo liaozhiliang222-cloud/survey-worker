@@ -8,13 +8,13 @@ let calls = [];
 globalThis.fetch = async (url, options) => {
   const body = JSON.parse(options.body);
   calls.push({ url, options, body });
-  if (mode === "quota" && body.model === "deepseek-v4-flash") {
+  if (mode === "quota" && body.model === "deepseek-v4-pro") {
     return new Response(JSON.stringify({ error: { code: "AllocationQuota.FreeTierOnly" } }), {
       status: 403,
       headers: { "Content-Type": "application/json" },
     });
   }
-  const content = mode === "structured" && body.model === "deepseek-v4-flash"
+  const content = mode === "structured" && /^deepseek-v4-/.test(body.model)
     ? "这是说明文字，不是 JSON"
     : '{"ok":true}';
   return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
@@ -49,9 +49,9 @@ let response = await mod.onRequest({
 });
 if (response.status !== 200) throw new Error(`builtin status ${response.status}`);
 if (calls[0].url !== "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions") throw new Error("wrong builtin url");
-if (calls[0].body.model !== "deepseek-v4-flash") throw new Error("DeepSeek is not the primary model");
+if (calls[0].body.model !== "deepseek-v4-pro") throw new Error("DeepSeek Pro is not the primary model");
 if (calls[0].options.headers.Authorization !== "Bearer server-secret") throw new Error("wrong builtin auth");
-if (response.headers.get("X-Actual-Model") !== "deepseek-v4-flash") throw new Error("wrong primary model header");
+if (response.headers.get("X-Actual-Model") !== "deepseek-v4-pro") throw new Error("wrong primary model header");
 
 // DeepSeek 不支持严格结构化输出；输出不合规时自动切到 Qwen。
 calls = [];
@@ -61,9 +61,10 @@ response = await mod.onRequest({
   env: { DASHSCOPE_API_KEY: "server-secret" },
 });
 if (response.status !== 200 || response.headers.get("X-Actual-Model") !== "qwen3.7-plus") throw new Error("structured fallback failed");
-if (calls.length !== 2) throw new Error("structured request did not fall back exactly once");
+if (calls.length !== 3) throw new Error("structured request did not traverse both DeepSeek tiers before Qwen");
 if (calls[0].body.response_format) throw new Error("unsupported DeepSeek response_format was not removed");
-if (calls[1].body.response_format?.type !== "json_object") throw new Error("Qwen did not receive response_format");
+if (calls[1].body.response_format) throw new Error("DeepSeek Flash received unsupported response_format");
+if (calls[2].body.response_format?.type !== "json_object") throw new Error("Qwen did not receive response_format");
 
 // 免费额度或权限错误时自动切换后备模型。
 calls = [];
@@ -72,7 +73,7 @@ response = await mod.onRequest({
   request: makeRequest(),
   env: { DASHSCOPE_API_KEY: "server-secret" },
 });
-if (response.status !== 200 || response.headers.get("X-Actual-Model") !== "qwen3.7-plus") throw new Error("quota fallback failed");
+if (response.status !== 200 || response.headers.get("X-Actual-Model") !== "deepseek-v4-flash") throw new Error("quota fallback failed");
 
 // 用户 Key 始终优先，且不进入平台模型链。
 calls = [];

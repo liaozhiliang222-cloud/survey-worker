@@ -18,7 +18,7 @@ let calls = [];
 const fetchImpl = async (url, options) => {
   const body = JSON.parse(options.body);
   calls.push({ url: String(url), options, body });
-  const content = mode === "structured" && body.model === "deepseek-v4-flash"
+  const content = mode === "structured" && /^deepseek-v4-/.test(body.model)
     ? "not-json"
     : '{"ok":true}';
   return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
@@ -50,7 +50,7 @@ try {
     body: JSON.stringify(payload()),
   });
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-actual-model"), "deepseek-v4-flash");
+  assert.equal(response.headers.get("x-actual-model"), "deepseek-v4-pro");
   assert.equal(calls[0].options.headers.Authorization, "Bearer server-secret");
 
   calls = [];
@@ -62,9 +62,10 @@ try {
   });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-actual-model"), "qwen3.7-plus");
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.equal(calls[0].body.response_format, undefined);
-  assert.equal(calls[1].body.response_format.type, "json_object");
+  assert.equal(calls[1].body.response_format, undefined);
+  assert.equal(calls[2].body.response_format.type, "json_object");
 
   calls = [];
   mode = "normal";

@@ -135,6 +135,8 @@ def _alias_slide_type(value: Any) -> str:
         "pricing_segment_example": "report_example",
         "concept_result_example": "report_example",
         "pricing_result_example": "report_example",
+        "report_example_concept": "report_example",
+        "report_example_pricing": "report_example",
         "timeline_gantt_risk": "gantt",
         "timeline": "gantt",
         "delivery_plan": "gantt",
