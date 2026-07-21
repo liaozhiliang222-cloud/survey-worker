@@ -113,13 +113,14 @@ async function callUpstream(targetUrl, apiKey, body, timeoutMs = 240_000) {
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    return { upstream, text: await upstream.text() };
+    if (body.stream && upstream.ok) return { upstream, text: "", stream: true };
+    return { upstream, text: await upstream.text(), stream: false };
   } finally {
     clearTimeout(timeout);
   }
 }
 function upstreamResponse(text, upstream, model, source, attempts = []) {
-  return new Response(text, {
+  return new Response(text || upstream.body, {
     status: upstream.status,
     headers: {
       "Content-Type": upstream.headers.get("Content-Type") || "application/json; charset=utf-8",
@@ -159,6 +160,7 @@ export async function onRequest({ request, env }) {
     if (!useBuiltin) {
       const targetUrl = validateTarget(payload.provider || "custom", payload.url);
       const { upstream, text } = await callUpstream(targetUrl, apiKey, body, 540_000);
+      if (body.stream && upstream.ok) return upstreamResponse("", upstream, body.model, "user-key", [body.model]);
       if (!text.trim()) return json({ error: { message: "模型返回为空，请检查模型名称、额度或服务状态。" } }, 502);
       return upstreamResponse(text, upstream, body.model, "user-key", [body.model]);
     }
@@ -179,6 +181,7 @@ export async function onRequest({ request, env }) {
         continue;
       }
       lastResult = { ...result, model };
+      if (result.stream) return upstreamResponse("", result.upstream, model, "builtin-bailian", attempts);
       if (!result.upstream.ok || !result.text.trim()) continue;
       if (wantsJson && !containsJsonObject(result.text)) continue;
       return upstreamResponse(result.text, result.upstream, model, "builtin-bailian", attempts);

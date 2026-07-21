@@ -19,6 +19,9 @@ const fetchImpl = async (url, options) => {
   const body = JSON.parse(options.body);
   calls.push({ url: String(url), options, body });
   if (mode === "network" && body.model === "deepseek-v4-pro") throw new TypeError("socket reset");
+  if (body.stream) {
+    return new Response('data: {"choices":[{"delta":{"content":"stream-ok"}}]}\n\ndata: [DONE]\n\n', { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  }
   const content = mode === "structured" && /^deepseek-v4-/.test(body.model)
     ? "not-json"
     : '{"ok":true}';
@@ -79,6 +82,17 @@ try {
   assert.equal(response.headers.get("x-actual-model"), "deepseek-v4-flash");
   assert.equal(calls.length, 2);
   assert.ok(calls[0].options.signal);
+
+  calls = [];
+  mode = "normal";
+  response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload({ stream: true })),
+  });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type"), /text\/event-stream/);
+  assert.match(await response.text(), /stream-ok/);
 
   calls = [];
   mode = "normal";

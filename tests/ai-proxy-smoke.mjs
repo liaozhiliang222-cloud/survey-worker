@@ -15,6 +15,9 @@ globalThis.fetch = async (url, options) => {
       headers: { "Content-Type": "application/json" },
     });
   }
+  if (body.stream) {
+    return new Response('data: {"choices":[{"delta":{"content":"stream-ok"}}]}\n\ndata: [DONE]\n\n', { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  }
   const content = mode === "structured" && /^deepseek-v4-/.test(body.model)
     ? "这是说明文字，不是 JSON"
     : '{"ok":true}';
@@ -24,7 +27,7 @@ globalThis.fetch = async (url, options) => {
   });
 };
 
-function makeRequest({ apiKey = "", structured = false } = {}) {
+function makeRequest({ apiKey = "", structured = false, stream = false } = {}) {
   return new Request("https://surveykit.cc/api/ai", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -36,6 +39,7 @@ function makeRequest({ apiKey = "", structured = false } = {}) {
         model: "deepseek-v4-pro",
         messages: [{ role: "user", content: "test" }],
         ...(structured ? { response_format: { type: "json_object" } } : {}),
+        ...(stream ? { stream: true } : {}),
       },
     }),
   });
@@ -85,6 +89,15 @@ response = await mod.onRequest({
 });
 if (response.status !== 200 || response.headers.get("X-Actual-Model") !== "deepseek-v4-flash") throw new Error("network fallback failed");
 if (calls.length !== 2 || !calls[0].options.signal) throw new Error("network fallback did not preserve timeout signal");
+
+calls = [];
+mode = "normal";
+response = await mod.onRequest({
+  request: makeRequest({ stream: true }),
+  env: { DASHSCOPE_API_KEY: "server-secret" },
+});
+if (response.status !== 200 || !String(response.headers.get("Content-Type")).includes("text/event-stream")) throw new Error("stream passthrough headers failed");
+if (!(await response.text()).includes("stream-ok") || !calls[0].options.signal) throw new Error("stream passthrough body failed");
 
 calls = [];
 mode = "normal";

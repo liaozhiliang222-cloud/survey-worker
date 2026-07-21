@@ -5,6 +5,7 @@ import vm from "node:vm";
 const source = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+const serviceWorker = readFileSync(new URL("../sw.js", import.meta.url), "utf8");
 
 function extractFunction(name, nextName) {
   const marker = `function ${name}(`;
@@ -15,7 +16,7 @@ function extractFunction(name, nextName) {
   return source.slice(start, end).trim();
 }
 
-const context = vm.createContext({});
+const context = vm.createContext({ TextDecoder, Uint8Array, Date });
 vm.runInContext([
   extractFunction("xmlEscape", "makeCrcTable"),
   extractFunction("wordParagraph", "wordTable"),
@@ -24,6 +25,23 @@ vm.runInContext([
   extractFunction("markdownToWordDocumentXml", "createDocxBlob"),
 ].join("\n"), context);
 
+vm.runInContext([
+  "async " + extractFunction("readAiChatCompletionStream", "callAiChatCompletion").replace(/\s+async$/, ""),
+  extractFunction("normalizeAiResponseContent", "buildAiQuestionnairePrompt"),
+].join("\n"), context);
+let streamProgress = null;
+const streamedQuestionnaire = await context.readAiChatCompletionStream(new Response([
+  'data: {"choices":[{"delta":{"reasoning_content":"规划"}}]}',
+  '',
+  'data: {"choices":[{"delta":{"content":"# 专业长卷"}}]}',
+  '',
+  'data: {"choices":[{"delta":{"content":"\\n正文"}}]}',
+  '',
+  'data: [DONE]',
+  '',
+].join("\n")), (progress) => { streamProgress = progress; });
+assert.equal(streamedQuestionnaire, "# 专业长卷\n正文");
+assert.ok(streamProgress.reasoningLength >= 2);
 context.aiStudyTypeLabels = { concept: "Concept", ua: "UA", brand: "Brand", nps: "NPS", pricing: "Pricing", kano: "Kano" };
 vm.runInContext([
   extractFunction("aiStudyTypeValues", "getAiStudyTypes"),
@@ -79,9 +97,13 @@ assert.match(source, /max: Math\.min\(70, target \+ 6\)/);
 assert.match(source, /lengthMode: document\.querySelector\("#aiQuestionnaireLengthMode"\)/);
 assert.equal((source.match(/maxTokens: 32000/g) || []).length, 2);
 assert.match(source, /buildAiQuestionnairePrompt\(\), \{[\s\S]{0,80}maxTokens: 32000/);
-assert.match(source, /buildAiRevisionPrompt\(instruction, lastAiQuestionnaireText\), \{ maxTokens: 32000, timeoutMs: 600000 \}/);
+assert.match(source, /buildAiRevisionPrompt\(instruction, lastAiQuestionnaireText\), \{ maxTokens: 32000, timeoutMs: 600000, stream: true \}/);
 assert.match(source, /timeoutMs: design\.config\.lengthMode === "long" \? 600000 : 360000/);
 assert.match(source, /专业长卷通常需要 2–6 分钟/);
+assert.match(source, /if \(options\.stream\) requestBody\.stream = true/);
+assert.equal((source.match(/stream: true/g) || []).length, 2);
+assert.match(serviceWorker, /research-toolbox-v48/);
+assert.match(serviceWorker, /\^\\\/api\\\/ai/);
 assert.match(styles, /#aiStudyType,[\s\S]{0,160}min-width: 0/);
 assert.match(styles, /#aiStudyType \.multiselect-trigger \{[\s\S]{0,100}width: 100%;[\s\S]{0,100}box-sizing: border-box/);
 assert.match(source, /const selectedStudyTypes = Array\.from\(document\.querySelectorAll/);

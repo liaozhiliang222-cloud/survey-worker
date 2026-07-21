@@ -9288,6 +9288,52 @@ function applyAiProviderPreset() {
   renderAiSettingsStatus(readAiSettingsFromForm());
 }
 
+async function readAiChatCompletionStream(response, onProgress) {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("当前浏览器无法读取 AI 流式响应，请升级浏览器后重试。");
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let content = "";
+  let reasoning = "";
+  let lastProgressAt = 0;
+
+  const consumeFrame = (frame) => {
+    const data = frame.split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .join("\n");
+    if (!data || data === "[DONE]") return;
+    let payload;
+    try {
+      payload = JSON.parse(data);
+    } catch {
+      return;
+    }
+    if (payload?.error) throw new Error(payload.error.message || payload.error.code || "模型流式响应失败。");
+    const choice = payload?.choices?.[0] || {};
+    const delta = choice.delta || choice.message || {};
+    content += normalizeAiResponseContent(delta.content || "");
+    reasoning += normalizeAiResponseContent(delta.reasoning_content || "");
+    const now = Date.now();
+    if (typeof onProgress === "function" && now - lastProgressAt >= 500) {
+      lastProgressAt = now;
+      onProgress({ contentLength: content.length, reasoningLength: reasoning.length });
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const frames = buffer.split(/\r?\n\r?\n/);
+    buffer = frames.pop() || "";
+    frames.forEach(consumeFrame);
+    if (done) break;
+  }
+  if (buffer.trim()) consumeFrame(buffer);
+  const output = (content || reasoning).trim();
+  if (!output) throw new Error("模型流式响应结束，但没有生成有效内容。");
+  return output;
+}
 async function callAiChatCompletion(settings, messages, options = {}) {
   if (window.location.protocol === "file:") {
     throw new Error("AI 后端代理需要通过本地服务或线上地址访问，不能直接用 file:// 页面调用。请使用 npm run dev 打开本地服务，或访问已部署的网址。");
@@ -9301,6 +9347,7 @@ async function callAiChatCompletion(settings, messages, options = {}) {
   if (options.responseFormat === "json_object") {
     requestBody.response_format = { type: "json_object" };
   }
+  if (options.stream) requestBody.stream = true;
   // 设置6分钟超时（比后端5分钟略长），防止大报告生成时524超时
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 360000;
@@ -9323,6 +9370,14 @@ async function callAiChatCompletion(settings, messages, options = {}) {
     }
     throw new Error(`AI 后端代理连接失败：${error.message}`);
   });
+  if (response.ok && options.stream && response.body) {
+    lastAiActualModel = response.headers.get("X-Actual-Model") || "";
+    try {
+      return await readAiChatCompletionStream(response, options.onProgress);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
   clearTimeout(timeout);
   if ([404, 405].includes(response.status)) {
     throw new Error("当前环境没有启用 AI 后端代理，请通过 npm run dev 本地服务或 Cloudflare Pages Functions 部署后再调用。");
@@ -9540,7 +9595,16 @@ async function renderAiBrief() {
         renderAiProgress(result, steps, 2, design.config.lengthMode === "long" ? "专业长卷通常需要 2–6 分钟，正在持续生成，请勿关闭页面。" : "大模型正在生成精简短卷，页面没有卡住。");
         output = await callAiChatCompletion(settings, buildAiQuestionnairePrompt(), {
           maxTokens: 32000,
-          timeoutMs: design.config.lengthMode === "long" ? 600000 : 360000
+          timeoutMs: design.config.lengthMode === "long" ? 600000 : 360000,
+          stream: true,
+          onProgress: ({ contentLength, reasoningLength }) => renderAiProgress(
+            result,
+            steps,
+            2,
+            contentLength
+              ? `正在接收问卷正文，已生成 ${contentLength.toLocaleString("zh-CN")} 字。`
+              : `模型正在规划问卷结构，已处理 ${reasoningLength.toLocaleString("zh-CN")} 字。`
+          )
         });
         source = aiProviderPresets[settings.provider]?.name || "大模型";
       } catch (error) {
@@ -11346,7 +11410,7 @@ async function reviseAiQuestionnaire() {
     if (!errors.length) {
       try {
         renderAiProgress(result, steps, 2, "正在按你的要求重写问卷，通常需要几十秒。");
-        output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 32000, timeoutMs: 600000 });
+        output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 32000, timeoutMs: 600000, stream: true });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output += `\n\n> 大模型修改失败：${error.message}`;
