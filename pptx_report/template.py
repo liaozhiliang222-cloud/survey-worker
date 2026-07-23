@@ -6,6 +6,7 @@ import colorsys
 import re
 import zipfile
 from collections import Counter
+from statistics import median
 from xml.etree import ElementTree as ET
 
 from pptx import Presentation
@@ -43,7 +44,46 @@ def _is_title_shape(shape, height: int) -> bool:
     except Exception:  # noqa: BLE001
         pass
     text = _shape_text(shape)
-    return bool(text and shape.top < height * 0.22 and shape.height < height * 0.24)
+    if not text:
+        return False
+    top_ratio = int(shape.top) / max(1, height)
+    height_ratio = int(shape.height) / max(1, height)
+    font_size = _shape_font_size_pt(shape)
+    # A loose "top fifth of slide" rule also catches the insight/body box that
+    # many research templates place immediately below the title. That makes
+    # the inferred title zone span both boxes and pushes the divider into the
+    # body. Keep the geometry gate tight, with a small font-size escape hatch
+    # for templates whose real title sits slightly lower.
+    return (
+        top_ratio < 0.12 and height_ratio < 0.15
+    ) or (
+        top_ratio < 0.16 and height_ratio < 0.13
+        and font_size is not None and font_size >= 20
+    )
+
+
+def _shape_font_size_pt(shape) -> float | None:
+    sizes = []
+    try:
+        for paragraph in shape.text_frame.paragraphs:
+            for run in paragraph.runs:
+                if run.font.size is not None:
+                    sizes.append(float(run.font.size.pt))
+    except Exception:  # noqa: BLE001
+        return None
+    return round(float(median(sizes)), 1) if sizes else None
+
+
+def _safe_title_zone(shapes, width: int, height: int) -> dict | None:
+    zone = _union_rect(shapes, width, height)
+    if not zone:
+        return None
+    # A title area should never consume the body band. This is a final guard
+    # for unusual grouped shapes or imported text boxes with misleading bounds.
+    max_bottom = 0.17
+    bottom = min(zone["y"] + zone["h"], max_bottom)
+    zone["h"] = round(min(0.14, max(0.0, bottom - zone["y"])), 4)
+    return zone
 
 
 def _union_rect(shapes, width: int, height: int) -> dict | None:
@@ -85,6 +125,52 @@ def _has_title_divider(layout, width: int, height: int) -> bool:
             ):
                 return True
     return False
+
+
+def _header_art_bottom(layout, width: int, height: int) -> float | None:
+    """Return the bottom edge of visible header artwork such as a logo."""
+    bottoms = []
+    for owner in (layout, layout.slide_master):
+        for shape in owner.shapes:
+            try:
+                if shape.is_placeholder:
+                    continue
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                top = int(shape.top)
+                bottom = int(shape.top + shape.height)
+                shape_height = abs(int(shape.height))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if (
+                top < height * 0.18
+                and 0 < shape_height < height * 0.22
+                and bottom < height * 0.24
+            ):
+                bottoms.append(bottom / max(1, height))
+    return round(max(bottoms), 4) if bottoms else None
+
+
+def _header_art_left(layout, width: int, height: int) -> float | None:
+    """Return the left edge of visible right-side header artwork."""
+    lefts = []
+    for owner in (layout, layout.slide_master):
+        for shape in owner.shapes:
+            try:
+                if shape.is_placeholder:
+                    continue
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                left = int(shape.left)
+                top = int(shape.top)
+                shape_height = abs(int(shape.height))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if left > width * 0.55 and top < height * 0.18 and 0 < shape_height < height * 0.22:
+                lefts.append(left / max(1, width))
+    return round(min(lefts), 4) if lefts else None
 
 
 def _classify_slide(slide, index: int) -> tuple[str, float]:
@@ -144,8 +230,11 @@ def build_template_mapping(prs: Presentation) -> dict:
             "layout_name": slide.slide_layout.name or "未命名版式",
             "confidence": round(confidence, 2),
             "has_title_divider": _has_title_divider(slide.slide_layout, width, height),
+            "header_art_bottom": _header_art_bottom(slide.slide_layout, width, height),
+            "header_art_left": _header_art_left(slide.slide_layout, width, height),
+            "title_font_size_pt": _shape_font_size_pt(title_shapes[0]) if title_shapes else None,
             "zones": {
-                "title": _union_rect(title_shapes, width, height),
+                "title": _safe_title_zone(title_shapes, width, height),
                 "content": _union_rect(content_shapes, width, height),
                 "footer": _union_rect(footer_shapes, width, height),
             },
@@ -158,7 +247,16 @@ def build_template_mapping(prs: Presentation) -> dict:
     # 通用正文映射可由图表页或普通内容页回退，确保所有报告页面都有可用落位。
     fallback = roles.get("chart") or roles.get("content") or next(iter(roles.values()), None)
     for role in ("cover", "toc", "summary", "chart", "matrix", "appendix"):
-        if role not in roles and fallback:
+        role_item = roles.get(role)
+        zones = (role_item or {}).get("zones") or {}
+        title_zone = zones.get("title") or {}
+        content_zone = zones.get("content") or {}
+        data_layout_is_unsafe = role in {"chart", "matrix"} and (
+            not title_zone
+            or content_zone.get("w", 0) < 0.60
+            or content_zone.get("h", 0) < 0.45
+        )
+        if (role_item is None or data_layout_is_unsafe) and fallback:
             roles[role] = {**fallback, "role": role, "fallback": True,
                            "confidence": round(max(0.35, fallback["confidence"] - 0.2), 2)}
     confidences = [item["confidence"] for item in roles.values()]

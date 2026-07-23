@@ -9,11 +9,13 @@
 
 from __future__ import annotations
 
+import io
 import os
 from typing import Optional
 
 from pptx import Presentation
-from pptx.util import Inches
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.util import Inches, Pt
 
 from .exceptions import RenderingError, TemplateNotFoundError
 from .model import ReportSpec, MultiGroupBarPageContent
@@ -144,6 +146,43 @@ class ReportRenderer:
             for shape in list(slide.placeholders):
                 element = shape._element
                 element.getparent().remove(element)
+            # Some imported layouts contain a user-drawn logo picture that
+            # PowerPoint renders inconsistently across appended slides. Add an
+            # identical slide-level copy so every generated page keeps branding.
+            header_picture_sources = list(layout.shapes)
+            if role != "chart":
+                chart_map = self._template_mapping.get("roles", {}).get("chart") or {}
+                chart_layout_index = chart_map.get("layout_index")
+                if (
+                    isinstance(chart_layout_index, int)
+                    and 0 <= chart_layout_index < len(prs.slide_layouts)
+                ):
+                    header_picture_sources.extend(
+                        prs.slide_layouts[chart_layout_index].shapes
+                    )
+            copied_header_pictures = set()
+            for layout_shape in header_picture_sources:
+                if (
+                    layout_shape.shape_type == MSO_SHAPE_TYPE.PICTURE
+                    and int(layout_shape.left) > int(self._slide_w) * 0.55
+                    and int(layout_shape.top) < int(self._slide_h) * 0.18
+                ):
+                    picture_key = (
+                        int(layout_shape.left),
+                        int(layout_shape.top),
+                        int(layout_shape.width),
+                        int(layout_shape.height),
+                    )
+                    if picture_key in copied_header_pictures:
+                        continue
+                    copied_header_pictures.add(picture_key)
+                    slide.shapes.add_picture(
+                        io.BytesIO(layout_shape.image.blob),
+                        layout_shape.left,
+                        layout_shape.top,
+                        layout_shape.width,
+                        layout_shape.height,
+                    )
         # 仅无模板时强制背景色，避免覆盖模板设计
         if not self.template_path:
             set_slide_background(slide, self.theme.background)
@@ -155,12 +194,20 @@ class ReportRenderer:
             return
         role_map = self._template_mapping.get("roles", {}).get(role) or {}
         zones = role_map.get("zones") or {}
+        template_title_size = role_map.get("title_font_size_pt")
+        header_art_bottom = role_map.get("header_art_bottom")
+        header_art_left = role_map.get("header_art_left")
         width, height = int(self._slide_w), int(self._slide_h)
         source_zones = {
             "title": (0.035, 0.01, 0.93, 0.14),
             "content": (0.035, 0.14, 0.93, 0.79),
             "footer": (0.035, 0.93, 0.93, 0.055),
         }
+        if role == "matrix":
+            # Matrix pages place their insight bullets above the table, earlier
+            # than standard chart pages. Include that band in the source content
+            # zone so the table keeps its intended distance below the insights.
+            source_zones["content"] = (0.035, 0.10, 0.93, 0.83)
         def scale_parts(parts, target_total):
             """Scale table grid lengths while keeping their sum equal to the frame."""
             values = [max(1, int(value)) for value in parts]
@@ -214,15 +261,62 @@ class ReportRenderer:
 
             shape.width = new_width
             shape.height = new_height
-        for shape in list(slide.shapes)[start_index:]:
+        new_shapes = list(slide.shapes)[start_index:]
+        for shape in new_shapes:
             center_y = (int(shape.top) + int(shape.height) / 2) / height
-            zone_name = "title" if center_y < 0.14 else "footer" if center_y > 0.92 else "content"
+            shape_text = str(getattr(shape, "text", "") or "").strip()
+            is_title_text = (
+                bool(shape_text)
+                and getattr(shape, "has_text_frame", False)
+                and int(shape.top) < height * 0.09
+                and int(shape.width) >= width * 0.35
+            )
+            is_title_divider = (
+                not shape_text
+                and not getattr(shape, "has_chart", False)
+                and not getattr(shape, "has_table", False)
+                and int(shape.width) >= width * 0.45
+                and abs(int(shape.height)) <= height * 0.01
+                and int(shape.top) < height * 0.18
+            )
+            zone_name = (
+                "title" if is_title_text or is_title_divider
+                else "footer" if center_y > 0.92
+                else "content"
+            )
             target = zones.get(zone_name)
             # 极小或越界区域通常是装饰物误识别，继续使用安全的系统布局。
             if not target or target.get("w", 0) < 0.25 or target.get("h", 0) < 0.04:
                 continue
             mapped_target = target
-            if zone_name == "content":
+            if zone_name == "title":
+                # Keep imported title geometry above the body even when an old
+                # or external mapping contains an over-tall title rectangle.
+                content_zone = zones.get("content") or {}
+                safe_bottom = min(
+                    0.17,
+                    float(content_zone.get("y", 0.18)) - 0.01,
+                )
+                target_top = max(0.01, min(float(target["y"]), 0.12))
+                target_bottom = min(
+                    float(target["y"]) + float(target["h"]),
+                    safe_bottom,
+                )
+                if target_bottom - target_top >= 0.04:
+                    mapped_target = {
+                        **target,
+                        "y": target_top,
+                        "h": target_bottom - target_top,
+                    }
+                    if header_art_left and is_title_text:
+                        safe_title_right = float(header_art_left) - 0.02
+                        safe_title_width = safe_title_right - float(mapped_target["x"])
+                        if safe_title_width >= 0.45:
+                            mapped_target = {
+                                **mapped_target,
+                                "w": min(float(mapped_target["w"]), safe_title_width),
+                            }
+            elif zone_name == "content":
                 # Template content unions can include edge decorations and may
                 # extend almost to the slide boundary. Keep a print-safe right
                 # margin and use the same adjusted zone for every content shape
@@ -237,6 +331,67 @@ class ReportRenderer:
                         "w": target_right - target_left,
                     }
             transform(shape, source_zones[zone_name], mapped_target)
+            if zone_name == "content":
+                shape.top = max(int(shape.top), int(float(mapped_target["y"]) * height))
+            if (
+                zone_name == "title"
+                and template_title_size
+                and getattr(shape, "has_text_frame", False)
+                and str(getattr(shape, "text", "") or "").strip()
+            ):
+                title_units = sum(2 if ord(char) > 127 else 1 for char in shape.text)
+                template_cap = min(28.0, float(template_title_size))
+                title_size = (
+                    min(template_cap, 16.0) if title_units > 95
+                    else min(template_cap, 18.0) if title_units > 70
+                    else min(template_cap, 20.0) if title_units > 52
+                    else template_cap
+                )
+                shape.top = int(float(mapped_target["y"]) * height)
+                shape.height = int(float(mapped_target["h"]) * height)
+                for paragraph in shape.text_frame.paragraphs:
+                    for run in paragraph.runs:
+                        if run.font.size is None or run.font.size.pt > title_size:
+                            run.font.size = Pt(title_size)
+
+        # Preserve a small visual gap between the title glyphs and the generated
+        # divider while still keeping the line comfortably above the insight box.
+        title_text_shapes = [
+            shape for shape in new_shapes
+            if getattr(shape, "has_text_frame", False)
+            and str(getattr(shape, "text", "") or "").strip()
+            and int(shape.top) < height * 0.13
+            and int(shape.width) >= width * 0.35
+        ]
+        divider_shapes = [
+            shape for shape in new_shapes
+            if not str(getattr(shape, "text", "") or "").strip()
+            and not getattr(shape, "has_chart", False)
+            and not getattr(shape, "has_table", False)
+            and int(shape.width) >= width * 0.45
+            and abs(int(shape.height)) <= height * 0.01
+        ]
+        body_text_tops = [
+            int(shape.top) for shape in new_shapes
+            if getattr(shape, "has_text_frame", False)
+            and str(getattr(shape, "text", "") or "").strip()
+            and height * 0.12 <= int(shape.top) < height * 0.9
+        ]
+        if title_text_shapes and divider_shapes:
+            title_bottom = max(int(shape.top + shape.height) for shape in title_text_shapes)
+            minimum_gap = int(height * 0.012)
+            body_top = min(body_text_tops) if body_text_tops else int(height * 0.18)
+            latest_divider_top = body_top - int(height * 0.006)
+            desired_top = title_bottom + minimum_gap
+            if header_art_bottom:
+                desired_top = max(
+                    desired_top,
+                    int((float(header_art_bottom) + 0.015) * height),
+                )
+            if desired_top <= latest_divider_top:
+                for divider in divider_shapes:
+                    if int(divider.top) < desired_top:
+                        divider.top = desired_top
 
     def _remove_duplicate_title_divider(self, slide, start_index: int, role: str) -> None:
         """Remove the renderer line when the selected template layout owns one."""

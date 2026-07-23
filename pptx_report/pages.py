@@ -289,13 +289,20 @@ def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) ->
     # 图文混排：右侧洞察栏
     if layout.sidebar_rect is not None:
         sr = layout.sidebar_rect
+        sidebar_insights = list(
+            page.side_insights
+            or page.insights
+            or [chart.insight for chart in page.charts if chart.insight]
+        )
         _add_textbox(slide, "洞察 INSIGHT", sr.x, sr.y, sr.cx, Inches(0.5), theme,
                       size=16, bold=True, color=theme.primary)
-        _add_bullets(slide, page.side_insights, sr.x, sr.y + Inches(0.6),
+        _add_bullets(slide, sidebar_insights, sr.x, sr.y + Inches(0.6),
                       sr.cx, sr.cy - Inches(0.6), theme, size=13)
+    else:
+        sidebar_insights = []
 
     # 标题下方直接呈现洞察正文，不再增加“核心洞察/核心结论”标签。
-    insight_texts = list(dict.fromkeys(
+    insight_texts = [] if layout.sidebar_rect is not None else list(dict.fromkeys(
         text for text in (
             list(page.insights or [])
             or [c.insight for c in page.charts]

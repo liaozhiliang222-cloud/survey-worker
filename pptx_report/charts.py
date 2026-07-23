@@ -385,9 +385,9 @@ def _set_compact_pie_plot_layout(chart, aspect_ratio: float) -> None:
             ("c:wMode", "factor"),
             ("c:hMode", "factor"),
             ("c:x", "0.22"),
-            ("c:y", "0.10"),
+            ("c:y", "0.04"),
             ("c:w", "0.56"),
-            ("c:h", "0.38"),
+            ("c:h", "0.68"),
         ):
             element = OxmlElement(tag)
             element.set("val", value)
@@ -408,9 +408,9 @@ def _set_compact_pie_plot_layout(chart, aspect_ratio: float) -> None:
                 ("c:wMode", "factor"),
                 ("c:hMode", "factor"),
                 ("c:x", "0.12"),
-                ("c:y", "0.93"),
+                ("c:y", "0.88"),
                 ("c:w", "0.76"),
-                ("c:h", "0.07"),
+                ("c:h", "0.10"),
             ):
                 element = OxmlElement(tag)
                 element.set("val", value)
