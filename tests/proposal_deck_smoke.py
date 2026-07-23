@@ -150,7 +150,8 @@ def main():
     output.parent.mkdir(parents=True, exist_ok=True)
     audit = render_proposal_deck(deck, str(output))
     prs = Presentation(str(output))
-    assert len(prs.slides) == 12
+    assert len(prs.slides) == len(audit["deck"]["slides"])
+    assert len(prs.slides) > len(deck["slides"])
     assert round(prs.slide_width / prs.slide_height, 2) == round(16 / 9, 2)
     shape_count = sum(len(slide.shapes) for slide in prs.slides)
     text_shape_count = sum(1 for slide in prs.slides for shape in slide.shapes if getattr(shape, "has_text_frame", False))
@@ -159,22 +160,25 @@ def main():
     assert text_shape_count > 110, text_shape_count
     assert len(chart_shapes) == 4, len(chart_shapes)
     assert all(shape.chart.series for shape in chart_shapes)
-    report_slides = [prs.slides[8], prs.slides[9]]
+    report_indices = [i for i, slide in enumerate(audit["deck"]["slides"]) if slide["visual_type"] in {"concept_funnel_maxdiff_example", "pricing_segment_example"}]
+    report_slides = [prs.slides[i] for i in report_indices]
     assert all(sum(1 for shape in slide.shapes if getattr(shape, "has_chart", False)) == 2 for slide in report_slides)
     assert all(not any(getattr(shape, "has_table", False) for shape in slide.shapes) for slide in report_slides)
     visible_text = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if getattr(shape, "has_text_frame", False))
     for raw_field in ["dataset_id", "metrics", "selling_point_scores", "segment_purchase_intention", "purchase_curve", "start_day", "end_day"]:
         assert raw_field not in visible_text
-    path_text = "\n".join(shape.text for shape in prs.slides[4].shapes if getattr(shape, "has_text_frame", False))
+    path_index = next(i for i, slide in enumerate(audit["deck"]["slides"]) if slide["visual_type"] == "dual_track_research_flow")
+    path_text = "\n".join(shape.text for shape in prs.slides[path_index].shapes if getattr(shape, "has_text_frame", False))
     assert "研究动作｜做什么" in path_text
     assert "阶段产出｜交付什么" in path_text
     assert "下一阶段输入｜如何被使用" in path_text
     assert "开展用户深访与场景追问" in path_text
     assert "统一概念刺激物信息量，完成可测化改写" in path_text
     assert "标准化概念刺激物与评价维度" in path_text
+    gantt_index = next(i for i, slide in enumerate(audit["deck"]["slides"]) if slide["visual_type"] == "timeline_gantt_risk")
     gantt_bar_widths = {
         round(shape.width / 914400, 2)
-        for shape in prs.slides[11].shapes
+        for shape in prs.slides[gantt_index].shapes
         if .18 <= shape.height / 914400 <= .3 and shape.width / 914400 > .3 and shape.left / 914400 >= 2.9
     }
     assert len(gantt_bar_widths) >= 3, gantt_bar_widths
@@ -182,6 +186,9 @@ def main():
         assert len([name for name in package.namelist() if name.startswith("ppt/charts/chart") and name.endswith(".xml")]) == 4
         assert len([name for name in package.namelist() if name.startswith("ppt/embeddings/")]) == 4
         assert not [name for name in package.namelist() if name.startswith("ppt/media/")]
+    split_issues = [issue for issue in audit["issues"] if issue.get("code") == "slide_split_for_capacity"]
+    assert split_issues
+    assert sum(len(slide["content"]) for slide in audit["deck"]["slides"]) == sum(len(slide.get("content", [])) for slide in deck["slides"])
     assert audit["ok"] is True
     assert not [issue for issue in audit["issues"] if issue["level"] == "error"]
     assert deck["illustrative_dataset"]["usable_for_decision"] is False
