@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 
 import pandas as pd
 
@@ -35,14 +36,27 @@ from .model import (
     ChartSpec,
     ChartType,
     CoverContent,
+    ExecutiveFinding,
     ExecutiveSummaryContent,
+    FindingsOverviewContent,
     KPI,
+    OpportunityItem,
+    OpportunityMatrixContent,
+    RecommendationContent,
+    RecommendationItem,
+    ResearchOverviewContent,
+    SectionDividerContent,
     LayoutType,
     MultiGroupBarPageContent,
     ReportSpec,
     TableData,
     TocContent,
 )
+from .common.capacity import split_preserving_order
+from .common.narrative import build_slide_briefs
+from .common.slide_brief import SlideBrief
+from .facts import extract_data_facts, extract_question_facts, facts_as_dicts, infer_data_kind
+from .report_templates import select_report_template
 from .renderer import ReportRenderer
 from .theme import theme_from_key
 from .build_jd_report import parse_crosstab, apply_dimension, SEGMENT_ORDER, _norm, _shorten
@@ -332,7 +346,7 @@ def _chart_title_text(q: dict) -> str:
         return f"{label}：{item}" if label else item
     if "过去6个月买过以下哪些调味料产品" in raw:
         return "过去6个月购买的调味料产品"
-    return raw if len(raw) <= 40 else raw[:39].rstrip(" -—") + "…"
+    return raw
 
 
 def auto_chart_type(q: dict, cats: list, segs: list) -> ChartType:
@@ -435,12 +449,53 @@ def _auto_insight(q: dict, cats: list, data: dict, segs: list) -> str:
     return insight
 
 
-def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None) -> ChartSpec:
-    """为单题构造 ChartSpec：排序 + 自动选图 + 多维度对比 + 洞察。
+def _decorate_chart_spec(spec: ChartSpec, question: dict, display_segments: list) -> ChartSpec:
+    """Attach verified metric semantics and evidence references to a chart."""
+    data_kind = infer_data_kind(question)
+    unit_by_kind = {
+        "percentage": "%",
+        "count": "",
+        "mean": "",
+        "score": "分",
+        "index": "指数",
+        "currency": "元",
+        "frequency": "次",
+        "nps": "",
+    }
+    facts = extract_question_facts(question)
+    spec.data_kind = data_kind
+    spec.unit = str(question.get("unit") or unit_by_kind.get(data_kind, ""))
+    spec.axis_policy = str(
+        question.get("axis_policy")
+        or ("zero_based" if data_kind in {"percentage", "count", "currency", "frequency"} else "auto")
+    )
+    spec.sort_policy = "preserve" if has_natural_order(spec.categories) else "auto"
+    spec.show_base = True
+    spec.base_values = {
+        str(segment): int(base)
+        for segment, base in (question.get("base") or {}).items()
+        if segment in display_segments and base is not None
+    }
+    question_id = str(question.get("code") or "")
+    spec.evidence_question_ids = [question_id] if question_id else []
+    spec.evidence_fact_ids = [fact.fact_id for fact in facts]
+    spec.source_references = list(
+        dict.fromkeys(fact.source_reference for fact in facts if fact.source_reference)
+    )
+    spec.significance_markers = [
+        {
+            "fact_id": fact.fact_id,
+            "segment": fact.segment,
+            "category": fact.category,
+            "significant": fact.significant,
+        }
+        for fact in facts
+        if fact.fact_type in {"segment_gap", "mean_difference"}
+    ]
+    return spec
 
-    ``display_segs`` 若给定，则限定为报告统一选定的人群列（与本题实际
-    存在的人群取交集）；否则默认展示本题全部人群。
-    """
+def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None) -> ChartSpec:
+    """Build an editable native chart with explicit metric semantics."""
     cats, data = _sort_question(q)
     segs = q.get("segments") or []
     if display_segs is None:
@@ -453,79 +508,94 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
     ]
     if non_empty_segs:
         display_segs = non_empty_segs
+    data_kind = infer_data_kind(q)
     ctype = forced_chart_type if forced_chart_type is not None else auto_chart_type(q, cats, display_segs)
+    if ctype == ChartType.RADAR and len(display_segs) > 6:
+        # A radar with more than six series is unreadable. Switch layout rather
+        # than silently dropping segments.
+        ctype = ChartType.BAR
     title = _chart_title_text(q)
     insight = _auto_insight(q, cats, data, display_segs)
 
+    def values_for(segment):
+        values = []
+        for value in data.get(segment, []):
+            numeric = float(value) if value is not None else 0.0
+            values.append(
+                numeric * 100
+                if data_kind == "percentage" and abs(numeric) <= 1
+                else numeric
+            )
+        return values
+
     if ctype == ChartType.RADAR:
-        # 雷达图系列过多会造成图例与轮廓严重拥挤；保留总体及前五个分群。
-        display_segs = list(display_segs[:6])
-        short_cats = [_shorten(c) for c in cats]
-        series_dict = {s: _pct_list(data, s, cats) for s in display_segs}
-        return ChartSpec.radar(
-            title=f"{title}（多维对比）", categories=short_cats,
-            series_dict=series_dict, insight=insight,
+        spec = ChartSpec.radar(
+            title=f"{title}（多维对比）",
+            categories=[_shorten(c) for c in cats],
+            series_dict={s: values_for(s) for s in display_segs},
+            insight=insight,
         )
-    if ctype == ChartType.DOUGHNUT:
+        return _decorate_chart_spec(spec, q, display_segs)
+    if ctype in (ChartType.DOUGHNUT, ChartType.PIE):
         ref_seg = "Total" if "Total" in display_segs else display_segs[0]
-        vals = _pct_list(data, ref_seg, cats)
-        return ChartSpec.doughnut(
-            title=title, categories=cats,
-            values=vals, insight=insight,
+        factory = ChartSpec.doughnut if ctype == ChartType.DOUGHNUT else ChartSpec.pie
+        spec = factory(
+            title=title,
+            categories=cats,
+            values=values_for(ref_seg),
+            insight=insight,
         )
-    if ctype == ChartType.PIE:
-        ref_seg = "Total" if "Total" in display_segs else display_segs[0]
-        vals = _pct_list(data, ref_seg, cats)
-        return ChartSpec.pie(
-            title=title, categories=cats,
-            values=vals, insight=insight,
-        )
+        return _decorate_chart_spec(spec, q, [ref_seg])
     if ctype in (ChartType.STACKED_BAR, ChartType.STACKED_COLUMN):
-        # 堆积图使用“人群=类目、答案选项=堆积系列”的构成口径。
-        # 不能把各人群百分比直接相加，否则会超过 100% 并造成误导。
-        values_by_segment = {
-            s: _pct_list(data, s, cats) for s in display_segs
-        }
+        values_by_segment = {s: values_for(s) for s in display_segs}
         series_dict = {
             str(cat): [
-                values_by_segment[s][idx]
-                if idx < len(values_by_segment[s]) else 0.0
+                values_by_segment[s][idx] if idx < len(values_by_segment[s]) else 0.0
                 for s in display_segs
             ]
             for idx, cat in enumerate(cats)
         }
         stack_categories = list(display_segs)
         if ctype == ChartType.STACKED_BAR:
-            # 横向条形图第一个类目显示在底部：反转写入，使“总体”视觉上位于最上方。
-            stack_categories = list(reversed(stack_categories))
+            stack_categories.reverse()
             series_dict = {
-                name: list(reversed(values))
-                for name, values in series_dict.items()
+                name: list(reversed(values)) for name, values in series_dict.items()
             }
         spec = ChartSpec.bar(
-            title=f"{title}（构成）", categories=stack_categories,
-            series_dict=series_dict, insight=insight, stacked=True,
+            title=f"{title}（构成）",
+            categories=stack_categories,
+            series_dict=series_dict,
+            insight=insight,
+            stacked=True,
         )
         spec.type = ctype
-        return spec
-    # 默认：分类比较图。标题不再重复单位，百分号由数据标签表达。
-    series_dict = {s: _pct_list(data, s, cats) for s in display_segs}
+        return _decorate_chart_spec(spec, q, display_segs)
+
+    series_dict = {s: values_for(s) for s in display_segs}
     if ctype == ChartType.LINE:
-        return ChartSpec.line(title=title, categories=cats, series_dict=series_dict, insight=insight)
+        spec = ChartSpec.line(
+            title=title,
+            categories=cats,
+            series_dict=series_dict,
+            insight=insight,
+        )
+        return _decorate_chart_spec(spec, q, display_segs)
     render_cats = list(cats)
     if ctype == ChartType.BAR:
-        # PowerPoint 横向条形图会把第一个类别/系列绘制在底部。
-        # 写入时同时反转，最终视觉顺序仍是“第一选项在上、总体系列在上”。
-        render_cats = list(reversed(render_cats))
+        render_cats.reverse()
         series_dict = {
             name: list(reversed(values))
             for name, values in reversed(list(series_dict.items()))
         }
-    spec = ChartSpec.bar(title=title, categories=render_cats, series_dict=series_dict, insight=insight)
+    spec = ChartSpec.bar(
+        title=title,
+        categories=render_cats,
+        series_dict=series_dict,
+        insight=insight,
+    )
     if ctype == ChartType.COLUMN:
         spec.type = ChartType.COLUMN
-    return spec
-
+    return _decorate_chart_spec(spec, q, display_segs)
 
 def _harmonize_page_charts(batch: list, charts: list) -> list:
     """让同页自动图表保持可比较，并给重复题干补充题号。"""
@@ -588,17 +658,226 @@ def _extract_kpis(questions: list) -> list:
             if v and 0 <= v <= 1 and v > best[0]:
                 best = (v, q["categories"][i], _norm(q["title"]))
     if best[0]:
-        kpis.append(KPI("最高单选项占比", f"{best[0] * 100:.1f}%", delta=best[1][:12]))
+        kpis.append(KPI("最高单选项占比", f"{best[0] * 100:.1f}%", delta=best[1]))
     # 首个含均值的题目
     for q in questions:
         mean = q.get("stats", {}).get("MEAN", {}).get("Total")
         if mean:
-            kpis.append(KPI(_norm(q["title"])[:8] or q["code"], f"{mean:.1f}"))
+            kpis.append(KPI(_norm(q["title"]) or q["code"], f"{mean:.1f}"))
             break
-    while len(kpis) < 5:
-        kpis.append(KPI("—", "—"))
     return kpis[:5]
 
+
+def _fact_headline(fact) -> str:
+    category = str(fact.category or "核心指标")
+    segment = "总体" if str(fact.segment or "").lower() == "total" else str(fact.segment or "总体")
+    value = fact.value
+    suffix = "%" if fact.metric_name == "percentage" else ""
+    if fact.fact_type == "segment_gap" and fact.gap_pp is not None:
+        direction = "高于" if fact.gap_pp > 0 else "低于"
+        return f"{segment}在「{category}」上{direction}总体{abs(fact.gap_pp):.1f}个百分点"
+    if fact.fact_type == "low_base_warning":
+        return f"{segment}样本量偏低，相关结论需谨慎解读"
+    if value is not None:
+        return f"「{category}」是当前最突出的结果（{value:.1f}{suffix}）"
+    return f"「{category}」是需要优先关注的结果"
+
+
+def _build_executive_findings(questions: list, facts: list) -> list[ExecutiveFinding]:
+    """Rank verified facts into client-readable findings, never placeholder cards."""
+    question_by_id = {str(question.get("code") or ""): question for question in questions}
+    buckets = [
+        ("核心用户", {"segment_ranking", "segment_gap"}),
+        ("关键行为", {"top_rank", "top2box"}),
+        ("主要问题", {"bottom_rank", "bottom2box", "distribution_polarization"}),
+        ("最大差异", {"segment_gap", "mean_difference"}),
+        ("机会方向", {"benchmark_gap", "top_rank", "segment_gap"}),
+    ]
+    used: set[str] = set()
+    findings: list[ExecutiveFinding] = []
+    for label, types in buckets:
+        candidates = [
+            fact for fact in facts
+            if fact.fact_type in types and fact.fact_id not in used
+            and fact.fact_type != "low_base_warning"
+        ]
+        candidates.sort(
+            key=lambda fact: (
+                abs(float(fact.gap_pp or 0)),
+                float(fact.confidence or 0),
+                abs(float(fact.value or 0)),
+            ),
+            reverse=True,
+        )
+        if not candidates:
+            continue
+        fact = candidates[0]
+        used.add(fact.fact_id)
+        question = question_by_id.get(fact.question_id, {})
+        findings.append(ExecutiveFinding(
+            title=f"{label}：{_fact_headline(fact)}",
+            description=str(question.get("title") or fact.metric_name),
+            evidence_fact_ids=[fact.fact_id],
+            evidence_question_ids=[fact.question_id] if fact.question_id else [],
+            source_references=[fact.source_reference] if fact.source_reference else [],
+            action_implication="围绕该人群与指标安排后续诊断，并将改善动作纳入优先级评估。",
+            importance="high" if len(findings) < 2 else "medium",
+        ))
+    return findings
+
+def _page_question_ids(page) -> list[str]:
+    question_ids = []
+    for chart in getattr(page, "charts", []):
+        question_ids.extend(getattr(chart, "evidence_question_ids", []) or [])
+    for group in getattr(page, "groups_data", []):
+        question_id = str(group.get("question_id") or "")
+        if question_id:
+            question_ids.append(question_id)
+    return list(dict.fromkeys(question_ids))
+
+
+def _enhance_report_pages(
+    pages: list,
+    questions: list,
+    facts: list,
+    findings: list[ExecutiveFinding],
+    source: str,
+) -> tuple[list, list[SlideBrief]]:
+    """Add narrative page families without changing editable chart ownership."""
+    question_by_id = {str(question.get("code") or ""): question for question in questions}
+    fact_payload = facts_as_dicts(facts)
+    semantic_pages = []
+    for index, page in enumerate(pages, 1):
+        question_ids = _page_question_ids(page)
+        chapter = getattr(page, "chapter", "") or next(
+            (
+                _categorize_question(question_by_id[question_id])
+                for question_id in question_ids
+                if question_id in question_by_id
+            ),
+            "其他研究",
+        )
+        page.chapter = chapter
+        page.slide_id = getattr(page, "slide_id", "") or f"finding_{index:03d}"
+        semantic_pages.append({
+            "slide_id": page.slide_id,
+            "slide_type": (
+                "segment_comparison"
+                if isinstance(page, MultiGroupBarPageContent)
+                else "key_finding"
+            ),
+            "chapter": chapter,
+            "title": page.title,
+            "questions": [{"code": question_id} for question_id in question_ids],
+            "density": getattr(page, "density", "medium"),
+        })
+    briefs = build_slide_briefs(semantic_pages, fact_payload)
+    usage = Counter()
+    previous = None
+    for page, brief in zip(pages, briefs):
+        page.brief = brief
+        page.slide_type = brief.slide_type
+        category_count = sum(
+            len(chart.categories) for chart in getattr(page, "charts", [])
+        ) + sum(
+            len(group.get("data", [])) for group in getattr(page, "groups_data", [])
+        )
+        request = {
+            "slide_type": brief.slide_type,
+            "chart_count": max(1, len(getattr(page, "charts", []) or getattr(page, "groups_data", []))),
+            "category_count": category_count,
+            "segment_count": len(getattr(page, "segments", []) or []),
+            "density": "high" if category_count > 18 else "medium",
+            "needs_table": isinstance(page, MultiGroupBarPageContent),
+            "needs_insight_sidebar": bool(getattr(page, "side_insights", [])),
+        }
+        template, _issues = select_report_template(
+            request,
+            previous_template_id=previous,
+            usage=usage,
+        )
+        usage[template.template_id] += 1
+        previous = template.template_id
+        page.template_id = template.template_id
+        page.layout_family = template.layout_family
+        page.density = request["density"]
+        brief.template_id = template.template_id
+        brief.layout_family = template.layout_family
+
+    total_base = max(
+        (
+            int(base)
+            for question in questions
+            for base in (question.get("base") or {}).values()
+            if base is not None
+        ),
+        default=0,
+    )
+    segment_count = max(
+        (len(question.get("segments") or []) for question in questions),
+        default=0,
+    )
+    result = [
+        ResearchOverviewContent(
+            sample_size=total_base or None,
+            question_count=len(questions),
+            segment_count=max(0, segment_count - 1),
+            source_references=[source] if source else [],
+        )
+    ]
+    if findings:
+        result.append(FindingsOverviewContent(findings=findings))
+    previous_chapter = None
+    for page in pages:
+        if page.chapter != previous_chapter:
+            result.append(SectionDividerContent(
+                title=page.chapter,
+                chapter=page.chapter,
+                subtitle=(page.brief.question_answered if page.brief else ""),
+                key_message=(page.brief.claim if page.brief else ""),
+                slide_id=f"section_{len(result):03d}",
+            ))
+            previous_chapter = page.chapter
+        result.append(page)
+
+    opportunity_facts = [
+        fact for fact in facts
+        if fact.fact_type in {"segment_gap", "benchmark_gap", "bottom_rank"}
+        and fact.value is not None
+    ]
+    opportunity_facts.sort(
+        key=lambda fact: abs(float(fact.gap_pp or fact.value or 0)),
+        reverse=True,
+    )
+    opportunities = [
+        OpportunityItem(
+            label=str(fact.category or fact.metric_name),
+            importance=abs(float(fact.gap_pp or fact.value or 0)),
+            performance=float(fact.value or 0),
+            implication=_fact_headline(fact),
+            fact_ids=[fact.fact_id],
+        )
+        for fact in opportunity_facts[:6]
+    ]
+    if opportunities:
+        result.append(OpportunityMatrixContent(
+            title="优先机会集中在高差异、低表现的关键指标",
+            opportunities=opportunities,
+            data_source=source,
+            slide_id="opportunity_matrix",
+        ))
+    recommendations = [
+        RecommendationItem(
+            action=finding.action_implication or finding.title,
+            rationale=finding.title,
+            priority=finding.importance,
+            evidence_fact_ids=list(finding.evidence_fact_ids),
+        )
+        for finding in findings
+    ]
+    if recommendations:
+        result.append(RecommendationContent(recommendations=recommendations))
+    return result, briefs
 
 def _is_appendix(q: dict) -> bool:
     """判断题目是否应进附录（不进主线图表）：甄别 / 配额 / 后台圈选 / 低信息量。"""
@@ -624,7 +903,7 @@ def _build_appendix(appendix_qs: list, source: str):
         return None
     headers = ["题号", "题面", "选项数"]
     rows = [
-        [q["code"], _norm(q["title"])[:30], len(q.get("categories", []))]
+        [q["code"], _norm(q["title"]), len(q.get("categories", []))]
         for q in appendix_qs
     ]
     return AppendixContent(
@@ -635,7 +914,7 @@ def _build_appendix(appendix_qs: list, source: str):
 
 
 def _group_title(group: list, idx: int, total: int) -> str:
-    base = _norm(group[0]["title"])[:12] or group[0]["code"]
+    base = _norm(group[0]["title"]) or group[0]["code"]
     return f"{base} 等 {len(group)} 题 · 人群对比（第{idx}/{total}组）"
 
 
@@ -650,7 +929,7 @@ def _insight_page_title(group: list, segments: list = None) -> str:
         if insight and insight not in insights:
             insights.append(insight)
     if not insights:
-        return f"{_norm(group[0].get('title', ''))[:28]}呈现明显差异"
+        return f"{_norm(group[0].get('title', ''))}呈现明显差异"
     # 标题只保留第一条洞察的核心结论，详细差异放正文，避免标题换行。
     title = insights[0].split("；", 1)[0]
     # 分群名与题目语境叠加时容易过长；页标题保留“分群 + 最高项”，
@@ -665,7 +944,7 @@ def _page_data_source(group: list, source: str = "") -> str:
     refs = []
     for q in group:
         code = q.get("code", "")
-        title = _norm(q.get("title", ""))[:22]
+        title = _norm(q.get("title", ""))
         base = q.get("base", {}).get("Total")
         ref = f"{code}.{title}" if code else title
         if base:
@@ -715,8 +994,8 @@ def _build_multi_group_bar_page(group: list, segments: list, source: str,
 
     for q in group:
         cats, data = _sort_question(q)
-        title = _norm(q["title"])[:24] or q["code"]
-        short_label = _extract_group_label(q.get("title", "")) or title[:8]
+        title = _norm(q["title"]) or q["code"]
+        short_label = _extract_group_label(q.get("title", "")) or title
 
         # 构造 DataFrame：选项列 + 各分群数据
         df_rows = []
@@ -740,7 +1019,7 @@ def _build_multi_group_bar_page(group: list, segments: list, source: str,
             )
             df = df[mask].reset_index(drop=True)
 
-        groups_data.append({"title": title, "short_label": short_label, "data": df})
+        groups_data.append({"title": title, "short_label": short_label, "data": df, "question_id": str(q.get("code") or "")})
 
         # 收集洞察（同时记录占比峰值，用于挑选最显著的一条作标题）
         insight = _auto_insight(q, cats, data, segments)
@@ -759,6 +1038,8 @@ def _build_multi_group_bar_page(group: list, segments: list, source: str,
         segments=list(segments),
         insights=all_insights,
         data_source=ds,
+        chapter=_categorize_question(group[0]) if group else "其他研究",
+        slide_id=f"finding_{idx:03d}",
     )
 
 
@@ -899,7 +1180,7 @@ def build_auto_report(
                 str(text).strip()
                 for text in (cfg.get("insight_bullets") or [])
                 if str(text).strip()
-            ][:4]
+            ]
             selected_dimensions = [
                 str(name).strip()
                 for name in (cfg.get("selected_dimensions") or [])
@@ -1029,6 +1310,8 @@ def build_auto_report(
 
         chart_pages = configured_pages
 
+    facts = extract_data_facts(questions)
+    findings = _build_executive_findings(renderable, facts)
     kpis = _extract_kpis(questions)
     conclusion = (
         f"基于 {len(renderable)} 道题目的交叉分析，覆盖 {len(display_segs)} 类人群；"
@@ -1036,6 +1319,13 @@ def build_auto_report(
     )
     if page_config and str(page_config.get("executive_summary") or "").strip():
         conclusion = str(page_config["executive_summary"]).strip()
+    chart_pages, slide_briefs = _enhance_report_pages(
+        chart_pages,
+        renderable,
+        facts,
+        findings,
+        source,
+    )
     appendix = _build_appendix(appendix_qs, source)
 
     # 精简目录：项目概述 / 主要研究发现（含子模块）/ 结论与建议
@@ -1044,8 +1334,18 @@ def build_auto_report(
     return ReportSpec(
         cover=CoverContent(title=title, client=client, date=date, subtitle=subtitle),
         toc=toc,
-        executive_summary=ExecutiveSummaryContent(kpis=kpis, conclusion=conclusion),
+        executive_summary=ExecutiveSummaryContent(kpis=kpis, conclusion=conclusion, findings=findings),
         chart_pages=chart_pages,
+        facts=facts,
+        slide_briefs=slide_briefs,
+        render_audit={
+            "input_blocks": sum(len(getattr(page, "charts", [])) or len(getattr(page, "groups_data", [])) for page in chart_pages),
+            "rendered_blocks": sum(len(getattr(page, "charts", [])) or len(getattr(page, "groups_data", [])) for page in chart_pages),
+            "truncated_blocks": 0,
+            "split_slide_ids": [],
+            "warnings": [],
+            "removed_content": [],
+        },
         appendix=appendix,
     )
 
@@ -1123,7 +1423,7 @@ def build_page_plan(
             "questions": [
                 {
                     "code": q.get("code", ""),
-                    "title": _norm(q.get("title", ""))[:40],
+                    "title": _norm(q.get("title", "")),
                     "categories": q.get("categories", []),
                 }
                 for q in batch
@@ -1147,7 +1447,7 @@ def build_page_plan(
             "questions": [
                 {
                     "code": q.get("code", ""),
-                    "title": _norm(q.get("title", ""))[:40],
+                    "title": _norm(q.get("title", "")),
                     "categories": q.get("categories", []),
                 }
                 for q in batch
@@ -1186,6 +1486,51 @@ def build_page_plan(
             chapters.append(chapter)
         chapter["page_idxs"].append(page["page_idx"])
 
+    facts = extract_data_facts(renderable)
+    fact_payload = facts_as_dicts(facts)
+    slide_briefs = build_slide_briefs(pages, fact_payload)
+    usage = Counter()
+    previous_template_id = None
+    template_issues = []
+    for page, brief in zip(pages, slide_briefs):
+        page["slide_id"] = brief.slide_id
+        page["slide_type"] = (
+            "segment_comparison"
+            if page.get("type") == "multi_group_bar"
+            else "key_finding"
+        )
+        brief.slide_type = page["slide_type"]
+        category_count = sum(
+            len(question.get("categories") or [])
+            for question in page.get("questions") or []
+        )
+        request = {
+            "slide_type": page["slide_type"],
+            "chart_count": max(1, len(page.get("questions") or [])),
+            "category_count": category_count,
+            "segment_count": len(page.get("segments") or []),
+            "density": "high" if category_count > 18 else "medium",
+            "needs_table": page.get("type") == "multi_group_bar",
+            "needs_insight_sidebar": page["slide_type"] == "key_finding",
+            "importance": "high" if page.get("page_idx") == 1 else "medium",
+        }
+        template, issues = select_report_template(
+            request,
+            previous_template_id=previous_template_id,
+            usage=usage,
+        )
+        usage[template.template_id] += 1
+        previous_template_id = template.template_id
+        page["template_id"] = template.template_id
+        page["layout_family"] = template.layout_family
+        page["density"] = request["density"]
+        brief.template_id = template.template_id
+        brief.layout_family = template.layout_family
+        page["slide_brief"] = brief.to_dict()
+        template_issues.extend(
+            {**issue, "page_idx": page.get("page_idx")}
+            for issue in issues
+        )
     return {
         "total_questions": len(questions),
         "renderable_questions": len(renderable),
@@ -1194,7 +1539,7 @@ def build_page_plan(
         "question_catalog": [
             {
                 "code": q.get("code", ""),
-                "title": _norm(q.get("title", ""))[:80],
+                "title": _norm(q.get("title", "")),
                 "categories": list(q.get("categories") or []),
                 "chapter": _categorize_question(q),
             }
@@ -1205,6 +1550,10 @@ def build_page_plan(
         "display_segments": display_segs,
         "available_dimensions": available_dimensions,
         "chapters": chapters,
+        "data_facts": fact_payload,
+        "slide_briefs": [brief.to_dict() for brief in slide_briefs],
+        "global_findings": [finding.to_dict() for finding in _build_executive_findings(renderable, facts)],
+        "template_issues": template_issues,
     }
 
 
@@ -1227,6 +1576,10 @@ def build_insight_context(
     ]
     by_code = {q.get("code"): q for q in renderable}
     dimension_groups = getattr(build_jd_report, "_cached_dimension_groups", []) or []
+    all_facts = extract_data_facts(renderable)
+    facts_by_question = {}
+    for fact in all_facts:
+        facts_by_question.setdefault(fact.question_id, []).append(fact)
     pages = []
 
     for idx, cfg in enumerate(cfg_pages):
@@ -1267,10 +1620,10 @@ def build_insight_context(
                     next((s for s in available_segments if _match_segment("总体", [s])), available_segments[0])
                 ] if available_segments else []
             else:
-                display_segments = available_segments[:8]
+                display_segments = available_segments
 
             rows = []
-            for category_index, category in enumerate(categories[:24]):
+            for category_index, category in enumerate(categories):
                 values = {}
                 for segment in display_segments:
                     segment_values = data.get(segment) or []
@@ -1294,6 +1647,8 @@ def build_insight_context(
                 "title": _norm(question.get("title", "")),
                 "base": bases,
                 "rows": rows,
+                "data_kind": infer_data_kind(question),
+                "facts": [fact.to_dict() for fact in facts_by_question.get(str(question.get("code") or ""), [])],
             })
 
         pages.append({
@@ -1303,15 +1658,31 @@ def build_insight_context(
             "chart_type": cfg.get("chart_type") or "auto",
             "dimensions": selected_dimensions or ["总体"],
             "questions": question_evidence,
+            "slide_brief": cfg.get("slide_brief") or {},
+            "evidence_fact_ids": list(dict.fromkeys(
+                fact["fact_id"]
+                for question in question_evidence
+                for fact in question.get("facts", [])
+            )),
+            "source_references": list(dict.fromkeys(
+                fact["source_reference"]
+                for question in question_evidence
+                for fact in question.get("facts", [])
+                if fact.get("source_reference")
+            )),
         })
 
     return {
         "pages": pages,
         "page_count": len(pages),
         "source": source,
+        "data_facts": [fact.to_dict() for fact in all_facts],
+        "global_findings": [finding.to_dict() for finding in _build_executive_findings(renderable, all_facts)],
         "rules": {
-            "title": "一句话数据洞察总结",
-            "bullets": "每页2-3条，必须引用本页数据，不得编造数字",
+            "title": "一句话核心结论；必须引用 evidence_fact_ids",
+            "bullets": "每页2-3条，只能解释已提供 DataFact，不得重新计算或编造数字",
+            "business_implication": "基于事实给出业务含义，不得引入未经验证的比例",
+            "forbidden": ["坐标", "字号", "颜色", "Python代码", "未提供的百分比", "无显著性字段时使用显著高于"],
         },
     }
 

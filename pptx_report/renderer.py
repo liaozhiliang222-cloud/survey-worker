@@ -17,14 +17,32 @@ from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Inches, Pt
 
+from .common.qa import inspect_presentation
 from .exceptions import RenderingError, TemplateNotFoundError
-from .model import ReportSpec, MultiGroupBarPageContent
+from .model import (
+    FindingsOverviewContent,
+    FunnelAnalysisContent,
+    KeyFindingContent,
+    MultiGroupBarPageContent,
+    OpportunityMatrixContent,
+    RecommendationContent,
+    ReportSpec,
+    ResearchOverviewContent,
+    SectionDividerContent,
+)
 from .pages import (
     build_appendix,
     build_chart_page,
     build_cover,
     build_exec_summary,
+    build_findings_overview,
+    build_funnel_analysis,
+    build_key_finding,
     build_multi_group_bar_page,
+    build_opportunity_matrix,
+    build_recommendation,
+    build_research_overview,
+    build_section_divider,
     build_toc,
 )
 from .theme import Theme
@@ -50,6 +68,7 @@ class ReportRenderer:
         self._slide_w = None
         self._slide_h = None
         self._template_mapping = None
+        self.last_qa = None
 
     def render(self, spec: ReportSpec, output_path: str) -> str:
         """渲染并保存到 output_path，返回该路径。"""
@@ -77,7 +96,7 @@ class ReportRenderer:
             self._add_exec_summary(spec.executive_summary, dims)
             report_page("正在绘制执行摘要")
             for index, page in enumerate(spec.chart_pages, 1):
-                self._add_chart_page(page, dims)
+                self._add_report_page(page, dims)
                 report_page(f"正在绘制数据页 {index}/{len(spec.chart_pages)}")
             if spec.appendix is not None:
                 self._add_appendix(spec.appendix, dims)
@@ -85,6 +104,12 @@ class ReportRenderer:
             if self.progress_callback:
                 self.progress_callback(94, "正在打包演示文稿")
             self._prs.save(output_path)
+            qa_result = inspect_presentation(output_path)
+            self.last_qa = qa_result.to_dict()
+            if not isinstance(spec.render_audit, dict):
+                spec.render_audit = {}
+            spec.render_audit["object_qa"] = self.last_qa
+            spec.render_audit["overall_score"] = qa_result.score
             if self.progress_callback:
                 self.progress_callback(97, "演示文稿已生成")
         except RenderingError:
@@ -448,6 +473,32 @@ class ReportRenderer:
             build_multi_group_bar_page(slide, page, self.theme, dims)
         else:
             build_chart_page(slide, page, self.theme, dims)
+        self._remove_duplicate_title_divider(slide, start, role)
+        self._apply_template_geometry(slide, start, role)
+
+    def _add_report_page(self, page, dims):
+        """Dispatch semantic page content while preserving legacy chart pages."""
+        builders = {
+            ResearchOverviewContent: (build_research_overview, "summary"),
+            SectionDividerContent: (build_section_divider, "section"),
+            FindingsOverviewContent: (build_findings_overview, "summary"),
+            KeyFindingContent: (build_key_finding, "chart"),
+            FunnelAnalysisContent: (build_funnel_analysis, "chart"),
+            OpportunityMatrixContent: (build_opportunity_matrix, "matrix"),
+            RecommendationContent: (build_recommendation, "summary"),
+        }
+        selected = next(
+            ((builder, role) for content_type, (builder, role) in builders.items()
+             if isinstance(page, content_type)),
+            None,
+        )
+        if selected is None:
+            self._add_chart_page(page, dims)
+            return
+        builder, role = selected
+        slide = self._blank_slide(role)
+        start = len(slide.shapes)
+        builder(slide, page, self.theme, dims)
         self._remove_duplicate_title_divider(slide, start, role)
         self._apply_template_geometry(slide, start, role)
 

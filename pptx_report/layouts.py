@@ -61,6 +61,19 @@ def resolve_layout(page: ChartPageContent, slide_w: Emu, slide_h: Emu) -> PageLa
         else:
             layout = LayoutType.DASHBOARD
 
+    semantic_aliases = {
+        LayoutType.HERO_CHART: LayoutType.SINGLE,
+        LayoutType.KEY_FINDING_WITH_EVIDENCE: LayoutType.MIXED,
+        LayoutType.CHART_WITH_INSIGHT: LayoutType.MIXED,
+        LayoutType.COMPARISON_40_60: LayoutType.MIXED,
+        LayoutType.MAIN_CHART_SUB_CHARTS: LayoutType.DASHBOARD,
+        LayoutType.SEGMENT_PROFILE: LayoutType.DASHBOARD,
+        LayoutType.FUNNEL_WITH_DRIVERS: LayoutType.MIXED,
+        LayoutType.MATRIX_WITH_PRIORITY: LayoutType.MIXED,
+        LayoutType.CHART_TABLE_HYBRID: LayoutType.MIXED,
+    }
+    layout = semantic_aliases.get(layout, layout)
+
     if layout == LayoutType.MIXED:
         return _mixed(page, slide_w, slide_h, n)
     if layout == LayoutType.SINGLE:

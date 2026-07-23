@@ -13,10 +13,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from .common.slide_brief import SlideBrief
 from .exceptions import ReportDataError, UnsupportedChartTypeError
 
 
@@ -43,7 +44,91 @@ class LayoutType(str, Enum):
     DUAL = "dual"              # 对比式双图（左右各一图）
     DASHBOARD = "dashboard"    # 仪表盘网格（2x2 / 3x2，最多 6 图）
     MIXED = "mixed"            # 图文混排（图 60% + 侧栏 40% 洞察）
+    HERO_CHART = "hero_chart"
+    CHART_WITH_INSIGHT = "chart_with_insight"
+    MAIN_CHART_SUB_CHARTS = "main_chart_sub_charts"
+    COMPARISON_40_60 = "comparison_40_60"
+    FUNNEL_WITH_DRIVERS = "funnel_with_drivers"
+    SEGMENT_PROFILE = "segment_profile"
+    MATRIX_WITH_PRIORITY = "matrix_with_priority"
+    CHART_TABLE_HYBRID = "chart_table_hybrid"
+    KEY_FINDING_WITH_EVIDENCE = "key_finding_with_evidence"
 
+
+class PageType(str, Enum):
+    CHART = "chart"
+    RESEARCH_OVERVIEW = "research_overview"
+    SECTION_DIVIDER = "section_divider"
+    FINDINGS_OVERVIEW = "findings_overview"
+    KEY_FINDING = "key_finding"
+    SEGMENT_COMPARISON = "segment_comparison"
+    FUNNEL_ANALYSIS = "funnel_analysis"
+    DRIVER_ANALYSIS = "driver_analysis"
+    PROBLEM_CAUSE_IMPACT = "problem_cause_impact"
+    OPPORTUNITY_MATRIX = "opportunity_matrix"
+    RECOMMENDATION = "recommendation"
+    ROADMAP = "roadmap"
+    METHODOLOGY = "methodology"
+
+
+class DataKind(str, Enum):
+    PERCENTAGE = "percentage"
+    COUNT = "count"
+    MEAN = "mean"
+    SCORE = "score"
+    INDEX = "index"
+    CURRENCY = "currency"
+    FREQUENCY = "frequency"
+    NPS = "nps"
+
+
+@dataclass
+class DataFact:
+    """A verified quantitative fact that can be cited by AI-written claims."""
+
+    fact_id: str
+    fact_type: str
+    question_id: str
+    metric_name: str
+    segment: Optional[str] = None
+    category: Optional[str] = None
+    value: Optional[float] = None
+    benchmark_value: Optional[float] = None
+    gap_pp: Optional[float] = None
+    rank: Optional[int] = None
+    base: Optional[int] = None
+    significant: Optional[bool] = None
+    source_reference: str = ""
+    confidence: float = 1.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "fact_id": self.fact_id,
+            "fact_type": self.fact_type,
+            "question_id": self.question_id,
+            "metric_name": self.metric_name,
+            "segment": self.segment,
+            "category": self.category,
+            "value": self.value,
+            "benchmark_value": self.benchmark_value,
+            "gap_pp": self.gap_pp,
+            "rank": self.rank,
+            "base": self.base,
+            "significant": self.significant,
+            "source_reference": self.source_reference,
+            "confidence": self.confidence,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DataFact":
+        values = {name: data.get(name) for name in cls.__dataclass_fields__}
+        values["fact_id"] = str(values.get("fact_id") or "")
+        values["fact_type"] = str(values.get("fact_type") or "")
+        values["question_id"] = str(values.get("question_id") or "")
+        values["metric_name"] = str(values.get("metric_name") or "")
+        values["source_reference"] = str(values.get("source_reference") or "")
+        values["confidence"] = float(values.get("confidence") if values.get("confidence") is not None else 1.0)
+        return cls(**values)
 
 # ------------------------- 原子结构 -------------------------
 @dataclass
@@ -95,6 +180,20 @@ class ChartSpec:
     y_values: List[float] = field(default_factory=list)
     insight: str = ""                       # 图表下方一句话结论
     secondary_axis_title: Optional[str] = None  # 组合图副轴标题
+    data_kind: Any = DataKind.PERCENTAGE
+    unit: str = "%"
+    axis_policy: str = "zero_based"
+    sort_policy: str = "auto"
+    highlight_series: Optional[str] = None
+    highlight_categories: List[str] = field(default_factory=list)
+    benchmark_value: Optional[float] = None
+    benchmark_label: str = ""
+    show_base: bool = False
+    base_values: Dict[str, int] = field(default_factory=dict)
+    significance_markers: List[Dict[str, Any]] = field(default_factory=list)
+    evidence_question_ids: List[str] = field(default_factory=list)
+    evidence_fact_ids: List[str] = field(default_factory=list)
+    source_references: List[str] = field(default_factory=list)
 
     # ----------------- 便捷工厂（兼作使用示例） -----------------
     @classmethod
@@ -167,6 +266,20 @@ class ChartSpec:
             "y_values": list(self.y_values),
             "insight": self.insight,
             "secondary_axis_title": self.secondary_axis_title,
+            "data_kind": self.data_kind.value if isinstance(self.data_kind, DataKind) else self.data_kind,
+            "unit": self.unit,
+            "axis_policy": self.axis_policy,
+            "sort_policy": self.sort_policy,
+            "highlight_series": self.highlight_series,
+            "highlight_categories": list(self.highlight_categories),
+            "benchmark_value": self.benchmark_value,
+            "benchmark_label": self.benchmark_label,
+            "show_base": self.show_base,
+            "base_values": dict(self.base_values),
+            "significance_markers": list(self.significance_markers),
+            "evidence_question_ids": list(self.evidence_question_ids),
+            "evidence_fact_ids": list(self.evidence_fact_ids),
+            "source_references": list(self.source_references),
         }
 
     @classmethod
@@ -185,10 +298,45 @@ class ChartSpec:
             y_values=[float(v) for v in data.get("y_values", [])],
             insight=str(data.get("insight", "")),
             secondary_axis_title=data.get("secondary_axis_title"),
+            data_kind=DataKind(data.get("data_kind", "percentage")),
+            unit=str(data.get("unit", "%")),
+            axis_policy=str(data.get("axis_policy", "zero_based")),
+            sort_policy=str(data.get("sort_policy", "auto")),
+            highlight_series=data.get("highlight_series"),
+            highlight_categories=[str(value) for value in data.get("highlight_categories", [])],
+            benchmark_value=data.get("benchmark_value"),
+            benchmark_label=str(data.get("benchmark_label", "")),
+            show_base=bool(data.get("show_base", False)),
+            base_values={str(key): int(value) for key, value in data.get("base_values", {}).items()},
+            significance_markers=list(data.get("significance_markers", [])),
+            evidence_question_ids=[str(value) for value in data.get("evidence_question_ids", [])],
+            evidence_fact_ids=[str(value) for value in data.get("evidence_fact_ids", [])],
+            source_references=[str(value) for value in data.get("source_references", [])],
         )
 
 
 # ------------------------- 页面内容 -------------------------
+@dataclass
+class ExecutiveFinding:
+    title: str
+    description: str = ""
+    evidence_fact_ids: List[str] = field(default_factory=list)
+    action_implication: str = ""
+    importance: str = "medium"
+    evidence_question_ids: List[str] = field(default_factory=list)
+    source_references: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "title": self.title,
+            "description": self.description,
+            "evidence_fact_ids": list(self.evidence_fact_ids),
+            "action_implication": self.action_implication,
+            "importance": self.importance,
+            "evidence_question_ids": list(self.evidence_question_ids),
+            "source_references": list(self.source_references),
+        }
+
 @dataclass
 class KPI:
     """执行摘要里的一个核心指标。"""
@@ -222,6 +370,7 @@ class ExecutiveSummaryContent:
 
     kpis: List[KPI] = field(default_factory=list)
     conclusion: str = ""
+    findings: List[ExecutiveFinding] = field(default_factory=list)
 
 
 @dataclass
@@ -235,6 +384,13 @@ class ChartPageContent:
     side_insights: List[str] = field(default_factory=list)  # 仅图文混排使用
     insights: List[str] = field(default_factory=list)  # 标题下方的圆点洞察正文
     data_source: str = ""  # 数据来源标注（页面底部，对齐调研公司规范）
+    slide_id: str = ""
+    slide_type: Any = PageType.CHART
+    chapter: str = ""
+    brief: Optional[SlideBrief] = None
+    template_id: str = ""
+    layout_family: str = ""
+    density: str = "medium"
 
 
 @dataclass
@@ -259,7 +415,128 @@ class MultiGroupBarPageContent:
     segments: list = field(default_factory=list)       # list[str]
     insights: list = field(default_factory=list)       # list[str]
     data_source: str = ""
+    slide_id: str = ""
+    slide_type: Any = PageType.SEGMENT_COMPARISON
+    chapter: str = ""
+    brief: Optional[SlideBrief] = None
+    template_id: str = ""
+    layout_family: str = "matrix_with_priority"
+    density: str = "high"
 
+
+@dataclass
+class ResearchOverviewContent:
+    title: str = "研究概览"
+    sample_size: Optional[int] = None
+    question_count: int = 0
+    segment_count: int = 0
+    methodology: str = "定量交叉表分析"
+    source_references: List[str] = field(default_factory=list)
+    slide_id: str = "research_overview"
+    slide_type: Any = PageType.RESEARCH_OVERVIEW
+    chapter: str = "项目概述"
+    brief: Optional[SlideBrief] = None
+    template_id: str = ""
+
+
+@dataclass
+class SectionDividerContent:
+    title: str
+    chapter: str
+    subtitle: str = ""
+    key_message: str = ""
+    slide_id: str = ""
+    slide_type: Any = PageType.SECTION_DIVIDER
+    brief: Optional[SlideBrief] = None
+    template_id: str = "section_divider_v1"
+
+
+@dataclass
+class FindingsOverviewContent:
+    title: str = "核心发现总览"
+    findings: List[ExecutiveFinding] = field(default_factory=list)
+    slide_id: str = "findings_overview"
+    slide_type: Any = PageType.FINDINGS_OVERVIEW
+    chapter: str = "主要研究发现"
+    brief: Optional[SlideBrief] = None
+    template_id: str = "findings_overview_v1"
+
+
+@dataclass
+class KeyFindingContent:
+    title: str
+    finding: ExecutiveFinding
+    charts: List[ChartSpec] = field(default_factory=list)
+    data_source: str = ""
+    slide_id: str = ""
+    slide_type: Any = PageType.KEY_FINDING
+    chapter: str = ""
+    brief: Optional[SlideBrief] = None
+    template_id: str = "key_finding_evidence_v1"
+    layout_family: str = "key_finding_with_evidence"
+
+
+@dataclass
+class FunnelStage:
+    label: str
+    value: float
+    fact_id: str = ""
+    question_id: str = ""
+
+
+@dataclass
+class FunnelAnalysisContent:
+    title: str
+    stages: List[FunnelStage] = field(default_factory=list)
+    drivers: List[str] = field(default_factory=list)
+    data_source: str = ""
+    slide_id: str = ""
+    slide_type: Any = PageType.FUNNEL_ANALYSIS
+    chapter: str = ""
+    brief: Optional[SlideBrief] = None
+    template_id: str = "funnel_drivers_v1"
+
+
+@dataclass
+class OpportunityItem:
+    label: str
+    importance: float
+    performance: float
+    implication: str = ""
+    fact_ids: List[str] = field(default_factory=list)
+
+
+@dataclass
+class OpportunityMatrixContent:
+    title: str
+    opportunities: List[OpportunityItem] = field(default_factory=list)
+    data_source: str = ""
+    slide_id: str = ""
+    slide_type: Any = PageType.OPPORTUNITY_MATRIX
+    chapter: str = ""
+    brief: Optional[SlideBrief] = None
+    template_id: str = "matrix_priority_v1"
+
+
+@dataclass
+class RecommendationItem:
+    action: str
+    rationale: str = ""
+    priority: str = "medium"
+    evidence_fact_ids: List[str] = field(default_factory=list)
+    owner: str = ""
+    timing: str = ""
+
+
+@dataclass
+class RecommendationContent:
+    title: str = "行动建议"
+    recommendations: List[RecommendationItem] = field(default_factory=list)
+    slide_id: str = "recommendation"
+    slide_type: Any = PageType.RECOMMENDATION
+    chapter: str = "结论与建议"
+    brief: Optional[SlideBrief] = None
+    template_id: str = "recommendation_v1"
 
 @dataclass
 class TableData:
@@ -278,6 +555,32 @@ class AppendixContent:
     source: str = ""
 
 
+def _serialize_value(value):
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, SlideBrief):
+        return value.to_dict()
+    if isinstance(value, DataFact):
+        return value.to_dict()
+    if isinstance(value, ChartSpec):
+        return value.to_dict()
+    if isinstance(value, ExecutiveFinding):
+        return value.to_dict()
+    if isinstance(value, list):
+        return [_serialize_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_serialize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _serialize_value(item) for key, item in value.items()}
+    if hasattr(value, "to_dict") and value.__class__.__module__.startswith("pandas"):
+        return value.to_dict(orient="records")
+    if is_dataclass(value):
+        return {
+            item.name: _serialize_value(getattr(value, item.name))
+            for item in fields(value)
+        }
+    return value
+
 # ------------------------- 顶层报告 -------------------------
 @dataclass
 class ReportSpec:
@@ -286,7 +589,10 @@ class ReportSpec:
     cover: CoverContent
     toc: TocContent
     executive_summary: ExecutiveSummaryContent
-    chart_pages: List[ChartPageContent] = field(default_factory=list)
+    chart_pages: List[Any] = field(default_factory=list)
+    facts: List[DataFact] = field(default_factory=list)
+    slide_briefs: List[SlideBrief] = field(default_factory=list)
+    render_audit: Dict[str, Any] = field(default_factory=dict)
     appendix: Optional[AppendixContent] = None
     template_path: Optional[str] = None  # 可选 .pptx 模板作为设计底
 
@@ -305,70 +611,47 @@ class ReportSpec:
             raise ReportDataError("封面标题(cover.title)不能为空")
         if not self.cover.client:
             raise ReportDataError("客户名称(cover.client)不能为空")
-        if not self.executive_summary.kpis:
+        if not self.executive_summary.kpis and not self.executive_summary.findings:
             raise ReportDataError("执行摘要至少包含 1 个 KPI")
         if not self.chart_pages:
             raise ReportDataError("至少需要 1 个图表页(chart_pages)")
         for i, page in enumerate(self.chart_pages):
-            # MultiGroupBarPageContent 无 charts 字段，跳过图表校验
             if isinstance(page, MultiGroupBarPageContent):
                 if not page.groups_data:
                     raise ReportDataError(f"第 {i + 1} 个多组条形图页没有配置任何题目数据")
                 continue
-            if not page.charts:
+            if isinstance(page, FindingsOverviewContent) and not page.findings:
+                raise ReportDataError(f"第 {i + 1} 个发现总览页没有发现内容")
+            if isinstance(page, KeyFindingContent) and not page.charts:
                 raise ReportDataError(f"第 {i + 1} 个图表页没有配置任何图表")
-        # 校验图表类型合法性（仅对 ChartPageContent）
+            if isinstance(page, FunnelAnalysisContent) and len(page.stages) < 2:
+                raise ReportDataError(f"第 {i + 1} 个漏斗页至少需要两个阶段")
+            if isinstance(page, OpportunityMatrixContent) and not page.opportunities:
+                raise ReportDataError(f"第 {i + 1} 个机会矩阵页没有机会项")
+            if isinstance(page, RecommendationContent) and not page.recommendations:
+                raise ReportDataError(f"第 {i + 1} 个建议页没有建议内容")
+            if isinstance(page, ChartPageContent) and not page.charts:
+                raise ReportDataError(f"第 {i + 1} 个图表页没有配置任何图表")
         for page in self.chart_pages:
-            if isinstance(page, MultiGroupBarPageContent):
-                continue
-            for ch in page.charts:
+            for ch in getattr(page, "charts", []):
                 if isinstance(ch.type, str):
                     try:
                         ChartType(ch.type)
                     except ValueError:
                         raise UnsupportedChartTypeError(ch.type)
-
     def to_dict(self) -> Dict[str, Any]:
-        """序列化为嵌套字典（可存 JSON / 走接口）。"""
+        """Serialize the report without losing new optional semantic fields."""
         return {
-            "cover": {
-                "title": self.cover.title,
-                "client": self.cover.client,
-                "date": self.cover.date,
-                "subtitle": self.cover.subtitle,
-                "logo_path": self.cover.logo_path,
-            },
-            "toc": {"sections": list(self.toc.sections)},
-            "executive_summary": {
-                "kpis": [{"label": k.label, "value": k.value, "delta": k.delta}
-                          for k in self.executive_summary.kpis],
-                "conclusion": self.executive_summary.conclusion,
-            },
-            "chart_pages": [
-                {
-                    "title": p.title,
-                    "subtitle": p.subtitle,
-                    "layout": p.layout.value if isinstance(p.layout, LayoutType) else p.layout,
-                    "side_insights": list(p.side_insights),
-                    "insights": list(p.insights),
-                    "data_source": p.data_source,
-                    "charts": [c.to_dict() for c in p.charts],
-                }
-                for p in self.chart_pages
-            ],
-            "appendix": (
-                None if self.appendix is None else {
-                    "title": self.appendix.title,
-                    "table": {
-                        "headers": list(self.appendix.table.headers),
-                        "rows": [list(r) for r in self.appendix.table.rows],
-                    },
-                    "source": self.appendix.source,
-                }
-            ),
+            "cover": _serialize_value(self.cover),
+            "toc": _serialize_value(self.toc),
+            "executive_summary": _serialize_value(self.executive_summary),
+            "chart_pages": [_serialize_value(page) for page in self.chart_pages],
+            "facts": [fact.to_dict() for fact in self.facts],
+            "slide_briefs": [brief.to_dict() for brief in self.slide_briefs],
+            "render_audit": _serialize_value(self.render_audit),
+            "appendix": _serialize_value(self.appendix) if self.appendix else None,
             "template_path": self.template_path,
         }
-
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ReportSpec":
         """从嵌套字典解析出 ReportSpec（数据与渲染分离的关键入口）。
@@ -397,10 +680,91 @@ class ReportSpec:
                       delta=k.get("delta"))
                   for k in es_d.get("kpis", [])],
             conclusion=es_d.get("conclusion", ""),
+            findings=[
+                ExecutiveFinding(
+                    title=str(item.get("title", "")),
+                    description=str(item.get("description", "")),
+                    evidence_fact_ids=[str(value) for value in item.get("evidence_fact_ids", [])],
+                    action_implication=str(item.get("action_implication", "")),
+                    importance=str(item.get("importance", "medium")),
+                    evidence_question_ids=[str(value) for value in item.get("evidence_question_ids", [])],
+                    source_references=[str(value) for value in item.get("source_references", [])],
+                )
+                for item in es_d.get("findings", [])
+            ],
         )
 
-        chart_pages: List[ChartPageContent] = []
+        chart_pages: List[Any] = []
         for cp in data.get("chart_pages", []):
+            raw_type = str(cp.get("slide_type") or cp.get("page_type") or "chart")
+            brief = SlideBrief.from_dict(cp["brief"]) if isinstance(cp.get("brief"), dict) else None
+            common = {
+                "slide_id": str(cp.get("slide_id", "")),
+                "chapter": str(cp.get("chapter", "")),
+                "brief": brief,
+                "template_id": str(cp.get("template_id", "")),
+            }
+            if raw_type == PageType.RESEARCH_OVERVIEW.value:
+                chart_pages.append(ResearchOverviewContent(
+                    title=str(cp.get("title", "研究概览")),
+                    sample_size=cp.get("sample_size"),
+                    question_count=int(cp.get("question_count", 0)),
+                    segment_count=int(cp.get("segment_count", 0)),
+                    methodology=str(cp.get("methodology", "定量交叉表分析")),
+                    source_references=[str(value) for value in cp.get("source_references", [])],
+                    **common,
+                ))
+                continue
+            if raw_type == PageType.SECTION_DIVIDER.value:
+                chart_pages.append(SectionDividerContent(
+                    title=str(cp.get("title", "")),
+                    subtitle=str(cp.get("subtitle", "")),
+                    key_message=str(cp.get("key_message", "")),
+                    **common,
+                ))
+                continue
+            if raw_type == PageType.FINDINGS_OVERVIEW.value:
+                chart_pages.append(FindingsOverviewContent(
+                    title=str(cp.get("title", "核心发现总览")),
+                    findings=[ExecutiveFinding(**item) for item in cp.get("findings", [])],
+                    **common,
+                ))
+                continue
+            if raw_type == PageType.KEY_FINDING.value:
+                finding = ExecutiveFinding(**(cp.get("finding") or {"title": cp.get("title", "")}))
+                chart_pages.append(KeyFindingContent(
+                    title=str(cp.get("title", finding.title)),
+                    finding=finding,
+                    charts=[ChartSpec.from_dict(item) for item in cp.get("charts", [])],
+                    data_source=str(cp.get("data_source", "")),
+                    layout_family=str(cp.get("layout_family", "key_finding_with_evidence")),
+                    **common,
+                ))
+                continue
+            if raw_type == PageType.FUNNEL_ANALYSIS.value:
+                chart_pages.append(FunnelAnalysisContent(
+                    title=str(cp.get("title", "漏斗分析")),
+                    stages=[FunnelStage(**item) for item in cp.get("stages", [])],
+                    drivers=[str(value) for value in cp.get("drivers", [])],
+                    data_source=str(cp.get("data_source", "")),
+                    **common,
+                ))
+                continue
+            if raw_type == PageType.OPPORTUNITY_MATRIX.value:
+                chart_pages.append(OpportunityMatrixContent(
+                    title=str(cp.get("title", "机会矩阵")),
+                    opportunities=[OpportunityItem(**item) for item in cp.get("opportunities", [])],
+                    data_source=str(cp.get("data_source", "")),
+                    **common,
+                ))
+                continue
+            if raw_type == PageType.RECOMMENDATION.value:
+                chart_pages.append(RecommendationContent(
+                    title=str(cp.get("title", "行动建议")),
+                    recommendations=[RecommendationItem(**item) for item in cp.get("recommendations", [])],
+                    **common,
+                ))
+                continue
             charts = [ChartSpec.from_dict(c) for c in cp.get("charts", [])]
             layout_raw = cp.get("layout", "auto")
             try:
@@ -415,8 +779,10 @@ class ReportSpec:
                 side_insights=[str(s) for s in cp.get("side_insights", [])],
                 insights=[str(s) for s in cp.get("insights", [])],
                 data_source=str(cp.get("data_source", "")),
+                layout_family=str(cp.get("layout_family", "")),
+                density=str(cp.get("density", "medium")),
+                **common,
             ))
-
         appendix = None
         ap = data.get("appendix")
         if ap:
@@ -435,6 +801,9 @@ class ReportSpec:
             toc=toc,
             executive_summary=es,
             chart_pages=chart_pages,
+            facts=[DataFact.from_dict(item) for item in data.get("facts", [])],
+            slide_briefs=[SlideBrief.from_dict(item) for item in data.get("slide_briefs", [])],
+            render_audit=dict(data.get("render_audit") or {}),
             appendix=appendix,
             template_path=data.get("template_path"),
         )

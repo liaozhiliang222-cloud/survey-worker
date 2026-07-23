@@ -25,7 +25,7 @@ from pptx.oxml.ns import qn
 from pptx.util import Inches, Pt
 
 from .exceptions import RenderingError, UnsupportedChartTypeError
-from .model import ChartSpec, ChartType
+from .model import ChartSpec, ChartType, DataKind
 from .theme import Theme
 from .utils import style_font, style_textframe
 
@@ -59,33 +59,12 @@ def add_chart(slide, spec: ChartSpec, x, y, cx, cy, theme: Theme) -> None:
         builder = _BUILDERS.get(ctype, _build_category_chart)
         chart_data = builder(spec)
         chart_type = _CHART_TYPE_MAP[ctype]
-        gf = slide.shapes.add_chart(chart_type, x, y, cx, cy, chart_data)
+        gf = slide.shapes.add_chart(chart_type, int(x), int(y), int(cx), int(cy), chart_data)
         chart = gf.chart
 
         _style_common(chart, spec, theme)
-        _color_series(chart, theme)
-        # 百分比条形/堆积图固定从 0 起始，避免 PowerPoint 自动截断坐标轴
-        # （例如 31%~36% 被放大成 29~37），造成视觉差异被夸大。
-        if ctype in (ChartType.BAR, ChartType.COLUMN, ChartType.LINE):
-            try:
-                chart.value_axis.minimum_scale = 0.0
-                # 单一总体系列使用贴近数据的整十上限，让低占比图表也能有效利用版面；
-                # 多人群对比仍固定 0~100，避免跨组尺度不一致。
-                if len(spec.series) == 1 and ctype in (ChartType.BAR, ChartType.COLUMN):
-                    values = [float(v) for v in spec.series[0].values]
-                    peak = max(values, default=0.0)
-                    chart.value_axis.maximum_scale = min(100.0, max(10.0, math.ceil(peak * 1.2 / 10.0) * 10.0))
-                else:
-                    chart.value_axis.maximum_scale = 100.0
-            except Exception:
-                pass
-        elif ctype in (ChartType.STACKED_BAR, ChartType.STACKED_COLUMN):
-            try:
-                chart.value_axis.minimum_scale = 0.0
-                chart.value_axis.maximum_scale = 1.0
-                chart.value_axis.number_format = "0%"
-            except Exception:
-                pass
+        _color_series(chart, theme, spec)
+        _apply_axis_policy(chart, spec, ctype, theme)
         if ctype in (
             ChartType.BAR, ChartType.COLUMN, ChartType.LINE,
             ChartType.STACKED_BAR, ChartType.STACKED_COLUMN,
@@ -94,7 +73,7 @@ def add_chart(slide, spec: ChartSpec, x, y, cx, cy, theme: Theme) -> None:
             _hide_chart_axes(chart, ctype)
         if ctype in (ChartType.PIE, ChartType.DOUGHNUT):
             aspect_ratio = float(cx) / max(1.0, float(cy))
-            _style_pie_doughnut(chart, theme, compact=aspect_ratio >= 2.0)
+            _style_pie_doughnut(chart, theme, spec, compact=aspect_ratio >= 2.0)
             _set_compact_pie_plot_layout(chart, aspect_ratio)
         else:
             # 分类图（柱状 / 条形 / 折线 / 堆积 / 雷达 / 组合底座）统一加数据标签
@@ -190,6 +169,55 @@ def _style_common(chart, spec: ChartSpec, theme: Theme) -> None:
             pass
 
 
+def _data_kind(spec: ChartSpec) -> str:
+    value = spec.data_kind.value if isinstance(spec.data_kind, DataKind) else spec.data_kind
+    return str(value or "percentage").lower()
+
+
+def _label_format(spec: ChartSpec, theme: Theme) -> str:
+    kind = _data_kind(spec)
+    if kind == "percentage": return theme.pct_format
+    if kind == "count": return "#,##0"
+    if kind == "currency":
+        unit = str(spec.unit or "¥")
+        return f'"{unit}"#,##0.0' if unit else "#,##0.0"
+    if kind == "nps": return "0"
+    if kind in ("mean", "score", "index", "frequency"):
+        suffix = str(spec.unit or "")
+        return f'0.0"{suffix}"' if suffix else "0.0"
+    return "0.0"
+
+
+def _all_values(spec: ChartSpec):
+    return [float(value) for series in spec.series for value in series.values]
+
+
+def _apply_axis_policy(chart, spec: ChartSpec, ctype: ChartType, theme: Theme) -> None:
+    """Set axes from metric semantics instead of assuming percentages."""
+    if ctype in (ChartType.PIE, ChartType.DOUGHNUT, ChartType.SCATTER): return
+    try: axis = chart.value_axis
+    except Exception: return
+    values = _all_values(spec)
+    if not values: return
+    kind = _data_kind(spec)
+    try:
+        axis.number_format = _label_format(spec, theme)
+        axis.number_format_is_linked = False
+        if ctype in (ChartType.STACKED_BAR, ChartType.STACKED_COLUMN):
+            axis.minimum_scale, axis.maximum_scale = 0.0, 1.0
+            axis.number_format = "0%"
+        elif kind == "percentage":
+            axis.minimum_scale, axis.maximum_scale = 0.0, 100.0
+        elif kind == "nps":
+            axis.minimum_scale, axis.maximum_scale = -100.0, 100.0
+        else:
+            peak, low = max(values), min(values)
+            if str(spec.axis_policy or "").lower() == "zero_based" or kind in ("count", "currency", "frequency"):
+                axis.minimum_scale = 0.0 if low >= 0 else math.floor(low * 1.15)
+            axis.maximum_scale = math.ceil(peak + max(abs(peak) * .15, 1.0))
+        if spec.benchmark_value is not None: axis.has_major_gridlines = True
+    except Exception: pass
+
 def _hide_chart_axes(chart, ctype: ChartType) -> None:
     """隐藏数值刻度；柱状/条形图保留一条浅灰零基线。"""
     if ctype == ChartType.RADAR:
@@ -237,12 +265,16 @@ def _hide_chart_axes(chart, ctype: ChartType) -> None:
         pass
 
 
-def _color_series(chart, theme: Theme) -> None:
+def _color_series(chart, theme: Theme, spec: ChartSpec) -> None:
     """按主题人群对比色板为各系列着色（自动循环取色）。"""
     for i, s in enumerate(chart.series):
         try:
             s.format.fill.solid()
-            s.format.fill.fore_color.rgb = theme.seg_color(i)
+            name = spec.series[i].name if i < len(spec.series) else ""
+            if spec.highlight_series and name != spec.highlight_series:
+                s.format.fill.fore_color.rgb = RGBColor.from_string("B8C4D0")
+            else:
+                s.format.fill.fore_color.rgb = theme.seg_color(i)
         except Exception:
             pass
     # 仅总体时保持主题主色单色。总体图的颜色承担的是统一识别作用，
@@ -305,7 +337,7 @@ def _apply_data_labels(chart, spec: ChartSpec, theme: Theme) -> None:
         if not label_all and idx != 0:
             continue
         spec_series = spec.series[idx] if idx < len(spec.series) else None
-        fmt = getattr(spec_series, "value_format", None) or theme.pct_format
+        fmt = getattr(spec_series, "value_format", None) or _label_format(spec, theme)
         try:
             s.has_data_labels = True
             dl = s.data_labels
@@ -319,7 +351,7 @@ def _apply_data_labels(chart, spec: ChartSpec, theme: Theme) -> None:
             pass
 
 
-def _style_pie_doughnut(chart, theme: Theme, compact: bool = False) -> None:
+def _style_pie_doughnut(chart, theme: Theme, spec: ChartSpec, compact: bool = False) -> None:
     """饼 / 环形图：显示百分比数据标签，每个扇区独立着色。"""
     plot = chart.plots[0]
     plot.has_data_labels = True
@@ -327,7 +359,7 @@ def _style_pie_doughnut(chart, theme: Theme, compact: bool = False) -> None:
     # 数据组装阶段已 ×100（33.8 表示 33.8%），直接显示数值 + 字面 %，避免比例重算误差
     dl.show_value = True
     dl.show_percentage = False
-    dl.number_format = theme.pct_format
+    dl.number_format = _label_format(spec, theme)
     dl.number_format_is_linked = False
     # 不要为饼图/环形图写入 ``c:dLblPos val="bestFit"``。PowerPoint 365
     # 会把 python-pptx 生成的这组标签位置标记视为无效图表内容，并在打开时

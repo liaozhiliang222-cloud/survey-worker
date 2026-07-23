@@ -28,7 +28,14 @@ from .model import (
     ChartPageContent,
     CoverContent,
     ExecutiveSummaryContent,
+    FindingsOverviewContent,
+    FunnelAnalysisContent,
+    KeyFindingContent,
     MultiGroupBarPageContent,
+    OpportunityMatrixContent,
+    RecommendationContent,
+    ResearchOverviewContent,
+    SectionDividerContent,
     TocContent,
 )
 from .theme import Theme
@@ -84,11 +91,15 @@ def _truncate_to_width(text: str, max_units: float) -> str:
 
 
 # ------------------------- 通用助手 -------------------------
+def _add_shape(slide, shape_type, x, y, cx, cy):
+    """Coerce calculated geometry to integer EMUs before writing DrawingML."""
+    return slide.shapes.add_shape(shape_type, int(x), int(y), int(cx), int(cy))
+
 def _add_textbox(slide, text, x, y, cx, cy, theme: Theme, size=18, bold=False,
                  color=None, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP,
                  line_spacing=None):
     """在 slide 上加一个文本框并写入（单行）文本。"""
-    tb = slide.shapes.add_textbox(x, y, cx, cy)
+    tb = slide.shapes.add_textbox(int(x), int(y), int(cx), int(cy))
     tf = tb.text_frame
     tf.word_wrap = True
     tf.vertical_anchor = anchor
@@ -106,7 +117,7 @@ def _add_textbox(slide, text, x, y, cx, cy, theme: Theme, size=18, bold=False,
 
 def _add_bullets(slide, items, x, y, cx, cy, theme: Theme, size=13, color=None):
     """在 slide 上添加一个项目符号列表（支持多段）。"""
-    tb = slide.shapes.add_textbox(x, y, cx, cy)
+    tb = slide.shapes.add_textbox(int(x), int(y), int(cx), int(cy))
     tf = tb.text_frame
     tf.word_wrap = True
     for i, item in enumerate(items):
@@ -121,7 +132,7 @@ def _add_bullets(slide, items, x, y, cx, cy, theme: Theme, size=13, color=None):
 def _add_bulleted_insights(slide, items, x, y, cx, cy, theme: Theme,
                            size=12.5, color=None):
     """把洞察拆成圆点段落，避免产生“分段 1/2/3”的机械编号感。"""
-    tb = slide.shapes.add_textbox(x, y, cx, cy)
+    tb = slide.shapes.add_textbox(int(x), int(y), int(cx), int(cy))
     tf = tb.text_frame
     tf.word_wrap = True
     tf.margin_left = Inches(0.04)
@@ -153,7 +164,7 @@ def _add_bulleted_insights(slide, items, x, y, cx, cy, theme: Theme,
 def build_cover(slide, cover: CoverContent, theme: Theme, dims: Dims) -> None:
     slide_w, _ = dims
     # 顶部主色带
-    band = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, slide_w, Inches(0.18))
+    band = _add_shape(slide, MSO_SHAPE.RECTANGLE, 0, 0, slide_w, Inches(0.18))
     set_shape_fill(band, theme.primary)
     remove_shape_outline(band)
 
@@ -203,7 +214,7 @@ def build_toc(slide, toc: TocContent, theme: Theme, dims: Dims) -> None:
         # 底部分隔线
         line_y = y + row_h + 0.02
         if line_y < slide_h - BOTTOM_MARGIN:
-            divider = slide.shapes.add_shape(
+            divider = _add_shape(slide,
                 MSO_SHAPE.RECTANGLE, Inches(PAGE_MARGIN), Inches(line_y),
                 slide_w - Inches(2 * PAGE_MARGIN), Inches(0.012))
             set_shape_fill(divider, "D9D9D9")
@@ -214,57 +225,128 @@ def build_toc(slide, toc: TocContent, theme: Theme, dims: Dims) -> None:
 # ------------------------- 执行摘要 -------------------------
 def build_exec_summary(slide, es, theme: Theme, dims: Dims) -> None:
     slide_w, slide_h = dims
-    _add_textbox(slide, "执行摘要 EXECUTIVE SUMMARY", Inches(PAGE_MARGIN),
-                  Inches(TITLE_TOP), slide_w - Inches(2 * PAGE_MARGIN),
-                  Inches(TITLE_HEIGHT), theme, size=32, bold=True, color=theme.primary)
+    _add_textbox(
+        slide,
+        "执行摘要 EXECUTIVE SUMMARY",
+        Inches(PAGE_MARGIN),
+        Inches(TITLE_TOP),
+        slide_w - Inches(2 * PAGE_MARGIN),
+        Inches(TITLE_HEIGHT),
+        theme,
+        size=32,
+        bold=True,
+        color=theme.primary,
+    )
+    findings = list(getattr(es, "findings", []) or [])
+    if findings:
+        count = len(findings)
+        cols = 2 if count > 3 else 1
+        rows = (count + cols - 1) // cols
+        gap_x, gap_y = 0.28, 0.22
+        width_in = float(slide_w) / 914400.0
+        height_in = float(slide_h) / 914400.0
+        content_top = 1.25
+        content_bottom = height_in - 0.65
+        card_w = (width_in - 2 * PAGE_MARGIN - gap_x * (cols - 1)) / cols
+        card_h = min(2.2, (content_bottom - content_top - gap_y * (rows - 1)) / rows)
+        for index, finding in enumerate(findings):
+            row, col = divmod(index, cols)
+            x = PAGE_MARGIN + col * (card_w + gap_x)
+            y = content_top + row * (card_h + gap_y)
+            card = _add_shape(slide,
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                Inches(x),
+                Inches(y),
+                Inches(card_w),
+                Inches(card_h),
+            )
+            set_shape_fill(card, "F5F8FC")
+            card.line.color.rgb = theme.rgb("D8E2EA")
+            _add_textbox(
+                slide,
+                f"{index + 1:02d}",
+                Inches(x + 0.18),
+                Inches(y + 0.16),
+                Inches(0.55),
+                Inches(0.35),
+                theme,
+                size=16,
+                bold=True,
+                color=theme.accent,
+            )
+            _add_textbox(
+                slide,
+                finding.title,
+                Inches(x + 0.78),
+                Inches(y + 0.12),
+                Inches(card_w - 0.96),
+                Inches(0.62),
+                theme,
+                size=14 if cols == 2 else 16,
+                bold=True,
+                color=theme.primary,
+            )
+            body = finding.description
+            if finding.action_implication:
+                body = f"{body}\n行动含义：{finding.action_implication}" if body else finding.action_implication
+            _add_textbox(
+                slide,
+                body,
+                Inches(x + 0.78),
+                Inches(y + 0.76),
+                Inches(card_w - 0.96),
+                Inches(max(0.45, card_h - 1.02)),
+                theme,
+                size=10.5 if rows >= 3 else 12,
+                color=theme.text_dark,
+                line_spacing=1.08,
+            )
+        return
 
+    # Backward-compatible fallback for legacy callers that only provide KPIs.
     n = len(es.kpis)
+    if not n:
+        return
     gap = 0.3
     card_w = (float(slide_w) / 914400.0 - 2 * PAGE_MARGIN - gap * (n - 1)) / n
-    card_h = 2.2
-    y = 1.8
     for i, kpi in enumerate(es.kpis):
         x = Inches(PAGE_MARGIN + i * (card_w + gap))
-        card = slide.shapes.add_shape(
-            MSO_SHAPE.ROUNDED_RECTANGLE, x, Inches(y), Inches(card_w), Inches(card_h))
-        card_color = theme.primary if i == 0 else theme.color(i)
-        set_shape_fill(card, card_color)
+        card = _add_shape(slide,
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            x,
+            Inches(1.8),
+            Inches(card_w),
+            Inches(2.2),
+        )
+        set_shape_fill(card, theme.primary if i == 0 else theme.color(i))
         remove_shape_outline(card)
-
         tf = card.text_frame
         tf.word_wrap = True
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-        tf.margin_left = Inches(0.1)
-        tf.margin_right = Inches(0.1)
-
         p = tf.paragraphs[0]
         p.alignment = PP_ALIGN.CENTER
-        r = p.add_run()
-        r.text = kpi.value
-        style_font(r.font, theme, size=40, bold=True, color=theme.text_light)
+        run = p.add_run()
+        run.text = kpi.value
+        style_font(run.font, theme, size=38, bold=True, color=theme.text_light)
+        label = tf.add_paragraph()
+        label.alignment = PP_ALIGN.CENTER
+        label_run = label.add_run()
+        label_run.text = kpi.label
+        style_font(label_run.font, theme, size=13, color=theme.text_light)
+    if es.conclusion:
+        _add_textbox(
+            slide,
+            es.conclusion,
+            Inches(PAGE_MARGIN),
+            Inches(4.35),
+            slide_w - Inches(2 * PAGE_MARGIN),
+            slide_h - Inches(4.85),
+            theme,
+            size=15,
+            color=theme.text_dark,
+            line_spacing=1.25,
+        )
 
-        if kpi.delta:
-            p2 = tf.add_paragraph()
-            p2.alignment = PP_ALIGN.CENTER
-            r2 = p2.add_run()
-            r2.text = kpi.delta
-            style_font(r2.font, theme, size=12, color=theme.text_light)
-
-        p3 = tf.add_paragraph()
-        p3.alignment = PP_ALIGN.CENTER
-        r3 = p3.add_run()
-        r3.text = kpi.label
-        style_font(r3.font, theme, size=14, color=theme.text_light)
-
-    # 结论
-    _add_textbox(slide, es.conclusion, Inches(PAGE_MARGIN),
-                  Inches(y + card_h + 0.35),
-                  slide_w - Inches(2 * PAGE_MARGIN),
-                  slide_h - Inches(y + card_h + 0.35 + BOTTOM_MARGIN),
-                  theme, size=16, color=theme.text_dark, line_spacing=1.3)
-
-
-# ------------------------- 图表分析页 -------------------------
 def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) -> None:
     slide_w, slide_h = dims
     title_units = _text_width_units(page.title)
@@ -272,7 +354,7 @@ def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) ->
     _add_textbox(slide, page.title, Inches(PAGE_MARGIN), Inches(TITLE_TOP),
                   slide_w - Inches(2 * PAGE_MARGIN), Inches(TITLE_HEIGHT), theme,
                   size=title_size, bold=True, color=theme.primary)
-    divider = slide.shapes.add_shape(
+    divider = _add_shape(slide,
         MSO_SHAPE.RECTANGLE,
         Inches(PAGE_MARGIN), Inches(0.98),
         slide_w - Inches(2 * PAGE_MARGIN), Inches(0.018),
@@ -361,6 +443,87 @@ def build_chart_page(slide, page: ChartPageContent, theme: Theme, dims: Dims) ->
         charts.add_chart(slide, spec, slot.x, slot_top, slot.cx, chart_h, theme)
 
 # ------------------------- 多组多列条形图页（表格+图表叠加） -------------------------
+def _add_page_title(slide, title, theme, dims, size=26):
+    slide_w, _ = dims
+    _add_textbox(slide, title, Inches(PAGE_MARGIN), Inches(TITLE_TOP), slide_w - Inches(2 * PAGE_MARGIN), Inches(TITLE_HEIGHT), theme, size=size, bold=True, color=theme.primary)
+    line = _add_shape(slide, MSO_SHAPE.RECTANGLE, Inches(PAGE_MARGIN), Inches(0.98), slide_w - Inches(2 * PAGE_MARGIN), Inches(0.018))
+    set_shape_fill(line, theme.primary); remove_shape_outline(line)
+
+
+def _add_source(slide, text, theme, dims):
+    if text:
+        slide_w, slide_h = dims
+        _add_textbox(slide, text, Inches(PAGE_MARGIN), slide_h - Inches(0.38), slide_w - Inches(2 * PAGE_MARGIN), Inches(0.2), theme, size=8, color="758D99")
+
+
+def build_research_overview(slide, page: ResearchOverviewContent, theme: Theme, dims: Dims):
+    slide_w, _ = dims; _add_page_title(slide, page.title, theme, dims)
+    cards = [("有效样本", f"N={page.sample_size:,}" if page.sample_size else "待确认"), ("分析题目", str(page.question_count)), ("覆盖人群", str(page.segment_count))]
+    gap = Inches(0.22); card_w = (slide_w - Inches(2 * PAGE_MARGIN) - gap * 2) / 3
+    for i, (label, value) in enumerate(cards):
+        x = Inches(PAGE_MARGIN) + i * (card_w + gap)
+        card = _add_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, x, Inches(1.45), card_w, Inches(1.35)); set_shape_fill(card, "F2F6FC"); card.line.color.rgb = RGBColor.from_string("D9E4F2")
+        _add_textbox(slide, label, x + Inches(.18), Inches(1.65), card_w - Inches(.36), Inches(.3), theme, size=12, color=theme.secondary)
+        _add_textbox(slide, value, x + Inches(.18), Inches(2.03), card_w - Inches(.36), Inches(.48), theme, size=24, bold=True, color=theme.primary)
+    _add_textbox(slide, "研究方法", Inches(PAGE_MARGIN), Inches(3.2), Inches(2), Inches(.45), theme, size=16, bold=True, color=theme.primary)
+    _add_textbox(slide, page.methodology, Inches(PAGE_MARGIN), Inches(3.72), slide_w - Inches(2 * PAGE_MARGIN), Inches(.9), theme, size=15, color=theme.text_dark, line_spacing=1.25)
+    _add_source(slide, "数据来源：" + "；".join(page.source_references), theme, dims)
+
+
+def build_section_divider(slide, page: SectionDividerContent, theme: Theme, dims: Dims):
+    slide_w, slide_h = dims
+    accent = _add_shape(slide, MSO_SHAPE.RECTANGLE, Inches(.72), Inches(1.55), Inches(.1), Inches(3.4)); set_shape_fill(accent, theme.primary); remove_shape_outline(accent)
+    _add_textbox(slide, page.chapter or "研究发现", Inches(1.08), Inches(1.62), slide_w - Inches(2), Inches(.45), theme, size=14, bold=True, color=theme.secondary)
+    _add_textbox(slide, page.title, Inches(1.08), Inches(2.18), slide_w - Inches(2), Inches(1.25), theme, size=34, bold=True, color=theme.primary, anchor=MSO_ANCHOR.MIDDLE)
+    if page.subtitle: _add_textbox(slide, page.subtitle, Inches(1.08), Inches(3.55), slide_w - Inches(2), Inches(.55), theme, size=17)
+    if page.key_message: _add_textbox(slide, page.key_message, Inches(1.08), Inches(4.35), slide_w - Inches(2), Inches(.85), theme, size=16, bold=True, color=theme.secondary)
+    footer = _add_shape(slide, MSO_SHAPE.RECTANGLE, 0, slide_h - Inches(.12), slide_w, Inches(.12)); set_shape_fill(footer, theme.primary); remove_shape_outline(footer)
+
+
+def build_findings_overview(slide, page: FindingsOverviewContent, theme: Theme, dims: Dims):
+    slide_w, _ = dims; _add_page_title(slide, page.title, theme, dims)
+    findings = list(page.findings); rows = max(1, (len(findings) + 1) // 2); gx, gy = Inches(.24), Inches(.22); cw = (slide_w - Inches(2 * PAGE_MARGIN) - gx) / 2; ch = min(Inches(1.65), (Inches(5.55) - gy * (rows - 1)) / rows)
+    for i, finding in enumerate(findings):
+        row, col = divmod(i, 2); x = Inches(PAGE_MARGIN) + col * (cw + gx); y = Inches(1.35) + row * (ch + gy)
+        card = _add_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, x, y, cw, ch); set_shape_fill(card, "F5F8FC"); card.line.color.rgb = RGBColor.from_string("D9E4F2")
+        _add_textbox(slide, f"{i+1:02d}", x + Inches(.15), y + Inches(.15), Inches(.55), Inches(.35), theme, size=15, bold=True, color=theme.secondary)
+        _add_textbox(slide, finding.title, x + Inches(.72), y + Inches(.12), cw - Inches(.88), Inches(.48), theme, size=15, bold=True, color=theme.primary)
+        _add_textbox(slide, finding.description, x + Inches(.18), y + Inches(.68), cw - Inches(.36), ch - Inches(.82), theme, size=11.5, line_spacing=1.1)
+
+
+def build_key_finding(slide, page: KeyFindingContent, theme: Theme, dims: Dims):
+    slide_w, _ = dims; _add_page_title(slide, page.title, theme, dims); f = page.finding
+    panel = _add_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(PAGE_MARGIN), Inches(1.28), Inches(3.35), Inches(5.55)); set_shape_fill(panel, "F2F6FC"); panel.line.color.rgb = RGBColor.from_string("D9E4F2")
+    _add_textbox(slide, f.title, Inches(PAGE_MARGIN+.22), Inches(1.55), Inches(2.9), Inches(.8), theme, size=19, bold=True, color=theme.primary)
+    _add_textbox(slide, f.description, Inches(PAGE_MARGIN+.22), Inches(2.5), Inches(2.9), Inches(1.65), theme, size=13, line_spacing=1.2)
+    if f.action_implication: _add_textbox(slide, "业务含义\n" + f.action_implication, Inches(PAGE_MARGIN+.22), Inches(4.45), Inches(2.9), Inches(1.7), theme, size=13, bold=True, color=theme.secondary)
+    x = Inches(PAGE_MARGIN+3.7); w = slide_w - x - Inches(PAGE_MARGIN); n = max(1, len(page.charts)); h = (Inches(5.5) - Inches(.2) * (n-1)) / n
+    for i, chart in enumerate(page.charts): charts.add_chart(slide, chart, x, Inches(1.28) + i * (h + Inches(.2)), w, h, theme)
+    _add_source(slide, page.data_source, theme, dims)
+
+
+def build_funnel_analysis(slide, page: FunnelAnalysisContent, theme: Theme, dims: Dims):
+    slide_w, _ = dims; _add_page_title(slide, page.title, theme, dims); stages = list(page.stages); x0, y0, fw, fh = Inches(PAGE_MARGIN), Inches(1.45), Inches(7.5), Inches(4.9); maxv = max((s.value for s in stages), default=1) or 1; sh = fh / max(1, len(stages)); palette = [theme.primary, theme.secondary, "4A90E2", "75AADB", "A7C7E7"]
+    for i, stage in enumerate(stages):
+        w = max(Inches(2.1), fw * max(.08, stage.value / maxv)); x = x0 + (fw-w)/2; y = y0 + i*sh; shape = _add_shape(slide, MSO_SHAPE.TRAPEZOID, x, y, w, max(Inches(.45), sh-Inches(.06))); set_shape_fill(shape, palette[i % len(palette)]); remove_shape_outline(shape)
+        _add_textbox(slide, f"{stage.label}  {stage.value:.1f}", x, y, w, sh-Inches(.06), theme, size=13, bold=True, color=theme.text_light, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+    px = Inches(PAGE_MARGIN+8); pw = slide_w-px-Inches(PAGE_MARGIN); _add_textbox(slide, "关键驱动 / 流失原因", px, Inches(1.55), pw, Inches(.45), theme, size=16, bold=True, color=theme.primary); _add_bulleted_insights(slide, page.drivers, px, Inches(2.15), pw, Inches(3.9), theme, size=13); _add_source(slide, page.data_source, theme, dims)
+
+
+def build_opportunity_matrix(slide, page: OpportunityMatrixContent, theme: Theme, dims: Dims):
+    slide_w, _ = dims; _add_page_title(slide, page.title, theme, dims); x0,y0,w,h = Inches(1),Inches(1.45),Inches(8.2),Inches(4.95)
+    bg=_add_shape(slide, MSO_SHAPE.RECTANGLE,x0,y0,w,h);set_shape_fill(bg,"F7F9FC");bg.line.color.rgb=RGBColor.from_string("C8D4E3")
+    for x,y,cx,cy in ((x0+w/2,y0,Inches(.012),h),(x0,y0+h/2,w,Inches(.012))): line=_add_shape(slide, MSO_SHAPE.RECTANGLE,x,y,cx,cy);set_shape_fill(line,"B9C7D8");remove_shape_outline(line)
+    for i,item in enumerate(page.opportunities):
+        px=x0+int(max(.03,min(.97,item.performance/100))*w);py=y0+int((1-max(.03,min(.97,item.importance/100)))*h);dot=_add_shape(slide, MSO_SHAPE.OVAL,px-Inches(.12),py-Inches(.12),Inches(.24),Inches(.24));set_shape_fill(dot,theme.secondary if item.performance<50 else theme.primary);remove_shape_outline(dot);_add_textbox(slide,item.label,px+Inches(.08),py-Inches(.16),Inches(1.55),Inches(.35),theme,size=9.5,bold=i<3)
+    sx=Inches(9.55);sw=slide_w-sx-Inches(PAGE_MARGIN);_add_textbox(slide,"优先机会",sx,Inches(1.5),sw,Inches(.4),theme,size=16,bold=True,color=theme.primary);priorities=[f"{i.label}：{i.implication}" for i in sorted(page.opportunities,key=lambda v:v.importance-v.performance,reverse=True) if i.implication];_add_bulleted_insights(slide,priorities,sx,Inches(2.05),sw,Inches(3.9),theme,size=11.5);_add_source(slide,page.data_source,theme,dims)
+
+
+def build_recommendation(slide, page: RecommendationContent, theme: Theme, dims: Dims):
+    slide_w,_=dims;_add_page_title(slide,page.title,theme,dims);rows=list(page.recommendations);rh=min(Inches(1.15),Inches(5.55)/max(1,len(rows)));colors={"high":theme.secondary,"medium":"4A90E2","low":"8DA3B8"}
+    for i,item in enumerate(rows):
+        y=Inches(1.35)+i*rh;badge=_add_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE,Inches(PAGE_MARGIN),y,Inches(.8),rh-Inches(.12));set_shape_fill(badge,colors.get(str(item.priority).lower(),"4A90E2"));remove_shape_outline(badge);_add_textbox(slide,f"{i+1:02d}",Inches(PAGE_MARGIN),y,Inches(.8),rh-Inches(.12),theme,size=15,bold=True,color=theme.text_light,align=PP_ALIGN.CENTER,anchor=MSO_ANCHOR.MIDDLE);_add_textbox(slide,item.action,Inches(PAGE_MARGIN+1),y,Inches(3.6),rh-Inches(.12),theme,size=14,bold=True,color=theme.primary,anchor=MSO_ANCHOR.MIDDLE);_add_textbox(slide,item.rationale,Inches(PAGE_MARGIN+4.75),y,slide_w-Inches(PAGE_MARGIN+5.15),rh-Inches(.12),theme,size=11.5,anchor=MSO_ANCHOR.MIDDLE)
+
 def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
                                 theme: Theme, dims: Dims) -> None:
     """渲染 multi_group_bar 布局：底层 PPT 表格 + 上层每人群一个 BAR_CLUSTERED 图表。
@@ -378,7 +541,7 @@ def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
                   Inches(12.5), Inches(0.58), theme,
                   size=20, bold=True, color=theme.primary)
     # 标题下方分隔线
-    divider = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.4), Inches(0.72),
+    divider = _add_shape(slide, MSO_SHAPE.RECTANGLE, Inches(0.4), Inches(0.72),
                                      Inches(12.5), Inches(0.02))
     set_shape_fill(divider, theme.primary)
     remove_shape_outline(divider)
