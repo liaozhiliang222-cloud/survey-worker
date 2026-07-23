@@ -12240,6 +12240,47 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
 });
 
 // ═════════════════ PPT 报告生成页 ═══════════════
+function isPptxChapterChartEligible(page) {
+  if (!page || !Array.isArray(page.questions) || page.questions.length === 0) return false;
+  return !new Set([
+    "section_divider",
+    "findings_overview",
+    "funnel_analysis",
+    "opportunity_matrix",
+    "recommendation",
+    "roadmap",
+    "methodology",
+  ]).has(String(page.slide_type || ""));
+}
+
+function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual = false) {
+  const allowed = new Set([
+    "auto", "bar", "column", "line", "stacked_bar",
+    "stacked_column", "radar", "doughnut", "pie",
+  ]);
+  const normalizedType = allowed.has(chartType) ? chartType : "auto";
+  const result = { eligible: 0, updated: 0, preserved: 0, skipped: 0 };
+  (plan?.pages || []).forEach((page) => {
+    if ((page.chapter || "其他研究") !== chapterName) return;
+    if (!isPptxChapterChartEligible(page)) {
+      result.skipped += 1;
+      return;
+    }
+    result.eligible += 1;
+    const manuallyCustomized = page.chart_type_source === "page";
+    if (manuallyCustomized && !overwriteManual) {
+      result.preserved += 1;
+      return;
+    }
+    const desiredSource = normalizedType === "auto" ? "" : "chapter";
+    if (page.chart_type !== normalizedType || (page.chart_type_source || "") !== desiredSource) {
+      page.chart_type = normalizedType;
+      page.chart_type_source = desiredSource;
+      result.updated += 1;
+    }
+  });
+  return result;
+}
 (function initPptxReportPage() {
     const dropzone = document.querySelector("#pptxDropzone");
     const fileInput = document.querySelector("#pptxFileInput");
@@ -13385,6 +13426,13 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       let chapterIndex = 0;
       chapterGroups.forEach((items, chapterName) => {
         const chapterDims = items[0]?.page?.selected_dimensions || ["总体"];
+        const eligibleChapterPages = items.filter(({ page }) => isPptxChapterChartEligible(page));
+        const chapterChartTypes = new Set(
+          eligibleChapterPages.map(({ page }) => page.chart_type || "auto")
+        );
+        const chapterChartType = chapterChartTypes.size === 1
+          ? Array.from(chapterChartTypes)[0]
+          : "__mixed__";
         html += `<details class="pptx-preview-chapter" open data-editor-chapter="chapter-${chapterIndex++}">
           <summary>
             <span class="pptx-preview-chapter-title">章节：${escapeHtml(chapterName)}</span>
@@ -13399,6 +13447,15 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
                   data-chapter="${escapeHtml(encodeURIComponent(chapterName))}" value="${escapeHtml(encodeURIComponent(d.key))}">${escapeHtml(d.key)}
               </label>`;
             }).join("")}
+            <span class="pptx-chapter-chart-label">本章图表：</span>
+            <select class="pptx-chapter-chart-select" data-field="chapter_chart_type"
+              data-chapter="${escapeHtml(encodeURIComponent(chapterName))}" ${eligibleChapterPages.length ? "" : "disabled"}>
+              ${chapterChartType === "__mixed__" ? `<option value="__mixed__" selected disabled>多种类型（保留单页设置）</option>` : ""}
+              ${chartTypeOptions.map((option) => `<option value="${option.value}" ${option.value === chapterChartType ? "selected" : ""}>${option.label}</option>`).join("")}
+            </select>
+            <label class="pptx-chapter-chart-overwrite" title="勾选后会覆盖本章已逐页设置的图表类型">
+              <input type="checkbox" data-chapter-chart-overwrite>覆盖单页设置
+            </label>
             <button type="button" class="ghost-btn pptx-add-page-btn" data-pptx-action="add-page"
               data-chapter="${escapeHtml(encodeURIComponent(chapterName))}">＋ 新建页面</button>
             <button type="button" class="ghost-btn" data-pptx-action="rename-chapter"
@@ -13554,6 +13611,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       if (editedPagePlan && editedPagePlan.pages && editedPagePlan.pages[idx]) {
         pushPptxPlanHistory();
         editedPagePlan.pages[idx].chart_type = newValue;
+        editedPagePlan.pages[idx].chart_type_source = newValue === "auto" ? "" : "page";
         renderPreviewTable(editedPagePlan);
       }
     };
@@ -13571,6 +13629,26 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
         .map((text) => text.trim())
         .filter(Boolean)
         .slice(0, 4);
+    };
+    window._onPreviewChapterChartChange = function(encodedChapterName, chartType, overwriteManual) {
+      const chapterName = decodeURIComponent(encodedChapterName);
+      if (!editedPagePlan?.pages || chartType === "__mixed__") return;
+      pushPptxPlanHistory();
+      const result = applyPptxChapterChartType(
+        editedPagePlan,
+        chapterName,
+        chartType,
+        Boolean(overwriteManual),
+      );
+      if (!result.updated) {
+        planUndoStack.pop();
+        updatePlanHistoryButtons();
+      }
+      const messages = [`已应用到 ${result.updated} 页`];
+      if (result.preserved) messages.push(`保留 ${result.preserved} 个单页设置`);
+      if (result.skipped) messages.push(`跳过 ${result.skipped} 个专用布局页`);
+      showToast(messages.join("；"), result.updated ? "success" : "warning");
+      renderPreviewTable(editedPagePlan);
     };
     window._onPreviewChapterDimCheck = function(encodedChapterName, encodedValue, checked) {
       const chapterName = decodeURIComponent(encodedChapterName);
@@ -13782,6 +13860,10 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       else if (field === "chapter") window._onPreviewChapterChange(pageIndex, event.target.value);
       else if (field === "dimension_check") window._onPreviewDimCheck(pageIndex, event.target.value, event.target.checked);
       else if (field === "chapter_dimension") window._onPreviewChapterDimCheck(event.target.dataset.chapter, event.target.value, event.target.checked);
+      else if (field === "chapter_chart_type") {
+        const overwrite = event.target.closest(".pptx-preview-chapter-controls")?.querySelector("[data-chapter-chart-overwrite]")?.checked;
+        window._onPreviewChapterChartChange(event.target.dataset.chapter, event.target.value, overwrite);
+      }
       else if (field === "insight_override") window._onPreviewInsightChange(pageIndex, event.target.value);
       else if (field === "insight_bullets") window._onPreviewBulletsChange(pageIndex, event.target.value);
     });

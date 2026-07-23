@@ -2369,6 +2369,29 @@ tr:last-child td {
   white-space: nowrap;
 }
 
+.pptx-chapter-chart-label {
+  margin-left: 6px;
+  color: #334155;
+  font-weight: 700;
+}
+
+.pptx-chapter-chart-select {
+  min-width: 150px;
+  max-width: 220px;
+  padding: 5px 28px 5px 9px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1e3a8a;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.pptx-preview-chapter-controls label.pptx-chapter-chart-overwrite {
+  border-style: dashed;
+  border-radius: 8px;
+  color: #64748b;
+}
 .pptx-preview-chapter-controls label.selected,
 .pptx-preview-dimensions label.selected {
   border-color: #3b82f6;
