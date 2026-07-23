@@ -1266,8 +1266,8 @@ function legacyDocUnsupportedMessage(filename = "该文件") {
 }
 
 function sharedStringsFromXml(xml) {
-  return [...xml.matchAll(/<si[\s\S]*?<\/si>/g)].map((match) =>
-    [...match[0].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((textMatch) => decodeXmlText(textMatch[1])).join("")
+  return [...xml.matchAll(/<(?:\w+:)?si\b[\s\S]*?<\/(?:\w+:)?si>/g)].map((match) =>
+    [...match[0].matchAll(/<(?:\w+:)?t\b[^>]*>([\s\S]*?)<\/(?:\w+:)?t>/g)].map((textMatch) => decodeXmlText(textMatch[1])).join("")
   );
 }
 
@@ -1277,15 +1277,15 @@ function columnIndexFromRef(ref) {
 }
 
 function xlsxSheetXmlToRows(xml, sharedStrings) {
-  return [...xml.matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)].map((rowMatch) => {
+  return [...xml.matchAll(/<(?:\w+:)?row\b[^>]*>([\s\S]*?)<\/(?:\w+:)?row>/g)].map((rowMatch) => {
     const row = [];
-    [...rowMatch[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)].forEach((cellMatch, fallbackIndex) => {
+    [...rowMatch[1].matchAll(/<(?:\w+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?c>)/g)].forEach((cellMatch, fallbackIndex) => {
       const attrs = cellMatch[1];
       const body = cellMatch[2] || "";
       const ref = attrs.match(/r="([^"]+)"/)?.[1] || "";
       const columnIndex = Math.max(0, columnIndexFromRef(ref));
-      const value = body.match(/<v[^>]*>([\s\S]*?)<\/v>/)?.[1] || "";
-      const inline = [...body.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((textMatch) => decodeXmlText(textMatch[1])).join("");
+      const value = body.match(/<(?:\w+:)?v\b[^>]*>([\s\S]*?)<\/(?:\w+:)?v>/)?.[1] || "";
+      const inline = [...body.matchAll(/<(?:\w+:)?t\b[^>]*>([\s\S]*?)<\/(?:\w+:)?t>/g)].map((textMatch) => decodeXmlText(textMatch[1])).join("");
       const cellValue = /t="s"/.test(attrs) ? sharedStrings[Number(value)] || "" : decodeXmlText(inline || value);
       row[Number.isFinite(columnIndex) ? columnIndex : fallbackIndex] = cellValue;
     });
@@ -1294,7 +1294,7 @@ function xlsxSheetXmlToRows(xml, sharedStrings) {
 }
 
 function getWorkbookSheetPaths(workbookXml, relationshipXml = "") {
-  const sheetIds = [...workbookXml.matchAll(/<sheet[^>]*r:id="([^"]+)"/g)].map((match) => match[1]);
+  const sheetIds = [...workbookXml.matchAll(/<(?:\w+:)?sheet\b[^>]*r:id="([^"]+)"/g)].map((match) => match[1]);
   const relationshipMap = new Map(
     [...relationshipXml.matchAll(/<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g)]
       .map((match) => [match[1], match[2].startsWith("/") ? match[2].slice(1) : `xl/${match[2]}`])
@@ -1523,7 +1523,7 @@ async function xlsxToDelimitedTableText(arrayBuffer) {
 }
 
 function getWorkbookSheetNames(workbookXml) {
-  return [...workbookXml.matchAll(/<sheet[^>]*name="([^"]+)"/g)].map((m) => decodeXmlText(m[1]));
+  return [...workbookXml.matchAll(/<(?:\w+:)?sheet\b[^>]*name="([^"]+)"/g)].map((m) => decodeXmlText(m[1]));
 }
 
 function rowsToCrosstabText(sheets) {

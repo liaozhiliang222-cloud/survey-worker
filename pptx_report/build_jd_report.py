@@ -37,6 +37,7 @@ from .theme import Theme
 SEGMENT_ORDER = ["都市中产", "都市蓝领", "都市家庭", "都市Z世代", "小镇中年", "小镇青年"]
 
 SHEET_NAME = "Table (%)"
+TOTAL_ALIASES = ("Total", "合计", "总计", "总体", "整体")
 
 # 模块缓存：最近一次 parse_crosstab 的维度分组结果
 _cached_dimension_groups: list[dict] = []
@@ -61,7 +62,7 @@ def _detect_dimension_groups(
     for i in range(1, len(hdr)):
         if hdr[i] is not None:
             n = _norm(hdr[i])
-            if n and n != "人群":
+            if n:
                 all_seg_names.append((i, n))
 
     if not all_seg_names:
@@ -73,17 +74,16 @@ def _detect_dimension_groups(
     for ri in range(max(0, header_row_idx - 15), header_row_idx):
         r = rows[ri]
         if r[0] is None:
-            ne = sum(
-                1 for ci in range(1, min(len(r), len(hdr)))
-                if r[ci] is not None and _norm(r[ci]) not in ("", "人群")
-            )
+            labels = [
+                (ci, _norm(r[ci]))
+                for ci in range(1, min(len(r), len(hdr)))
+                if r[ci] is not None
+                and _norm(r[ci]) != ""
+                and not (ci == 1 and _norm(r[ci]) in TOTAL_ALIASES)
+            ]
+            ne = len(labels)
             # 分组标签行的非空列数应该远少于数据表头
             if 2 <= ne < hdr_nonempty * 0.7:
-                labels = [
-                    (ci, _norm(r[ci]))
-                    for ci in range(1, min(len(r), len(hdr)))
-                    if r[ci] is not None and _norm(r[ci]) not in ("", "人群")
-                ]
                 group_label_rows.append((ri, labels))
 
     if not group_label_rows:
@@ -123,6 +123,176 @@ def _detect_dimension_groups(
     return groups
 
 
+def _parse_spss_pivot_rows(rows: list) -> tuple[list, list[dict]] | None:
+    """解析 SPSS Custom Tables 风格的横向透视交叉表。
+
+    该格式使用固定三层列表头：维度名、维度取值、指标（计数/列 N %），
+    题目与选项则沿行方向连续堆叠。返回 ``None`` 表示并非此类格式。
+    """
+    if len(rows) < 4:
+        return None
+
+    def cell_text(value) -> str:
+        return "" if value is None else _norm(value)
+
+    def metric_name(value) -> str:
+        return re.sub(r"\s+", "", cell_text(value)).lower()
+
+    def numeric_value(value):
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = cell_text(value).replace(",", "")
+        if not text or text in {"-", "—", "–"}:
+            return None
+        try:
+            if text.endswith("%"):
+                return float(text[:-1]) / 100
+            return float(text)
+        except (TypeError, ValueError):
+            return None
+
+    metric_row_idx = None
+    percent_cols = []
+    for ri in range(min(10, len(rows))):
+        candidate = []
+        for ci in range(2, len(rows[ri])):
+            name = metric_name(rows[ri][ci])
+            if name in {"列n%", "列%", "columnn%", "column%"}:
+                candidate.append(ci)
+        if len(candidate) >= 2:
+            metric_row_idx = ri
+            percent_cols = candidate
+            break
+
+    if metric_row_idx is None or metric_row_idx < 2:
+        return None
+
+    group_row = rows[metric_row_idx - 2]
+    segment_row = rows[metric_row_idx - 1]
+    metric_row = rows[metric_row_idx]
+    total_aliases = {str(alias).strip().lower() for alias in TOTAL_ALIASES}
+
+    column_pairs = []
+    groups = []
+    group_lookup = {}
+    current_group = ""
+    for pct_col in percent_cols:
+        count_col = pct_col - 1
+        if count_col < 2 or metric_name(metric_row[count_col]) not in {"计数", "count", "n"}:
+            continue
+        if count_col < len(group_row) and cell_text(group_row[count_col]):
+            current_group = cell_text(group_row[count_col])
+        segment = ""
+        if count_col < len(segment_row):
+            segment = cell_text(segment_row[count_col])
+        if not segment and pct_col < len(segment_row):
+            segment = cell_text(segment_row[pct_col])
+        if not segment:
+            continue
+        column_pairs.append((segment, pct_col, count_col, current_group))
+        if segment.lower() in total_aliases or not current_group:
+            continue
+        if current_group not in group_lookup:
+            group_lookup[current_group] = {
+                "name": current_group,
+                "segments": [],
+                "cols": [],
+            }
+            groups.append(group_lookup[current_group])
+        group = group_lookup[current_group]
+        if segment not in group["segments"]:
+            group["segments"].append(segment)
+            group["cols"].append(pct_col)
+
+    if not column_pairs:
+        return None
+
+    total_pair = next(
+        (pair for pair in column_pairs if pair[0].lower() in total_aliases),
+        column_pairs[0],
+    )
+    first_group_pairs = []
+    if groups:
+        first_cols = set(groups[0]["cols"])
+        first_group_pairs = [pair for pair in column_pairs if pair[1] in first_cols]
+    default_pairs = [total_pair, *first_group_pairs]
+    default_segments = []
+    for name, _, _, _ in default_pairs:
+        normalized = "Total" if name.lower() in total_aliases else name
+        if normalized not in default_segments:
+            default_segments.append(normalized)
+
+    starts = [
+        ri for ri in range(metric_row_idx + 1, len(rows))
+        if len(rows[ri]) > 1
+        and cell_text(rows[ri][0])
+        and cell_text(rows[ri][1]).lower() in total_aliases
+    ]
+    if not starts:
+        return None
+
+    questions = []
+    for question_idx, start in enumerate(starts):
+        end = starts[question_idx + 1] if question_idx + 1 < len(starts) else len(rows)
+        raw_title = cell_text(rows[start][0])
+        code_match = re.match(r"^([A-Za-z]+\d+[A-Za-z]?(?:\.\d+)*)[.．]\s*(.*)$", raw_title)
+        code = code_match.group(1) if code_match else f"Q{question_idx + 1}"
+        title = code_match.group(2).strip() if code_match else raw_title
+
+        seg_cols = [(name, pct_col) for name, pct_col, _, _ in column_pairs]
+        data_by_col = {pct_col: [] for _, pct_col, _, _ in column_pairs}
+        base_by_col = {}
+        for _, pct_col, count_col, _ in column_pairs:
+            if count_col < len(rows[start]):
+                base_value = numeric_value(rows[start][count_col])
+                if base_value is not None:
+                    base_by_col[pct_col] = int(base_value) if base_value.is_integer() else base_value
+
+        categories = []
+        for ri in range(start + 1, end):
+            row = rows[ri]
+            category = cell_text(row[1]) if len(row) > 1 else ""
+            if not category:
+                continue
+            values = {}
+            has_numeric = False
+            for _, pct_col, _, _ in column_pairs:
+                value = numeric_value(row[pct_col]) if pct_col < len(row) else None
+                values[pct_col] = value
+                has_numeric = has_numeric or value is not None
+            if not has_numeric:
+                continue
+            categories.append(category)
+            for _, pct_col, _, _ in column_pairs:
+                data_by_col[pct_col].append(values[pct_col])
+
+        if not categories:
+            continue
+
+        data = {}
+        base = {}
+        for name, pct_col, _, _ in default_pairs:
+            key = "Total" if name.lower() in total_aliases else name
+            if key in data:
+                continue
+            data[key] = data_by_col.get(pct_col, [])
+            base[key] = base_by_col.get(pct_col)
+
+        questions.append({
+            "code": code,
+            "title": title,
+            "categories": categories,
+            "segments": default_segments,
+            "seg_cols": seg_cols,
+            "data": data,
+            "data_by_col": data_by_col,
+            "stats": {},
+            "stats_by_col": {},
+            "base": base,
+            "base_by_col": base_by_col,
+        })
+
+    return questions, groups
 def parse_crosstab(path: str, sheet_name: str = None) -> list:
     """解析问卷交叉表导出为题目列表。
 
@@ -164,6 +334,7 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
                           if not any(k in s.lower() for k in ("目录", "index", "toc"))]
         ws = wb[candidates[0]] if candidates else wb[wb.sheetnames[0]]
     rows = list(ws.iter_rows(values_only=True))
+    wb.close()
 
     questions: list = []
     cur = None
@@ -173,8 +344,10 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
     global _cached_dimension_groups
     _cached_dimension_groups = []
 
-    # 表头第 1 列（index=1）的合法"总计/TOTAL"关键词集合
-    TOTAL_ALIASES = ("Total", "合计", "总计", "总体", "整体")
+    spss_pivot = _parse_spss_pivot_rows(rows)
+    if spss_pivot is not None:
+        questions, _cached_dimension_groups = spss_pivot
+        return questions
 
     for ri, row in enumerate(rows):
         # 表头行：row[0] 为空，第 2 列为 Total/合计/总计/总体/整体，第 3 列起为人群名。
@@ -194,20 +367,26 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
                 if row[i] is not None and _norm(row[i]) != ""
             ) >= 1
         ):
-            # 收集表头：从 row[1] 起，遇到**重复段名**即停止。
+            new_groups = _detect_dimension_groups(rows, ri)
+
+            # 收集默认展示表头。多级表头优先取第一个真实维度组；
+            # 无分组标签时，沿用“遇到重复段名即停止”的兼容逻辑。
             # 荣耀电商等导出会在同一行内把"7 品牌"结构在多个分析维度上
             # 重复铺开（整体×7、是否购买×7、…），若全部收集会导致
             # segments 重复 20+ 次、图表错乱。只取第一组有效维度。
-            segs = []
-            for i in range(1, len(row)):
-                if row[i] is None:
-                    continue
-                name = _norm(row[i])
-                if not name or name in ("人群",):
-                    continue
-                if name in segs:  # 段名重复，说明下一组维度开始
-                    break
-                segs.append(name)
+            if new_groups and new_groups[0]["name"] != "全部维度":
+                segs = [_norm(row[1]), *new_groups[0].get("segments", [])]
+            else:
+                segs = []
+                for i in range(1, len(row)):
+                    if row[i] is None:
+                        continue
+                    name = _norm(row[i])
+                    if not name or name in ("人群",):
+                        continue
+                    if name in segs:  # 段名重复，说明下一组维度开始
+                        break
+                    segs.append(name)
             if len(segs) < 2:  # 退化情况（只有一个段），退回原逻辑
                 segs = [_norm(row[1])] + [
                     _norm(row[i])
@@ -232,7 +411,6 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
             cur["stats"] = {}
             cur["stats_by_col"] = {}
             # 每次更新表头都重新检测分组（保留段数最多的那次结果）
-            new_groups = _detect_dimension_groups(rows, ri)
             if len(new_groups) > len(_cached_dimension_groups):
                 _cached_dimension_groups = new_groups
             # 不 continue —— 多级表头文件中后续行可能也是表头，
@@ -289,7 +467,8 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
                 if name in seen:
                     continue
                 seen.add(name)
-                cur["stats"].setdefault(stat, {})[name] = cur["stats_by_col"].get(col, {}).get(stat)
+                if name in cur["segments"]:
+                    cur["stats"].setdefault(stat, {})[name] = cur["stats_by_col"].get(col, {}).get(stat)
             continue
 
         # 样本量行：BASE
@@ -307,7 +486,8 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
                 if name in seen:
                     continue
                 seen.add(name)
-                cur["base"][name] = cur["base_by_col"].get(col)
+                if name in cur["segments"]:
+                    cur["base"][name] = cur["base_by_col"].get(col)
             continue
 
         # 普通分类数据行：清洗尾部 "（...）" 注释
@@ -334,7 +514,8 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
             if name in seen:
                 continue
             seen.add(name)
-            cur["data"][name].append(col_vals.get(col))
+            if name in cur["data"]:
+                cur["data"][name].append(col_vals.get(col))
 
     return questions
 

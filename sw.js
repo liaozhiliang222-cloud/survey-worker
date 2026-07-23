@@ -1,8 +1,9 @@
-const CACHE_NAME = "research-toolbox-v48";
+const CACHE_NAME = "research-toolbox-v49";
 const ASSETS = [
   "./manifest.webmanifest",
   "./icon.svg",
-  "./cloudflare-pages-verification.txt"
+  "./cloudflare-pages-verification.txt",
+  "./templates/crosstab/crosstab-header-template.xlsx"
 ];
 
 function isAppShellRequest(request) {
