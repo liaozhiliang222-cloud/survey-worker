@@ -130,9 +130,26 @@ try {
   const previewText = await preview.text();
   assert.equal(preview.status, 200, previewText);
   assert.equal(JSON.parse(previewText).path, "/api/pptx-report/preview?title=smoke");
-  assert.deepEqual(backendRequests.map((item) => item.url), [
+
+  const renderedPreview = await fetch(`http://127.0.0.1:${appPort}/pptx-api/preview-render`, {
+    method: "POST",
+    headers: { "Content-Type": "application/vnd.surveykit.pptx-request" },
+    body: Buffer.from("fixture")
+  });
+  assert.equal(renderedPreview.status, 200);
+  assert.equal((await renderedPreview.json()).path, "/api/pptx-report/preview-render");
+
+  const profile = await fetch(`http://127.0.0.1:${appPort}/pptx-api/templates/abc/profile`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ roles: { chart: 2 } })
+  });
+  assert.equal(profile.status, 200);
+  assert.equal((await profile.json()).path, "/api/pptx-report/templates/abc/profile");  assert.deepEqual(backendRequests.map((item) => item.url), [
     "/healthz?probe=1",
-    "/api/pptx-report/preview?title=smoke"
+    "/api/pptx-report/preview?title=smoke",
+    "/api/pptx-report/preview-render",
+    "/api/pptx-report/templates/abc/profile"
   ]);
 
   console.log("Server route smoke passed: health, proxy mappings and 413 body limits");

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 
 @dataclass
@@ -47,6 +48,8 @@ def inspect_presentation(
     for slide_index, slide in enumerate(prs.slides, 1):
         has_source = False
         nonempty_text = 0
+        header_text_shapes = []
+        header_pictures = []
         for shape_index, shape in enumerate(slide.shapes, 1):
             result.checked_shapes += 1
             left, top = int(shape.left), int(shape.top)
@@ -63,6 +66,15 @@ def inspect_presentation(
             text = str(getattr(shape, "text", "") or "").strip()
             if text:
                 nonempty_text += 1
+                if top < height * 0.20 and int(shape.width) > width * 0.25:
+                    header_text_shapes.append((shape_index, shape, text))
+                    if text.count("\n") >= 2:
+                        result.issues.append({
+                            "level": "warning",
+                            "code": "title_over_two_lines",
+                            "slide": slide_index,
+                            "shape": shape_index,
+                        })
                 if "数据来源" in text or "Source" in text:
                     has_source = True
                 if "nan" in text.lower():
@@ -85,6 +97,8 @@ def inspect_presentation(
                         "value": min(sizes),
                     }
                 )
+            if shape.shape_type == MSO_SHAPE_TYPE.PICTURE and top < height * 0.20:
+                header_pictures.append((shape_index, shape))
             if getattr(shape, "has_chart", False):
                 chart = shape.chart
                 if not chart.series:
@@ -96,6 +110,26 @@ def inspect_presentation(
                             "shape": shape_index,
                         }
                     )
+        for text_index, text_shape, _ in header_text_shapes:
+            text_box = (
+                int(text_shape.left), int(text_shape.top),
+                int(text_shape.left + text_shape.width), int(text_shape.top + text_shape.height),
+            )
+            for picture_index, picture in header_pictures:
+                picture_box = (
+                    int(picture.left), int(picture.top),
+                    int(picture.left + picture.width), int(picture.top + picture.height),
+                )
+                overlap_width = max(0, min(text_box[2], picture_box[2]) - max(text_box[0], picture_box[0]))
+                overlap_height = max(0, min(text_box[3], picture_box[3]) - max(text_box[1], picture_box[1]))
+                if overlap_width * overlap_height > 0:
+                    result.issues.append({
+                        "level": "error",
+                        "code": "template_logo_overlaps_title",
+                        "slide": slide_index,
+                        "shape": text_index,
+                        "related_shape": picture_index,
+                    })
         if slide_index > 3 and require_sources and nonempty_text and not has_source:
             result.issues.append(
                 {

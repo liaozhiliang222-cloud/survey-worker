@@ -12351,6 +12351,14 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       const warnings = (analysis.warnings || []).map((warning) => `<span class="warning-text">${escapeHtml(warning)}</span>`).join("");
       const mapping = analysis.mapping || {};
       const mappedRoles = Object.values(mapping.roles || {}).filter((item) => !item.fallback).length;
+      const roleLabels = { cover: "封面", toc: "目录", summary: "摘要", section: "章节页", chart: "图表页", matrix: "矩阵页", appendix: "附录" };
+      const recommendedRoles = analysis.recommended_roles || {};
+      const slideOptions = Array.from({ length: analysis.slide_count || 0 }, (_, index) =>
+        `<option value="${index + 1}">第 ${index + 1} 页</option>`).join("");
+      const roleFields = Object.entries(roleLabels).map(([role, label]) => {
+        const selected = Number(recommendedRoles[role] || ((mapping.roles || {})[role]?.slide_index ?? -1) + 1);
+        return `<label class="pptx-template-role"><span>${label}</span><select data-template-role="${role}">${slideOptions.replace(`value="${selected}"`, `value="${selected}" selected`)}</select></label>`;
+      }).join("");
       const mappingLabel = mapping.mode === "semantic-layout-zones"
         ? `深度映射：${mappedRoles} 类页面 · 置信度 ${Math.round((mapping.confidence || 0) * 100)}%`
         : "基础主题映射";
@@ -12365,9 +12373,49 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
           <span>${escapeHtml(mappingLabel)}</span>
         </div>
         ${warnings}
+        <details class="pptx-template-role-editor">
+          <summary>确认模板页面角色</summary>
+          <div class="pptx-template-role-grid">${roleFields}</div>
+          <button class="ghost-btn" type="button" data-save-template-profile>保存角色配置</button>
+        </details>
       `;
     }
 
+    async function savePptxTemplateProfile() {
+      if (!uploadedTemplateId || !templateAnalysisEl) return;
+      const roles = {};
+      templateAnalysisEl.querySelectorAll("[data-template-role]").forEach((select) => {
+        roles[select.dataset.templateRole] = Number(select.value);
+      });
+      templateStatusEl.textContent = "正在保存模板页面角色…";
+      const response = await fetch(`/pptx-api/templates/${encodeURIComponent(uploadedTemplateId)}/profile`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: uploadedTemplateAnalysis?.file_name || "company-template.pptx", roles }),
+      });
+      if (!response.ok) throw new Error(await readPptxApiError(response, "模板角色保存失败"));
+      const profile = await response.json();
+      uploadedTemplateAnalysis.profile = profile;
+      uploadedTemplateAnalysis.recommended_roles = Object.fromEntries(
+        Object.entries(profile.roles || {}).map(([role, item]) => [role, Number(item.slide_index) + 1])
+      );
+      templateStatusEl.textContent = "模板页面角色已确认，预览和导出将使用该配置。";
+      renderTemplateAnalysis();
+      invalidatePptxPreview("模板页面角色已更新，请重新预览。");
+    }
+
+    templateAnalysisEl?.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-save-template-profile]");
+      if (!button) return;
+      button.disabled = true;
+      try {
+        await savePptxTemplateProfile();
+      } catch (error) {
+        templateStatusEl.textContent = `模板角色保存失败：${error.message}`;
+      } finally {
+        button.disabled = false;
+      }
+    });
     async function uploadPptxTemplate(file) {
       if (!file) return;
       if (!/\.pptx$/i.test(file.name)) {
@@ -13412,6 +13460,7 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
                 </div>
               </div>
               <div class="pptx-page-actions pptx-preview-field-wide">
+                <button type="button" class="secondary-btn" data-pptx-action="render-preview" data-page-index="${idx}">真实预览</button>
                 <button type="button" class="ghost-btn" data-pptx-action="duplicate-page" data-page-index="${idx}">复制</button>
                 <button type="button" class="ghost-btn" data-pptx-action="split-page" data-page-index="${idx}" ${(p.questions || []).length < 2 ? "disabled" : ""}>拆分</button>
                 <button type="button" class="ghost-btn" data-pptx-action="merge-page" data-page-index="${idx}" data-direction="-1" ${idx === 0 ? "disabled" : ""}>与上页合并</button>
@@ -13658,6 +13707,41 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       renderPreviewTable(editedPagePlan);
     };
 
+    async function renderRealPptxPreview(pageIndex, control) {
+      if (!selectedFile || !editedPagePlan?.pages?.[pageIndex]) return;
+      const checked = Array.from(segmentPanel.querySelectorAll('input[type="checkbox"]:checked:not([data-role])')).map((cb) => cb.value);
+      const useUploadedTemplate = templateModeInput?.value === "upload";
+      control.disabled = true;
+      const originalText = control.textContent;
+      control.textContent = "渲染中…";
+      try {
+        const buf = await selectedFile.arrayBuffer();
+        const payload = packPptxGenerateRequest(buf, {
+          segments: checked,
+          title: (titleInput.value || "调研分析报告").trim(),
+          theme: themeInput?.value || "blue",
+          template_id: useUploadedTemplate ? uploadedTemplateId : null,
+          dimension: currentDimension || null,
+          pages: [pageIndex + 1],
+          page_config: compactPptxPageConfig(editedPagePlan),
+        });
+        const response = await fetch("/pptx-api/preview-render", {
+          method: "POST",
+          headers: { "Content-Type": "application/vnd.surveykit.pptx-request" },
+          body: payload,
+        });
+        if (!response.ok) throw new Error(await readPptxApiError(response, "真实预览生成失败"));
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank", "noopener,noreferrer");
+        setTimeout(() => URL.revokeObjectURL(url), 120000);
+      } catch (error) {
+        showToast(error.message || "真实预览生成失败", "warning");
+      } finally {
+        control.disabled = false;
+        control.textContent = originalText;
+      }
+    }
     function handlePptxEditorAction(event) {
       const control = event.target.closest("[data-pptx-action]");
       if (!control || !previewTable.contains(control)) return;
@@ -13665,7 +13749,9 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
       event.stopPropagation();
       const action = control.dataset.pptxAction;
       const pageIndex = Number(control.dataset.pageIndex);
-      if (action === "scroll-chapter") {
+      if (action === "render-preview") {
+        renderRealPptxPreview(pageIndex, control);
+      } else if (action === "scroll-chapter") {
         previewTable.querySelector(`[data-editor-chapter="${control.dataset.targetChapter}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
       } else if (action === "add-page") {
         window._onPreviewAddPage(control.dataset.chapter);

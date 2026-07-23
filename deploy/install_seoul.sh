@@ -17,7 +17,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y python3 python3-venv python3-pip nginx curl
+apt-get install -y python3 python3-venv python3-pip nginx curl libreoffice-impress
 
 mkdir -p "${APP_DIR}"
 cp -a deploy "${APP_DIR}/"

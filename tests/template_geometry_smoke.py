@@ -28,6 +28,15 @@ def main() -> None:
     body.top = int(template_prs.slide_height * 0.15)
     body.height = int(template_prs.slide_height * 0.16)
     template_mapping = build_template_mapping(template_prs)
+    override_mapping = build_template_mapping(
+        template_prs, role_overrides={"chart": 2, "summary": 2}
+    )
+    for role in ("chart", "summary"):
+        selected = override_mapping["roles"][role]
+        if selected["slide_index"] != 1 or not selected.get("user_confirmed"):
+            raise AssertionError(f"Template role override did not select slide 2 for {role}: {selected}")
+        if selected["confidence"] != 1.0:
+            raise AssertionError("User-confirmed template roles must have full confidence")
     content_zones = template_mapping["roles"]["content"]["zones"]
     if content_zones["title"]["h"] > 0.13:
         raise AssertionError(f"Title zone incorrectly includes body placeholder: {content_zones}")

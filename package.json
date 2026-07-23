@@ -15,7 +15,7 @@
     "test:server-routes": "node tests/server-routes-smoke.mjs",
     "test:cloudflare-proxy": "node tests/cloudflare-proxy-smoke.mjs",
     "test:python:deps": "python tests/python-deps-smoke.py",
-    "test:python": "npm run test:python:deps && python tests/crosstab_parser_smoke.py && python tests/template_geometry_smoke.py && python tests/proposal_templates_smoke.py && python tests/proposal_deck_smoke.py && python tests/report_semantics_smoke.py",
+    "test:python": "npm run test:python:deps && python tests/crosstab_parser_smoke.py && python tests/template_geometry_smoke.py && python tests/proposal_templates_smoke.py && python tests/proposal_deck_smoke.py && python tests/report_semantics_smoke.py && python tests/preview_profile_api_smoke.py",
     "test:python:crosstab-parser": "python tests/crosstab_parser_smoke.py",
     "test:python:proposal-templates": "python tests/proposal_templates_smoke.py"
   },

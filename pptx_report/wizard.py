@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from pptx import Presentation
 
 import pandas as pd
 
@@ -1701,6 +1702,8 @@ def run_wizard(
     page_config: dict = None,
     theme_key: str = "blue",
     template_path: str = None,
+    template_mapping: dict = None,
+    preview_page_numbers: list[int] | None = None,
     progress_callback=None,
 ) -> str:
     """端到端：解析交叉表 → 组装 → 渲染成 .pptx。
@@ -1746,6 +1749,14 @@ def run_wizard(
         source=source, max_per_page=max_per_page, segments=segments,
         page_config=page_config,
     )
+    if preview_page_numbers:
+        requested = {int(number) for number in preview_page_numbers if int(number) > 0}
+        spec.chart_pages = [
+            page for index, page in enumerate(spec.chart_pages, 1) if index in requested
+        ]
+        spec.appendix = None
+        if not spec.chart_pages:
+            raise ValueError("未找到请求预览的报告页面")
     spec.validate()
     progress(48, "报告结构校验完成")
     theme = theme_from_key(theme_key)
@@ -1755,9 +1766,18 @@ def run_wizard(
     renderer = ReportRenderer(
         theme=theme,
         template_path=template_path,
+        template_mapping=template_mapping,
         progress_callback=progress_callback,
     )
-    return renderer.render(spec, out_path)
+    rendered = renderer.render(spec, out_path)
+    if preview_page_numbers:
+        preview_prs = Presentation(rendered)
+        for slide_id in list(preview_prs.slides._sldIdLst)[:3]:
+            relationship_id = slide_id.rId
+            preview_prs.slides._sldIdLst.remove(slide_id)
+            preview_prs.part.drop_rel(relationship_id)
+        preview_prs.save(rendered)
+    return rendered
 
 
 if __name__ == "__main__":

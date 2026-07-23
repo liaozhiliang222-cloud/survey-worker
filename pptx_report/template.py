@@ -197,10 +197,11 @@ def _classify_slide(slide, index: int) -> tuple[str, float]:
     return "content", 0.62
 
 
-def build_template_mapping(prs: Presentation) -> dict:
+def build_template_mapping(prs: Presentation, role_overrides: dict | None = None) -> dict:
     """识别示例页角色和版面区域，供渲染器按语义选版式与落位。"""
     width, height = int(prs.slide_width), int(prs.slide_height)
     candidates: dict[str, list[dict]] = {}
+    all_candidates: list[dict] = []
     layout_indexes = {id(layout): idx for idx, layout in enumerate(prs.slide_layouts)}
     for index, slide in enumerate(prs.slides):
         role, confidence = _classify_slide(slide, index)
@@ -240,11 +241,27 @@ def build_template_mapping(prs: Presentation) -> dict:
             },
         }
         candidates.setdefault(role, []).append(candidate)
+        all_candidates.append(candidate)
     roles = {}
     for role, items in candidates.items():
         items.sort(key=lambda item: (item["confidence"], bool(item["zones"]["content"])), reverse=True)
         roles[role] = items[0]
     # 通用正文映射可由图表页或普通内容页回退，确保所有报告页面都有可用落位。
+    if role_overrides:
+        by_slide = {item["slide_index"]: item for item in all_candidates}
+        for role, requested in role_overrides.items():
+            try:
+                slide_index = int(requested) - 1
+            except (TypeError, ValueError):
+                continue
+            selected = by_slide.get(slide_index)
+            if selected is not None:
+                roles[str(role)] = {
+                    **selected,
+                    "role": str(role),
+                    "confidence": 1.0,
+                    "user_confirmed": True,
+                }
     fallback = roles.get("chart") or roles.get("content") or next(iter(roles.values()), None)
     for role in ("cover", "toc", "summary", "chart", "matrix", "appendix"):
         role_item = roles.get(role)
@@ -256,7 +273,10 @@ def build_template_mapping(prs: Presentation) -> dict:
             or content_zone.get("w", 0) < 0.60
             or content_zone.get("h", 0) < 0.45
         )
-        if (role_item is None or data_layout_is_unsafe) and fallback:
+        if (
+            role_item is None
+            or (data_layout_is_unsafe and not role_item.get("user_confirmed"))
+        ) and fallback:
             roles[role] = {**fallback, "role": role, "fallback": True,
                            "confidence": round(max(0.35, fallback["confidence"] - 0.2), 2)}
     confidences = [item["confidence"] for item in roles.values()]

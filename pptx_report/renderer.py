@@ -55,6 +55,7 @@ class ReportRenderer:
 
     def __init__(self, theme: Optional[Theme] = None,
                  template_path: Optional[str] = None,
+                 template_mapping: Optional[dict] = None,
                  progress_callback=None):
         """
         Args:
@@ -63,6 +64,7 @@ class ReportRenderer:
         """
         self.theme = theme or Theme()
         self.template_path = template_path
+        self.template_mapping = template_mapping
         self.progress_callback = progress_callback
         self._prs = None
         self._slide_w = None
@@ -124,7 +126,7 @@ class ReportRenderer:
             if not os.path.exists(self.template_path):
                 raise TemplateNotFoundError(self.template_path)
             prs = Presentation(self.template_path)
-            self._template_mapping = build_template_mapping(prs)
+            self._template_mapping = self.template_mapping or build_template_mapping(prs)
             # 上传模板只提供母版、版式、背景和主题。移除模板中的示例页，避免旧内容
             # 出现在新报告前面；版式与母版关系仍会保留。
             for slide_id in list(prs.slides._sldIdLst):
@@ -346,14 +348,26 @@ class ReportRenderer:
                 # extend almost to the slide boundary. Keep a print-safe right
                 # margin and use the same adjusted zone for every content shape
                 # so tables and their chart overlays remain synchronized.
-                safe_left, safe_right = 0.025, 0.975
+                safe_left, safe_right = 0.04, 0.96
                 target_left = max(safe_left, float(target["x"]))
                 target_right = min(safe_right, float(target["x"]) + float(target["w"]))
-                if target_right - target_left >= 0.25:
+                footer_zone = zones.get("footer") or {}
+                safe_bottom = min(
+                    0.91,
+                    float(footer_zone.get("y", 0.94)) - 0.025,
+                )
+                target_bottom = min(
+                    float(target["y"]) + float(target["h"]), safe_bottom
+                )
+                if (
+                    target_right - target_left >= 0.25
+                    and target_bottom - float(target["y"]) >= 0.20
+                ):
                     mapped_target = {
                         **target,
                         "x": target_left,
                         "w": target_right - target_left,
+                        "h": target_bottom - float(target["y"]),
                     }
             transform(shape, source_zones[zone_name], mapped_target)
             if zone_name == "content":

@@ -22,6 +22,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -53,7 +55,8 @@ for p in (str(HERE), str(PARENT)):
 from pptx_report.cli import _collect_segments
 from pptx_report.build_jd_report import parse_crosstab
 from pptx_report.wizard import build_insight_context, build_page_plan, run_wizard
-from pptx_report.template import analyze_template
+from pptx import Presentation
+from pptx_report.template import analyze_template, build_template_mapping
 from pptx_report.proposal_deck import DeckValidationError, audit_deck, render_proposal_deck
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -114,12 +117,31 @@ def _template_path(template_id: str) -> Path | None:
     return path if path.exists() else None
 
 
+def _template_profile_path(template_id: str) -> Path:
+    return TEMPLATE_DIR / f"{template_id}.json"
+
+
+def _read_template_profile(template_id: str) -> dict | None:
+    if not re.fullmatch(r"[0-9a-f]{32}", str(template_id or "")):
+        return None
+    try:
+        payload = json.loads(_template_profile_path(template_id).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _write_template_profile(template_id: str, profile: dict) -> None:
+    _template_profile_path(template_id).write_text(
+        json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 def _cleanup_templates() -> None:
     cutoff = time.time() - TEMPLATE_TTL_SECONDS
     for path in TEMPLATE_DIR.glob("*.pptx"):
         try:
             if path.stat().st_mtime < cutoff:
                 path.unlink()
+                _template_profile_path(path.stem).unlink(missing_ok=True)
         except OSError:
             pass
 
@@ -139,9 +161,33 @@ async def upload_template(request: Request):
     filename = unquote(request.headers.get("X-Template-Name") or "company-template.pptx")
     try:
         analysis = analyze_template(str(path), filename=filename[:120])
+        roles = analysis.get("mapping", {}).get("roles", {})
+        profile = {
+            "template_id": template_id,
+            "name": filename[:120],
+            "version": 1,
+            "roles": roles,
+            "theme_tokens": {
+                "colors": analysis.get("theme_colors", []),
+                "fonts": analysis.get("fonts", []),
+            },
+            "safe_zones": {
+                role: (item.get("zones") or {}) for role, item in roles.items()
+            },
+            "created_at": time.time(),
+        }
+        _write_template_profile(template_id, profile)
         return JSONResponse({
             "template_id": template_id,
             "expires_in": TEMPLATE_TTL_SECONDS,
+            "profile": profile,
+            "recommended_roles": {
+                role: int(item.get("slide_index", 0)) + 1
+                for role, item in roles.items()
+            },
+            "role_confidence": {
+                role: item.get("confidence", 0) for role, item in roles.items()
+            },
             **analysis,
         }, headers={"Cache-Control": "no-store"})
     except Exception as exc:  # noqa: BLE001
@@ -159,10 +205,57 @@ def delete_template(template_id: str):
     if path is not None:
         try:
             path.unlink()
+            _template_profile_path(template_id).unlink(missing_ok=True)
         except OSError as exc:
             return JSONResponse({"error": {"message": f"模板删除失败：{exc}"}}, status_code=500)
     return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
+
+@app.get("/api/pptx-report/templates/{template_id}/profile")
+def get_template_profile(template_id: str):
+    if _template_path(template_id) is None:
+        return JSONResponse({"error": {"message": "模板不存在或已过期。"}}, status_code=404)
+    profile = _read_template_profile(template_id)
+    if profile is None:
+        return JSONResponse({"error": {"message": "模板 Profile 不存在。"}}, status_code=404)
+    return JSONResponse(profile, headers={"Cache-Control": "no-store"})
+
+
+@app.put("/api/pptx-report/templates/{template_id}/profile")
+async def update_template_profile(template_id: str, request: Request):
+    path = _template_path(template_id)
+    if path is None:
+        return JSONResponse({"error": {"message": "模板不存在或已过期。"}}, status_code=404)
+    try:
+        incoming = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"error": {"message": "Profile JSON 无效。"}}, status_code=400)
+    overrides = incoming.get("roles") if isinstance(incoming, dict) else None
+    if not isinstance(overrides, dict):
+        return JSONResponse({"error": {"message": "Profile 必须包含 roles 对象。"}}, status_code=400)
+    allowed = {"cover", "toc", "summary", "section", "chart", "matrix", "appendix", "content"}
+    overrides = {role: value for role, value in overrides.items() if role in allowed}
+    mapping = build_template_mapping(Presentation(str(path)), role_overrides=overrides)
+    confirmed = {
+        role: item for role, item in mapping.get("roles", {}).items()
+        if role in overrides and item.get("user_confirmed")
+    }
+    if not confirmed:
+        return JSONResponse({"error": {"message": "未找到有效的页面角色覆盖。"}}, status_code=400)
+    base = _read_template_profile(template_id) or {}
+    profile = {
+        **base,
+        "template_id": template_id,
+        "name": str(incoming.get("name") or base.get("name") or "template.pptx")[:120],
+        "version": int(base.get("version") or 1) + 1,
+        "roles": {**(base.get("roles") or {}), **confirmed},
+        "updated_at": time.time(),
+    }
+    profile["safe_zones"] = {
+        role: (item.get("zones") or {}) for role, item in profile["roles"].items()
+    }
+    _write_template_profile(template_id, profile)
+    return JSONResponse(profile, headers={"Cache-Control": "no-store"})
 
 @app.get("/healthz")
 def healthz():
@@ -299,6 +392,60 @@ def _unpack_generate_request(data: bytes, content_type: str) -> tuple[bytes, dic
     return data[header_size + meta_size:], metadata
 
 
+def _office_converter() -> str | None:
+    return shutil.which("libreoffice") or shutil.which("soffice")
+
+
+@app.post("/api/pptx-report/preview-render")
+async def preview_render(request: Request):
+    body = await request.body()
+    try:
+        data, metadata = _unpack_generate_request(body, request.headers.get("content-type", ""))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return JSONResponse({"error": {"message": f"请求格式错误：{exc}"}}, status_code=400)
+    raw_pages = metadata.get("pages") or [1]
+    try:
+        pages = sorted({int(page) for page in raw_pages if 0 < int(page) <= 200})[:3]
+    except (TypeError, ValueError):
+        return JSONResponse({"error": {"message": "pages 必须是 1-200 的页码数组。"}}, status_code=400)
+    if not pages:
+        return JSONResponse({"error": {"message": "请至少选择一页进行预览。"}}, status_code=400)
+    converter = _office_converter()
+    if not converter:
+        return JSONResponse(
+            {"error": {"message": "服务器未安装 LibreOffice，暂时无法生成真实页面预览。"}},
+            status_code=503,
+        )
+    response = _generate_core(
+        data, request.query_params, metadata, preview_page_numbers=pages
+    )
+    if response.status_code >= 400:
+        return response
+    with tempfile.TemporaryDirectory(prefix="surveykit-ppt-preview-") as temp_dir:
+        pptx_path = Path(temp_dir) / "preview.pptx"
+        pptx_path.write_bytes(response.body)
+        completed = subprocess.run(
+            [converter, "--headless", "--convert-to", "pdf", "--outdir", temp_dir, str(pptx_path)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        pdf_path = Path(temp_dir) / "preview.pdf"
+        if completed.returncode != 0 or not pdf_path.exists():
+            detail = (completed.stderr or completed.stdout or "转换失败").strip()[-500:]
+            return JSONResponse({"error": {"message": f"页面预览转换失败：{detail}"}}, status_code=500)
+        content = pdf_path.read_bytes()
+    return Response(
+        content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'inline; filename="surveykit-preview.pdf"',
+            "Cache-Control": "no-store",
+            "X-Preview-Pages": ",".join(str(page) for page in pages),
+        },
+    )
+
 @app.post("/api/pptx-report/insight-context")
 async def insight_context(request: Request):
     """返回 AI 写报告所需的逐页聚合证据，不传输原始答卷。"""
@@ -343,6 +490,7 @@ def _generate_core(
     qs,
     metadata: dict | None = None,
     progress_callback=None,
+    preview_page_numbers: list[int] | None = None,
 ) -> Response | JSONResponse:
     if len(data) > MAX_UPLOAD_BYTES:
         return JSONResponse({"error": {"message": "文件过大（>25MB）。"}}, status_code=413)
@@ -358,6 +506,7 @@ def _generate_core(
     theme_key = metadata.get("theme") or qs.get("theme") or "blue"
     template_id = metadata.get("template_id") or qs.get("template_id") or ""
     template_path = _template_path(str(template_id)) if template_id else None
+    template_profile = _read_template_profile(str(template_id)) if template_id else None
     if template_id and template_path is None:
         return JSONResponse(
             {"error": {"message": "上传模板不存在或已过期，请重新上传模板。"}},
@@ -385,6 +534,12 @@ def _generate_core(
             page_config=page_config,
             theme_key=theme_key,
             template_path=str(template_path) if template_path else None,
+            template_mapping={
+                "version": 2,
+                "mode": "confirmed-layout-zones",
+                "roles": template_profile.get("roles", {}),
+            } if template_profile and template_profile.get("roles") else None,
+            preview_page_numbers=preview_page_numbers,
             progress_callback=progress_callback,
         )
         with open(tmp_out.name, "rb") as f:
