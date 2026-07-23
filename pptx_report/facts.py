@@ -327,6 +327,28 @@ def extract_question_facts(
                 significant=None,
             )
 
+    if question.get("trend_ordered") or question.get("time_series"):
+        trend_points = [
+            (categories[index], _as_number(value))
+            for index, value in enumerate(total_values)
+            if index < len(categories) and _as_number(value) is not None
+        ]
+        if len(trend_points) >= 2:
+            first_label, first_raw = trend_points[0]
+            last_label, last_raw = trend_points[-1]
+            first_value = _normalized_percentage(first_raw, data_kind)
+            last_value = _normalized_percentage(last_raw, data_kind)
+            add(
+                fact_type="trend_change",
+                metric_name=data_kind,
+                segment=total_segment,
+                category=f"{first_label}→{last_label}",
+                value=last_value,
+                benchmark_value=first_value,
+                gap_pp=(last_value - first_value) if data_kind == "percentage" else None,
+                base=bases.get(total_segment),
+                significant=None,
+            )
     benchmark = _as_number(question.get("benchmark_value"))
     if benchmark is not None and ranked:
         index, value = ranked[0]

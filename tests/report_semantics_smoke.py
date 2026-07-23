@@ -40,7 +40,8 @@ def check_facts():
         "data": {"Total": [7.2], "老用户": [8.0]}, "base": {"Total": 400, "老用户": 80},
     }
     related = {**percentage, "code": "Q3", "title": "推荐意愿", "data": {"Total": [.30, .35, .20, .15], "年轻用户": [.45, .35, .10, .10]}}
-    facts = extract_data_facts([percentage, mean, related])
+    trend = {"code": "Q4", "title": "年度趋势", "data_kind": "percentage", "categories": ["2024", "2025", "2026"], "segments": ["Total"], "data": {"Total": [.40, .50, .55]}, "base": {"Total": 400}, "trend_ordered": True}
+    facts = extract_data_facts([percentage, mean, related, trend])
     gap = next(f for f in facts if f.fact_type == "segment_gap" and f.category == "非常满意")
     assert round(gap.gap_pp, 1) == 20.0 and gap.significant is None
     assert any(f.fact_type == "low_base_warning" and f.segment == "年轻用户" for f in facts)
@@ -51,6 +52,7 @@ def check_facts():
     assert infer_data_kind(mean) == "mean"
     assert any(f.fact_type == "outlier" for f in facts)
     assert any(f.fact_type == "cross_question_consistency" for f in facts)
+    assert any(f.fact_type == "trend_change" and round(f.gap_pp, 1) == 15.0 for f in facts)
     funnel = build_funnel_facts([("知晓", 80), ("考虑", 50), ("购买", 20)])
     assert [round(abs(f.gap_pp), 1) for f in funnel] == [30.0, 30.0]
     return facts
