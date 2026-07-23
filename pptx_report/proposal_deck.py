@@ -78,8 +78,8 @@ class DeckValidationError(ValueError):
 
 
 def _text(value: Any, limit: int = 0) -> str:
-    result = re.sub(r"\s+", " ", str(value or "")).strip()
-    return result[:limit] if limit else result
+    """Normalize whitespace; capacity handling must never delete content."""
+    return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
 def _items(slide: dict) -> list[dict]:
@@ -87,7 +87,7 @@ def _items(slide: dict) -> list[dict]:
     if not isinstance(raw, list):
         return []
     normalized = []
-    for index, item in enumerate(raw[:MAX_ITEMS]):
+    for index, item in enumerate(raw):
         if isinstance(item, str):
             item = {"headline": item}
         if not isinstance(item, dict):
@@ -141,10 +141,45 @@ def normalize_deck(deck: dict) -> tuple[dict, list[dict]]:
     slides = result.get("slides")
     if not isinstance(slides, list) or not slides:
         raise DeckValidationError("Deck JSON 缺少 slides。")
+    visual_capacity = {
+        "context_tension_map": 4, "decision_tree": 4, "evidence_threshold_matrix": 5,
+        "dual_track_research_flow": 5, "qualitative_design_canvas": 6,
+        "quantitative_sample_architecture": 6, "questionnaire_decision_journey": 7,
+        "concept_funnel_maxdiff_example": 3, "pricing_segment_example": 3,
+        "decision_output_map": 7, "timeline_gantt_risk": 8, "deliverable_map": 6,
+        "risk_matrix": 7, "plan_comparison": 5, "pricing_table": 5,
+        "cover_product_hero": 7,
+    }
+    expanded_slides = []
+    for source_index, source in enumerate(slides):
+        if not isinstance(source, dict):
+            expanded_slides.append(source)
+            continue
+        visual = _fallback_visual(source.get("visual_type") or source.get("slide_type"))
+        capacity = visual_capacity.get(visual, MAX_ITEMS)
+        content = source.get("content") if isinstance(source.get("content"), list) else []
+        chunks = [content[pos:pos + capacity] for pos in range(0, len(content), capacity)] or [[]]
+        for part_index, chunk in enumerate(chunks, 1):
+            part = copy.deepcopy(source)
+            part["content"] = chunk
+            part["node_count"] = len(chunk)
+            if len(chunks) > 1:
+                base_id = _text(part.get("id") or part.get("slide_id")) or f"slide_{source_index + 1:02d}"
+                part["id"] = f"{base_id}_part_{part_index}"
+                part["slide_id"] = part["id"]
+                if part_index > 1:
+                    part["title"] = f"{_text(part.get('title'))}（续{part_index}）"
+                part["previous_slide_relation"] = "延续上一页未展示完的内容" if part_index > 1 else part.get("previous_slide_relation", "")
+                part["next_slide_relation"] = "下一页继续本页内容" if part_index < len(chunks) else part.get("next_slide_relation", "")
+            expanded_slides.append(part)
+        if len(chunks) > 1:
+            issues.append({"level": "warning", "code": "slide_split_for_capacity", "source_slide": source_index + 1, "parts": len(chunks), "input_blocks": len(content), "capacity": capacity})
+    slides = expanded_slides
+
     normalized_slides = []
     seen_ids: set[str] = set()
     seen_titles: set[str] = set()
-    for index, raw in enumerate(slides[:20]):
+    for index, raw in enumerate(slides):
         if not isinstance(raw, dict):
             issues.append({"level": "error", "code": "invalid_slide", "slide": index + 1})
             continue
@@ -286,6 +321,8 @@ def audit_deck(deck: dict) -> dict:
             if slide["data_status"] != "illustrative" or not slide["charts"]:
                 issues.append({"level": "error", "code": "invalid_example_slide", "slide": slide["order"]})
     for slide in normalized["slides"]:
+        if "_part_" in slide["id"]:
+            continue
         match = re.search(r"([一二三四五六七八九十]|\d+)(?:个?模块|项)", slide["title"])
         if match:
             values = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
@@ -1104,7 +1141,7 @@ def render_proposal_deck(deck: dict, output_path: str) -> dict:
     prs.core_properties.title = normalized["title"]
     prs.core_properties.subject = "SurveyKit AI 调研方案 PPT"
     prs.core_properties.author = "SurveyKit"
-    project_short = normalized["title"][:18]
+    project_short = normalized["title"]
     for page_no, data in enumerate(normalized["slides"], 1):
         slide = _base_slide(prs, data, page_no, project_short)
         diagnostics = _render_by_template(slide, normalized, data)
