@@ -103,6 +103,26 @@ def inspect_slide_images(paths: Iterable[str | Path]) -> VisualQAResult:
                 "slide": slide_index,
                 "edge_ratio": round(edge_ratio, 4),
             })
+        if content_ratio > 0.62:
+            result.issues.append({
+                "level": "warning",
+                "code": "visually_overdense_slide",
+                "slide": slide_index,
+                "content_ratio": round(content_ratio, 4),
+            })
+
+        left_ratio = _foreground_ratio(mask, (0, 0, mask.width // 2, mask.height))
+        right_ratio = _foreground_ratio(mask, (mask.width // 2, 0, mask.width, mask.height))
+        denser_half = max(left_ratio, right_ratio)
+        emptier_half = min(left_ratio, right_ratio)
+        if slide_index > 3 and 0.02 < content_ratio < 0.55 and denser_half > 0.18 and emptier_half < 0.004:
+            result.issues.append({
+                "level": "warning",
+                "code": "large_asymmetric_blank_area",
+                "slide": slide_index,
+                "denser_half_ratio": round(denser_half, 4),
+                "emptier_half_ratio": round(emptier_half, 4),
+            })
     result.score = max(0, 100 - result.error_count * 12 - result.warning_count * 3)
     return result
 

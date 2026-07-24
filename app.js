@@ -14356,6 +14356,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const visualLabels = {
           visually_near_empty_slide: "页面接近空白",
           content_touches_page_edge: "内容贴近页面边缘，可能发生裁切",
+          visually_overdense_slide: "页面内容过密，建议拆页或精简",
+          large_asymmetric_blank_area: "页面左右内容失衡，存在大面积空白",
         };
         let visualQaHtml = `<span>图片级视觉 QA：未执行（服务器未启用或缺少 LibreOffice / PDF 渲染组件）。</span>`;
         if (visualQa.status === "completed") {
