@@ -2603,6 +2603,52 @@ tr:last-child td {
   font-size: 6px;
 }
 
+.pptx-real-preview {
+  overflow: hidden;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+  box-shadow: 0 10px 24px rgba(30, 64, 175, 0.08);
+}
+
+.pptx-real-preview[hidden] {
+  display: none;
+}
+
+.pptx-real-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #dbeafe;
+  background: #fff;
+}
+
+.pptx-real-preview-head strong {
+  color: #1e3a8a;
+  font-size: 12px;
+}
+
+.pptx-real-preview-head span {
+  flex: 1;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.pptx-real-preview-head .ghost-btn {
+  min-height: 30px;
+  padding: 5px 9px;
+  text-decoration: none;
+}
+
+.pptx-real-preview iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  background: #e2e8f0;
+}
+
 .pptx-preview-field {
   display: grid;
   align-content: start;

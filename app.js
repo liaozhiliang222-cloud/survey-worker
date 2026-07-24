@@ -13423,6 +13423,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
 
     function renderPreviewTable(plan) {
       if (!previewTable) return;
+      previewTable.querySelectorAll("[data-pptx-preview-url]").forEach((panel) => {
+        if (panel.dataset.pptxPreviewUrl) URL.revokeObjectURL(panel.dataset.pptxPreviewUrl);
+      });
       const pages = plan.pages || [];
       if (pages.length === 0) {
         previewTable.innerHTML = '<div class="empty-state"><strong>无页面</strong><span>没有可渲染的题目。</span></div>';
@@ -13599,6 +13602,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 <button type="button" class="ghost-btn" data-pptx-action="move-page" data-page-index="${idx}" data-direction="-1" ${idx === 0 ? "disabled" : ""}>上移</button>
                 <button type="button" class="ghost-btn" data-pptx-action="move-page" data-page-index="${idx}" data-direction="1" ${idx === pages.length - 1 ? "disabled" : ""}>下移</button>
                 <button type="button" class="ghost-btn danger" data-pptx-action="delete-page" data-page-index="${idx}">删除页面</button>
+              </div>
+              <div class="pptx-real-preview pptx-preview-field-wide" data-real-preview="${idx}" hidden>
+                <div class="pptx-real-preview-head">
+                  <strong>最终页面预览</strong>
+                  <span>基于当前标题、图表、维度与模板实时渲染</span>
+                  <a class="ghost-btn" data-preview-open target="_blank" rel="noopener noreferrer">新窗口查看</a>
+                  <button type="button" class="ghost-btn" data-pptx-action="close-preview" data-page-index="${idx}">关闭</button>
+                </div>
+                <iframe title="第 ${p.page_idx} 页最终预览" loading="lazy"></iframe>
               </div>
             </div>
           </details>`;
@@ -13886,8 +13898,20 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (!response.ok) throw new Error(await readPptxApiError(response, "真实预览生成失败"));
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
-        window.open(url, "_blank", "noopener,noreferrer");
-        setTimeout(() => URL.revokeObjectURL(url), 120000);
+        const card = control.closest(".pptx-preview-page");
+        const panel = card?.querySelector(`[data-real-preview="${pageIndex}"]`);
+        const frame = panel?.querySelector("iframe");
+        const openLink = panel?.querySelector("[data-preview-open]");
+        if (!panel || !frame || !openLink) {
+          URL.revokeObjectURL(url);
+          throw new Error("找不到当前页面的真实预览容器");
+        }
+        if (panel.dataset.pptxPreviewUrl) URL.revokeObjectURL(panel.dataset.pptxPreviewUrl);
+        panel.dataset.pptxPreviewUrl = url;
+        frame.src = `${url}#toolbar=0&navpanes=0&view=FitH`;
+        openLink.href = url;
+        panel.hidden = false;
+        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
       } catch (error) {
         showToast(error.message || "真实预览生成失败", "warning");
       } finally {
@@ -13904,6 +13928,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const pageIndex = Number(control.dataset.pageIndex);
       if (action === "render-preview") {
         renderRealPptxPreview(pageIndex, control);
+      } else if (action === "close-preview") {
+        const panel = control.closest("[data-real-preview]");
+        if (panel?.dataset.pptxPreviewUrl) URL.revokeObjectURL(panel.dataset.pptxPreviewUrl);
+        if (panel) {
+          panel.querySelector("iframe")?.removeAttribute("src");
+          panel.querySelector("[data-preview-open]")?.removeAttribute("href");
+          delete panel.dataset.pptxPreviewUrl;
+          panel.hidden = true;
+        }
       } else if (action === "scroll-chapter") {
         previewTable.querySelector(`[data-editor-chapter="${control.dataset.targetChapter}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
       } else if (action === "add-page") {
