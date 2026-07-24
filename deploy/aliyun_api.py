@@ -77,6 +77,102 @@ JOB_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATE_DIR = Path(tempfile.gettempdir()) / "surveykit-ppt-templates"
 TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATE_TTL_SECONDS = 24 * 60 * 60
+
+
+def _job_request_data_path(job_id: str) -> Path:
+    """Path to the persisted xlsx upload for a job."""
+    return JOB_DIR / f"{job_id}.xlsx"
+
+
+def _job_request_meta_path(job_id: str) -> Path:
+    """Path to the persisted request metadata (qs + metadata) for a job."""
+    return JOB_DIR / f"{job_id}.meta.json"
+
+
+def _persist_job_request(job_id: str, data: bytes, qs: dict, metadata: dict) -> None:
+    """Save the raw request payload to disk so the job can be recovered after restart."""
+    _job_request_data_path(job_id).write_bytes(data)
+    _job_request_meta_path(job_id).write_text(
+        json.dumps({"qs": qs, "metadata": metadata}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def _load_job_request(job_id: str) -> tuple[bytes, dict, dict] | None:
+    """Load persisted request data for job recovery. Returns (data, qs, metadata) or None."""
+    data_path = _job_request_data_path(job_id)
+    meta_path = _job_request_meta_path(job_id)
+    if not data_path.exists() or not meta_path.exists():
+        return None
+    try:
+        data = data_path.read_bytes()
+        meta_payload = json.loads(meta_path.read_text(encoding="utf-8"))
+        return data, meta_payload.get("qs", {}), meta_payload.get("metadata", {})
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _remove_job_files(job_id: str) -> None:
+    _job_state_path(job_id).unlink(missing_ok=True)
+    _job_output_path(job_id).unlink(missing_ok=True)
+    _job_request_data_path(job_id).unlink(missing_ok=True)
+    _job_request_meta_path(job_id).unlink(missing_ok=True)
+
+
+def _recover_incomplete_jobs() -> None:
+    """On startup, re-launch threads for jobs that were queued/running when the service died.
+
+    With multiple uvicorn workers, each worker calls this on boot.  To avoid
+    duplicate recovery we skip jobs whose state was updated within the last 15 s
+    (meaning another worker already claimed them).
+    """
+    recovered = 0
+    now = time.time()
+    for state_path in JOB_DIR.glob("*.json"):
+        job_id = state_path.stem
+        if not _valid_job_id(job_id):
+            continue
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if state.get("status") not in {"queued", "running", "cancel_requested"}:
+            continue
+        # Skip if another worker already recovered this job moments ago
+        if (now - (state.get("updated_at") or 0)) < 15:
+            continue
+        request_payload = _load_job_request(job_id)
+        if request_payload is None:
+            _write_job_state(job_id, {
+                "status": "lost",
+                "progress": 0,
+                "message": "服务已重启且无法恢复任务数据，请重新生成。",
+                "finished_at": time.time(),
+            })
+            continue
+        data, qs, metadata = request_payload
+        if state.get("status") == "cancel_requested":
+            _write_job_state(job_id, {
+                "status": "cancelled",
+                "progress": 0,
+                "message": "任务已取消",
+                "finished_at": time.time(),
+            })
+            continue
+        _write_job_state(job_id, {
+            "status": "queued",
+            "progress": 3,
+            "message": "服务重启后自动恢复任务，等待执行",
+        })
+        threading.Thread(
+            target=_run_generate_job,
+            args=(job_id, data, qs, metadata),
+            daemon=True,
+            name=f"pptx-job-recover-{job_id[:8]}",
+        ).start()
+        recovered += 1
+    if recovered:
+        print(f"[startup] recovered {recovered} incomplete job(s)")
 app = FastAPI(title="PPTX Report API")
 
 # CORS：允许前端域名（surveykit.cc）和本地开发直连阿里云
@@ -680,14 +776,17 @@ def _write_job_state(job_id: str, payload: dict) -> dict:
     return merged
 
 
-def _remove_job_files(job_id: str) -> None:
-    _job_state_path(job_id).unlink(missing_ok=True)
-    _job_output_path(job_id).unlink(missing_ok=True)
-
-
 def _cleanup_jobs() -> None:
     now = time.time()
     for state_path in JOB_DIR.glob("*.json"):
+        if not _valid_job_id(state_path.stem):
+            # Skip .meta.json and other non-state files; remove orphans
+            if state_path.suffix == ".json" and state_path.stem.endswith(".meta"):
+                job_id = state_path.stem[: -len(".meta")]
+                if not _job_state_path(job_id).exists():
+                    state_path.unlink(missing_ok=True)
+                    _job_request_data_path(job_id).unlink(missing_ok=True)
+            continue
         try:
             state = json.loads(state_path.read_text(encoding="utf-8"))
             ttl = FAILED_JOB_TTL_SECONDS if state.get("status") in {"failed", "cancelled", "lost"} else JOB_TTL_SECONDS
@@ -836,11 +935,13 @@ async def create_generate_job(request: Request):
         client_id = ""
     qs = dict(request.query_params)
     fingerprint = _request_fingerprint(data, qs, metadata, client_id) if client_id else ""
+    job_id = uuid.uuid4().hex
+    _persist_job_request(job_id, data, qs, metadata)
     with JOB_STATE_LOCK:
         duplicate = _find_active_duplicate(client_id, fingerprint)
         if duplicate:
+            _remove_job_files(job_id)
             return JSONResponse({**duplicate, "deduplicated": True}, status_code=202)
-        job_id = uuid.uuid4().hex
         state = _write_job_state(job_id, {
             "status": "queued",
             "progress": 3,
@@ -860,18 +961,51 @@ async def create_generate_job(request: Request):
     return JSONResponse(state, status_code=202)
 
 
+JOB_STALE_TIMEOUT_SECONDS = 5 * 60
+
+
 @app.get("/api/pptx-report/jobs/{job_id}")
 def get_generate_job(job_id: str):
     state = _read_job_state(job_id)
     if state is None:
         return JSONResponse({"error": {"message": "生成任务不存在或已过期。"}}, status_code=404, headers={"Cache-Control": "no-store"})
-    if state.get("status") in {"queued", "running", "cancel_requested"} and state.get("service_instance_id") != SERVICE_INSTANCE_ID:
-        state = _write_job_state(job_id, {
-            "status": "lost",
-            "progress": 0,
-            "message": "服务已重启，任务执行状态已丢失，请重新生成。",
-            "finished_at": time.time(),
-        })
+    # Detect stuck jobs: if queued/running but not updated for a long time, the
+    # executing thread likely died (OOM / crash).  Attempt recovery from persisted data.
+    if state.get("status") in {"queued", "running"}:
+        updated_at = state.get("updated_at") or 0
+        stale = (time.time() - updated_at) > JOB_STALE_TIMEOUT_SECONDS
+        if stale:
+            request_payload = _load_job_request(job_id)
+            if request_payload is not None:
+                data, qs, metadata = request_payload
+                _write_job_state(job_id, {
+                    "status": "queued",
+                    "progress": 3,
+                    "message": "检测到任务停滞，自动恢复执行",
+                })
+                threading.Thread(
+                    target=_run_generate_job,
+                    args=(job_id, data, qs, metadata),
+                    daemon=True,
+                    name=f"pptx-job-recover-{job_id[:8]}",
+                ).start()
+                state = _read_job_state(job_id)
+            else:
+                state = _write_job_state(job_id, {
+                    "status": "lost",
+                    "progress": 0,
+                    "message": "任务执行超时且无法恢复，请重新生成。",
+                    "finished_at": time.time(),
+                })
+    elif state.get("status") == "cancel_requested":
+        updated_at = state.get("updated_at") or 0
+        if (time.time() - updated_at) > 60:
+            state = _write_job_state(job_id, {
+                "status": "cancelled",
+                "progress": 0,
+                "message": "任务已取消",
+                "finished_at": time.time(),
+            })
     return JSONResponse(state, headers={"Cache-Control": "no-store"})
 
 
@@ -908,6 +1042,12 @@ def download_generate_job(job_id: str, delete_after: bool = False):
             "Cache-Control": "no-store",
         },
     )
+
+@app.on_event("startup")
+def _startup_recover_jobs():
+    """Recover incomplete jobs after service restart."""
+    _recover_incomplete_jobs()
+
 
 if __name__ == "__main__":
     import uvicorn

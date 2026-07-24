@@ -1,8 +1,13 @@
 {
   "scripts": {
-    "dev": "node server.js",
+    "dev": "vite",
+    "dev:legacy": "node server.js",
+    "build": "vite build",
+    "preview": "vite preview",
     "check:syntax": "node --check app.js && node --check ppt-report-ai.js && node --check server.js && node --check lib/request-body.js && node --check lib/http-response.js && node --check lib/pptx-proxy.js && node --check lib/ai-proxy.js && node --check proposal-deck.js && node --check functions/pptx-api/_proxy.js && node --check \"functions/pptx-api/[[path]].js\"",
-    "test": "npm run test:js",
+    "test": "npm run test:unit && npm run test:js",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
     "test:js": "npm run check:syntax && npm run test:ai-proxy && npm run test:local-ai-proxy && npm run test:ai-plan-template && npm run test:ai-questionnaire && npm run test:crosstab-header-template && npm run test:pptx-chapter-chart && npm run test:ppt-report-ai && npm run test:pptx-job-ui && npm run test:pptx-template-profile-ui && npm run test:proposal-deck && npm run test:request-body && npm run test:pptx-proxy && npm run test:server-routes && npm run test:cloudflare-proxy",
     "test:ai-proxy": "node tests/ai-proxy-smoke.mjs",
     "test:local-ai-proxy": "node tests/local-ai-proxy-smoke.mjs",
@@ -21,8 +26,32 @@
     "test:python:deps": "python tests/python-deps-smoke.py",
     "test:python": "npm run test:python:deps && python tests/crosstab_parser_smoke.py && python tests/template_geometry_smoke.py && python tests/proposal_templates_smoke.py && python tests/proposal_deck_smoke.py && python tests/report_semantics_smoke.py && python tests/preview_profile_api_smoke.py && python tests/object_qa_smoke.py && python tests/visual_qa_smoke.py && python tests/job_api_smoke.py",
     "test:python:crosstab-parser": "python tests/crosstab_parser_smoke.py",
-    "test:python:proposal-templates": "python tests/proposal_templates_smoke.py"
+    "test:python:proposal-templates": "python tests/proposal_templates_smoke.py",
+    "start": "node server.js"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "devDependencies": {
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  },
+  "name": "release-main-521",
+  "version": "1.0.0",
+  "description": "面向市场调研项目的本地 Web 工具，覆盖问卷设计、数据清洗、交叉表分析、AI 报告和 PPTX 报告生成。",
+  "main": "app.js",
+  "directories": {
+    "doc": "docs",
+    "lib": "lib",
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liaozhiliang222-cloud/survey-worker.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/liaozhiliang222-cloud/survey-worker/issues"
+  },
+  "homepage": "https://github.com/liaozhiliang222-cloud/survey-worker#readme"
 }

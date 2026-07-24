@@ -1,0 +1,13 @@
+/**
+ * 样式模块入口
+ * 过渡策略：
+ *   - tokens.css 提供设计令牌（CSS 自定义属性）
+ *   - 原有 styles.css 通过 index.html <link> 加载，保持完整
+ *   - 新模块样式以独立 CSS 文件在此引入
+ */
+@import "./tokens.css";
+
+/* ─── 模块样式（按需添加）─── */
+/* @import "./modules/workspace.css"; */
+/* @import "./modules/crosstab.css"; */
+/* @import "./modules/ai-report.css"; */

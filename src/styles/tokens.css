@@ -1,0 +1,52 @@
+/**
+ * 设计令牌 — 全局 CSS 自定义属性
+ * 所有模块共享的颜色、间距、圆角、阴影等变量
+ */
+:root {
+  /* ─── 色彩系统 ─── */
+  --ink: #102033;
+  --muted: #475569;
+  --line: #d8e4f0;
+  --surface: #ffffff;
+  --soft: #f3f7fb;
+
+  --teal: #2563eb;
+  --blue: #2563eb;
+  --blue-deep: #102a56;
+  --blue-soft: #eff6ff;
+  --green: #13875a;
+  --amber: #b7791f;
+  --red: #b42318;
+  --danger: #b42318;
+  --accent-warm: #f59e0b;
+
+  /* ─── 圆角 ─── */
+  --radius: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* ─── 阴影 ─── */
+  --shadow-card: 0 14px 34px rgba(15, 42, 86, 0.055);
+  --shadow-hover: 0 18px 42px rgba(37, 99, 235, 0.12);
+  --shadow-soft: 0 10px 24px rgba(15, 42, 86, 0.045);
+
+  /* ─── 间距 ─── */
+  --gap-sm: 8px;
+  --gap-md: 16px;
+  --gap-lg: 24px;
+
+  /* ─── 字体 ─── */
+  --font-sans: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+  --font-mono: "Cascadia Code", "Fira Code", "Consolas", monospace;
+
+  /* ─── 动画 ─── */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 350ms ease;
+
+  /* ─── 布局 ─── */
+  --sidebar-width: 240px;
+  --header-height: 56px;
+  --content-max-width: 1200px;
+}
