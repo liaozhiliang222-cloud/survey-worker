@@ -13880,12 +13880,18 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (!plan || !Array.isArray(plan.pages)) return null;
       return {
         executive_summary: String(plan.executive_summary || "").trim(),
+        global_findings: Array.isArray(plan.global_findings) ? plan.global_findings : [],
+        storyline: Array.isArray(plan.storyline) ? plan.storyline : [],
         pages: plan.pages.map((page) => ({
           page_idx: page.page_idx,
           chapter: page.chapter,
           chart_type: page.chart_type,
           insight_override: page.insight_override,
           insight_bullets: Array.isArray(page.insight_bullets) ? page.insight_bullets : [],
+          business_implication: String(page.business_implication || "").trim(),
+          evidence_fact_ids: Array.isArray(page.evidence_fact_ids) ? page.evidence_fact_ids : [],
+          evidence_question_ids: Array.isArray(page.evidence_question_ids) ? page.evidence_question_ids : [],
+          slide_brief: page.slide_brief && typeof page.slide_brief === "object" ? page.slide_brief : {},
           dimension_mode: page.dimension_mode,
           dimension_key: page.dimension_key,
           selected_dimensions: Array.isArray(page.selected_dimensions)
@@ -14011,52 +14017,91 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         aiWriteStatus.textContent = `AI 设置尚未就绪：${errors.join("；")}`;
         return;
       }
+      const aiPlanner = window.PptReportAi;
+      if (!aiPlanner) {
+        aiWriteStatus.textContent = "PPT AI 故事线模块未加载，请刷新页面后重试。";
+        return;
+      }
       aiWriteBtn.disabled = true;
-      aiWriteStatus.textContent = "正在由 Python 汇总逐页数据证据…";
+      aiWriteStatus.textContent = "阶段 1/3：Python 正在汇总逐页数据事实…";
       try {
         const context = await requestPptxInsightContext();
         const contextByPage = new Map((context.pages || []).map((page) => [Number(page.page_idx), page]));
-        const batches = [];
-        for (let i = 0; i < context.pages.length; i += 10) batches.push(context.pages.slice(i, i + 10));
-        const generated = [];
+        if (!context.pages?.length) throw new Error("没有可用于写作的报告页面。");
 
+        aiWriteStatus.textContent = "阶段 2/3：AI 正在形成全局洞察与报告故事线…";
+        let narrative = aiPlanner.fallbackNarrative(context);
+        try {
+          const narrativeMessages = [
+            {
+              role: "system",
+              content: [
+                "你是资深市场研究报告总监。请根据已经计算好的 DataFact 和 Slide Brief，形成全局洞察与逐页故事线。",
+                "只能引用输入中真实存在的 fact_id、question_id 和 page_idx；不得重新计算、改写或编造数字。",
+                "故事线需体现用户是谁→行为如何→主要问题→人群差异→原因与机会→行动建议，并尊重现有页面顺序。",
+                "只返回 JSON：{\"findings\":[{\"finding_id\":\"finding_01\",\"headline\":\"\",\"description\":\"\",\"fact_ids\":[],\"question_ids\":[],\"business_implication\":\"\",\"confidence\":0.9}],\"storyline\":[{\"page_idx\":1,\"role\":\"\",\"transition\":\"\",\"focus_fact_ids\":[]}],\"executive_summary\":\"\"}。",
+              ].join("\n"),
+            },
+            { role: "user", content: JSON.stringify(aiPlanner.buildNarrativeInput(context)) },
+          ];
+          const narrativeOutput = await callAiChatCompletion(settings, narrativeMessages, {
+            maxTokens: 5000,
+            timeoutMs: 240000,
+            temperature: 0.1,
+            responseFormat: "json_object",
+          });
+          narrative = aiPlanner.validateNarrative(aiPlanner.parseJsonObject(narrativeOutput), context);
+        } catch (narrativeError) {
+          console.warn("PPT AI narrative fallback:", narrativeError);
+          aiWriteStatus.textContent = "全局故事线响应异常，已使用结构化事实继续生成逐页文案…";
+        }
+
+        const batches = aiPlanner.chunkPages(context.pages, 4);
+        const generated = [];
+        let previousPage = null;
         for (let i = 0; i < batches.length; i += 1) {
-          aiWriteStatus.textContent = `AI 正在写报告：第 ${i + 1}/${batches.length} 批页面…`;
+          aiWriteStatus.textContent = `阶段 3/3：AI 正在写第 ${i + 1}/${batches.length} 批页面（每批 3–5 页）…`;
+          const batchInput = aiPlanner.buildPageBatchInput(batches[i], narrative, previousPage);
           const messages = [
             {
               role: "system",
               content: [
-                "你是资深市场研究报告总监。请根据逐页结构化数据，为每页写一句话洞察标题和2-3条正文洞察。",
-                "只能使用输入中出现的百分比和样本量，不得推测、改写或编造数字。",
-                "标题应直接表达结论；正文采用观察+数据证据+业务含义，避免空话。",
-                "只返回 JSON：{\"pages\":[{\"page_idx\":1,\"title\":\"一句话标题\",\"bullets\":[\"洞察1\",\"洞察2\"]}]}。",
+                "你是资深市场研究报告总监。请沿用给定全局故事线，为每页写一句话洞察标题、2–3条正文和业务含义。",
+                "只允许使用该页 questions、DataFact、evidence_fact_ids、evidence_question_ids 中的证据；不得重新计算或编造数字。",
+                "标题直接表达唯一结论；正文采用观察+数据证据+解释；相邻页面不得重复完全相同的结论。",
+                "必须为每页返回真实的 evidence_fact_ids 和 evidence_question_ids。",
+                "只返回 JSON：{\"pages\":[{\"page_idx\":1,\"title\":\"\",\"bullets\":[\"\",\"\"],\"business_implication\":\"\",\"evidence_fact_ids\":[],\"evidence_question_ids\":[]}]}。",
               ].join("\n"),
             },
-            { role: "user", content: JSON.stringify({ pages: batches[i] }) },
+            { role: "user", content: JSON.stringify(batchInput) },
           ];
+
+          let validatedPages = [];
           let output = await callAiChatCompletion(settings, messages, {
-            maxTokens: 6000,
+            maxTokens: 5000,
             timeoutMs: 240000,
-            temperature: 0.15,
+            temperature: 0.12,
             responseFormat: "json_object",
           });
-          let parsed;
           try {
-            parsed = parseAiInsightJson(output);
+            validatedPages = aiPlanner.validatePageOutput(aiPlanner.parseJsonObject(output), batches[i]);
+            if (!validatedPages.length) throw new Error("本批页面缺少有效证据引用");
           } catch {
             output = await callAiChatCompletion(settings, [
               ...messages,
-              { role: "assistant", content: output.slice(0, 12000) },
-              { role: "user", content: "上一次输出不是合法 JSON。请仅按指定结构重新输出 JSON，不要解释或添加 Markdown。" },
+              { role: "assistant", content: String(output).slice(0, 12000) },
+              { role: "user", content: "上一次输出未通过 JSON 或证据ID校验。请严格按指定结构重新输出，不要解释或添加 Markdown。" },
             ], {
-              maxTokens: 6000,
+              maxTokens: 5000,
               timeoutMs: 240000,
               temperature: 0,
               responseFormat: "json_object",
             });
-            parsed = parseAiInsightJson(output);
+            validatedPages = aiPlanner.validatePageOutput(aiPlanner.parseJsonObject(output), batches[i]);
+            if (!validatedPages.length) throw new Error(`第 ${i + 1} 批页面未返回可验证的洞察`);
           }
-          generated.push(...parsed.pages);
+          generated.push(...validatedPages);
+          previousPage = validatedPages[validatedPages.length - 1] || previousPage;
         }
 
         const generatedByPage = new Map(generated.map((page) => [Number(page.page_idx), page]));
@@ -14068,33 +14113,30 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           if (!suggestion || !evidence) return;
           const title = String(suggestion.title || "").trim();
           const bullets = (suggestion.bullets || []).map((text) => String(text || "").trim()).filter(Boolean);
-          if (title && isAiInsightSupported(title, evidence)) page.insight_override = title.slice(0, 90);
-          page.insight_bullets = bullets.filter((text) => isAiInsightSupported(text, evidence)).slice(0, 3);
+          if (title && isAiInsightSupported(title, evidence)) page.insight_override = title;
+          page.insight_bullets = bullets.filter((text) => isAiInsightSupported(text, evidence));
+          page.business_implication = suggestion.business_implication;
+          page.evidence_fact_ids = suggestion.evidence_fact_ids;
+          page.evidence_question_ids = suggestion.evidence_question_ids;
+          page.slide_brief = {
+            ...(page.slide_brief || {}),
+            claim: page.insight_override || page.title,
+            business_implication: suggestion.business_implication,
+            evidence_fact_ids: suggestion.evidence_fact_ids,
+            evidence_question_ids: suggestion.evidence_question_ids,
+          };
           if (page.insight_override || page.insight_bullets.length) applied += 1;
         });
 
-        const summaryInput = editedPagePlan.pages.map((page) => ({
-          page_idx: page.page_idx,
-          title: page.insight_override || page.title,
-          bullets: page.insight_bullets || [],
-        }));
-        try {
-          const summaryOutput = await callAiChatCompletion(settings, [
-            { role: "system", content: "基于逐页洞察，写3句以内的执行摘要，不新增数字。只返回 JSON：{\"summary\":\"...\"}。" },
-            { role: "user", content: JSON.stringify(summaryInput) },
-          ], { maxTokens: 1200, timeoutMs: 180000, temperature: 0.15, responseFormat: "json_object" });
-          const summaryText = String(summaryOutput || "").match(/\{[\s\S]*\}/)?.[0] || "{}";
-          editedPagePlan.executive_summary = String(JSON.parse(summaryText).summary || "").trim();
-        } catch (_) {
-          editedPagePlan.executive_summary = "";
-        }
-
+        editedPagePlan.executive_summary = String(narrative.executive_summary || "").trim();
+        editedPagePlan.global_findings = narrative.findings;
+        editedPagePlan.storyline = narrative.storyline;
         editedPagePlan.planning_mode = "ai_report";
         renderPreviewTable(editedPagePlan);
         previewPanel.style.display = "";
         if (confirmBtn) confirmBtn.textContent = "生成 AI 增强版 PPT";
         aiWriteBtn.textContent = "重新生成 AI 洞察";
-        aiWriteStatus.textContent = `AI 已完成 ${applied}/${editedPagePlan.pages.length} 页洞察。请在页面预览中检查或修改，再生成增强版 PPT。`;
+        aiWriteStatus.textContent = `AI 已完成全局故事线及 ${applied}/${editedPagePlan.pages.length} 页洞察。请检查或修改后再生成 PPT。`;
         previewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (error) {
         aiWriteStatus.textContent = `AI 写报告失败：${error.message}`;
@@ -14102,7 +14144,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         aiWriteBtn.disabled = false;
       }
     }
-
     async function doGeneratePptx() {
       if (!selectedFile) return;
       if (!segmentPanel) return;

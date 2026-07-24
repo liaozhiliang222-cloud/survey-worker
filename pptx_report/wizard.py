@@ -743,6 +743,7 @@ def _enhance_report_pages(
     facts: list,
     findings: list[ExecutiveFinding],
     source: str,
+    page_config: dict | None = None,
 ) -> tuple[list, list[SlideBrief]]:
     """Add narrative page families without changing editable chart ownership."""
     question_by_id = {str(question.get("code") or ""): question for question in questions}
@@ -773,9 +774,39 @@ def _enhance_report_pages(
             "density": getattr(page, "density", "medium"),
         })
     briefs = build_slide_briefs(semantic_pages, fact_payload)
+    configured_semantics = list((page_config or {}).get("pages") or [])
+    valid_fact_ids = {str(fact.fact_id) for fact in facts}
+    valid_question_ids = {str(question.get("code") or "") for question in questions}
     usage = Counter()
     previous = None
-    for page, brief in zip(pages, briefs):
+    for page_index, (page, brief) in enumerate(zip(pages, briefs)):
+        configured = configured_semantics[page_index] if page_index < len(configured_semantics) else {}
+        semantic_override = configured.get("slide_brief") if isinstance(configured.get("slide_brief"), dict) else configured
+        if isinstance(semantic_override, dict):
+            implication = str(semantic_override.get("business_implication") or configured.get("business_implication") or "").strip()
+            if implication:
+                brief.business_implication = implication
+            fact_ids = [
+                str(value) for value in (
+                    semantic_override.get("evidence_fact_ids")
+                    or configured.get("evidence_fact_ids")
+                    or []
+                ) if str(value) in valid_fact_ids
+            ]
+            question_ids = [
+                str(value) for value in (
+                    semantic_override.get("evidence_question_ids")
+                    or configured.get("evidence_question_ids")
+                    or []
+                ) if str(value) in valid_question_ids
+            ]
+            if fact_ids:
+                brief.evidence_fact_ids = list(dict.fromkeys(fact_ids))
+            if question_ids:
+                brief.evidence_question_ids = list(dict.fromkeys(question_ids))
+            if semantic_override.get("locked") is not None:
+                brief.locked = bool(semantic_override.get("locked"))
+        brief.claim = str(page.title or brief.claim)
         page.brief = brief
         page.slide_type = brief.slide_type
         category_count = sum(
@@ -1326,6 +1357,7 @@ def build_auto_report(
         facts,
         findings,
         source,
+        page_config=page_config,
     )
     appendix = _build_appendix(appendix_qs, source)
 

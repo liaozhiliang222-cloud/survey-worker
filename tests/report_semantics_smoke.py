@@ -15,7 +15,7 @@ from pptx_report.common.capacity import split_preserving_order
 from pptx_report.common.narrative import build_slide_briefs
 from pptx_report.facts import build_funnel_facts, extract_data_facts, infer_data_kind
 from pptx_report.model import (
-    ChartPageContent, ChartSpec, ChartType, CoverContent, DataKind,
+    ChartPageContent, ChartSpec, ChartType, CoverContent, DataFact, DataKind,
     ExecutiveFinding, ExecutiveSummaryContent, FindingsOverviewContent,
     FunnelAnalysisContent, FunnelStage, KeyFindingContent, OpportunityItem,
     OpportunityMatrixContent, RecommendationContent, RecommendationItem,
@@ -24,6 +24,7 @@ from pptx_report.model import (
 )
 from pptx_report.renderer import ReportRenderer
 from pptx_report.report_templates import select_report_template
+from pptx_report.wizard import _enhance_report_pages
 
 
 def check_facts():
@@ -90,6 +91,41 @@ def check_templates_and_chart_semantics():
         assert restored.data_kind == DataKind(kind) and restored.unit == unit
 
 
+def check_ai_semantic_overrides():
+    chart = ChartSpec(
+        "Satisfaction",
+        ChartType.BAR,
+        ["Satisfied", "Not satisfied"],
+        [Series("Total", [65, 35])],
+        evidence_question_ids=["Q1"],
+        evidence_fact_ids=["F1"],
+        source_references=["Q1.Satisfaction"],
+    )
+    page = ChartPageContent("AI finding title", charts=[chart], data_source="Q1.Satisfaction")
+    fact = DataFact(
+        fact_id="F1",
+        fact_type="top_rank",
+        question_id="Q1",
+        metric_name="percentage",
+        category="Satisfied",
+        value=65,
+        source_reference="Q1.Satisfaction",
+    )
+    questions = [{"code": "Q1", "title": "Satisfaction", "categories": ["Satisfied", "Not satisfied"], "segments": ["Total"], "data": {"Total": [65, 35]}, "base": {"Total": 400}}]
+    page_config = {"pages": [{
+        "business_implication": "Prioritize the service recovery journey",
+        "evidence_fact_ids": ["F1", "invented"],
+        "evidence_question_ids": ["Q1", "Q999"],
+        "slide_brief": {"locked": True},
+    }]}
+    _enhanced, briefs = _enhance_report_pages(
+        [page], questions, [fact], [], "source.xlsx", page_config=page_config
+    )
+    assert briefs[0].claim == "AI finding title"
+    assert briefs[0].business_implication == "Prioritize the service recovery journey"
+    assert briefs[0].evidence_fact_ids == ["F1"]
+    assert briefs[0].evidence_question_ids == ["Q1"]
+    assert briefs[0].locked is True
 def check_rendered_page_families():
     finding = ExecutiveFinding("核心用户更关注体验", "年轻用户评价更集中。", ["Q1__top_rank__001"],
                                "优先优化关键触点", "high", ["Q1"], ["Q1.满意度"])
@@ -131,6 +167,7 @@ def main():
     facts = check_facts()
     check_capacity_and_briefs(facts)
     check_templates_and_chart_semantics()
+    check_ai_semantic_overrides()
     check_rendered_page_families()
     print("report semantics smoke: ok")
 

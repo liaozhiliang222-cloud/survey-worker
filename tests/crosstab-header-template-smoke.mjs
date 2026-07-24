@@ -44,7 +44,7 @@ assert.match(
   /id="downloadCrosstabHeaderTemplate"[\s\S]{0,180}href="\.\/templates\/crosstab\/crosstab-header-template\.xlsx"[\s\S]{0,120}download="交叉表表头模板\.xlsx"/,
 );
 assert.match(styles, /\.download-template-btn\s*\{[\s\S]{0,180}text-decoration:\s*none/);
-assert.match(serviceWorker, /research-toolbox-v49/);
+assert.match(serviceWorker, /research-toolbox-v50/);
 assert.match(serviceWorker, /\.\/templates\/crosstab\/crosstab-header-template\.xlsx/);
 assert.match(source, /<\(\?:\\w\+:\)\?row\\b/);
 assert.equal(template.subarray(0, 2).toString("utf8"), "PK");
