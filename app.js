@@ -14242,9 +14242,21 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           qa_inspection_failed: "QA 检查未能完成",
         };
         const qaDetailHtml = qaIssues.length
-          ? `<details class="pptx-qa-details"><summary>查看 QA 明细（涉及 ${(qa.slides_with_issues || []).length || new Set(qaIssues.map((issue) => issue.slide).filter(Boolean)).size} 页）</summary><ul>${qaIssues.slice(0, 30).map((issue) => `<li><b>第 ${Number(issue.slide || 0) || "?"} 页</b> · ${escapeHtml(qaLabels[issue.code] || issue.code || "未知问题")} · ${issue.level === "error" ? "错误" : "提醒"}</li>`).join("")}</ul>${qaIssues.length > 30 ? `<small>另有 ${qaIssues.length - 30} 项未展开，请下载后按页检查。</small>` : ""}</details>`
+          ? `<details class="pptx-qa-details"><summary>查看对象 QA 明细（涉及 ${(qa.slides_with_issues || []).length || new Set(qaIssues.map((issue) => issue.slide).filter(Boolean)).size} 页）</summary><ul>${qaIssues.slice(0, 30).map((issue) => `<li><b>第 ${Number(issue.slide || 0) || "?"} 页</b> · ${escapeHtml(qaLabels[issue.code] || issue.code || "未知问题")} · ${issue.level === "error" ? "错误" : "提醒"}</li>`).join("")}</ul>${qaIssues.length > 30 ? `<small>另有 ${qaIssues.length - 30} 项未展开，请下载后按页检查。</small>` : ""}</details>`
           : `<span>对象 QA 未发现结构问题。</span>`;
-        resultEl.innerHTML = `<div class="empty-state"><strong>${isAiEnhanced ? "AI 增强版生成成功" : "基础版生成成功"}</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span><span>对象QA：${Number(readyState.overall_score ?? qa.score ?? 0)}分 · ${qaErrors}项错误 · ${qaWarnings}项提醒</span>${qaDetailHtml}</div>`;
+        const visualQa = readyState.visual_qa || {};
+        const visualIssues = Array.isArray(visualQa.issues) ? visualQa.issues : [];
+        const visualLabels = {
+          visually_near_empty_slide: "页面接近空白",
+          content_touches_page_edge: "内容贴近页面边缘，可能发生裁切",
+        };
+        let visualQaHtml = `<span>图片级视觉 QA：未执行（服务器未启用或缺少 LibreOffice / PDF 渲染组件）。</span>`;
+        if (visualQa.status === "completed") {
+          visualQaHtml = `<span>图片级视觉 QA：${Number(visualQa.score ?? 0)}分 · 检查 ${Number(visualQa.checked_slides || 0)} 页 · ${visualIssues.length} 项提醒</span>${visualIssues.length ? `<details class="pptx-qa-details"><summary>查看视觉 QA 明细</summary><ul>${visualIssues.slice(0, 30).map((issue) => `<li><b>第 ${Number(issue.slide || 0) || "?"} 页</b> · ${escapeHtml(visualLabels[issue.code] || issue.code || "未知问题")}</li>`).join("")}</ul></details>` : ""}`;
+        } else if (visualQa.status === "failed") {
+          visualQaHtml = `<span>图片级视觉 QA：执行失败；不影响 PPT 下载，请人工复核页面。</span>`;
+        }
+        resultEl.innerHTML = `<div class="empty-state"><strong>${isAiEnhanced ? "AI 增强版生成成功" : "基础版生成成功"}</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span><span>综合QA：${Number(readyState.overall_score ?? qa.score ?? 0)}分 · 对象级 ${qaErrors}项错误 / ${qaWarnings}项提醒</span>${qaDetailHtml}${visualQaHtml}</div>`;
         if (aiWriteBtn) aiWriteBtn.disabled = false;
         if (aiWriteStatus) aiWriteStatus.textContent = isAiEnhanced
           ? "AI 增强版报告已生成；如需调整，可编辑页面洞察后再次生成。"
