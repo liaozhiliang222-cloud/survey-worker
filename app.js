@@ -14166,6 +14166,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             timeoutMs: 240000,
             temperature: 0.1,
             responseFormat: "json_object",
+            stream: true,
           });
           narrative = aiPlanner.validateNarrative(aiPlanner.parseJsonObject(narrativeOutput), context);
         } catch (narrativeError) {
@@ -14199,6 +14200,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             timeoutMs: 240000,
             temperature: 0.12,
             responseFormat: "json_object",
+            stream: true,
           });
           try {
             validatedPages = aiPlanner.validatePageOutput(aiPlanner.parseJsonObject(output), batches[i]);
@@ -14213,6 +14215,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               timeoutMs: 240000,
               temperature: 0,
               responseFormat: "json_object",
+              stream: true,
             });
             validatedPages = aiPlanner.validatePageOutput(aiPlanner.parseJsonObject(output), batches[i]);
             if (!validatedPages.length) throw new Error(`第 ${i + 1} 批页面未返回可验证的洞察`);
