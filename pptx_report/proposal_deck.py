@@ -19,6 +19,7 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION, XL_MARKER_STYLE, X
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
+from pptx_report.common import RenderAudit, SlideBrief, split_preserving_order
 from pptx_report.illustrative_dataset import DISCLAIMER, EXAMPLE_LABEL, audit_illustrative_dataset, normalize_illustrative_dataset
 from pptx_report.proposal_templates import plan_deck_templates
 
@@ -138,6 +139,7 @@ def normalize_deck(deck: dict) -> tuple[dict, list[dict]]:
         raise DeckValidationError("Deck JSON 必须是对象。")
     result = copy.deepcopy(deck)
     issues: list[dict] = []
+    deck_render_audit = RenderAudit()
     slides = result.get("slides")
     if not isinstance(slides, list) or not slides:
         raise DeckValidationError("Deck JSON 缺少 slides。")
@@ -158,13 +160,22 @@ def normalize_deck(deck: dict) -> tuple[dict, list[dict]]:
         visual = _fallback_visual(source.get("visual_type") or source.get("slide_type"))
         capacity = visual_capacity.get(visual, MAX_ITEMS)
         content = source.get("content") if isinstance(source.get("content"), list) else []
-        chunks = [content[pos:pos + capacity] for pos in range(0, len(content), capacity)] or [[]]
+        source_slide_id = _text(source.get("id") or source.get("slide_id")) or f"slide_{source_index + 1:02d}"
+        if content:
+            chunks, slide_audit = split_preserving_order(
+                content,
+                max_items=capacity,
+                source_slide_id=source_slide_id,
+            )
+            deck_render_audit.merge(slide_audit)
+        else:
+            chunks = [[]]
         for part_index, chunk in enumerate(chunks, 1):
             part = copy.deepcopy(source)
             part["content"] = chunk
             part["node_count"] = len(chunk)
             if len(chunks) > 1:
-                base_id = _text(part.get("id") or part.get("slide_id")) or f"slide_{source_index + 1:02d}"
+                base_id = source_slide_id
                 part["id"] = f"{base_id}_part_{part_index}"
                 part["slide_id"] = part["id"]
                 if part_index > 1:
@@ -261,8 +272,46 @@ def normalize_deck(deck: dict) -> tuple[dict, list[dict]]:
         "page_size": len(normalized_slides),
         "source_summary": result.get("source_summary") if isinstance(result.get("source_summary"), dict) else {},
         "slides": normalized_slides,
+        "render_audit": deck_render_audit.to_dict(),
     }
     planned_slides, template_issues = plan_deck_templates(normalized_slides)
+    for slide in planned_slides:
+        source_references = []
+        for reference in slide.get("source_references") or []:
+            if isinstance(reference, dict):
+                value = reference.get("label") or reference.get("source_type")
+            else:
+                value = reference
+            value = str(value or "").strip()
+            if value:
+                source_references.append(value)
+
+        content_density = str(slide.get("content_density") or "medium")
+        brief = SlideBrief(
+            slide_id=str(slide.get("slide_id") or slide.get("id") or ""),
+            slide_type=str(slide.get("slide_type") or slide.get("visual_type") or "content"),
+            chapter=str(slide.get("chapter") or slide.get("slide_type") or "研究方案"),
+            title=str(slide.get("title") or ""),
+            question_answered=str(slide.get("slide_question") or slide.get("title") or ""),
+            claim=str(slide.get("key_message") or slide.get("title") or ""),
+            business_implication=str(slide.get("unique_purpose") or ""),
+            source_references=source_references,
+            visual_intent=str(slide.get("visual_type") or "framework"),
+            layout_family=str(slide.get("template_id") or slide.get("layout_variant") or "default"),
+            relation_type=str(slide.get("relation_type") or "sequential"),
+            density={
+                "professional": "medium",
+                "standard": "medium",
+                "compact": "low",
+            }.get(content_density, content_density),
+            relationship_to_previous=str(slide.get("previous_slide_relation") or ""),
+            relationship_to_next=str(slide.get("next_slide_relation") or ""),
+            locked=bool(slide.get("locked")),
+            template_id=str(slide.get("template_id") or ""),
+        )
+        issues.extend(brief.validate())
+        slide["slide_brief"] = brief.to_dict()
+
     normalized["slides"] = planned_slides
     issues.extend(template_issues)
     return normalized, issues

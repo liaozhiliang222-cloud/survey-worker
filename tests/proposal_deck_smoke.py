@@ -189,6 +189,16 @@ def main():
     split_issues = [issue for issue in audit["issues"] if issue.get("code") == "slide_split_for_capacity"]
     assert split_issues
     assert sum(len(slide["content"]) for slide in audit["deck"]["slides"]) == sum(len(slide.get("content", [])) for slide in deck["slides"])
+    render_audit = audit["deck"]["render_audit"]
+    assert render_audit["complete"] is True
+    assert render_audit["input_blocks"] == render_audit["rendered_blocks"]
+    assert render_audit["truncated_blocks"] == 0
+    assert render_audit["removed_content"] == []
+    assert all(slide["slide_brief"]["slide_id"] == slide["slide_id"] for slide in audit["deck"]["slides"])
+    assert all(slide["slide_brief"]["question_answered"] for slide in audit["deck"]["slides"])
+    assert all(slide["slide_brief"]["claim"] for slide in audit["deck"]["slides"])
+    assert all(slide["slide_brief"]["template_id"] == slide["template_id"] for slide in audit["deck"]["slides"])
+    assert any(slide["slide_brief"]["locked"] for slide in audit["deck"]["slides"])
     assert audit["ok"] is True
     assert not [issue for issue in audit["issues"] if issue["level"] == "error"]
     assert deck["illustrative_dataset"]["usable_for_decision"] is False
