@@ -60,7 +60,20 @@ def main() -> None:
 
         loaded = client.get(f"/api/pptx-report/templates/{template_id}/profile")
         assert loaded.status_code == 200
-        assert loaded.json()["roles"]["summary"]["slide_index"] == 1
+        exported_profile = loaded.json()
+        assert exported_profile["roles"]["summary"]["slide_index"] == 1
+        assert "font_mapping" in exported_profile
+
+        imported = client.put(
+            f"/api/pptx-report/templates/{template_id}/profile",
+            json=exported_profile,
+        )
+        assert imported.status_code == 200, imported.text
+        imported_profile = imported.json()
+        assert imported_profile["version"] == 3
+        assert imported_profile["template_id"] == template_id
+        assert imported_profile["roles"]["chart"]["slide_index"] == 1
+        assert imported_profile["safe_zones"]["chart"]
 
         original_converter = api._office_converter
         api._office_converter = lambda: None

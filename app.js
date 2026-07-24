@@ -12294,6 +12294,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     const templateUploadArea = document.querySelector("#pptxTemplateUploadArea");
     const templateInput = document.querySelector("#pptxTemplateInput");
     const templateClearBtn = document.querySelector("#pptxTemplateClear");
+    const templateProfileImportBtn = document.querySelector("#pptxTemplateProfileImport");
+    const templateProfileExportBtn = document.querySelector("#pptxTemplateProfileExport");
+    const templateProfileInput = document.querySelector("#pptxTemplateProfileInput");
     const templateAnalysisEl = document.querySelector("#pptxTemplateAnalysis");
     const templateStatusEl = document.querySelector("#pptxTemplateStatus");
     const planningModeInput = document.querySelector("#pptxPlanningMode");
@@ -12423,17 +12426,25 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       `;
     }
 
-    async function savePptxTemplateProfile() {
+    async function savePptxTemplateProfile(importedProfile = null) {
       if (!uploadedTemplateId || !templateAnalysisEl) return;
       const roles = {};
-      templateAnalysisEl.querySelectorAll("[data-template-role]").forEach((select) => {
-        roles[select.dataset.templateRole] = Number(select.value);
-      });
-      templateStatusEl.textContent = "正在保存模板页面角色…";
+      if (importedProfile?.roles && typeof importedProfile.roles === "object") {
+        Object.assign(roles, importedProfile.roles);
+      } else {
+        templateAnalysisEl.querySelectorAll("[data-template-role]").forEach((select) => {
+          roles[select.dataset.templateRole] = Number(select.value);
+        });
+      }
+      templateStatusEl.textContent = importedProfile ? "正在导入模板 Profile…" : "正在保存模板页面角色…";
       const response = await fetch(`/pptx-api/templates/${encodeURIComponent(uploadedTemplateId)}/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: uploadedTemplateAnalysis?.file_name || "company-template.pptx", roles }),
+        body: JSON.stringify({
+          ...(importedProfile || {}),
+          name: importedProfile?.name || uploadedTemplateAnalysis?.file_name || "company-template.pptx",
+          roles,
+        }),
       });
       if (!response.ok) throw new Error(await readPptxApiError(response, "模板角色保存失败"));
       const profile = await response.json();
@@ -12441,7 +12452,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       uploadedTemplateAnalysis.recommended_roles = Object.fromEntries(
         Object.entries(profile.roles || {}).map(([role, item]) => [role, Number(item.slide_index) + 1])
       );
-      templateStatusEl.textContent = "模板页面角色已确认，预览和导出将使用该配置。";
+      templateStatusEl.textContent = importedProfile ? "模板 Profile 已导入，安全区已按当前模板重新计算。" : "模板页面角色已确认，预览和导出将使用该配置。";
       renderTemplateAnalysis();
       invalidatePptxPreview("模板页面角色已更新，请重新预览。");
     }
@@ -12456,6 +12467,62 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         templateStatusEl.textContent = `模板角色保存失败：${error.message}`;
       } finally {
         button.disabled = false;
+      }
+    });
+    async function exportPptxTemplateProfile() {
+      if (!uploadedTemplateId) return;
+      templateStatusEl.textContent = "正在导出模板 Profile…";
+      const response = await fetch(`/pptx-api/templates/${encodeURIComponent(uploadedTemplateId)}/profile`, { cache: "no-store" });
+      if (!response.ok) throw new Error(await readPptxApiError(response, "模板 Profile 导出失败"));
+      const profile = await response.json();
+      const blob = new Blob([JSON.stringify(profile, null, 2)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const baseName = String(profile.name || uploadedTemplateAnalysis?.file_name || "ppt-template")
+        .replace(/\.pptx$/i, "")
+        .replace(/[\\/:*?"<>|]+/g, "-");
+      link.href = url;
+      link.download = `${baseName}.profile.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+      templateStatusEl.textContent = "模板 Profile 已导出，可用于同源模板的角色复用。";
+    }
+
+    templateProfileImportBtn?.addEventListener("click", () => {
+      if (!uploadedTemplateId || !templateProfileInput) return;
+      templateProfileInput.value = "";
+      templateProfileInput.click();
+    });
+    templateProfileExportBtn?.addEventListener("click", async () => {
+      templateProfileExportBtn.disabled = true;
+      try {
+        await exportPptxTemplateProfile();
+      } catch (error) {
+        templateStatusEl.textContent = `模板 Profile 导出失败：${error.message}`;
+      } finally {
+        templateProfileExportBtn.disabled = !uploadedTemplateId;
+      }
+    });
+    templateProfileInput?.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file || !uploadedTemplateId) return;
+      if (file.size > 1024 * 1024) {
+        templateStatusEl.textContent = "模板 Profile 不能超过 1MB。";
+        return;
+      }
+      if (templateProfileImportBtn) templateProfileImportBtn.disabled = true;
+      try {
+        const profile = JSON.parse(await file.text());
+        if (!profile || typeof profile.roles !== "object" || Array.isArray(profile.roles)) {
+          throw new Error("Profile 缺少有效的 roles 对象");
+        }
+        await savePptxTemplateProfile(profile);
+      } catch (error) {
+        templateStatusEl.textContent = `模板 Profile 导入失败：${error.message}`;
+      } finally {
+        if (templateProfileImportBtn) templateProfileImportBtn.disabled = !uploadedTemplateId;
       }
     });
     async function uploadPptxTemplate(file) {
@@ -12488,11 +12555,16 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (themeInput && templateModeInput?.value === "upload" && uploadedTemplateId) themeInput.disabled = true;
         templateStatusEl.textContent = uploadedTemplateId ? "模板分析完成，生成报告时将自动套用。" : "模板未返回有效标识，请重新上传。";
         if (templateClearBtn) templateClearBtn.disabled = !uploadedTemplateId;
+        if (templateProfileImportBtn) templateProfileImportBtn.disabled = !uploadedTemplateId;
+        if (templateProfileExportBtn) templateProfileExportBtn.disabled = !uploadedTemplateId;
         renderTemplateAnalysis();
         invalidatePptxPreview("报告模板已更新，请重新预览后再生成。");
       } catch (error) {
         uploadedTemplateId = "";
         uploadedTemplateAnalysis = null;
+        if (templateClearBtn) templateClearBtn.disabled = true;
+        if (templateProfileImportBtn) templateProfileImportBtn.disabled = true;
+        if (templateProfileExportBtn) templateProfileExportBtn.disabled = true;
         renderTemplateAnalysis();
         templateStatusEl.textContent = `模板上传失败：${error.message}`;
       } finally {
@@ -12516,6 +12588,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       uploadedTemplateAnalysis = null;
       if (templateInput) templateInput.value = "";
       if (templateClearBtn) templateClearBtn.disabled = true;
+      if (templateProfileImportBtn) templateProfileImportBtn.disabled = true;
+      if (templateProfileExportBtn) templateProfileExportBtn.disabled = true;
       if (themeInput) themeInput.disabled = false;
       if (templateStatusEl) templateStatusEl.textContent = "模板已移除。";
       renderTemplateAnalysis();

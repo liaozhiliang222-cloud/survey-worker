@@ -180,6 +180,7 @@ async def upload_template(request: Request):
                 "colors": analysis.get("theme_colors", []),
                 "fonts": analysis.get("fonts", []),
             },
+            "font_mapping": {},
             "safe_zones": {
                 role: (item.get("zones") or {}) for role, item in roles.items()
             },
@@ -235,15 +236,32 @@ async def update_template_profile(template_id: str, request: Request):
     path = _template_path(template_id)
     if path is None:
         return JSONResponse({"error": {"message": "模板不存在或已过期。"}}, status_code=404)
+    raw = await request.body()
+    if len(raw) > MAX_METADATA_BYTES:
+        return JSONResponse({"error": {"message": "Profile JSON 不能超过 1MB。"}}, status_code=413)
     try:
-        incoming = await request.json()
-    except Exception:  # noqa: BLE001
+        incoming = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return JSONResponse({"error": {"message": "Profile JSON 无效。"}}, status_code=400)
-    overrides = incoming.get("roles") if isinstance(incoming, dict) else None
-    if not isinstance(overrides, dict):
+    raw_overrides = incoming.get("roles") if isinstance(incoming, dict) else None
+    if not isinstance(raw_overrides, dict):
         return JSONResponse({"error": {"message": "Profile 必须包含 roles 对象。"}}, status_code=400)
     allowed = {"cover", "toc", "summary", "section", "chart", "matrix", "appendix", "content"}
-    overrides = {role: value for role, value in overrides.items() if role in allowed}
+    overrides = {}
+    for role, value in raw_overrides.items():
+        if role not in allowed:
+            continue
+        try:
+            if isinstance(value, dict):
+                if value.get("slide_index") is None:
+                    continue
+                page_number = int(value["slide_index"]) + 1
+            else:
+                page_number = int(value)
+        except (TypeError, ValueError):
+            continue
+        if page_number > 0:
+            overrides[role] = page_number
     mapping = build_template_mapping(Presentation(str(path)), role_overrides=overrides)
     confirmed = {
         role: item for role, item in mapping.get("roles", {}).items()
@@ -258,6 +276,12 @@ async def update_template_profile(template_id: str, request: Request):
         "name": str(incoming.get("name") or base.get("name") or "template.pptx")[:120],
         "version": int(base.get("version") or 1) + 1,
         "roles": {**(base.get("roles") or {}), **confirmed},
+        "theme_tokens": dict(incoming.get("theme_tokens"))
+        if isinstance(incoming.get("theme_tokens"), dict)
+        else dict(base.get("theme_tokens") or {}),
+        "font_mapping": dict(incoming.get("font_mapping"))
+        if isinstance(incoming.get("font_mapping"), dict)
+        else dict(base.get("font_mapping") or {}),
         "updated_at": time.time(),
     }
     profile["safe_zones"] = {
