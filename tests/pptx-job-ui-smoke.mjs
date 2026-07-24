@@ -11,6 +11,8 @@ assert.match(app, /jobs\/\$\{encodeURIComponent\(lastPptxJobId\)\}\/cancel/);
 assert.match(app, /download\?delete_after=true/);
 assert.match(app, /\["failed", "cancelled", "lost"\]/);
 assert.match(app, /readyState\.overall_score/);
+assert.match(app, /duplicate_divider_lines/);
+assert.match(app, /pptx-qa-details/);
 assert.match(app, /对象QA/);
 assert.match(proxy, /X-SurveyKit-Client-ID/);
 console.log("PPT async job UI smoke passed.");

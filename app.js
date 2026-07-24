@@ -14224,9 +14224,27 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const isAiEnhanced = editedPagePlan?.planning_mode === "ai_report";
         const qa = readyState.qa || {};
         const qaIssues = Array.isArray(qa.issues) ? qa.issues : [];
-        const qaErrors = qaIssues.filter((issue) => issue.level === "error").length;
-        const qaWarnings = qaIssues.length - qaErrors;
-        resultEl.innerHTML = `<div class="empty-state"><strong>${isAiEnhanced ? "AI 增强版生成成功" : "基础版生成成功"}</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span><span>对象QA：${Number(readyState.overall_score ?? qa.score ?? 0)}分 · ${qaErrors}项错误 · ${qaWarnings}项提醒</span></div>`;
+        const qaErrors = Number(qa.error_count ?? qaIssues.filter((issue) => issue.level === "error").length);
+        const qaWarnings = Number(qa.warning_count ?? (qaIssues.length - qaErrors));
+        const qaLabels = {
+          shape_out_of_bounds: "对象超出页面边界",
+          invalid_shape_size: "对象尺寸无效",
+          title_over_two_lines: "标题超过两行",
+          template_logo_overlaps_title: "模板 Logo 遮挡标题",
+          title_logo_gap_too_small: "标题与 Logo 间距过小",
+          duplicate_divider_lines: "检测到重复分隔线",
+          divider_intersects_text_box: "分隔线穿过文本框",
+          chart_data_length_mismatch: "图表系列与类目数量不一致",
+          empty_chart: "图表没有有效数据",
+          font_below_threshold: "字号低于可读阈值",
+          nan_text: "页面出现 NaN 文本",
+          source_missing: "页面缺少数据来源",
+          qa_inspection_failed: "QA 检查未能完成",
+        };
+        const qaDetailHtml = qaIssues.length
+          ? `<details class="pptx-qa-details"><summary>查看 QA 明细（涉及 ${(qa.slides_with_issues || []).length || new Set(qaIssues.map((issue) => issue.slide).filter(Boolean)).size} 页）</summary><ul>${qaIssues.slice(0, 30).map((issue) => `<li><b>第 ${Number(issue.slide || 0) || "?"} 页</b> · ${escapeHtml(qaLabels[issue.code] || issue.code || "未知问题")} · ${issue.level === "error" ? "错误" : "提醒"}</li>`).join("")}</ul>${qaIssues.length > 30 ? `<small>另有 ${qaIssues.length - 30} 项未展开，请下载后按页检查。</small>` : ""}</details>`
+          : `<span>对象 QA 未发现结构问题。</span>`;
+        resultEl.innerHTML = `<div class="empty-state"><strong>${isAiEnhanced ? "AI 增强版生成成功" : "基础版生成成功"}</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span><span>对象QA：${Number(readyState.overall_score ?? qa.score ?? 0)}分 · ${qaErrors}项错误 · ${qaWarnings}项提醒</span>${qaDetailHtml}</div>`;
         if (aiWriteBtn) aiWriteBtn.disabled = false;
         if (aiWriteStatus) aiWriteStatus.textContent = isAiEnhanced
           ? "AI 增强版报告已生成；如需调整，可编辑页面洞察后再次生成。"

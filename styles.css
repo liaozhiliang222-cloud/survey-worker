@@ -2085,6 +2085,33 @@ tr:last-child td {
   line-height: 1.6;
   margin: 0;
 }
+.pptx-qa-details {
+  width: 100%;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+}
+
+.pptx-qa-details summary {
+  color: var(--primary);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pptx-qa-details ul {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding-left: 20px;
+  color: var(--muted);
+}
+
+.pptx-qa-details small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+}
 
 .crosstab-progress-card {
   border-color: #bfdbfe;
