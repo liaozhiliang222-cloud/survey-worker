@@ -35,11 +35,16 @@ assert.equal(streamedResult.body.length, 0);
 
 const declared = new PassThrough();
 declared.headers = { "content-length": "2048" };
-const declaredResult = await collect(declared, 1024);
+const declaredResultPromise = collect(declared, 1024);
+let declaredResolved = false;
+declaredResultPromise.then(() => { declaredResolved = true; });
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(declaredResolved, false, "Oversized declared bodies must be drained before responding.");
+declared.end();
+const declaredResult = await declaredResultPromise;
 assert.equal(declaredResult.tooLarge, true);
 assert.equal(declaredResult.size, 2048);
 assert.equal(declaredResult.body.length, 0);
-declared.end();
 
 assert.deepEqual(bodyLimitError("AI", 1024), {
   error: {
