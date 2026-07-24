@@ -12319,6 +12319,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     const progress = document.querySelector("#pptxProgress");
     const progressFill = document.querySelector("#pptxProgressFill");
     const progressText = document.querySelector("#pptxProgressText");
+    const cancelJobBtn = document.querySelector("#pptxCancelJobBtn");
     const genStatus = document.querySelector("#pptxGenStatus");
     const resultEl = document.querySelector("#pptxResult");
     const aiWriteBtn = document.querySelector("#pptxAiWriteBtn");
@@ -13926,6 +13927,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       setPptxProgress(2, "正在读取文件");
     }
 
+    function getPptxClientId() {
+      const key = "surveykit_pptx_client_id";
+      let value = localStorage.getItem(key) || "";
+      if (!/^[A-Za-z0-9_.-]{8,128}$/.test(value)) {
+        value = `web-${crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)}`;
+        localStorage.setItem(key, value);
+      }
+      return value;
+    }
     async function waitForPptxJob(jobId) {
       for (let attempt = 0; attempt < 1200; attempt += 1) {
         const resp = await fetch(`/pptx-api/jobs/${encodeURIComponent(jobId)}`, {
@@ -13935,7 +13945,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const state = await resp.json();
         setPptxProgress(state.progress || 0, state.message || "正在生成报告");
         if (state.status === "ready") return state;
-        if (state.status === "failed") throw new Error(state.message || "生成失败");
+        if (["failed", "cancelled", "lost"].includes(state.status)) throw new Error(state.message || "生成失败");
         await new Promise((resolve) => setTimeout(resolve, 700));
       }
       throw new Error("生成超时，请稍后重试。");
@@ -14177,7 +14187,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         });
         const createResp = await fetch("/pptx-api/jobs", {
           method: "POST",
-          headers: { "Content-Type": "application/vnd.surveykit.pptx-request" },
+          headers: {
+            "Content-Type": "application/vnd.surveykit.pptx-request",
+            "X-SurveyKit-Client-ID": getPptxClientId(),
+          },
           body: payload,
         });
         if (!createResp.ok) {
@@ -14186,9 +14199,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const job = await createResp.json();
         lastPptxJobId = job.job_id || "";
         setPptxProgress(job.progress || 6, job.message || "任务已创建");
-        await waitForPptxJob(job.job_id);
+        if (cancelJobBtn) cancelJobBtn.classList.remove("hidden");
+        const readyState = await waitForPptxJob(job.job_id);
         setPptxProgress(97, "正在下载报告");
-        const downloadResp = await fetch(`/pptx-api/jobs/${encodeURIComponent(job.job_id)}/download`, {
+        const downloadResp = await fetch(`/pptx-api/jobs/${encodeURIComponent(job.job_id)}/download?delete_after=true`, {
           cache: "no-store",
         });
         if (!downloadResp.ok) {
@@ -14208,7 +14222,11 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         recordWorkspaceReportOutput(`${title}.pptx`, blob.size);
         saveWorkspaceReportPlan(editedPagePlan, selectedFile?.name || title);
         const isAiEnhanced = editedPagePlan?.planning_mode === "ai_report";
-        resultEl.innerHTML = `<div class="empty-state"><strong>${isAiEnhanced ? "AI 增强版生成成功" : "基础版生成成功"}</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span></div>`;
+        const qa = readyState.qa || {};
+        const qaIssues = Array.isArray(qa.issues) ? qa.issues : [];
+        const qaErrors = qaIssues.filter((issue) => issue.level === "error").length;
+        const qaWarnings = qaIssues.length - qaErrors;
+        resultEl.innerHTML = `<div class="empty-state"><strong>${isAiEnhanced ? "AI 增强版生成成功" : "基础版生成成功"}</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span><span>对象QA：${Number(readyState.overall_score ?? qa.score ?? 0)}分 · ${qaErrors}项错误 · ${qaWarnings}项提醒</span></div>`;
         if (aiWriteBtn) aiWriteBtn.disabled = false;
         if (aiWriteStatus) aiWriteStatus.textContent = isAiEnhanced
           ? "AI 增强版报告已生成；如需调整，可编辑页面洞察后再次生成。"
@@ -14222,6 +14240,20 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         setTimeout(() => progress.classList.add("hidden"), 1500);
       }
     }
+
+    cancelJobBtn?.addEventListener("click", async () => {
+      if (!lastPptxJobId) return;
+      cancelJobBtn.disabled = true;
+      try {
+        const response = await fetch(`/pptx-api/jobs/${encodeURIComponent(lastPptxJobId)}/cancel`, { method: "POST", cache: "no-store" });
+        if (!response.ok) throw new Error(await readPptxApiError(response, "取消任务失败"));
+        setPptxProgress(0, "正在取消任务");
+      } catch (error) {
+        (genStatus || confirmStatus).textContent = `取消任务失败：${error.message}`;
+      } finally {
+        cancelJobBtn.disabled = false;
+      }
+    });
 
     confirmBtn && confirmBtn.addEventListener("click", () => doGeneratePptx());
     aiWriteBtn && aiWriteBtn.addEventListener("click", () => generatePptxAiReport());

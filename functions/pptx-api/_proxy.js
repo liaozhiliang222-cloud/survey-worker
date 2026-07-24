@@ -75,7 +75,7 @@ export async function proxyToBackend(request, env) {
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, X-Project-Id",
+        "Access-Control-Allow-Headers": "Content-Type, X-Project-Id, X-SurveyKit-Client-ID",
         "Access-Control-Max-Age": "86400",
       },
     });

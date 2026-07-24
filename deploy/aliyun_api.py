@@ -19,6 +19,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -44,7 +45,8 @@ except Exception:  # noqa: BLE001
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 
 HERE = Path(__file__).resolve().parent
 PARENT = HERE.parent
@@ -53,6 +55,7 @@ for p in (str(HERE), str(PARENT)):
         sys.path.insert(0, p)
 
 from pptx_report.cli import _collect_segments
+from pptx_report.common.qa import inspect_presentation
 from pptx_report.build_jd_report import parse_crosstab
 from pptx_report.wizard import build_insight_context, build_page_plan, run_wizard
 from pptx import Presentation
@@ -63,6 +66,11 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 REQUEST_ENVELOPE_MAGIC = b"SKPPTX1\n"
 MAX_METADATA_BYTES = 1024 * 1024
 JOB_TTL_SECONDS = 2 * 60 * 60
+FAILED_JOB_TTL_SECONDS = 30 * 60
+MAX_CONCURRENT_JOBS = max(1, int(os.environ.get("PPTX_MAX_CONCURRENT_JOBS", "2")))
+SERVICE_INSTANCE_ID = uuid.uuid4().hex
+JOB_STATE_LOCK = threading.RLock()
+JOB_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT_JOBS)
 JOB_DIR = Path(tempfile.gettempdir()) / "surveykit-ppt-jobs"
 JOB_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATE_DIR = Path(tempfile.gettempdir()) / "surveykit-ppt-templates"
@@ -599,27 +607,6 @@ def _valid_job_id(job_id: str) -> bool:
     return bool(re.fullmatch(r"[0-9a-f]{32}", job_id or ""))
 
 
-def _write_job_state(job_id: str, payload: dict) -> None:
-    payload = {**payload, "job_id": job_id, "updated_at": time.time()}
-    target = _job_state_path(job_id)
-    temporary = target.with_name(f"{job_id}.{uuid.uuid4().hex}.tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    try:
-        for attempt in range(20):
-            try:
-                os.replace(temporary, target)
-                return
-            except PermissionError:
-                if attempt == 19:
-                    raise
-                time.sleep(0.02)
-    finally:
-        try:
-            temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-
 def _read_job_state(job_id: str) -> dict | None:
     if not _valid_job_id(job_id):
         return None
@@ -631,60 +618,165 @@ def _read_job_state(job_id: str) -> dict | None:
     return None
 
 
+def _write_job_state(job_id: str, payload: dict) -> dict:
+    target = _job_state_path(job_id)
+    with JOB_STATE_LOCK:
+        current = {}
+        try:
+            current = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            pass
+        protected_cancel = (
+            current.get("status") in {"cancel_requested", "cancelled"}
+            and payload.get("status") in {"queued", "running", "ready"}
+        )
+        if protected_cancel:
+            payload = {**payload, "status": current.get("status"), "message": current.get("message", "正在取消任务")}
+        merged = {
+            **current,
+            **payload,
+            "job_id": job_id,
+            "updated_at": time.time(),
+            "service_instance_id": SERVICE_INSTANCE_ID,
+        }
+        temporary = target.with_name(f"{job_id}.{uuid.uuid4().hex}.tmp")
+        temporary.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
+        try:
+            for attempt in range(20):
+                try:
+                    os.replace(temporary, target)
+                    return merged
+                except PermissionError:
+                    if attempt == 19:
+                        raise
+                    time.sleep(0.02)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return merged
+
+
+def _remove_job_files(job_id: str) -> None:
+    _job_state_path(job_id).unlink(missing_ok=True)
+    _job_output_path(job_id).unlink(missing_ok=True)
+
+
 def _cleanup_jobs() -> None:
-    cutoff = time.time() - JOB_TTL_SECONDS
+    now = time.time()
     for state_path in JOB_DIR.glob("*.json"):
         try:
-            if state_path.stat().st_mtime >= cutoff:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            ttl = FAILED_JOB_TTL_SECONDS if state.get("status") in {"failed", "cancelled", "lost"} else JOB_TTL_SECONDS
+            if state_path.stat().st_mtime >= now - ttl:
                 continue
-            job_id = state_path.stem
-            state_path.unlink(missing_ok=True)
-            _job_output_path(job_id).unlink(missing_ok=True)
-        except OSError:
+            _remove_job_files(state_path.stem)
+        except (OSError, json.JSONDecodeError):
             pass
+
+
+def _request_fingerprint(data: bytes, qs: dict, metadata: dict, client_id: str) -> str:
+    digest = hashlib.sha256()
+    digest.update(client_id.encode("utf-8"))
+    digest.update(data)
+    digest.update(json.dumps(qs, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+    digest.update(json.dumps(metadata, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _find_active_duplicate(client_id: str, fingerprint: str) -> dict | None:
+    if not client_id:
+        return None
+    for state_path in JOB_DIR.glob("*.json"):
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            state.get("client_id") == client_id
+            and state.get("request_fingerprint") == fingerprint
+            and state.get("status") in {"queued", "running"}
+            and state.get("service_instance_id") == SERVICE_INSTANCE_ID
+        ):
+            return state
+    return None
+
+
+class JobCancelled(RuntimeError):
+    pass
+
+
+def _raise_if_cancelled(job_id: str) -> None:
+    state = _read_job_state(job_id) or {}
+    if state.get("status") in {"cancel_requested", "cancelled"}:
+        raise JobCancelled("任务已取消")
 
 
 def _run_generate_job(job_id: str, data: bytes, qs: dict, metadata: dict) -> None:
     def progress(percent, message):
-        try:
-            _write_job_state(
-                job_id,
-                {
-                    "status": "running",
-                    "progress": max(1, min(97, int(percent))),
-                    "message": str(message or "正在生成报告"),
-                },
-            )
-        except OSError:
-            # 进度展示属于旁路能力，状态文件被短暂占用时不能中断 PPT 生成。
-            pass
+        _raise_if_cancelled(job_id)
+        _write_job_state(job_id, {
+            "status": "running",
+            "progress": max(1, min(97, int(percent))),
+            "message": str(message or "正在生成报告"),
+        })
+        _raise_if_cancelled(job_id)
 
     try:
-        progress(8, "文件上传完成")
-        response = _generate_core(data, qs, metadata, progress_callback=progress)
-        if response.status_code >= 400:
+        with JOB_SEMAPHORE:
+            _raise_if_cancelled(job_id)
+            _write_job_state(job_id, {
+                "status": "running",
+                "started_at": time.time(),
+                "progress": 6,
+                "message": "任务开始执行",
+            })
+            progress(8, "文件上传完成")
+            response = _generate_core(data, qs, metadata, progress_callback=progress)
+            if response.status_code >= 400:
+                try:
+                    error_payload = json.loads(response.body.decode("utf-8"))
+                    message = error_payload.get("error", {}).get("message") or "生成失败"
+                except Exception:  # noqa: BLE001
+                    message = "生成失败"
+                raise RuntimeError(message)
+            _raise_if_cancelled(job_id)
+            output = _job_output_path(job_id)
+            output.write_bytes(response.body)
             try:
-                error_payload = json.loads(response.body.decode("utf-8"))
-                message = error_payload.get("error", {}).get("message") or "生成失败"
-            except Exception:  # noqa: BLE001
-                message = "生成失败"
-            raise RuntimeError(message)
-        _job_output_path(job_id).write_bytes(response.body)
-        _write_job_state(
-            job_id,
-            {
+                qa = inspect_presentation(output).to_dict()
+            except Exception as qa_exc:  # noqa: BLE001
+                qa = {
+                    "slide_count": 0,
+                    "checked_shapes": 0,
+                    "issues": [{"level": "warning", "code": "qa_inspection_failed", "message": str(qa_exc)}],
+                    "score": 0,
+                    "ok": False,
+                }
+            _write_job_state(job_id, {
                 "status": "ready",
-                "progress": 96,
-                "message": "报告已生成，正在准备下载",
+                "progress": 100,
+                "message": "报告已生成，可下载",
                 "filename": _safe_title(metadata.get("title") or qs.get("title") or "调研分析报告") + ".pptx",
                 "size": len(response.body),
-            },
-        )
+                "finished_at": time.time(),
+                "qa": qa,
+                "overall_score": qa.get("score", 0),
+            })
+            _raise_if_cancelled(job_id)
+    except JobCancelled:
+        _job_output_path(job_id).unlink(missing_ok=True)
+        _write_job_state(job_id, {
+            "status": "cancelled",
+            "progress": 0,
+            "message": "任务已取消",
+            "finished_at": time.time(),
+        })
     except Exception as exc:  # noqa: BLE001
-        _write_job_state(
-            job_id,
-            {"status": "failed", "progress": 0, "message": str(exc)},
-        )
+        _write_job_state(job_id, {
+            "status": "failed",
+            "progress": 0,
+            "message": str(exc),
+            "finished_at": time.time(),
+        })
 
 
 @app.post("/api/pptx-report/jobs")
@@ -696,54 +788,84 @@ async def create_generate_job(request: Request):
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return JSONResponse({"error": {"message": f"请求格式错误：{exc}"}}, status_code=400)
     if len(data) > MAX_UPLOAD_BYTES:
-        return JSONResponse({"error": {"message": "文件过大（>25MB）。"}}, status_code=413)
-    job_id = uuid.uuid4().hex
-    _write_job_state(
-        job_id,
-        {"status": "queued", "progress": 3, "message": "任务已创建"},
-    )
-    worker = threading.Thread(
+        return JSONResponse({"error": {"message": "文件过大（最大25MB）。"}}, status_code=413)
+    client_id = str(request.headers.get("x-surveykit-client-id") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{8,128}", client_id):
+        client_id = ""
+    qs = dict(request.query_params)
+    fingerprint = _request_fingerprint(data, qs, metadata, client_id) if client_id else ""
+    with JOB_STATE_LOCK:
+        duplicate = _find_active_duplicate(client_id, fingerprint)
+        if duplicate:
+            return JSONResponse({**duplicate, "deduplicated": True}, status_code=202)
+        job_id = uuid.uuid4().hex
+        state = _write_job_state(job_id, {
+            "status": "queued",
+            "progress": 3,
+            "message": "任务已创建，等待执行",
+            "created_at": time.time(),
+            "started_at": None,
+            "finished_at": None,
+            "client_id": client_id,
+            "request_fingerprint": fingerprint,
+        })
+    threading.Thread(
         target=_run_generate_job,
-        args=(job_id, data, dict(request.query_params), metadata),
+        args=(job_id, data, qs, metadata),
         daemon=True,
         name=f"pptx-job-{job_id[:8]}",
-    )
-    worker.start()
-    return JSONResponse(
-        {"job_id": job_id, "status": "queued", "progress": 3, "message": "任务已创建"},
-        status_code=202,
-    )
+    ).start()
+    return JSONResponse(state, status_code=202)
 
 
 @app.get("/api/pptx-report/jobs/{job_id}")
 def get_generate_job(job_id: str):
     state = _read_job_state(job_id)
     if state is None:
-        return JSONResponse(
-            {"error": {"message": "生成任务不存在或已过期。"}},
-            status_code=404,
-            headers={"Cache-Control": "no-store"},
-        )
+        return JSONResponse({"error": {"message": "生成任务不存在或已过期。"}}, status_code=404, headers={"Cache-Control": "no-store"})
+    if state.get("status") in {"queued", "running", "cancel_requested"} and state.get("service_instance_id") != SERVICE_INSTANCE_ID:
+        state = _write_job_state(job_id, {
+            "status": "lost",
+            "progress": 0,
+            "message": "服务已重启，任务执行状态已丢失，请重新生成。",
+            "finished_at": time.time(),
+        })
     return JSONResponse(state, headers={"Cache-Control": "no-store"})
 
 
+@app.post("/api/pptx-report/jobs/{job_id}/cancel")
+def cancel_generate_job(job_id: str):
+    state = _read_job_state(job_id)
+    if state is None:
+        return JSONResponse({"error": {"message": "生成任务不存在或已过期。"}}, status_code=404)
+    if state.get("status") in {"ready", "failed", "cancelled", "lost"}:
+        return JSONResponse(state, headers={"Cache-Control": "no-store"})
+    state = _write_job_state(job_id, {
+        "status": "cancel_requested",
+        "message": "正在取消任务",
+    })
+    return JSONResponse(state, status_code=202, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/pptx-report/jobs/{job_id}/download")
-def download_generate_job(job_id: str):
+def download_generate_job(job_id: str, delete_after: bool = False):
     state = _read_job_state(job_id)
     output = _job_output_path(job_id)
     if state is None or state.get("status") != "ready" or not output.exists():
         return JSONResponse({"error": {"message": "报告尚未生成完成或已过期。"}}, status_code=404)
     filename = state.get("filename") or "report.pptx"
     utf8_name = quote(str(filename).encode("utf-8"))
-    return Response(
-        output.read_bytes(),
+    background = BackgroundTask(_remove_job_files, job_id) if delete_after else None
+    return FileResponse(
+        output,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename="report.pptx",
+        background=background,
         headers={
             "Content-Disposition": f'attachment; filename="report.pptx"; filename*=UTF-8\'\'{utf8_name}',
             "Cache-Control": "no-store",
         },
     )
-
 
 if __name__ == "__main__":
     import uvicorn
