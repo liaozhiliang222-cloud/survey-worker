@@ -24,6 +24,7 @@ try {
   const preflight = await proxyToBackend(new Request("https://surveykit.cc/pptx-api/preview", { method: "OPTIONS" }), {});
   assert.equal(preflight.status, 204);
   assert.match(preflight.headers.get("access-control-allow-headers"), /X-Project-Id/);
+  assert.match(preflight.headers.get("access-control-allow-headers"), /X-SurveyKit-Client-ID/);
   assert.equal(fetchCalls, 0);
 
   let captured;
@@ -45,13 +46,33 @@ try {
   assert.equal(captured.options.method, "POST");
   assert.equal(captured.options.headers.get("x-surveykit-proxy"), "cloudflare-pages");
   assert.equal(captured.options.headers.get("x-project-id"), "project-1");
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("PK-cloudflare-"));
+      controller.enqueue(new TextEncoder().encode("stream"));
+      controller.close();
+    },
+  }), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "Content-Disposition": "attachment; filename=\"report.pptx\"; filename*=UTF-8''%E8%B0%83%E7%A0%94%E6%8A%A5%E5%91%8A.pptx",
+    },
+  });
+  const streamed = await proxyToBackend(
+    new Request("https://surveykit.cc/pptx-api/jobs/abc/download?delete_after=true"),
+    { PPTX_BACKEND_URL: "https://backend.example.com" },
+  );
+  assert.match(streamed.headers.get("content-disposition"), /filename\*=UTF-8''%E8%B0%83%E7%A0%94/);
+  assert.equal(await streamed.text(), "PK-cloudflare-stream");
+  assert.doesNotMatch(source, /arrayBuffer\s*\(/);
 
   globalThis.fetch = async () => new Response("forbidden", { status: 403 });
   const forbidden = await proxyToBackend(new Request("https://surveykit.cc/pptx-api/healthz"), { PPTX_BACKEND_URL: "https://backend.example.com" });
   assert.equal(forbidden.status, 403);
   assert.match((await forbidden.json()).error.message, /拒绝访问/);
 
-  console.log("Cloudflare PPTX proxy smoke passed: config, CORS, mapping and errors");
+  console.log("Cloudflare PPTX proxy smoke passed: config, CORS, streaming, filename, mapping and errors");
 } finally {
   globalThis.fetch = originalFetch;
 }
