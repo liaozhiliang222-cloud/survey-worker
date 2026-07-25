@@ -174,9 +174,37 @@ def _data_kind(spec: ChartSpec) -> str:
     return str(value or "percentage").lower()
 
 
-def _label_format(spec: ChartSpec, theme: Theme) -> str:
+def _effective_data_kind(spec: ChartSpec) -> str:
+    """Return the data kind used for rendering, with a value-based safety net.
+
+    If ``spec.data_kind`` was mis-inferred (e.g., "score" because a derived
+    SUM/MEAN row slipped past detection) but the actual series values are all
+    in the 0-1 range, treat the chart as a percentage so labels render as
+    ``33.8%`` instead of ``0.3``. This keeps data label formatting consistent
+    across the entire report even when upstream ``infer_data_kind`` guesses
+    wrong for a handful of questions.
+    """
     kind = _data_kind(spec)
-    if kind == "percentage": return theme.pct_format
+    if kind == "percentage":
+        return kind
+    values = _all_values(spec)
+    if values and all(0.0 <= float(v) <= 1.0 for v in values):
+        return "percentage"
+    return kind
+
+
+def _label_format(spec: ChartSpec, theme: Theme) -> str:
+    kind = _effective_data_kind(spec)
+    if kind == "percentage":
+        # wizard.py normally scales 0-1 values to 0-100, in which case the
+        # literal-% format (``0.0"%"``) is correct. If the safety net in
+        # ``_effective_data_kind`` caught a mis-detected percentage, values may
+        # still be in 0-1 range — fall back to Excel's native ``0.0%`` format
+        # which multiplies by 100 so 0.338 renders as ``33.8%`` not ``0.3%``.
+        values = _all_values(spec)
+        if values and max(values) > 1.0:
+            return theme.pct_format
+        return "0.0%"
     if kind == "count": return "#,##0"
     if kind == "currency":
         unit = str(spec.unit or "¥")
@@ -199,7 +227,7 @@ def _apply_axis_policy(chart, spec: ChartSpec, ctype: ChartType, theme: Theme) -
     except Exception: return
     values = _all_values(spec)
     if not values: return
-    kind = _data_kind(spec)
+    kind = _effective_data_kind(spec)
     try:
         axis.number_format = _label_format(spec, theme)
         axis.number_format_is_linked = False
@@ -207,7 +235,12 @@ def _apply_axis_policy(chart, spec: ChartSpec, ctype: ChartType, theme: Theme) -
             axis.minimum_scale, axis.maximum_scale = 0.0, 1.0
             axis.number_format = "0%"
         elif kind == "percentage":
-            axis.minimum_scale, axis.maximum_scale = 0.0, 100.0
+            # Values already scaled to 0-100 by wizard.py → axis 0-100.
+            # Values still in 0-1 (safety net) → axis 0-1 with Excel % format.
+            if max(values) > 1.0:
+                axis.minimum_scale, axis.maximum_scale = 0.0, 100.0
+            else:
+                axis.minimum_scale, axis.maximum_scale = 0.0, 1.0
         elif kind == "nps":
             axis.minimum_scale, axis.maximum_scale = -100.0, 100.0
         else:
@@ -309,24 +342,25 @@ def _no_wrap_data_labels(dl) -> None:
 def _apply_data_labels(chart, spec: ChartSpec, theme: Theme) -> None:
     """为分类图（柱 / 条 / 折线 / 堆积 / 雷达 / 组合）的每个系列添加数据标签。
 
-    规则（对齐调研公司交付规范）：
-      - 百分比图默认显示 ``49.0%``（数据已 ×100，使用 :attr:`Theme.pct_format`）；
-      - 系列数 ≤ 4 时全部标注；> 4 时仅标注第一个系列（通常为 Total），
-        其余系列靠图例区分，避免标签拥挤重叠；
-      - 字号随系列数动态缩小（9 → 7 → 5pt）；
+    规则（对齐调研公司交付规范，v12 强化一致性）：
+      - 百分比图统一显示 ``49.0%``（数据已 ×100，使用 :attr:`Theme.pct_format`）；
+        即使上游 ``infer_data_kind`` 误判为 ``score``，只要系列值落在 0-1，
+        仍按百分比渲染，避免报告后半段标签退化为 ``0.3``。
+      - 所有分类图（含雷达 / 堆积图 / 多系列）一律显示数据标签，保持全报告
+        视觉一致；系列较多时通过字号自适应缩小避免拥挤。
       - 关闭自动换行，保证数字与 % 同行。
     """
     ctype = spec.type if isinstance(spec.type, ChartType) else ChartType(spec.type)
-    # 散点图坐标点、雷达图轮廓靠形状对比，标签意义不大且易拥挤，跳过
-    if ctype in (ChartType.SCATTER, ChartType.RADAR):
+    # 散点图坐标点本身就是数值对，标签无意义且必重叠，仍跳过。
+    if ctype == ChartType.SCATTER:
         return
     n_series = len(chart.series)
     if n_series == 0:
         return
-    if ctype in (ChartType.STACKED_BAR, ChartType.STACKED_COLUMN) and n_series >= 4:
-        return
-    label_all = n_series <= 4
-    if n_series >= 5:
+    # 字号随系列数动态缩小：雷达图与多系列堆积图更紧凑，保证标签可见不重叠。
+    if ctype == ChartType.RADAR:
+        font_size = max(5, theme.data_label_size - 3)
+    elif n_series >= 5:
         font_size = max(5, theme.data_label_size - 3)
     elif n_series >= 3:
         font_size = max(7, theme.data_label_size - 1)
@@ -334,8 +368,6 @@ def _apply_data_labels(chart, spec: ChartSpec, theme: Theme) -> None:
         font_size = theme.data_label_size
 
     for idx, s in enumerate(chart.series):
-        if not label_all and idx != 0:
-            continue
         spec_series = spec.series[idx] if idx < len(spec.series) else None
         fmt = getattr(spec_series, "value_format", None) or _label_format(spec, theme)
         try:

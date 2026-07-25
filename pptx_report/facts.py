@@ -56,6 +56,28 @@ def infer_data_kind(question: dict) -> str:
     stats = question.get("stats") or {}
     if "nps" in title or "净推荐" in title:
         return "nps"
+    # Collect raw values, but ignore derived summary rows (SUM/MEAN/T2B/B2B/JAR/TH/TL)
+    # that may carry values outside 0-1 and would otherwise mislead detection.
+    categories = [_clean(value).upper() for value in (question.get("categories") or [])]
+    derived = DERIVED_LABELS
+    data = question.get("data") or {}
+    values: list[float] = []
+    for series in data.values():
+        for idx, value in enumerate(series or []):
+            if idx < len(categories) and categories[idx] in derived:
+                continue
+            numeric = _as_number(value)
+            if numeric is not None:
+                values.append(numeric)
+    # Percentage detection runs BEFORE title-keyword checks (currency / frequency /
+    # index): a question titled "购买频率" with values 0.3/0.4/0.3 is a percentage
+    # distribution of frequency, not a raw count of occurrences. Checking values
+    # first avoids mis-labeling these as "frequency" and rendering 0.3次 instead
+    # of 30%.
+    if values:
+        pct_like = sum(1 for value in values if 0 <= value <= 1)
+        if pct_like / len(values) >= 0.8:
+            return "percentage"
     if any(token in title for token in ("金额", "价格", "费用", "元", "预算")):
         return "currency"
     if any(token in title for token in ("次数", "频次", "频率")):
@@ -64,15 +86,9 @@ def infer_data_kind(question: dict) -> str:
         return "index"
     if "MEAN" in stats or "mean" in stats:
         return "mean"
-    values = [
-        _as_number(value)
-        for series in (question.get("data") or {}).values()
-        for value in (series or [])
-    ]
-    values = [value for value in values if value is not None]
-    if values and all(0 <= value <= 1 for value in values):
-        return "percentage"
-    if values and all(float(value).is_integer() and value >= 0 for value in values):
+    if not values:
+        return "score"
+    if all(float(value).is_integer() and value >= 0 for value in values):
         return "count"
     return "score"
 

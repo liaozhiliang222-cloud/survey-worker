@@ -279,8 +279,9 @@ def _sort_question(q: dict):
     segs = q.get("segments") or []
     raw_data = q["data"]
     # 量表衍生汇总指标不应与原始选项同时出现在图表中，否则会出现
-    # “适中”与 JAR 同值等重复表达。
-    derived_summary_categories = {"T2B", "B2B", "JAR", "TH", "TL"}
+    # “适中”与 JAR 同值等重复表达。SUM/MEAN 同属衍生行，且其值常超出 0-1，
+    # 会干扰 infer_data_kind 的百分比识别与数据标签格式，一并剔除。
+    derived_summary_categories = {"T2B", "B2B", "JAR", "TH", "TL", "SUM", "MEAN"}
     keep_indices = [
         i for i, cat in enumerate(raw_cats)
         if str(cat).strip().upper() not in derived_summary_categories
@@ -450,9 +451,10 @@ def _auto_insight(q: dict, cats: list, data: dict, segs: list) -> str:
     return insight
 
 
-def _decorate_chart_spec(spec: ChartSpec, question: dict, display_segments: list) -> ChartSpec:
+def _decorate_chart_spec(spec: ChartSpec, question: dict, display_segments: list, data_kind: str | None = None) -> ChartSpec:
     """Attach verified metric semantics and evidence references to a chart."""
-    data_kind = infer_data_kind(question)
+    if data_kind is None:
+        data_kind = infer_data_kind(question)
     unit_by_kind = {
         "percentage": "%",
         "count": "",
@@ -510,6 +512,21 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
     if non_empty_segs:
         display_segs = non_empty_segs
     data_kind = infer_data_kind(q)
+    # Safety net: if infer_data_kind returned a non-percentage kind but the
+    # actual values are predominantly 0-1, the question is almost certainly a
+    # percentage question that was mis-classified (e.g., a stray SUM/MEAN row
+    # pushed it to "score"). Force percentage so values get scaled to 0-100
+    # and labels render as ``33.8%`` instead of ``0.3``.
+    all_numeric = [
+        float(v)
+        for s in display_segs
+        for v in (data.get(s) or [])
+        if v is not None
+    ]
+    if all_numeric:
+        pct_like = sum(1 for v in all_numeric if 0 <= v <= 1)
+        if data_kind != "percentage" and pct_like / len(all_numeric) >= 0.8:
+            data_kind = "percentage"
     ctype = forced_chart_type if forced_chart_type is not None else auto_chart_type(q, cats, display_segs)
     if ctype == ChartType.RADAR and len(display_segs) > 6:
         # A radar with more than six series is unreadable. Switch layout rather
@@ -536,7 +553,7 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
             series_dict={s: values_for(s) for s in display_segs},
             insight=insight,
         )
-        return _decorate_chart_spec(spec, q, display_segs)
+        return _decorate_chart_spec(spec, q, display_segs, data_kind)
     if ctype in (ChartType.DOUGHNUT, ChartType.PIE):
         ref_seg = "Total" if "Total" in display_segs else display_segs[0]
         factory = ChartSpec.doughnut if ctype == ChartType.DOUGHNUT else ChartSpec.pie
@@ -546,7 +563,7 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
             values=values_for(ref_seg),
             insight=insight,
         )
-        return _decorate_chart_spec(spec, q, [ref_seg])
+        return _decorate_chart_spec(spec, q, [ref_seg], data_kind)
     if ctype in (ChartType.STACKED_BAR, ChartType.STACKED_COLUMN):
         values_by_segment = {s: values_for(s) for s in display_segs}
         series_dict = {
@@ -570,7 +587,7 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
             stacked=True,
         )
         spec.type = ctype
-        return _decorate_chart_spec(spec, q, display_segs)
+        return _decorate_chart_spec(spec, q, display_segs, data_kind)
 
     series_dict = {s: values_for(s) for s in display_segs}
     if ctype == ChartType.LINE:
@@ -580,7 +597,7 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
             series_dict=series_dict,
             insight=insight,
         )
-        return _decorate_chart_spec(spec, q, display_segs)
+        return _decorate_chart_spec(spec, q, display_segs, data_kind)
     render_cats = list(cats)
     if ctype == ChartType.BAR:
         render_cats.reverse()
@@ -596,7 +613,7 @@ def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None
     )
     if ctype == ChartType.COLUMN:
         spec.type = ChartType.COLUMN
-    return _decorate_chart_spec(spec, q, display_segs)
+    return _decorate_chart_spec(spec, q, display_segs, data_kind)
 
 def _harmonize_page_charts(batch: list, charts: list) -> list:
     """让同页自动图表保持可比较，并给重复题干补充题号。"""
