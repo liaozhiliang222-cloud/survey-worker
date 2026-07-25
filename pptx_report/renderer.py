@@ -547,15 +547,35 @@ class ReportRenderer:
         build_appendix(slide, ap, self.theme, dims)
         self._apply_template_geometry(slide, start, "appendix")
 
+    def _move_slide_after(self, src_idx: int, after_idx: int) -> None:
+        """将 src_idx 位置的 slide 移动到 after_idx 之后。
+
+        python-pptx 的 add_slide 总是在末尾添加，需要通过操作 sldIdLst 重新排序。
+        """
+        sld_id_lst = self._prs.slides._sldIdLst
+        slides = list(sld_id_lst)
+        if src_idx < 0 or src_idx >= len(slides):
+            return
+        if after_idx < 0 or after_idx >= len(slides):
+            return
+        if src_idx == after_idx:
+            return
+        target = slides[src_idx]
+        sld_id_lst.remove(target)
+        # 移除后索引可能变化，重新计算插入位置
+        insert_pos = after_idx if after_idx < src_idx else after_idx
+        sld_id_lst.insert(insert_pos + 1, target)
+
     def _handle_need_split(self, render_qa_result) -> None:
         """检测 NEED_SPLIT 标记，对溢出文本执行自动拆页并插入续页。
 
         策略：
           1. 从 QA 结果中找到 action=NEED_SPLIT 的记录
-          2. 定位对应 slide 的溢出文本框
-          3. 用 split_text_for_pages 拆分文本
-          4. 当前页保留第一部分，剩余内容插入续页
-          5. 记录 SPLIT_PAGE RenderAction
+          2. 按 slide_idx 降序排序（从后往前处理，避免插入续页影响后续索引）
+          3. 定位对应 slide 的溢出文本框
+          4. 用 split_text_for_pages 拆分文本，最多拆 2 页（避免无限续页）
+          5. 当前页保留第一部分，剩余内容插入续页（紧接在溢出页之后）
+          6. 记录 SPLIT_PAGE RenderAction
         """
         from .qa.models import RenderAction, IssueType, Severity
 
@@ -566,31 +586,37 @@ class ReportRenderer:
         if not need_split_actions:
             return
 
+        # 解析 slide_idx 并降序排序（从后往前处理，避免插入续页影响前面 slide 的索引）
+        parsed_actions = []
+        for action in need_split_actions:
+            try:
+                slide_idx = int(action.slide_id.split("_")[1]) - 1
+                parsed_actions.append((slide_idx, action))
+            except (IndexError, ValueError):
+                continue
+        parsed_actions.sort(key=lambda x: x[0], reverse=True)
+
         slide_width = int(self._slide_w)
         slide_height = int(self._slide_h)
         split_records = []
+        max_continuation_pages = 1  # 每个 slide 最多 1 页续页，避免无限拆分
 
-        for action in need_split_actions:
-            # 解析 slide_id（格式：slide_01）
-            try:
-                slide_idx = int(action.slide_id.split("_")[1]) - 1
-            except (IndexError, ValueError):
-                continue
+        for slide_idx, action in parsed_actions:
             slides = list(self._prs.slides)
             if slide_idx < 0 or slide_idx >= len(slides):
                 continue
 
             slide = slides[slide_idx]
-            # 找到溢出的文本框（匹配 element_id 或找最大文本框）
+            # 找到溢出的文本框（优先匹配 element_id，否则找文本最长的文本框）
             target_shape = None
+            element_id = getattr(action, 'element_id', '') or ''
             for shape in slide.shapes:
                 if not shape.has_text_frame:
                     continue
-                if shape.name == action.before or (action.element_id if hasattr(action, 'element_id') else "") == shape.name:
+                if element_id and shape.name == element_id:
                     target_shape = shape
                     break
             if target_shape is None:
-                # 找文本最长的文本框
                 max_len = 0
                 for shape in slide.shapes:
                     if shape.has_text_frame and len(shape.text_frame.text or "") > max_len:
@@ -625,15 +651,27 @@ class ReportRenderer:
             if len(pages) <= 1:
                 continue
 
+            # 限制续页数量：最多 max_continuation_pages 页
+            total_pages = min(len(pages), max_continuation_pages + 1)
+            pages = pages[:total_pages]
+            if len(pages) > 2:
+                # 将被截断的内容合并到最后一页
+                remaining = "\n".join(pages[max_continuation_pages:])
+                pages = pages[:max_continuation_pages] + [remaining]
+
             # 当前页保留第一部分
             target_shape.text_frame.clear()
             target_shape.text_frame.text = pages[0]
 
-            # 为剩余部分插入续页
+            # 为剩余部分插入续页，并移动到溢出页之后
+            from pptx.util import Emu
             for page_idx, page_text in enumerate(pages[1:], 2):
                 cont_slide = self._blank_slide("chart")
-                from pptx.util import Emu
-                # 添加标题（续页标记）
+                # 续页添加到末尾后，移动到溢出页之后
+                new_idx = len(self._prs.slides) - 1
+                self._move_slide_after(new_idx, slide_idx)
+
+                # 添加标题（续页标记，沿用原标题 + 续页标识）
                 title_left = Emu(int(slide_width * 0.035))
                 title_top = Emu(int(slide_height * 0.02))
                 title_width = Emu(int(slide_width * 0.93))
