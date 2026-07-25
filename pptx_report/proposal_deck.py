@@ -7,6 +7,7 @@ share one content contract without accepting model-generated coordinates.
 from __future__ import annotations
 
 import copy
+import os
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -637,23 +638,47 @@ def _render_product_cover(slide, deck, data):
     _textbox(slide, date.today().isoformat(), .86, 6.34, 1.8, .26, 9.5, "B7CADB")
     _textbox(slide, "SurveyKit · AI 研究方案", 4.45, 6.34, 2.7, .26, 9.5, "B7CADB", True, PP_ALIGN.RIGHT)
 
+    # 产品视觉区：优先使用上传的产品图（data.cover_image_path 或 deck.cover_image_path），
+    # 没有图片时绘制通用占位几何，不再硬编码特定产品剪影。
+    cover_image_path = data.get("cover_image_path") or deck.get("cover_image_path")
+    if _is_readable_image(cover_image_path):
+        # 图片占位区域与原 silhouette 一致：右侧 8.05"-12.5" × 0.65"-5.1"
+        try:
+            slide.shapes.add_picture(cover_image_path, Inches(8.05), Inches(.65), Inches(4.45), Inches(4.45))
+        except Exception:
+            _render_generic_product_placeholder(slide)
+    else:
+        _render_generic_product_placeholder(slide)
+
+    product_label = data.get("product_label") or deck.get("product_label") or "产品示意"
+    _textbox(slide, product_label, 8.15, 5.62, 4.25, .4, 15, WHITE, True, PP_ALIGN.CENTER)
+    _textbox(slide, "产品示意 · 非真实外观", 8.15, 6.08, 4.25, .24, 9, "9CB6C8", False, PP_ALIGN.CENTER)
+
+
+def _is_readable_image(path: Any) -> bool:
+    """检查路径是否指向一个可读的图片文件。"""
+    if not path or not isinstance(path, str):
+        return False
+    if not os.path.isfile(path):
+        return False
+    lower = path.lower()
+    return lower.endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp"))
+
+
+def _render_generic_product_placeholder(slide):
+    """绘制通用的产品占位视觉：圆形光晕 + 内嵌方框，不绑定具体产品语义。"""
     halo = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(8.05), Inches(.65), Inches(4.45), Inches(4.45))
     halo.fill.solid(); halo.fill.fore_color.rgb = _rgb("1E4663"); halo.line.fill.background()
     ring = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(8.62), Inches(1.22), Inches(3.3), Inches(3.3))
     ring.fill.background(); ring.line.color.rgb = _rgb("3E7087"); ring.line.width = Pt(1)
-    # Editable, intentionally generic pet-water-dispenser silhouette.
-    body = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(9.22), Inches(1.25), Inches(2.08), Inches(3.55))
+    # 通用产品占位：圆角矩形主体 + 中央高亮区，保持视觉平衡但不指向具体品类
+    body = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(9.22), Inches(1.45), Inches(2.08), Inches(2.85))
     body.fill.solid(); body.fill.fore_color.rgb = _rgb("173A55"); body.line.color.rgb = _rgb("71C8D2"); body.line.width = Pt(1.4)
-    window = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(9.58), Inches(1.62), Inches(1.36), Inches(1.95))
+    window = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(9.58), Inches(1.82), Inches(1.36), Inches(1.55))
     window.fill.solid(); window.fill.fore_color.rgb = _rgb("24516B"); window.line.fill.background()
-    _line(slide, 10.26, 1.72, 0, 1.62, "6BC4CF", 1.0)
-    for y in [2.02, 2.42, 2.82]: _line(slide, 9.82, y, .88, 0, "4A7089", .75)
-    bowl = slide.shapes.add_shape(MSO_SHAPE.ARC, Inches(8.72), Inches(4.04), Inches(3.15), Inches(1.28))
-    bowl.fill.solid(); bowl.fill.fore_color.rgb = _rgb("173A55"); bowl.line.color.rgb = _rgb("71C8D2"); bowl.line.width = Pt(1.2)
-    drop = slide.shapes.add_shape(MSO_SHAPE.TEAR, Inches(11.55), Inches(3.22), Inches(.48), Inches(.65))
-    drop.fill.solid(); drop.fill.fore_color.rgb = _rgb(CYAN); drop.line.fill.background(); drop.rotation = 20
-    _textbox(slide, "智能饮水管理", 8.15, 5.62, 4.25, .4, 15, WHITE, True, PP_ALIGN.CENTER)
-    _textbox(slide, "产品示意 · 非真实外观", 8.15, 6.08, 4.25, .24, 9, "9CB6C8", False, PP_ALIGN.CENTER)
+    # 中心产品图标占位（菱形 + 圆点，纯几何，无品类暗示）
+    icon = slide.shapes.add_shape(MSO_SHAPE.DIAMOND, Inches(9.92), Inches(2.25), Inches(.68), Inches(.68))
+    icon.fill.solid(); icon.fill.fore_color.rgb = _rgb(CYAN); icon.line.fill.background()
 
 
 def _render_context(slide, items):

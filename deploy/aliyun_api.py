@@ -117,6 +117,7 @@ def _remove_job_files(job_id: str) -> None:
     _job_output_path(job_id).unlink(missing_ok=True)
     _job_request_data_path(job_id).unlink(missing_ok=True)
     _job_request_meta_path(job_id).unlink(missing_ok=True)
+    _job_render_qa_path(job_id).unlink(missing_ok=True)
 
 
 def _recover_incomplete_jobs() -> None:
@@ -182,7 +183,6 @@ app.add_middleware(
         "https://surveykit.cc",
         "https://aiwiki.surveykit.cc",
         "http://localhost:4281",
-        "*",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -650,6 +650,7 @@ def _generate_core(
     tmp_in = _write_temp(data, ".xlsx")
     tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
     tmp_out.close()
+    render_qa_sidecar = tmp_out.name + ".render_qa.json"
     try:
         run_wizard(
             tmp_in,
@@ -673,6 +674,14 @@ def _generate_core(
         )
         with open(tmp_out.name, "rb") as f:
             content = f.read()
+        # 读取 Render QA 侧车文件
+        render_qa_data = None
+        try:
+            if os.path.exists(render_qa_sidecar):
+                with open(render_qa_sidecar, "r", encoding="utf-8") as qf:
+                    render_qa_data = json.loads(qf.read())
+        except (OSError, json.JSONDecodeError):
+            pass
         # RFC 6266：HTTP 头值必须是 latin-1，中文文件名需用 filename* (UTF-8 百分号编码)，
         # 同时给一个 ASCII 回退名，避免 Starlette 编码中文头值时报错。
         ts = time.strftime("%Y%m%d_%H%M%S")
@@ -685,11 +694,11 @@ def _generate_core(
                 "Content-Disposition": f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{utf8_name}',
                 "Cache-Control": "no-store",
             },
-        )
+        ), render_qa_data
     except Exception as exc:  # noqa: BLE001
-        return JSONResponse({"error": {"message": f"生成失败：{exc}"}}, status_code=500)
+        return JSONResponse({"error": {"message": f"生成失败：{exc}"}}, status_code=500), None
     finally:
-        for p in (tmp_in, tmp_out.name):
+        for p in (tmp_in, tmp_out.name, render_qa_sidecar):
             try:
                 os.unlink(p)
             except OSError:
@@ -703,7 +712,8 @@ async def generate(request: Request):
         data, metadata = _unpack_generate_request(body, request.headers.get("content-type", ""))
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return JSONResponse({"error": {"message": f"请求格式错误：{exc}"}}, status_code=400)
-    return _generate_core(data, request.query_params, metadata)
+    resp, _ = _generate_core(data, request.query_params, metadata)
+    return resp
 
 
 @app.post("/api/pptx-report/")
@@ -713,7 +723,8 @@ async def generate_slash(request: Request):
         data, metadata = _unpack_generate_request(body, request.headers.get("content-type", ""))
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return JSONResponse({"error": {"message": f"请求格式错误：{exc}"}}, status_code=400)
-    return _generate_core(data, request.query_params, metadata)
+    resp, _ = _generate_core(data, request.query_params, metadata)
+    return resp
 
 
 def _job_state_path(job_id: str) -> Path:
@@ -722,6 +733,10 @@ def _job_state_path(job_id: str) -> Path:
 
 def _job_output_path(job_id: str) -> Path:
     return JOB_DIR / f"{job_id}.pptx"
+
+
+def _job_render_qa_path(job_id: str) -> Path:
+    return JOB_DIR / f"{job_id}.render_qa.json"
 
 
 def _valid_job_id(job_id: str) -> bool:
@@ -854,7 +869,7 @@ def _run_generate_job(job_id: str, data: bytes, qs: dict, metadata: dict) -> Non
                 "message": "任务开始执行",
             })
             progress(8, "文件上传完成")
-            response = _generate_core(data, qs, metadata, progress_callback=progress)
+            response, render_qa_data = _generate_core(data, qs, metadata, progress_callback=progress)
             if response.status_code >= 400:
                 try:
                     error_payload = json.loads(response.body.decode("utf-8"))
@@ -891,6 +906,14 @@ def _run_generate_job(job_id: str, data: bytes, qs: dict, metadata: dict) -> Non
             overall_score = int(qa.get("score", 0))
             if visual_qa.get("status") == "completed":
                 overall_score = round(overall_score * 0.75 + int(visual_qa.get("score", 0)) * 0.25)
+            # 持久化 render_qa 到 job 目录（多 worker 安全）
+            if render_qa_data:
+                try:
+                    _job_render_qa_path(job_id).write_text(
+                        json.dumps(render_qa_data, ensure_ascii=False), encoding="utf-8"
+                    )
+                except OSError:
+                    pass
             _write_job_state(job_id, {
                 "status": "ready",
                 "progress": 100,
@@ -899,6 +922,7 @@ def _run_generate_job(job_id: str, data: bytes, qs: dict, metadata: dict) -> Non
                 "size": len(response.body),
                 "finished_at": time.time(),
                 "qa": qa,
+                "render_qa": render_qa_data,
                 "visual_qa": visual_qa,
                 "overall_score": overall_score,
             })

@@ -1802,6 +1802,15 @@ def run_wizard(
         progress_callback=progress_callback,
     )
     rendered = renderer.render(spec, out_path)
+    # 写入 Render QA 侧车文件，供 API 层读取
+    if renderer.last_render_qa:
+        import json as _json
+        qa_sidecar = out_path + ".render_qa.json"
+        try:
+            with open(qa_sidecar, "w", encoding="utf-8") as _f:
+                _json.dump(renderer.last_render_qa, _f, ensure_ascii=False)
+        except OSError:
+            pass
     if preview_page_numbers:
         preview_prs = Presentation(rendered)
         for slide_id in list(preview_prs.slides._sldIdLst)[:3]:

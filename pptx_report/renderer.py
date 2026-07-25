@@ -19,6 +19,7 @@ from pptx.util import Inches, Pt
 
 from .common.qa import inspect_presentation
 from .exceptions import RenderingError, TemplateNotFoundError
+from .qa import run_render_qa, split_text_for_pages
 from .model import (
     FindingsOverviewContent,
     FunnelAnalysisContent,
@@ -71,6 +72,7 @@ class ReportRenderer:
         self._slide_h = None
         self._template_mapping = None
         self.last_qa = None
+        self.last_render_qa = None
 
     def render(self, spec: ReportSpec, output_path: str) -> str:
         """渲染并保存到 output_path，返回该路径。"""
@@ -79,9 +81,12 @@ class ReportRenderer:
             spec.toc.sections = spec.auto_toc()
         spec.validate()
 
+        if self.progress_callback:
+            self.progress_callback(45, "正在解析报告结构")
         self._prs = self._build_presentation()
         dims = (self._slide_w, self._slide_h)
-        total_units = 3 + len(spec.chart_pages) + (1 if spec.appendix is not None else 0)
+        total_pages = len(spec.chart_pages)
+        total_units = 3 + total_pages + (1 if spec.appendix is not None else 0)
         completed = 0
 
         def report_page(message):
@@ -99,10 +104,29 @@ class ReportRenderer:
             report_page("正在绘制执行摘要")
             for index, page in enumerate(spec.chart_pages, 1):
                 self._add_report_page(page, dims)
-                report_page(f"正在绘制数据页 {index}/{len(spec.chart_pages)}")
+                report_page(f"正在渲染第 {index}/{total_pages} 页")
             if spec.appendix is not None:
                 self._add_appendix(spec.appendix, dims)
                 report_page("正在绘制附录")
+            if self.progress_callback:
+                self.progress_callback(92, "正在执行渲染质量检查")
+            # ─── Render QA：确定性排版质量检查与自动修复 ───
+            try:
+                slide_briefs = []
+                for page in spec.chart_pages:
+                    if hasattr(page, "brief") and page.brief:
+                        slide_briefs.append(page.brief.to_dict())
+                render_qa_result = run_render_qa(self._prs, slide_briefs=slide_briefs or None)
+                self.last_render_qa = render_qa_result.to_dict()
+                # ─── NEED_SPLIT 自动拆页处理 ───
+                self._handle_need_split(render_qa_result)
+            except Exception as qa_exc:  # noqa: BLE001
+                # QA 异常不阻断报告生成（graceful degradation）
+                import traceback
+                print(f"[render_qa] 质量检查异常，已跳过: {qa_exc}")
+                traceback.print_exc()
+                self.last_render_qa = {"passed": True, "score": 0, "error": str(qa_exc)}
+
             if self.progress_callback:
                 self.progress_callback(94, "正在打包演示文稿")
             self._prs.save(output_path)
@@ -111,6 +135,7 @@ class ReportRenderer:
             if not isinstance(spec.render_audit, dict):
                 spec.render_audit = {}
             spec.render_audit["object_qa"] = self.last_qa
+            spec.render_audit["render_qa"] = self.last_render_qa
             spec.render_audit["overall_score"] = qa_result.score
             if self.progress_callback:
                 self.progress_callback(97, "演示文稿已生成")
@@ -521,6 +546,132 @@ class ReportRenderer:
         start = len(slide.shapes)
         build_appendix(slide, ap, self.theme, dims)
         self._apply_template_geometry(slide, start, "appendix")
+
+    def _handle_need_split(self, render_qa_result) -> None:
+        """检测 NEED_SPLIT 标记，对溢出文本执行自动拆页并插入续页。
+
+        策略：
+          1. 从 QA 结果中找到 action=NEED_SPLIT 的记录
+          2. 定位对应 slide 的溢出文本框
+          3. 用 split_text_for_pages 拆分文本
+          4. 当前页保留第一部分，剩余内容插入续页
+          5. 记录 SPLIT_PAGE RenderAction
+        """
+        from .qa.models import RenderAction, IssueType, Severity
+
+        need_split_actions = [
+            a for a in render_qa_result.actions
+            if a.action == "NEED_SPLIT"
+        ]
+        if not need_split_actions:
+            return
+
+        slide_width = int(self._slide_w)
+        slide_height = int(self._slide_h)
+        split_records = []
+
+        for action in need_split_actions:
+            # 解析 slide_id（格式：slide_01）
+            try:
+                slide_idx = int(action.slide_id.split("_")[1]) - 1
+            except (IndexError, ValueError):
+                continue
+            slides = list(self._prs.slides)
+            if slide_idx < 0 or slide_idx >= len(slides):
+                continue
+
+            slide = slides[slide_idx]
+            # 找到溢出的文本框（匹配 element_id 或找最大文本框）
+            target_shape = None
+            for shape in slide.shapes:
+                if not shape.has_text_frame:
+                    continue
+                if shape.name == action.before or (action.element_id if hasattr(action, 'element_id') else "") == shape.name:
+                    target_shape = shape
+                    break
+            if target_shape is None:
+                # 找文本最长的文本框
+                max_len = 0
+                for shape in slide.shapes:
+                    if shape.has_text_frame and len(shape.text_frame.text or "") > max_len:
+                        max_len = len(shape.text_frame.text or "")
+                        target_shape = shape
+            if target_shape is None:
+                continue
+
+            text = target_shape.text_frame.text or ""
+            if not text.strip():
+                continue
+
+            # 获取字号
+            font_size_pt = 18.0
+            try:
+                for para in target_shape.text_frame.paragraphs:
+                    for run in para.runs:
+                        if run.font.size:
+                            font_size_pt = run.font.size.pt
+                            break
+                    break
+            except (AttributeError, TypeError):
+                pass
+
+            box_width = int(target_shape.width) if target_shape.width else slide_width
+            box_height = int(target_shape.height) if target_shape.height else slide_height
+
+            # 拆分文本
+            pages = split_text_for_pages(
+                text, font_size_pt, box_width, box_height
+            )
+            if len(pages) <= 1:
+                continue
+
+            # 当前页保留第一部分
+            target_shape.text_frame.clear()
+            target_shape.text_frame.text = pages[0]
+
+            # 为剩余部分插入续页
+            for page_idx, page_text in enumerate(pages[1:], 2):
+                cont_slide = self._blank_slide("chart")
+                from pptx.util import Emu
+                # 添加标题（续页标记）
+                title_left = Emu(int(slide_width * 0.035))
+                title_top = Emu(int(slide_height * 0.02))
+                title_width = Emu(int(slide_width * 0.93))
+                title_height = Emu(int(slide_height * 0.08))
+                title_box = cont_slide.shapes.add_textbox(title_left, title_top, title_width, title_height)
+                title_box.text_frame.text = f"（续 {page_idx - 1}）"
+                for para in title_box.text_frame.paragraphs:
+                    for run in para.runs:
+                        run.font.size = Pt(14)
+
+                # 添加内容文本框
+                content_left = Emu(int(slide_width * 0.035))
+                content_top = Emu(int(slide_height * 0.14))
+                content_width = Emu(box_width)
+                content_height = Emu(int(slide_height * 0.79))
+                content_box = cont_slide.shapes.add_textbox(content_left, content_top, content_width, content_height)
+                content_box.text_frame.text = page_text
+                for para in content_box.text_frame.paragraphs:
+                    for run in para.runs:
+                        run.font.size = Pt(font_size_pt)
+
+            split_records.append(RenderAction(
+                slide_id=action.slide_id,
+                issue_type=IssueType.TEXT_OVERFLOW.value,
+                severity=Severity.HIGH.value,
+                action="SPLIT_PAGE",
+                before=f"{len(pages)} pages overflow",
+                after=f"split into {len(pages)} slides",
+                reason=f"文本溢出自动拆页：原内容拆分为 {len(pages)} 页",
+            ))
+
+        # 记录拆页操作到 QA 结果
+        if split_records:
+            render_qa_result.actions.extend(split_records)
+            if hasattr(self, 'last_render_qa') and self.last_render_qa:
+                self.last_render_qa.setdefault("split_pages", []).extend(
+                    [{"slide_id": r.slide_id, "reason": r.reason} for r in split_records]
+                )
 
     # ------------------------- 模板占位符填充 -------------------------
     def fill_named_placeholders(self, slide, mapping: dict) -> None:
