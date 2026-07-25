@@ -902,7 +902,24 @@ def _run_generate_job(job_id: str, data: bytes, qs: dict, metadata: dict) -> Non
             }
             if os.environ.get("PPTX_VISUAL_QA_MODE", "auto").lower() != "disabled":
                 progress(98, "正在进行页面视觉质检")
-                visual_qa = run_visual_qa(output).to_dict()
+                try:
+                    visual_qa = run_visual_qa(
+                        output,
+                        dpi=int(os.environ.get("PPTX_VISUAL_QA_DPI", "72")),
+                        timeout=int(os.environ.get("PPTX_VISUAL_QA_TIMEOUT", "60")),
+                        max_slides=int(os.environ["PPTX_VISUAL_QA_MAX_SLIDES"]) if "PPTX_VISUAL_QA_MAX_SLIDES" in os.environ else None,
+                    ).to_dict()
+                except Exception as vqa_exc:  # noqa: BLE001
+                    visual_qa = {
+                        "status": "failed",
+                        "reason": f"visual QA timed out or failed: {vqa_exc}",
+                        "score": 0,
+                        "ok": True,
+                        "checked_slides": 0,
+                        "issues": [],
+                        "error_count": 0,
+                        "warning_count": 0,
+                    }
             overall_score = int(qa.get("score", 0))
             if visual_qa.get("status") == "completed":
                 overall_score = round(overall_score * 0.75 + int(visual_qa.get("score", 0)) * 0.25)

@@ -132,7 +132,9 @@ def run_visual_qa(
     *,
     office_converter: str | None = None,
     pdf_rasterizer: str | None = None,
-    timeout: int = 180,
+    timeout: int = 90,
+    dpi: int = 72,
+    max_slides: int | None = None,
 ) -> VisualQAResult:
     converter = office_converter or shutil.which("libreoffice") or shutil.which("soffice")
     rasterizer = pdf_rasterizer or shutil.which("pdftoppm")
@@ -147,8 +149,19 @@ def run_visual_qa(
     source = Path(pptx_path)
     try:
         with tempfile.TemporaryDirectory(prefix="surveykit-visual-qa-") as temp_dir:
+            # 为本次调用创建独立的 LibreOffice user profile，避免并发冲突与冷启动开销
+            profile_dir = Path(temp_dir) / "lo_profile"
             completed = subprocess.run(
-                [converter, "--headless", "--convert-to", "pdf", "--outdir", temp_dir, str(source)],
+                [
+                    converter,
+                    f"-env:UserInstallation=file://{profile_dir}",
+                    "--headless",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    temp_dir,
+                    str(source),
+                ],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -162,7 +175,7 @@ def run_visual_qa(
                 return VisualQAResult(status="failed", reason=detail, score=0, toolchain=toolchain)
             prefix = Path(temp_dir) / "slide"
             rasterized = subprocess.run(
-                [rasterizer, "-png", "-r", "110", str(pdf_path), str(prefix)],
+                [rasterizer, "-png", "-r", str(dpi), str(pdf_path), str(prefix)],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -174,6 +187,21 @@ def run_visual_qa(
             if rasterized.returncode != 0 or not images:
                 detail = (rasterized.stderr or rasterized.stdout or "rasterization failed").strip()[-500:]
                 return VisualQAResult(status="failed", reason=detail, score=0, toolchain=toolchain)
+            # 大型报告抽样检查：保留前 3 页 + 每 N 页抽 1 页 + 最后 1 页
+            if max_slides and len(images) > max_slides:
+                sampled = list(images[:3])
+                step = max(1, (len(images) - 4) // (max_slides - 4)) if max_slides > 4 else 1
+                for idx in range(3, len(images) - 1, step):
+                    sampled.append(images[idx])
+                sampled.append(images[-1])
+                # 去重并保持顺序
+                seen = set()
+                deduped = []
+                for img in sampled:
+                    if img not in seen:
+                        seen.add(img)
+                        deduped.append(img)
+                images = deduped
             result = inspect_slide_images(images)
             result.toolchain = toolchain
             return result
