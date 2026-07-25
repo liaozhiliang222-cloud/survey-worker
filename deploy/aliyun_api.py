@@ -56,7 +56,6 @@ for p in (str(HERE), str(PARENT)):
 
 from pptx_report.cli import _collect_segments
 from pptx_report.common.qa import inspect_presentation
-from pptx_report.common.visual_qa import run_visual_qa
 from pptx_report.build_jd_report import parse_crosstab
 from pptx_report.wizard import build_insight_context, build_page_plan, run_wizard
 from pptx import Presentation
@@ -890,39 +889,7 @@ def _run_generate_job(job_id: str, data: bytes, qs: dict, metadata: dict) -> Non
                     "score": 0,
                     "ok": False,
                 }
-            visual_qa = {
-                "status": "skipped",
-                "checked_slides": 0,
-                "issues": [],
-                "score": 100,
-                "reason": "visual QA disabled",
-                "ok": True,
-                "error_count": 0,
-                "warning_count": 0,
-            }
-            if os.environ.get("PPTX_VISUAL_QA_MODE", "auto").lower() != "disabled":
-                progress(98, "正在进行页面视觉质检")
-                try:
-                    visual_qa = run_visual_qa(
-                        output,
-                        dpi=int(os.environ.get("PPTX_VISUAL_QA_DPI", "72")),
-                        timeout=int(os.environ.get("PPTX_VISUAL_QA_TIMEOUT", "60")),
-                        max_slides=int(os.environ["PPTX_VISUAL_QA_MAX_SLIDES"]) if "PPTX_VISUAL_QA_MAX_SLIDES" in os.environ else None,
-                    ).to_dict()
-                except Exception as vqa_exc:  # noqa: BLE001
-                    visual_qa = {
-                        "status": "failed",
-                        "reason": f"visual QA timed out or failed: {vqa_exc}",
-                        "score": 0,
-                        "ok": True,
-                        "checked_slides": 0,
-                        "issues": [],
-                        "error_count": 0,
-                        "warning_count": 0,
-                    }
             overall_score = int(qa.get("score", 0))
-            if visual_qa.get("status") == "completed":
-                overall_score = round(overall_score * 0.75 + int(visual_qa.get("score", 0)) * 0.25)
             # 持久化 render_qa 到 job 目录（多 worker 安全）
             if render_qa_data:
                 try:
@@ -940,7 +907,6 @@ def _run_generate_job(job_id: str, data: bytes, qs: dict, metadata: dict) -> Non
                 "finished_at": time.time(),
                 "qa": qa,
                 "render_qa": render_qa_data,
-                "visual_qa": visual_qa,
                 "overall_score": overall_score,
             })
             _raise_if_cancelled(job_id)

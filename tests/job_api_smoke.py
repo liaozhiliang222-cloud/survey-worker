@@ -43,7 +43,6 @@ def wait_for(client: TestClient, job_id: str, statuses: set[str], timeout: float
 
 
 def main() -> None:
-    os.environ["PPTX_VISUAL_QA_MODE"] = "disabled"
     original_dir = api.JOB_DIR
     original_generate = api._generate_core
     original_semaphore = api.JOB_SEMAPHORE
@@ -86,7 +85,6 @@ def main() -> None:
         ready = wait_for(client, ready_response.json()["job_id"], {"ready"})
         assert ready["started_at"] and ready["finished_at"]
         assert ready["qa"]["slide_count"] == 4 and isinstance(ready["overall_score"], int)
-        assert ready["visual_qa"]["status"] == "skipped"
         download = client.get(f"/api/pptx-report/jobs/{ready['job_id']}/download?delete_after=true")
         assert download.status_code == 200 and download.content.startswith(b"PK")
         assert not api._job_state_path(ready["job_id"]).exists()
