@@ -16366,11 +16366,38 @@ window.addEventListener("unhandledrejection", (event) => {
       highlightEl = target;
       const rect = target.getBoundingClientRect();
       const tipRect = tooltip.getBoundingClientRect();
-      let top = rect.bottom + 12;
+      const margin = 12;
+      const vpW = window.innerWidth;
+      const vpH = window.innerHeight;
+      const tipH = tipRect.height || tooltip.offsetHeight || 200;
+      const tipW = tipRect.width || tooltip.offsetWidth || 300;
+      const maxTop = vpH - margin - tipH;
+      const maxLeft = vpW - margin - tipW;
+
+      // 策略：下方 → 上方 → 右侧 → 视口内钳制
+      let top = rect.bottom + margin;
       let left = rect.left;
-      if (top + tipRect.height > window.innerHeight - 20) top = rect.top - tipRect.height - 12;
-      if (left + tipRect.width > window.innerWidth - 20) left = window.innerWidth - tipRect.width - 20;
-      if (left < 12) left = 12;
+
+      if (top > maxTop) {
+        const aboveTop = rect.top - tipH - margin;
+        if (aboveTop >= margin) {
+          top = aboveTop;
+        } else {
+          const rightLeft = rect.right + margin;
+          if (rightLeft <= maxLeft) {
+            top = Math.max(margin, Math.min(rect.top, maxTop));
+            left = rightLeft;
+          } else {
+            top = Math.max(margin, Math.min(top, maxTop));
+          }
+        }
+      }
+
+      // 最终安全钳制：确保始终在视口内
+      top = Math.max(margin, Math.min(top, vpH - margin - tipH));
+      if (left > maxLeft) left = maxLeft;
+      if (left < margin) left = margin;
+
       tooltip.style.top = `${top}px`;
       tooltip.style.left = `${left}px`;
     } else {

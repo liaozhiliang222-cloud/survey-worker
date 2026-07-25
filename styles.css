@@ -5271,6 +5271,8 @@ tbody tr.warn td {
   position: fixed;
   z-index: 9999;
   max-width: 320px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
   background: #fff;
   border-radius: 12px;
   padding: 20px;
