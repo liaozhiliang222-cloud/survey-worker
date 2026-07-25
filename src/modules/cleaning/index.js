@@ -121,32 +121,29 @@ export function detectCleaningFields(parsed) {
 /**
  * 执行清洗规则
  * @param {object} parsed - { headers, rows }
- * @param {Array} rules - 清洗规则列表
+ * @param {Array} rules - 清洗规则列表，每条含 { type, field, fields, threshold, operator, min, max, allowedValues, level, title, enabled }
  * @param {object} config - { minDuration, straightThreshold, openMinChars, durationField }
  * @returns {{ kept: object[], removed: object[], report: object }}
  */
 export function executeCleaning(parsed, rules, config = {}) {
-  const { minDuration = 120, durationField = "" } = config;
+  const { minDuration = 120, durationField = "", straightThreshold = 90, openMinChars = 5 } = config;
   const kept = [];
   const removed = [];
   const reasons = {};
+  const enabledRules = (rules || []).filter((rule) => rule.enabled !== false);
 
-  for (const row of parsed.rows) {
-    let flagged = false;
-    let reason = "";
+  for (const [rowIndex, row] of parsed.rows.entries()) {
+    const hits = [];
 
-    // 时长规则
-    if (durationField && row[durationField] !== "") {
-      const duration = Number(row[durationField]);
-      if (Number.isFinite(duration) && duration < minDuration) {
-        flagged = true;
-        reason = `答题时长 ${duration}s < ${minDuration}s`;
-      }
+    for (const rule of enabledRules) {
+      const reason = applyRule(row, rowIndex, parsed.rows, rule, { minDuration, durationField, straightThreshold, openMinChars });
+      if (reason) hits.push(reason);
     }
 
-    if (flagged) {
+    if (hits.length) {
+      const reason = hits.join("；");
       removed.push({ ...row, _removeReason: reason });
-      reasons[reason] = (reasons[reason] || 0) + 1;
+      hits.forEach((hit) => { reasons[hit] = (reasons[hit] || 0) + 1; });
     } else {
       kept.push(row);
     }
@@ -163,4 +160,74 @@ export function executeCleaning(parsed, rules, config = {}) {
       reasons
     }
   };
+}
+
+function applyRule(row, rowIndex, allRows, rule, config) {
+  const type = rule.type;
+  if (type === "duration") {
+    const field = rule.field || config.durationField;
+    if (!field) return "";
+    const value = Number(row[field]);
+    const threshold = Number.isFinite(Number(rule.threshold)) ? Number(rule.threshold) : config.minDuration;
+    if (Number.isFinite(value) && value < threshold) return `${rule.title || "超短时长"}：${field}=${value} < ${threshold}秒`;
+  }
+  if (type === "duplicate") {
+    const field = rule.field;
+    if (!field) return "";
+    const value = String(row[field] ?? "").trim();
+    if (value && allRows.findIndex((item) => String(item[field] ?? "").trim() === value) !== rowIndex) {
+      return `${rule.title || "重复样本"}：${field}=${value}`;
+    }
+  }
+  if (type === "straight") {
+    const fields = rule.fields?.length ? rule.fields : String(rule.field || "").split(",").map((item) => item.trim()).filter(Boolean);
+    const values = fields.map((field) => String(row[field] ?? "").trim()).filter(Boolean);
+    const threshold = Number.isFinite(Number(rule.threshold)) ? Number(rule.threshold) : config.straightThreshold;
+    if (values.length >= 5) {
+      const counts = values.reduce((acc, value) => ({ ...acc, [value]: (acc[value] || 0) + 1 }), {});
+      const ratio = (Math.max(...Object.values(counts)) / values.length) * 100;
+      if (ratio >= threshold) return `${rule.title || "直线作答"}：一致率 ${ratio.toFixed(1)}% ≥ ${threshold}%`;
+    }
+  }
+  if (type === "open_text") {
+    const field = rule.field;
+    if (!field) return "";
+    const value = String(row[field] ?? "").trim();
+    const threshold = Number.isFinite(Number(rule.threshold)) ? Number(rule.threshold) : config.openMinChars;
+    if (value && value.length < threshold) return `${rule.title || "开放题过短"}：${field} 少于 ${threshold}字`;
+  }
+  if (type === "range") {
+    const field = rule.field;
+    if (!field) return "";
+    const value = String(row[field] ?? "").trim();
+    if (!value) return `${rule.title || "选项范围检查"}：${field} 为空`;
+    if (rule.operator === "in_allowed" && Array.isArray(rule.allowedValues) && rule.allowedValues.length) {
+      const allowed = rule.allowedValues.map((item) => String(item).trim());
+      if (!allowed.includes(value)) return `${rule.title || "选项范围检查"}：${field}=${value} 不在允许范围内`;
+    }
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue)) {
+      if (Number.isFinite(Number(rule.min)) && numericValue < Number(rule.min)) {
+        return `${rule.title || "选项范围检查"}：${field}=${value} < ${rule.min}`;
+      }
+      if (Number.isFinite(Number(rule.max)) && numericValue > Number(rule.max)) {
+        return `${rule.title || "选项范围检查"}：${field}=${value} > ${rule.max}`;
+      }
+    }
+  }
+  if (type === "exclusive") {
+    const exclusivePattern = /^(以上都没有|以上均无|都没有|不知道|无|没有|拒答|不适用|none of the above|dont know|refused|na)$/i;
+    const fields = rule.fields?.length ? rule.fields : String(rule.field || "").split(",").map((item) => item.trim()).filter(Boolean);
+    for (const field of fields) {
+      const cell = String(row[field] ?? "").trim();
+      if (!cell) continue;
+      const tokens = cell.split(/[;；,，]/).map((token) => token.trim()).filter(Boolean);
+      const hasExclusive = tokens.some((token) => exclusivePattern.test(token));
+      const hasSubstantive = tokens.some((token) => !exclusivePattern.test(token));
+      if (hasExclusive && hasSubstantive) {
+        return `${rule.title || "排他项冲突"}：${field} 同时选中排他项与实质选项（${cell}）`;
+      }
+    }
+  }
+  return "";
 }

@@ -22,6 +22,18 @@ export {
   loadJson,
   saveJson
 } from "./shared/storage.js";
+export {
+  saveProjectData,
+  loadProjectData,
+  loadAllProjectData,
+  clearProjectData,
+  estimateStorage,
+  checkStorageHealth
+} from "./shared/idb-storage.js";
+
+// ─── MaxDiff 模块（阶段三/四：设计校验 + MNL/HB 模型）─────────
+import * as maxdiffModule from "./modules/maxdiff/index.js";
+export { maxdiffModule };
 
 // ─── 功能模块（已完成提取）───────────────────────────────────
 export * as workspace from "./modules/workspace/index.js";
@@ -45,9 +57,31 @@ export * as pptxReport from "./modules/pptx-report/index.js";
 import { initErrorMonitor } from "./shared/error-monitor.js";
 
 // ─── 应用初始化 ─────────────────────────────────────────────
+import {
+  saveProjectData,
+  loadProjectData,
+  loadAllProjectData,
+  clearProjectData,
+  estimateStorage,
+  checkStorageHealth
+} from "./shared/idb-storage.js";
+
 function initApp() {
   // 初始化错误监控
   initErrorMonitor({ enableConsole: true });
+
+  // 暴露 IndexedDB 持久化能力给 legacy app.js（过渡期桥接）
+  window.SurveyKitIDB = {
+    saveProjectData,
+    loadProjectData,
+    loadAllProjectData,
+    clearProjectData,
+    estimateStorage,
+    checkStorageHealth,
+  };
+
+  // 暴露 MaxDiff 模块（阶段三/四：设计校验 + MNL/HB 模型）给 legacy app.js
+  window.SurveyKitMaxDiff = maxdiffModule;
 
   // 移除加载遮罩
   const overlay = document.querySelector("#appLoading");

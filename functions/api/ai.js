@@ -159,7 +159,7 @@ export async function onRequest({ request, env }) {
 
     if (!useBuiltin) {
       const targetUrl = validateTarget(payload.provider || "custom", payload.url);
-      const { upstream, text } = await callUpstream(targetUrl, apiKey, body, 540_000);
+      const { upstream, text } = await callUpstream(targetUrl, apiKey, body, 280_000);
       if (body.stream && upstream.ok) return upstreamResponse("", upstream, body.model, "user-key", [body.model]);
       if (!text.trim()) return json({ error: { message: "模型返回为空，请检查模型名称、额度或服务状态。" } }, 502);
       return upstreamResponse(text, upstream, body.model, "user-key", [body.model]);

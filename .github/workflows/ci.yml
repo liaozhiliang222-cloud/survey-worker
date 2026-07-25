@@ -50,3 +50,6 @@ jobs:
 
       - name: Run Python report regression suite
         run: npm run test:python
+
+      - name: Run Python unit tests (pytest)
+        run: python -m pytest tests/unit/ -v

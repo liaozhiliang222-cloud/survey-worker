@@ -98,6 +98,34 @@ const exampleMaxDiffScoreData = `口味更好,48,12,80
 规格更合适,20,36,80
 售后更安心,30,26,80`;
 
+const exampleMaxDiffResponses = (() => {
+  const items = ["口味更好", "包装更高级", "价格更划算", "购买更方便", "品牌更可靠", "成分更健康", "规格更合适", "售后更安心"];
+  // 模拟 20 个受访者 × 6 道题，best 倾向"口味更好/价格更划算"，worst 倾向"规格更合适/售后更安心"
+  const bestPool = ["口味更好", "口味更好", "价格更划算", "价格更划算", "品牌更可靠", "成分更健康"];
+  const worstPool = ["规格更合适", "规格更合适", "售后更安心", "售后更安心", "购买更方便", "包装更高级"];
+  const lines = [];
+  let seed = 42;
+  const rand = () => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  };
+  for (let r = 1; r <= 20; r += 1) {
+    for (let s = 1; s <= 6; s += 1) {
+      const best = bestPool[Math.floor(rand() * bestPool.length)];
+      const worst = worstPool[Math.floor(rand() * worstPool.length)];
+      // 随机抽取 4 个展示项（必须包含 best 和 worst）
+      const pool = items.filter((it) => it !== best && it !== worst);
+      const shown = [best, worst];
+      while (shown.length < 4 && pool.length) {
+        const idx = Math.floor(rand() * pool.length);
+        shown.push(pool.splice(idx, 1)[0]);
+      }
+      lines.push(`R${r},${s},${best},${worst},${shown.join("|")}`);
+    }
+  }
+  return lines.join("\n");
+})();
+
 const exampleAbcQuestionnaire = `Q1. 您对本产品的整体满意度如何？
 A. 非常满意
 B. 比较满意
@@ -180,7 +208,10 @@ let lastPsmAnalysis = null;
 let lastAuditReport = null;
 let lastKanoAnalysis = null;
 let lastMaxDiffDesign = null;
+let lastMaxDiffValidation = null;
 let lastMaxDiffScore = null;
+let lastMaxDiffMNL = null;
+let lastMaxDiffHB = null;
 let lastAiPlan = "";
 let aiPlanTemplates = [];
 let aiQuestionnaireTemplates = [];
@@ -243,6 +274,92 @@ let cleaningCenterState = {
   fileName: ""
 };
 let lastHeaderPlan = null;
+
+// === 项目数据总线：统一管理模块间数据流转 ===
+const WORKER_THRESHOLD = 5000; // 超过此行数使用 Web Worker
+let _dataWorker = null;
+function getDataWorker() {
+  if (!_dataWorker) {
+    try { _dataWorker = new Worker("./data-worker.js"); } catch { _dataWorker = null; }
+  }
+  return _dataWorker;
+}
+function runInWorker(type, payload) {
+  return new Promise((resolve, reject) => {
+    const worker = getDataWorker();
+    if (!worker) return reject(new Error("Worker unavailable"));
+    const handler = (e) => {
+      if (e.data.type === `${type}_done`) {
+        worker.removeEventListener("message", handler);
+        resolve(e.data.result);
+      }
+    };
+    worker.addEventListener("message", handler);
+    worker.postMessage({ type, payload });
+  });
+}
+
+const projectDataBus = {
+  _data: {},
+  _listeners: [],
+  _currentProjectId: null,
+  set(key, value, meta = {}) {
+    this._data[key] = { value, meta, updatedAt: Date.now() };
+    this._notify(key);
+    // 异步持久化到 IndexedDB（按 projectId 隔离），失败仅告警不阻塞
+    if (this._currentProjectId && window.SurveyKitIDB) {
+      window.SurveyKitIDB.saveProjectData(this._currentProjectId, key, value, meta);
+    }
+  },
+  get(key) {
+    return this._data[key]?.value ?? null;
+  },
+  has(key) {
+    return Boolean(this._data[key]?.value);
+  },
+  meta(key) {
+    return this._data[key]?.meta ?? {};
+  },
+  onChange(fn) {
+    this._listeners.push(fn);
+  },
+  _notify(key) {
+    this._listeners.forEach((fn) => { try { fn(key, this); } catch (_) {} });
+  },
+  /**
+   * 切换到指定项目：清空内存并从 IndexedDB 异步回填历史数据。
+   * 回填是异步的，UI 会通过 onChange 收到通知。
+   */
+  async attachToProject(projectId) {
+    this._currentProjectId = projectId;
+    this._data = {};
+    if (!projectId || !window.SurveyKitIDB) return;
+    const records = await window.SurveyKitIDB.loadAllProjectData(projectId);
+    for (const record of records) {
+      this._data[record.dataKey] = {
+        value: record.value,
+        meta: record.meta || {},
+        updatedAt: record.updatedAt,
+      };
+      this._notify(record.dataKey);
+    }
+  },
+  /**
+   * 删除项目对应的全部 IndexedDB 数据（项目删除时调用）。
+   */
+  async purgeProject(projectId) {
+    if (!projectId || !window.SurveyKitIDB) return;
+    await window.SurveyKitIDB.clearProjectData(projectId);
+  },
+  reset() {
+    this._data = {};
+  },
+  summary() {
+    const keys = Object.keys(this._data);
+    return keys.map((key) => ({ key, ...this._data[key].meta, updatedAt: this._data[key].updatedAt }));
+  }
+};
+
 let workspaceProject = null;
 let workspaceLibrary = null;
 const WORKSPACE_LIBRARY_KEY = "surveyWorkspaceLibrary.v2";
@@ -510,11 +627,15 @@ function activateWorkspaceProject(projectId) {
   library.activeProjectId = project.id;
   workspaceProject = project;
   resetWorkspaceRuntimeState();
+  // 异步从 IndexedDB 回填该项目历史数据（数据集、模型结果等）
+  projectDataBus.attachToProject(project.id).then(() => {
+    renderWorkspaceProject();
+  });
   persistWorkspaceLibrary();
   fillWorkspaceProject(project);
   renderWorkspaceProjectLibrary();
   renderWorkspaceProject();
-  showToast("已切换项目；问卷和配置已恢复，文件类资产需要按需重新上传", "info", 3600);
+  showToast("已切换项目；问卷、配置与历史数据已恢复，文件类资产需要按需重新上传", "info", 3600);
 }
 
 function resetWorkspaceRuntimeState() {
@@ -523,13 +644,17 @@ function resetWorkspaceRuntimeState() {
   lastCleaningRules = null;
   cleaningCenterState = { parsed: null, rules: [], result: null, fileName: "" };
   lastHeaderPlan = null;
+  projectDataBus.reset();
   if (typeof lastAiPlan !== "undefined") lastAiPlan = null;
   if (typeof lastAuditReport !== "undefined") lastAuditReport = null;
   if (typeof lastAiReport !== "undefined") lastAiReport = null;
   if (typeof lastPsmAnalysis !== "undefined") lastPsmAnalysis = null;
   if (typeof lastKanoAnalysis !== "undefined") lastKanoAnalysis = null;
   if (typeof lastMaxDiffDesign !== "undefined") lastMaxDiffDesign = null;
+  if (typeof lastMaxDiffValidation !== "undefined") lastMaxDiffValidation = null;
   if (typeof lastMaxDiffScore !== "undefined") lastMaxDiffScore = null;
+  if (typeof lastMaxDiffMNL !== "undefined") lastMaxDiffMNL = null;
+  if (typeof lastMaxDiffHB !== "undefined") lastMaxDiffHB = null;
 }
 
 function getWorkspaceFormProject() {
@@ -946,6 +1071,8 @@ function deleteWorkspaceProject() {
   const project = library.projects.find((item) => item.id === library.activeProjectId);
   if (!project) return;
   if (!window.confirm(`确定删除项目“${project.projectName || "未命名项目"}”吗？项目档案、报告方案和本地资产记录将一并删除。`)) return;
+  // 同步删除 IndexedDB 中该项目的全部持久化数据
+  projectDataBus.purgeProject(project.id);
   library.projects = library.projects.filter((item) => item.id !== project.id);
   library.activeProjectId = library.projects.find((item) => !item.archivedAt)?.id || library.projects[0]?.id || null;
   workspaceLibrary = library;
@@ -954,6 +1081,7 @@ function deleteWorkspaceProject() {
   resetWorkspaceRuntimeState();
   if (workspaceProject) {
     fillWorkspaceProject(workspaceProject);
+    projectDataBus.attachToProject(workspaceProject.id).then(() => renderWorkspaceProject());
   } else {
     ["#workspaceProjectName", "#workspaceSampleTarget", "#workspaceQuotaDimensions", "#workspaceQuestionnaire"].forEach((selector) => {
       const field = document.querySelector(selector);
@@ -3933,7 +4061,8 @@ function renderCleaningRules() {
               ["straight", "直线作答"],
               ["open_text", "开放题过短"],
               ["demographic_conflict", "人口背景矛盾"],
-              ["range", "选项范围检查"]
+              ["range", "选项范围检查"],
+              ["exclusive", "排他项冲突"]
             ].map(([value, label]) => `<option value="${value}" ${rule.type === value ? "selected" : ""}>${label}</option>`).join("")}
           </select></label>
           <label>优先级<select class="cleaning-rule-level"><option value="high" ${rule.level === "high" ? "selected" : ""}>高</option><option value="medium" ${rule.level === "medium" ? "selected" : ""}>中</option><option value="low" ${rule.level === "low" ? "selected" : ""}>低</option></select></label>
@@ -4081,8 +4210,42 @@ function applyCleaningRule(row, rowIndex, allRows, rule) {
     return checkDemographicConflict(row, rule) || null;
   }
   if (rule.type === "range") {
-    const value = String(row[rule.field] ?? "").trim();
+    const raw = row[rule.field];
+    const value = String(raw ?? "").trim();
     if (!value) return `${rule.title}：${rule.field} 为空`;
+    const operator = rule.operator || "";
+    // in_allowed：值必须落在允许枚举内
+    if (operator === "in_allowed" && Array.isArray(rule.allowedValues) && rule.allowedValues.length) {
+      const allowed = rule.allowedValues.map((item) => String(item).trim());
+      if (!allowed.includes(value)) return `${rule.title}：${rule.field}=${value} 不在允许范围内`;
+    }
+    // 数值范围检查（min/max/threshold）
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue)) {
+      if (Number.isFinite(Number(rule.min)) && numericValue < Number(rule.min)) {
+        return `${rule.title}：${rule.field}=${value} < ${rule.min}`;
+      }
+      if (Number.isFinite(Number(rule.max)) && numericValue > Number(rule.max)) {
+        return `${rule.title}：${rule.field}=${value} > ${rule.max}`;
+      }
+    }
+  }
+  if (rule.type === "exclusive") {
+    // 排他项冲突：fields 中任一字段命中"排他选项"（以上都没有/不知道/拒答），
+    // 同时其他实质选项又有值，则判定冲突
+    const exclusivePattern = /^(以上都没有|以上均无|都没有|不知道|无|没有|拒答|不适用|none of the above|dont know|refused|na)$/i;
+    const fields = rule.fields?.length ? rule.fields : String(rule.field || "").split(",").map((item) => item.trim()).filter(Boolean);
+    for (const field of fields) {
+      const cell = String(row[field] ?? "").trim();
+      if (!cell) continue;
+      // 多选题常见编码：1 选中 / 0 未选；或分号/逗号分隔的选项文本
+      const tokens = cell.split(/[;；,，]/).map((token) => token.trim()).filter(Boolean);
+      const hasExclusive = tokens.some((token) => exclusivePattern.test(token));
+      const hasSubstantive = tokens.some((token) => !exclusivePattern.test(token));
+      if (hasExclusive && hasSubstantive) {
+        return `${rule.title}：${field} 同时选中排他项与实质选项（${cell}）`;
+      }
+    }
   }
   return null;
 }
@@ -4103,6 +4266,9 @@ function executeCleaningCenter() {
     }
   });
   cleaningCenterState.result = { kept, removed, executedAt: new Date().toLocaleString("zh-CN") };
+  // 数据总线：写入原始数据和清洗后数据
+  projectDataBus.set("rawData", cleaningCenterState.parsed, { rows: cleaningCenterState.parsed?.rows?.length || 0, fileName: cleaningCenterState.fileName });
+  projectDataBus.set("cleanedData", { headers: cleaningCenterState.parsed?.headers, rows: kept }, { rows: kept.length, removed: removed.length });
   renderCleaningExecutionResult();
 }
 
@@ -4170,7 +4336,9 @@ function buildAiCleaningRulesPrompt(parsed) {
         "你是一名资深市场研究数据清洗专家，擅长根据问卷原始数据字段生成可执行、易理解、不过度复杂的清洗规则。",
         "请只返回 JSON 数组，不要输出 Markdown、解释或代码块。",
         "每条规则对象字段必须包含：title、type、level、field、threshold、description、enabled。",
-        "type 只能是 duration、duplicate、straight、open_text、demographic_conflict、range。",
+        "range 类型可额外提供 operator=in_allowed 和 allowedValues 数组（允许的枚举值列表），或 min/max 数值边界。",
+        "exclusive 类型用于多选题排他项冲突，field 用逗号分隔多个多选题字段。",
+        "type 只能是 duration、duplicate、straight、open_text、demographic_conflict、range、exclusive。",
         "level 只能是 high、medium、low。",
         "enabled 建议仅对高确定性的机器规则设为 true；人口背景矛盾、选项范围检查等容易误伤的规则默认 false，用于人工复核。",
         "不要生成大量选项范围检查；除非字段明显存在异常编码风险，否则不要生成 range。",
@@ -4200,12 +4368,15 @@ function parseAiCleaningRulesOutput(output) {
     id: `ai_${Date.now()}_${Math.random().toString(16).slice(2)}`,
     enabled: rule.enabled === true,
     level: ["high", "medium", "low"].includes(rule.level) ? rule.level : "medium",
-    type: ["duration", "duplicate", "straight", "open_text", "demographic_conflict", "range"].includes(rule.type) ? rule.type : "open_text",
+    type: ["duration", "duplicate", "straight", "open_text", "demographic_conflict", "range", "exclusive"].includes(rule.type) ? rule.type : "open_text",
     title: String(rule.title || "AI 建议规则").slice(0, 40),
     field: String(rule.field || ""),
     fields: String(rule.field || "").split(",").map((item) => item.trim()).filter(Boolean),
-    operator: rule.type === "duplicate" ? "duplicate" : "",
+    operator: rule.type === "duplicate" ? "duplicate" : (rule.type === "range" ? String(rule.operator || "") : ""),
     threshold: Number.isFinite(Number(rule.threshold)) ? Number(rule.threshold) : "",
+    min: Number.isFinite(Number(rule.min)) ? Number(rule.min) : "",
+    max: Number.isFinite(Number(rule.max)) ? Number(rule.max) : "",
+    allowedValues: Array.isArray(rule.allowedValues) ? rule.allowedValues.map((item) => String(item)).slice(0, 50) : [],
     unit: rule.type === "duration" ? "秒" : rule.type === "straight" ? "%" : rule.type === "open_text" ? "字" : "",
     description: String(rule.description || "AI 根据字段结构生成的清洗建议。").slice(0, 220)
   }));
@@ -4635,7 +4806,8 @@ function excelXmlCell(value) {
   const cell = value && typeof value === "object" && !Array.isArray(value)
     ? value
     : { value };
-  const styleId = cell.format === "percent" ? ` ss:StyleID="Percent1"` : cell.format === "bold" ? ` ss:StyleID="Bold"` : "";
+  const styleMap = { percent: "Percent1", bold: "Bold", header: "Header", top2: "Top2", bottom2: "Bottom2", base: "Base" };
+  const styleId = cell.format && styleMap[cell.format] ? ` ss:StyleID="${styleMap[cell.format]}"` : "";
   if (cell.type === "number") {
     const href = cell.href ? ` ss:HRef="${escapeHtml(cell.href)}"` : "";
     return `<Cell${href}${styleId}><Data ss:Type="Number">${cell.value ?? 0}</Data></Cell>`;
@@ -4658,6 +4830,21 @@ function excelWorkbookStylesXml() {
     </Style>
     <Style ss:ID="Bold">
       <Font ss:FontName="Arial" ss:Size="11" ss:Bold="1"/>
+    </Style>
+    <Style ss:ID="Header">
+      <Font ss:FontName="Arial" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
+      <Interior ss:Color="#4472C4" ss:Pattern="Solid"/>
+    </Style>
+    <Style ss:ID="Top2">
+      <Interior ss:Color="#C6EFCE" ss:Pattern="Solid"/>
+      <Font ss:Color="#006100"/>
+    </Style>
+    <Style ss:ID="Bottom2">
+      <Interior ss:Color="#FFC7CE" ss:Pattern="Solid"/>
+      <Font ss:Color="#9C0006"/>
+    </Style>
+    <Style ss:ID="Base">
+      <Font ss:FontName="Arial" ss:Size="10" ss:Italic="1" ss:Color="#666666"/>
     </Style>
   </Styles>`;
 }
@@ -6200,18 +6387,40 @@ function renderCrosstabAnalysis() {
 
 function exportCrosstabAnalysis() {
   if (!lastCrosstabAnalysis) return;
-  const rows = [
-    [`${lastCrosstabAnalysis.rowVar} x ${lastCrosstabAnalysis.colVar}`],
-    ["卡方值", lastCrosstabAnalysis.chiSquare.toFixed(4)],
-    ["自由度", lastCrosstabAnalysis.degreesOfFreedom],
-    ["p值", lastCrosstabAnalysis.pValue === null ? "" : lastCrosstabAnalysis.pValue.toFixed(6)],
-    [],
-    [lastCrosstabAnalysis.rowVar, ...lastCrosstabAnalysis.colLabels, "合计"]
-  ];
-  lastCrosstabAnalysis.rowLabels.forEach((rowLabel, rowIndex) => {
-    rows.push([rowLabel, ...lastCrosstabAnalysis.matrix[rowIndex], lastCrosstabAnalysis.rowTotals[rowIndex]]);
+  const ct = lastCrosstabAnalysis;
+  // 计算百分比矩阵
+  const pctMatrix = ct.matrix.map((row, ri) => row.map((val) => ct.rowTotals[ri] > 0 ? val / ct.rowTotals[ri] : 0));
+  // 找 Top2 和 Bottom2（按列百分比）
+  const colPctAvg = ct.colLabels.map((_, ci) => {
+    const vals = pctMatrix.map((row) => row[ci]);
+    return vals.reduce((s, v) => s + v, 0) / (vals.length || 1);
   });
-  rows.push(["合计", ...lastCrosstabAnalysis.colTotals, lastCrosstabAnalysis.total]);
+  const sortedColIdx = colPctAvg.map((v, i) => ({ v, i })).sort((a, b) => b.v - a.v);
+  const top2Cols = new Set(sortedColIdx.slice(0, 2).map((x) => x.i));
+  const bottom2Cols = new Set(sortedColIdx.slice(-2).map((x) => x.i));
+
+  const rows = [
+    [{ value: `${ct.rowVar} × ${ct.colVar}`, format: "bold" }],
+    [{ value: "卡方值", format: "bold" }, { value: ct.chiSquare.toFixed(4), type: "number" }],
+    [{ value: "自由度", format: "bold" }, { value: ct.degreesOfFreedom, type: "number" }],
+    [{ value: "p值", format: "bold" }, { value: ct.pValue === null ? "" : ct.pValue.toFixed(6) }],
+    [],
+    [{ value: ct.rowVar, format: "header" }, ...ct.colLabels.map((l) => ({ value: l, format: "header" })), { value: "基数", format: "header" }, { value: "合计%", format: "header" }],
+  ];
+  ct.rowLabels.forEach((rowLabel, ri) => {
+    const cells = [{ value: rowLabel, format: "bold" }];
+    ct.colLabels.forEach((_, ci) => {
+      const pct = pctMatrix[ri][ci];
+      let fmt = "percent";
+      if (top2Cols.has(ci) && pct === Math.max(...pctMatrix.map((r) => r[ci]))) fmt = "top2";
+      else if (bottom2Cols.has(ci) && pct === Math.min(...pctMatrix.map((r) => r[ci]))) fmt = "bottom2";
+      cells.push({ value: pct, type: "number", format: fmt });
+    });
+    cells.push({ value: ct.rowTotals[ri], type: "number", format: "base" });
+    cells.push({ value: ct.total > 0 ? ct.rowTotals[ri] / ct.total : 0, type: "number", format: "percent" });
+    rows.push(cells);
+  });
+  rows.push([{ value: "合计", format: "bold" }, ...ct.colTotals.map((v) => ({ value: ct.total > 0 ? v / ct.total : 0, type: "number", format: "percent" })), { value: ct.total, type: "number", format: "base" }, { value: 1, type: "number", format: "percent" }]);
   downloadExcelFromRows("交叉表分析.xlsx", rows, "交叉表");
 }
 
@@ -6297,6 +6506,7 @@ function renderWeighting() {
       return;
     }
     lastWeightingResult = { mode, rows };
+    projectDataBus.set("weightedData", lastWeightingResult, { mode, cells: rows.length });
     document.querySelector("#exportWeighting").disabled = false;
     const body = rows.map((row) => `<tr><td>${escapeHtml(row.cell)}</td><td>${row.sample}</td><td>${row.target}</td><td>${row.weight.toFixed(3)}</td></tr>`).join("");
     const maxWeight = Math.max(...rows.map((row) => row.weight));
@@ -6326,6 +6536,7 @@ function renderWeighting() {
   const weighted = calculateRimWeights(parsed.rows, targets);
   const summary = summarizeRimTargets(weighted.records, targets);
   lastWeightingResult = { mode, records: weighted.records, summary, headers: parsed.headers };
+  projectDataBus.set("weightedData", lastWeightingResult, { mode, records: weighted.records.length });
   document.querySelector("#exportWeighting").disabled = false;
   const weights = weighted.records.map((record) => record.__weight);
   const maxWeight = Math.max(...weights);
@@ -6590,6 +6801,7 @@ function runPsmAnalysis() {
     curve,
     notes: psmNotes
   };
+  projectDataBus.set("modelResults.psm", lastPsmAnalysis, { type: "PSM", samples: rows.length });
   exportButton.disabled = false;
   exportPngButton.disabled = false;
   const noteBlock = psmNotes.length
@@ -6820,6 +7032,7 @@ function runKanoAnalysis() {
 
   const items = rows.map(analyzeKanoRow);
   lastKanoAnalysis = items;
+  projectDataBus.set("modelResults.kano", items, { type: "KANO", attributes: items.length });
   exportButton.disabled = false;
   exportPngButton.disabled = false;
   const tableRows = items
@@ -6908,6 +7121,8 @@ function generateMaxDiffDesign() {
   if (items.length < itemsPerSet) {
     lastMaxDiffDesign = null;
     exportButton.disabled = true;
+    const validationExportButton = document.querySelector("#exportMaxDiffValidation");
+    if (validationExportButton) validationExportButton.disabled = true;
     result.innerHTML = `
       <div class="empty-state">
         <strong>项目数量不足</strong>
@@ -6938,13 +7153,25 @@ function generateMaxDiffDesign() {
 
   lastMaxDiffDesign = { items, sets, counts };
   exportButton.disabled = false;
+  const validationExportButton = document.querySelector("#exportMaxDiffValidation");
+  const validation = window.SurveyKitMaxDiff
+    ? window.SurveyKitMaxDiff.validateMaxDiffDesign({ items, sets, counts }, { itemsPerSet })
+    : null;
+  lastMaxDiffValidation = validation;
+  if (validationExportButton) validationExportButton.disabled = !validation;
   const coverageRows = items
-    .map((item) => `
-      <tr>
-        <td>${escapeHtml(item)}</td>
-        <td>${counts.get(item)}</td>
-      </tr>
-    `)
+    .map((item) => {
+      const count = counts.get(item);
+      const deviation = validation ? (count - validation.occurrence.mean) : 0;
+      const devClass = Math.abs(deviation) > validation?.occurrence.mean * 0.15 ? "warn" : "";
+      return `
+        <tr class="${devClass}">
+          <td>${escapeHtml(item)}</td>
+          <td>${count}</td>
+          <td>${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)}</td>
+        </tr>
+      `;
+    })
     .join("");
   const setCards = sets
     .map((set) => `
@@ -6955,6 +7182,8 @@ function generateMaxDiffDesign() {
     `)
     .join("");
 
+  const validationHtml = validation ? renderMaxDiffValidationPanel(validation) : "";
+
   result.innerHTML = `
     <article class="audit-issue">
       <div class="issue-head">
@@ -6963,6 +7192,7 @@ function generateMaxDiffDesign() {
       </div>
       <div class="maxdiff-grid">${setCards}</div>
     </article>
+    ${validationHtml}
     <article class="audit-issue">
       <div class="issue-head">
         <strong>展示次数检查</strong>
@@ -6970,10 +7200,56 @@ function generateMaxDiffDesign() {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>项目</th><th>展示次数</th></tr></thead>
+          <thead><tr><th>项目</th><th>展示次数</th><th>偏离均值</th></tr></thead>
           <tbody>${coverageRows}</tbody>
         </table>
       </div>
+    </article>
+  `;
+}
+
+function renderMaxDiffValidationPanel(validation) {
+  const levelText = { good: "良好", acceptable: "可接受", warning: "需调整" }[validation.level] || validation.level;
+  const levelClass = { good: "low", acceptable: "medium", warning: "high" }[validation.level] || "low";
+  const occurrenceCvPct = (validation.occurrence.cv * 100).toFixed(1);
+  const pairCvPct = (validation.pairCoverage.cv * 100).toFixed(1);
+  const positionCvPct = (validation.positionBalance.avgCv * 100).toFixed(1);
+  const missingCount = validation.pairCoverage.missingPairs.length;
+  const issueRows = validation.issues
+    .map((issue) => `
+      <li class="audit-issue-row ${issue.level}">
+        <span class="issue-tag ${issue.level}">${issue.level === "low" ? "提示" : issue.level === "medium" ? "中等" : "高"}</span>
+        <span>${escapeHtml(issue.message)}</span>
+      </li>
+    `)
+    .join("");
+  const pairCoverageNote = missingCount > 0
+    ? `存在 ${missingCount} 对项目从未共现，覆盖不完整`
+    : `所有项目对均已共现，平均 ${validation.pairCoverage.mean.toFixed(2)} 次`;
+  return `
+    <article class="audit-issue">
+      <div class="issue-head">
+        <strong>实验设计平衡性校验</strong>
+        <span class="issue-tag ${levelClass}">评分 ${validation.overallScore}/100 · ${levelText}</span>
+      </div>
+      <div class="maxdiff-validation-grid">
+        <div class="validation-metric">
+          <span class="metric-label">出现次数均衡</span>
+          <strong class="${validation.occurrence.balanced ? "ok" : "warn"}">${occurrenceCvPct}%</strong>
+          <span class="metric-hint">CV ≤ 10% 为良好</span>
+        </div>
+        <div class="validation-metric">
+          <span class="metric-label">配对覆盖均衡</span>
+          <strong class="${validation.pairCoverage.balanced ? "ok" : "warn"}">${pairCvPct}%</strong>
+          <span class="metric-hint">${escapeHtml(pairCoverageNote)}</span>
+        </div>
+        <div class="validation-metric">
+          <span class="metric-label">位置分布均衡</span>
+          <strong class="${validation.positionBalance.balanced ? "ok" : "warn"}">${positionCvPct}%</strong>
+          <span class="metric-hint">CV ≤ 35% 为良好</span>
+        </div>
+      </div>
+      ${issueRows ? `<ul class="audit-issue-list">${issueRows}</ul>` : ""}
     </article>
   `;
 }
@@ -7074,6 +7350,7 @@ function renderMaxDiffScore() {
   }
 
   lastMaxDiffScore = rows;
+  projectDataBus.set("modelResults.maxdiff", rows, { type: "MaxDiff", items: rows.length });
   exportButton.disabled = false;
   exportPngButton.disabled = false;
   const maxAbs = Math.max(0.01, ...rows.map((row) => Math.abs(row.score)));
@@ -7141,6 +7418,153 @@ function exportMaxDiffScore() {
     rows.push([index + 1, row.item, row.best, row.worst, row.shown, row.score.toFixed(3)]);
   });
   downloadExcelFromRows("MaxDiff简单计分.xlsx", rows);
+}
+
+function exportMaxDiffValidation() {
+  if (!lastMaxDiffValidation || !window.SurveyKitMaxDiff) return;
+  const rows = window.SurveyKitMaxDiff.maxDiffValidationToExportRows(lastMaxDiffValidation);
+  downloadExcelFromRows("MaxDiff设计校验.xlsx", rows);
+}
+
+// ─── 阶段四：MNL / HB 模型估计 ─────────────────────────────
+
+function parseMaxDiffResponsesFromInput() {
+  if (!window.SurveyKitMaxDiff) return null;
+  const text = document.querySelector("#maxdiffResponses")?.value || "";
+  if (!text.trim()) return null;
+  return window.SurveyKitMaxDiff.parseMaxDiffResponses(text);
+}
+
+function renderMaxDiffUtilities(result, modelName) {
+  if (!result?.utilities?.length) return "";
+  const maxU = Math.max(0.01, ...result.utilities.map((u) => Math.abs(u.utility)));
+  const rows = result.utilities
+    .map((u) => {
+      const width = Math.max(4, Math.abs(u.utility) / maxU * 100);
+      const positive = u.utility >= 0;
+      const sharePct = (u.share * 100).toFixed(1);
+      return `
+        <div class="score-bar-row">
+          <span>${escapeHtml(u.item)}</span>
+          <div class="score-track">
+            <i class="${positive ? "positive" : "negative"}" style="width:${width}%"></i>
+          </div>
+          <strong>${u.utility.toFixed(3)}</strong>
+        </div>
+      `;
+    })
+    .join("");
+  const tableRows = result.utilities
+    .map((u) => `
+      <tr>
+        <td>${u.rank}</td>
+        <td>${escapeHtml(u.item)}</td>
+        <td>${u.utility.toFixed(4)}</td>
+        <td>${u.se.toFixed(4)}</td>
+        <td>${(u.share * 100).toFixed(2)}%</td>
+      </tr>
+    `)
+    .join("");
+  const meta = [
+    `对数似然 LL = ${result.logLikelihood?.toFixed(3) ?? "-"}`,
+    result.converged !== undefined ? `收敛：${result.converged ? "是" : "否"}` : "",
+    result.respondentCount !== undefined ? `受访者数：${result.respondentCount}` : ""
+  ].filter(Boolean).join(" · ");
+  return `
+    <article class="audit-issue">
+      <div class="issue-head">
+        <strong>${modelName} 效用估计</strong>
+        <span class="issue-tag high">${result.utilities.length} 项</span>
+      </div>
+      <p class="panel-note">${escapeHtml(meta)}</p>
+      <div class="score-bars">${rows}</div>
+    </article>
+    <article class="audit-issue">
+      <div class="issue-head">
+        <strong>效用明细</strong>
+        <span class="issue-tag low">${modelName}</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>排名</th><th>项目</th><th>效用值</th><th>标准误</th><th>偏好份额</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    </article>
+  `;
+}
+
+function runMaxDiffMNL() {
+  const result = document.querySelector("#maxdiffModelResults");
+  const exportButton = document.querySelector("#exportMaxDiffMNL");
+  if (!window.SurveyKitMaxDiff) {
+    result.innerHTML = `<div class="empty-state"><strong>模块未加载</strong><span>MNL 模型模块未就绪。</span></div>`;
+    return;
+  }
+  const parsed = parseMaxDiffResponsesFromInput();
+  if (!parsed || !parsed.responses.length) {
+    lastMaxDiffMNL = null;
+    exportButton.disabled = true;
+    result.innerHTML = `
+      <div class="empty-state">
+        <strong>未识别到响应数据</strong>
+        <span>请按“受访者ID, 题组编号, best 项目, worst 项目, 展示项目(以 | 分隔)”粘贴原始选择数据。</span>
+      </div>
+    `;
+    return;
+  }
+  const iterations = Math.max(50, Number(document.querySelector("#maxdiffIterations")?.value) || 400);
+  const modelResult = window.SurveyKitMaxDiff.estimateMNLUtilities(parsed.responses, parsed.items, { iterations });
+  lastMaxDiffMNL = modelResult;
+  projectDataBus.set("modelResults.maxdiffMNL", modelResult, { type: "MNL", items: modelResult.utilities.length });
+  exportButton.disabled = false;
+  result.innerHTML = renderMaxDiffUtilities(modelResult, "MNL");
+}
+
+function runMaxDiffHB() {
+  const result = document.querySelector("#maxdiffModelResults");
+  const exportButton = document.querySelector("#exportMaxDiffHB");
+  if (!window.SurveyKitMaxDiff) {
+    result.innerHTML = `<div class="empty-state"><strong>模块未加载</strong><span>HB 模型模块未就绪。</span></div>`;
+    return;
+  }
+  const parsed = parseMaxDiffResponsesFromInput();
+  if (!parsed || !parsed.responses.length) {
+    lastMaxDiffHB = null;
+    exportButton.disabled = true;
+    result.innerHTML = `
+      <div class="empty-state">
+        <strong>未识别到响应数据</strong>
+        <span>请按“受访者ID, 题组编号, best 项目, worst 项目, 展示项目(以 | 分隔)”粘贴原始选择数据。</span>
+      </div>
+    `;
+    return;
+  }
+  const iterations = Math.max(50, Number(document.querySelector("#maxdiffIterations")?.value) || 200);
+  const modelResult = window.SurveyKitMaxDiff.estimateHBUtilities(parsed.responses, parsed.items, { iterations });
+  lastMaxDiffHB = modelResult;
+  projectDataBus.set("modelResults.maxdiffHB", modelResult, { type: "HB", items: modelResult.groupUtilities.length });
+  exportButton.disabled = false;
+  result.innerHTML = renderMaxDiffUtilities(
+    { ...modelResult, utilities: modelResult.groupUtilities },
+    "HB 层级贝叶斯"
+  );
+}
+
+function exportMaxDiffMNL() {
+  if (!lastMaxDiffMNL || !window.SurveyKitMaxDiff) return;
+  const rows = window.SurveyKitMaxDiff.maxDiffUtilitiesToExportRows(lastMaxDiffMNL, "MNL");
+  downloadExcelFromRows("MaxDiff-MNL效用估计.xlsx", rows);
+}
+
+function exportMaxDiffHB() {
+  if (!lastMaxDiffHB || !window.SurveyKitMaxDiff) return;
+  const exportResult = {
+    ...lastMaxDiffHB,
+    utilities: lastMaxDiffHB.groupUtilities
+  };
+  const rows = window.SurveyKitMaxDiff.maxDiffUtilitiesToExportRows(exportResult, "HB 层级贝叶斯");
+  downloadExcelFromRows("MaxDiff-HB效用估计.xlsx", rows);
 }
 
 function scoreAbcQuestion(question) {
@@ -9624,6 +10048,8 @@ async function renderAiBrief() {
   copyButton.disabled = false;
   exportButton.disabled = false;
   if (wordButton) wordButton.disabled = false;
+  const platformBtn = document.querySelector("#exportAiPlatformFormat");
+  if (platformBtn) platformBtn.disabled = false;
   if (applyButton) applyButton.disabled = false;
   if (reviseButton) reviseButton.disabled = false;
   result.innerHTML = renderAiQuestionnaireHtml({ ...design, questionnaireText: output, source });
@@ -10506,6 +10932,35 @@ function exportAiWord() {
   downloadBlob("AI问卷设计初稿.docx", createDocxBlob(lastAiPrompt));
 }
 
+function exportAiPlatformFormat() {
+  if (!lastAiPrompt) return;
+  // 将问卷稿转换为问卷星/腾讯问卷批量导入格式
+  const lines = lastAiPrompt.split("\n");
+  const output = [];
+  let qNum = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    // 检测题目标题（Q1. / 1. / 第1题 等）
+    const qMatch = trimmed.match(/^(?:Q|第)?\s*(\d+)\s*[.、．)\]]?\s*(.+)/i);
+    if (qMatch && !trimmed.match(/^[A-Fa-f][.、．)\]]/)) {
+      qNum++;
+      output.push(`${qNum}.${qMatch[2].replace(/^[.、．)\]]\s*/, "")}`);
+    } else if (trimmed.match(/^[A-Fa-f][.、．)\]]\s*/)) {
+      // 选项
+      output.push(trimmed.replace(/^([A-Fa-f])[.、．)\]]\s*/, "$1."));
+    } else if (trimmed.match(/^[【\[]/)) {
+      // 跳题逻辑标注
+      output.push(trimmed);
+    } else if (trimmed.startsWith("#") || trimmed.startsWith("---")) {
+      continue; // 跳过 Markdown 标记
+    } else {
+      output.push(trimmed);
+    }
+  }
+  downloadTextFile("问卷平台导入格式.txt", output.join("\n"), "text/plain;charset=utf-8");
+}
+
 function aiWorkbenchTaskName(task) {
   return {
     "questionnaire-review": "问卷审查说明",
@@ -11098,10 +11553,41 @@ function getProjectTypeGuidance(projectType) {
   };
 }
 
+function buildDataBusModelNotes() {
+  const parts = [];
+  const psm = projectDataBus.get("modelResults.psm");
+  if (psm) {
+    parts.push(`PSM 价格敏感度分析（N=${psm.sampleCount}）：可接受价格区间 ${psm.acceptable || "未识别"}，IPP=${psm.ipp ?? "-"}，OPP=${psm.opp ?? "-"}。`);
+  }
+  const kano = projectDataBus.get("modelResults.kano");
+  if (kano?.length) {
+    const summary = kano.slice(0, 6).map((item) => `${item.name}(${item.category})`).join("、");
+    parts.push(`KANO 分析（${kano.length} 项属性）：${summary}。`);
+  }
+  const maxdiff = projectDataBus.get("modelResults.maxdiff");
+  if (maxdiff?.length) {
+    const top = maxdiff.slice(0, 3).map((item) => item.name || item.item).join(" > ");
+    parts.push(`MaxDiff 相对偏好（${maxdiff.length} 项）：Top3 = ${top}。`);
+  }
+  const maxdiffMNL = projectDataBus.get("modelResults.maxdiffMNL");
+  if (maxdiffMNL?.utilities?.length) {
+    const top = maxdiffMNL.utilities.slice(0, 3).map((u) => `${u.item}(${u.utility.toFixed(2)})`).join(" > ");
+    parts.push(`MaxDiff MNL 效用（LL=${maxdiffMNL.logLikelihood?.toFixed(1)}）：Top3 = ${top}。`);
+  }
+  const maxdiffHB = projectDataBus.get("modelResults.maxdiffHB");
+  if (maxdiffHB?.groupUtilities?.length) {
+    const top = maxdiffHB.groupUtilities.slice(0, 3).map((u) => `${u.item}(${u.utility.toFixed(2)})`).join(" > ");
+    parts.push(`MaxDiff HB 群体效用（N=${maxdiffHB.respondentCount}）：Top3 = ${top}。`);
+  }
+  if (!parts.length) return "";
+  return ["【已有模型分析结果（可在报告中引用）】", ...parts].join("\n");
+}
+
 function buildAiReportPrompt(context, summary, dataContext) {
   const contextText = formatAiReportContext(context);
   const variableNotes = buildAiReportVariableNotes(dataContext);
   const guidance = getProjectTypeGuidance(context.projectType);
+  const modelNotes = buildDataBusModelNotes();
   return [
     {
       role: "system",
@@ -11139,6 +11625,8 @@ function buildAiReportPrompt(context, summary, dataContext) {
         "",
         variableNotes,
         "",
+        modelNotes,
+        "",
         "【数据摘要】",
         summary,
         "",
@@ -11158,6 +11646,100 @@ function buildAiReportPrompt(context, summary, dataContext) {
       ].join("\n")
     }
   ];
+}
+
+// === AI 报告图表内嵌：SVG 图表生成 ===
+function svgBarChart(title, labels, values, opts = {}) {
+  const w = opts.width || 480, h = opts.height || 260;
+  const pad = { top: 30, right: 20, bottom: 50, left: 50 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+  const maxVal = Math.max(...values, 1);
+  const barW = Math.min(40, chartW / labels.length * 0.7);
+  const gap = chartW / labels.length;
+  const color = opts.color || "#4285f4";
+  let bars = "";
+  labels.forEach((label, i) => {
+    const barH = (values[i] / maxVal) * chartH;
+    const x = pad.left + i * gap + (gap - barW) / 2;
+    const y = pad.top + chartH - barH;
+    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${color}" rx="2"/>`;
+    bars += `<text x="${(x + barW / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="#333">${values[i].toFixed(1)}%</text>`;
+    const lbl = label.length > 6 ? label.slice(0, 6) + "…" : label;
+    bars += `<text x="${(x + barW / 2).toFixed(1)}" y="${(pad.top + chartH + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="#666">${lbl}</text>`;
+  });
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#222">${title}</text><line x1="${pad.left}" y1="${pad.top + chartH}" x2="${pad.left + chartW}" y2="${pad.top + chartH}" stroke="#ddd"/>${bars}</svg>`;
+}
+
+function svgPieChart(title, labels, values, opts = {}) {
+  const w = opts.width || 360, h = opts.height || 280;
+  const cx = w * 0.38, cy = h * 0.55, r = Math.min(w, h) * 0.32;
+  const total = values.reduce((s, v) => s + v, 0) || 1;
+  const colors = ["#4285f4", "#ea4335", "#fbbc04", "#34a853", "#ff6d01", "#46bdc6", "#7baaf7", "#ee675c"];
+  let paths = "", legend = "", angle = -Math.PI / 2;
+  labels.forEach((label, i) => {
+    const slice = (values[i] / total) * 2 * Math.PI;
+    const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+    const x2 = cx + r * Math.cos(angle + slice), y2 = cy + r * Math.sin(angle + slice);
+    const large = slice > Math.PI ? 1 : 0;
+    paths += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${colors[i % colors.length]}"/>`;
+    const pct = ((values[i] / total) * 100).toFixed(1);
+    legend += `<rect x="${w * 0.72}" y="${30 + i * 18}" width="10" height="10" fill="${colors[i % colors.length]}"/><text x="${w * 0.72 + 14}" y="${39 + i * 18}" font-size="9" fill="#333">${(label.length > 8 ? label.slice(0, 8) + "…" : label)} ${pct}%</text>`;
+    angle += slice;
+  });
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#222">${title}</text>${paths}${legend}</svg>`;
+}
+
+function svgStackedBarChart(title, categories, seriesNames, seriesData, opts = {}) {
+  const w = opts.width || 500, h = opts.height || 280;
+  const pad = { top: 30, right: 20, bottom: 50, left: 50 };
+  const chartW = w - pad.left - pad.right;
+  const chartH = h - pad.top - pad.bottom;
+  const colors = ["#4285f4", "#ea4335", "#fbbc04", "#34a853", "#ff6d01", "#46bdc6"];
+  const barW = Math.min(36, chartW / categories.length * 0.6);
+  const gap = chartW / categories.length;
+  let bars = "";
+  categories.forEach((cat, ci) => {
+    let cumH = 0;
+    seriesNames.forEach((sn, si) => {
+      const val = seriesData[si]?.[ci] || 0;
+      const segH = (val / 100) * chartH;
+      const x = pad.left + ci * gap + (gap - barW) / 2;
+      const y = pad.top + chartH - cumH - segH;
+      bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${segH.toFixed(1)}" fill="${colors[si % colors.length]}"/>`;
+      cumH += segH;
+    });
+    const lbl = cat.length > 6 ? cat.slice(0, 6) + "…" : cat;
+    bars += `<text x="${(pad.left + ci * gap + gap / 2).toFixed(1)}" y="${(pad.top + chartH + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="#666">${lbl}</text>`;
+  });
+  let legend = seriesNames.map((sn, i) => `<rect x="${pad.left + i * 90}" y="${h - 14}" width="10" height="10" fill="${colors[i % colors.length]}"/><text x="${pad.left + i * 90 + 14}" y="${h - 5}" font-size="9" fill="#333">${sn.length > 8 ? sn.slice(0, 8) + "…" : sn}</text>`).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#222">${title}</text><line x1="${pad.left}" y1="${pad.top + chartH}" x2="${pad.left + chartW}" y2="${pad.top + chartH}" stroke="#ddd"/>${bars}${legend}</svg>`;
+}
+
+function buildCrosstabChartSvg(dataContext) {
+  if (!dataContext || !dataContext.headerInfos || !dataContext.rawRows?.length) return "";
+  const { headerInfos, rawRows, displayHeaders } = dataContext;
+  const questionHeaders = headerInfos.filter((h) => h.type === "question").slice(0, 3);
+  if (!questionHeaders.length) return "";
+  const charts = [];
+  for (const h of questionHeaders) {
+    const idx = h.index;
+    const values = rawRows.map((r) => r[idx]).filter((v) => v !== "" && v != null);
+    const freq = {};
+    for (const v of values) { const key = String(v).trim(); freq[key] = (freq[key] || 0) + 1; }
+    const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    if (!sorted.length) continue;
+    const labels = sorted.map(([k]) => k);
+    const pcts = sorted.map(([, c]) => (c / values.length) * 100);
+    const title = displayHeaders[idx] || h.header;
+    if (sorted.length <= 5) {
+      charts.push(svgPieChart(title, labels, sorted.map(([, c]) => c)));
+    } else {
+      charts.push(svgBarChart(title, labels, pcts));
+    }
+  }
+  if (!charts.length) return "";
+  return `\n\n## 数据图表\n\n` + charts.map((svg) => `<div style="margin:12px 0">${svg}</div>`).join("\n");
 }
 
 async function generateAiReport() {
@@ -11239,13 +11821,14 @@ async function generateAiReport() {
     markWorkspaceStatus("ai_report");
 
     const html = renderMarkdownPreview(output);
+    const chartSvg = buildCrosstabChartSvg(lastCrosstabDataContext);
     result.innerHTML = `
       <article class="audit-issue">
         <div class="issue-head">
           <strong>AI 定量报告</strong>
           <span class="issue-tag low">${escapeHtml(source)}</span>
         </div>
-        <div class="markdown-body">${html}</div>
+        <div class="markdown-body">${html}${chartSvg}</div>
       </article>
     `;
     setExportButtons(true);
@@ -11805,6 +12388,119 @@ document.querySelector("#workspaceExportProject")?.addEventListener("click", (ev
   downloadTextFile(`${(project.projectName || "调研项目").replace(/[\\/:*?"<>|]/g, "_")}.survey-project.json`, JSON.stringify({ version: 2, project }, null, 2), "application/json;charset=utf-8");
   showButtonSaved(event.currentTarget, "已导出");
 });
+
+// === 一键交付包：将项目产出打包为 zip ===
+function createZipBlob(files) {
+  // files: [{name, content}] — content 为 string 或 Uint8Array
+  const encoder = new TextEncoder();
+  const entries = files.map((f) => {
+    const nameBytes = encoder.encode(f.name);
+    const data = typeof f.content === "string" ? encoder.encode(f.content) : f.content;
+    return { nameBytes, data };
+  });
+  // 计算总大小
+  let offset = 0;
+  const localHeaders = entries.map((e) => {
+    const header = new Uint8Array(30 + e.nameBytes.length);
+    const dv = new DataView(header.buffer);
+    dv.setUint32(0, 0x04034b50, true); // local file header signature
+    dv.setUint16(4, 20, true); // version needed
+    dv.setUint16(6, 0, true); // flags
+    dv.setUint16(8, 0, true); // compression: store
+    dv.setUint16(10, 0, true); // mod time
+    dv.setUint16(12, 0, true); // mod date
+    dv.setUint32(14, crc32(e.data), true); // crc32
+    dv.setUint32(18, e.data.length, true); // compressed size
+    dv.setUint32(22, e.data.length, true); // uncompressed size
+    dv.setUint16(26, e.nameBytes.length, true);
+    dv.setUint16(28, 0, true); // extra length
+    header.set(e.nameBytes, 30);
+    const localOffset = offset;
+    offset += header.length + e.data.length;
+    return { header, localOffset };
+  });
+  // Central directory
+  const centralParts = entries.map((e, i) => {
+    const cd = new Uint8Array(46 + e.nameBytes.length);
+    const dv = new DataView(cd.buffer);
+    dv.setUint32(0, 0x02014b50, true); // central dir signature
+    dv.setUint16(4, 20, true);
+    dv.setUint16(6, 20, true);
+    dv.setUint16(8, 0, true);
+    dv.setUint16(10, 0, true); // compression: store
+    dv.setUint16(12, 0, true);
+    dv.setUint16(14, 0, true);
+    dv.setUint32(16, crc32(e.data), true);
+    dv.setUint32(20, e.data.length, true);
+    dv.setUint32(24, e.data.length, true);
+    dv.setUint16(28, e.nameBytes.length, true);
+    dv.setUint16(30, 0, true);
+    dv.setUint16(32, 0, true);
+    dv.setUint16(34, 0, true);
+    dv.setUint16(36, 0, true);
+    dv.setUint32(38, 0, true);
+    dv.setUint32(42, localHeaders[i].localOffset, true);
+    cd.set(e.nameBytes, 46);
+    return cd;
+  });
+  const centralSize = centralParts.reduce((s, p) => s + p.length, 0);
+  const centralOffset = offset;
+  // End of central directory
+  const eocd = new Uint8Array(22);
+  const eocdDv = new DataView(eocd.buffer);
+  eocdDv.setUint32(0, 0x06054b50, true);
+  eocdDv.setUint16(4, 0, true);
+  eocdDv.setUint16(6, 0, true);
+  eocdDv.setUint16(8, entries.length, true);
+  eocdDv.setUint16(10, entries.length, true);
+  eocdDv.setUint32(12, centralSize, true);
+  eocdDv.setUint32(16, centralOffset, true);
+  eocdDv.setUint16(20, 0, true);
+  // 拼装
+  const parts = [];
+  entries.forEach((e, i) => { parts.push(localHeaders[i].header, e.data); });
+  centralParts.forEach((cd) => parts.push(cd));
+  parts.push(eocd);
+  return new Blob(parts, { type: "application/zip" });
+}
+
+function crc32(data) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < data.length; i++) {
+    crc ^= data[i];
+    for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+document.querySelector("#workspaceDeliveryPack")?.addEventListener("click", (event) => {
+  const project = loadWorkspaceProject();
+  if (!project) return showToast("当前没有可打包的项目", "warning");
+  const files = [];
+  const projectName = (project.projectName || "调研项目").replace(/[\\/:*?"<>|]/g, "_");
+  // 项目档案
+  files.push({ name: `${projectName}/项目档案.json`, content: JSON.stringify({ version: 2, project }, null, 2) });
+  // 清洗后数据
+  const cleanedData = projectDataBus.get("cleanedData");
+  if (cleanedData) files.push({ name: `${projectName}/清洗后数据.csv`, content: cleanedData });
+  // 交叉表
+  if (lastCrosstabAnalysis) {
+    const ct = lastCrosstabAnalysis;
+    const csvRows = [[ct.rowVar, ...ct.colLabels, "合计"].join(",")];
+    ct.rowLabels.forEach((rl, ri) => csvRows.push([rl, ...ct.matrix[ri], ct.rowTotals[ri]].join(",")));
+    csvRows.push(["合计", ...ct.colTotals, ct.total].join(","));
+    files.push({ name: `${projectName}/交叉表分析.csv`, content: csvRows.join("\n") });
+  }
+  // AI 报告
+  if (lastAiReport) files.push({ name: `${projectName}/AI定量报告.md`, content: lastAiReport });
+  // 模型结果汇总
+  const modelNotes = typeof buildDataBusModelNotes === "function" ? buildDataBusModelNotes() : "";
+  if (modelNotes) files.push({ name: `${projectName}/模型结果汇总.md`, content: modelNotes });
+  if (files.length <= 1) return showToast("项目中暂无可打包的产出物，请先完成分析", "warning");
+  const blob = createZipBlob(files);
+  downloadBlob(`${projectName}_交付包.zip`, blob);
+  showButtonSaved(event.currentTarget, "已打包");
+});
 document.querySelector("#workspaceImportProject")?.addEventListener("click", () => {
   const input = document.querySelector("#workspaceProjectImportFile");
   if (input) { input.value = ""; input.click(); }
@@ -12067,6 +12763,28 @@ document.querySelector("#loadWeightingExample").addEventListener("click", () => 
   document.querySelector("#weightingSampleData").value = exampleWeightingSampleData;
   document.querySelector("#weightingTargetData").value = exampleWeightingTargetData;
   renderWeighting();
+});
+
+// === 数据总线衔接：清洗后数据 → 加权模块 ===
+projectDataBus.onChange((key) => {
+  const hint = document.querySelector("#weightingDataBusHint");
+  if (!hint) return;
+  if (key === "cleanedData" && projectDataBus.has("cleanedData")) {
+    hint.classList.remove("hidden");
+  }
+});
+document.querySelector("#useCleanedDataForWeighting")?.addEventListener("click", () => {
+  const cleaned = projectDataBus.get("cleanedData");
+  if (!cleaned?.rows?.length) return;
+  const headers = cleaned.headers || [];
+  const csvLines = [headers.join(",")];
+  cleaned.rows.forEach((row) => {
+    csvLines.push(headers.map((h) => String(row[h] ?? "").replace(/,/g, "，")).join(","));
+  });
+  document.querySelector("#weightingMode").value = "rim";
+  document.querySelector("#weightingSampleData").value = csvLines.join("\n");
+  document.querySelector("#weightingDataBusHint")?.classList.add("hidden");
+  showToast(`已填充清洗后数据（${cleaned.rows.length} 行），请设置目标结构后点击计算权重。`, "info", 4000);
 });
 
 // AI 报告生成页面（独立入口）
@@ -14027,7 +14745,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const value = Math.max(0, Math.min(100, Math.round(percent)));
       progressFill.style.width = value + "%";
       progress.setAttribute("aria-valuenow", String(value));
-      progressText.textContent = `${text} · ${value}%`;
+      // 细化阶段指示
+      let stage = "";
+      if (value < 10) stage = "上传";
+      else if (value < 48) stage = "解析";
+      else if (value < 90) stage = "渲染";
+      else if (value < 95) stage = "质检";
+      else if (value < 100) stage = "打包";
+      else stage = "完成";
+      progressText.textContent = `[${stage}] ${text} · ${value}%`;
     }
 
     function startPptxProgress() {
@@ -14292,6 +15018,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           theme: themeInput?.value || "blue",
           template_id: useUploadedTemplate ? uploadedTemplateId : null,
           planning_mode: planningModeInput?.value || "rule",
+          structure_template: document.querySelector("#pptxStructureTemplate")?.value || "",
           dimension: currentDimension || null,
           page_config: compactPptxPageConfig(editedPagePlan),
         });
@@ -14331,6 +15058,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         (genStatus || confirmStatus).textContent = "已生成并开始下载。";
         recordWorkspaceReportOutput(`${title}.pptx`, blob.size);
         saveWorkspaceReportPlan(editedPagePlan, selectedFile?.name || title);
+        // 记录生成历史
+        savePptxHistory({
+          time: Date.now(),
+          title,
+          score: Number(readyState.overall_score ?? 0),
+          size: blob.size,
+          template: uploadedTemplateId || "默认",
+          fileName: selectedFile?.name || "",
+        });
         const isAiEnhanced = editedPagePlan?.planning_mode === "ai_report";
         const qa = readyState.qa || {};
         const qaIssues = Array.isArray(qa.issues) ? qa.issues : [];
@@ -14402,6 +15138,54 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     titleInput?.addEventListener("input", () => invalidatePptxPreview());
     themeInput?.addEventListener("change", () => invalidatePptxPreview("主题色已更新，请重新预览后再生成。"));
     planningModeInput?.addEventListener("change", () => invalidatePptxPreview("规划模式已更新，请重新预览。"));
+
+    // === PPT 生成历史（localStorage）===
+    const PPTX_HISTORY_KEY = "surveykit_pptx_history";
+    const PPTX_HISTORY_MAX = 10;
+
+    function loadPptxHistory() {
+      try { return JSON.parse(localStorage.getItem(PPTX_HISTORY_KEY) || "[]"); } catch { return []; }
+    }
+    function savePptxHistory(entry) {
+      const list = loadPptxHistory();
+      list.unshift(entry);
+      if (list.length > PPTX_HISTORY_MAX) list.length = PPTX_HISTORY_MAX;
+      localStorage.setItem(PPTX_HISTORY_KEY, JSON.stringify(list));
+      renderPptxHistory();
+    }
+    function renderPptxHistory() {
+      const container = document.querySelector("#pptxHistoryList");
+      if (!container) return;
+      const list = loadPptxHistory();
+      if (!list.length) {
+        container.innerHTML = `<p class="panel-note">暂无生成记录</p>`;
+        return;
+      }
+      container.innerHTML = list.map((item, i) => {
+        const date = new Date(item.time);
+        const timeStr = `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+        const sizeStr = item.size > 1048576 ? `${(item.size / 1048576).toFixed(1)} MB` : `${Math.round(item.size / 1024)} KB`;
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:13px">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</span>
+          <span style="color:#666;white-space:nowrap">${item.score}分 · ${sizeStr}</span>
+          <span style="color:#999;white-space:nowrap">${timeStr}</span>
+          <button class="secondary-btn mini" type="button" data-history-idx="${i}" style="white-space:nowrap">重新生成</button>
+        </div>`;
+      }).join("");
+      container.querySelectorAll("[data-history-idx]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = Number(btn.dataset.historyIdx);
+          const entry = loadPptxHistory()[idx];
+          if (entry && titleInput) titleInput.value = entry.title;
+          if (typeof showToast === "function") showToast(`已填充标题「${entry.title}」，请上传数据后点击生成`, "info");
+        });
+      });
+    }
+    document.querySelector("#pptxHistoryClear")?.addEventListener("click", () => {
+      localStorage.removeItem(PPTX_HISTORY_KEY);
+      renderPptxHistory();
+    });
+    renderPptxHistory();
   })();
 
 function initCheckboxMultiselect(dropdown, labels, placeholder) {
@@ -14551,6 +15335,610 @@ document.querySelector("#loadMaxDiffScoreExample").addEventListener("click", () 
   renderMaxDiffScore();
   if (lastMaxDiffScore) markWorkspaceStatus("models");
 });
+document.querySelector("#exportMaxDiffValidation").addEventListener("click", exportMaxDiffValidation);
+document.querySelector("#runMaxDiffMNL").addEventListener("click", () => {
+  runMaxDiffMNL();
+  if (lastMaxDiffMNL) markWorkspaceStatus("models");
+});
+document.querySelector("#runMaxDiffHB").addEventListener("click", () => {
+  runMaxDiffHB();
+  if (lastMaxDiffHB) markWorkspaceStatus("models");
+});
+document.querySelector("#exportMaxDiffMNL").addEventListener("click", exportMaxDiffMNL);
+document.querySelector("#exportMaxDiffHB").addEventListener("click", exportMaxDiffHB);
+document.querySelector("#loadMaxDiffResponsesExample").addEventListener("click", () => {
+  const textarea = document.querySelector("#maxdiffResponses");
+  if (textarea) textarea.value = exampleMaxDiffResponses;
+});
+
+// ═════════════ 关键驱动分析 (Key Driver Analysis) ═════════════
+let lastDriverAnalysis = null;
+
+function parseDriverData(text) {
+  const lines = text.trim().split(/\n/).filter((l) => l.trim());
+  if (lines.length < 3) return null;
+  const sep = lines[0].includes("\t") ? "\t" : ",";
+  const headers = lines[0].split(sep).map((h) => h.trim());
+  const rows = lines.slice(1).map((line) => line.split(sep).map((v) => parseFloat(v.trim())));
+  const valid = rows.filter((row) => row.length === headers.length && row.every((v) => Number.isFinite(v)));
+  if (valid.length < 3) return null;
+  return { headers, rows: valid, dvIndex: headers.length - 1 };
+}
+
+function computeDriverAnalysis(data) {
+  const { headers, rows, dvIndex } = data;
+  const ivNames = headers.filter((_, i) => i !== dvIndex);
+  const dvName = headers[dvIndex];
+  const n = rows.length;
+  const k = ivNames.length;
+  // 提取矩阵
+  const X = rows.map((row) => row.filter((_, i) => i !== dvIndex));
+  const y = rows.map((row) => row[dvIndex]);
+  // 标准化
+  const meanX = Array.from({ length: k }, (_, j) => X.reduce((s, r) => s + r[j], 0) / n);
+  const sdX = Array.from({ length: k }, (_, j) => Math.sqrt(X.reduce((s, r) => s + (r[j] - meanX[j]) ** 2, 0) / (n - 1)));
+  const meanY = y.reduce((s, v) => s + v, 0) / n;
+  const sdY = Math.sqrt(y.reduce((s, v) => s + (v - meanY) ** 2, 0) / (n - 1));
+  const Zx = X.map((row) => row.map((v, j) => sdX[j] ? (v - meanX[j]) / sdX[j] : 0));
+  const Zy = y.map((v) => sdY ? (v - meanY) / sdY : 0);
+  // OLS: beta = (X'X)^-1 X'y
+  const XtX = Array.from({ length: k }, () => Array(k).fill(0));
+  const Xty = Array(k).fill(0);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < k; j++) {
+      Xty[j] += Zx[i][j] * Zy[i];
+      for (let m = 0; m < k; m++) XtX[j][m] += Zx[i][j] * Zx[i][m];
+    }
+  }
+  // Gauss-Jordan 求逆
+  const aug = XtX.map((row, i) => [...row, ...Array.from({ length: k }, (_, m) => (i === m ? 1 : 0))]);
+  for (let col = 0; col < k; col++) {
+    let maxRow = col;
+    for (let row = col + 1; row < k; row++) if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) maxRow = row;
+    [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+    const pivot = aug[col][col] || 1e-10;
+    for (let j = 0; j < 2 * k; j++) aug[col][j] /= pivot;
+    for (let row = 0; row < k; row++) {
+      if (row === col) continue;
+      const factor = aug[row][col];
+      for (let j = 0; j < 2 * k; j++) aug[row][j] -= factor * aug[col][j];
+    }
+  }
+  const inv = aug.map((row) => row.slice(k));
+  const beta = inv.map((row) => row.reduce((s, v, j) => s + v * Xty[j], 0));
+  // R²
+  const yHat = Zx.map((row) => row.reduce((s, v, j) => s + v * beta[j], 0));
+  const ssRes = Zy.reduce((s, v, i) => s + (v - yHat[i]) ** 2, 0);
+  const ssTot = Zy.reduce((s, v) => s + v * v, 0);
+  const r2 = ssTot ? 1 - ssRes / ssTot : 0;
+  // 相对重要性（标准化系数的绝对值占比）
+  const absBeta = beta.map((b) => Math.abs(b));
+  const totalAbs = absBeta.reduce((s, v) => s + v, 0) || 1;
+  const importance = absBeta.map((v) => v / totalAbs);
+  // 均值（原始尺度）
+  const ivMeans = meanX;
+  const results = ivNames.map((name, i) => ({
+    name, beta: beta[i], importance: importance[i], mean: ivMeans[i]
+  })).sort((a, b) => b.importance - a.importance);
+  return { results, r2, n, k, dvName, ivMeans };
+}
+
+function renderDriverAnalysis() {
+  const text = document.querySelector("#driverData").value;
+  const result = document.querySelector("#driverResults");
+  const data = parseDriverData(text);
+  if (!data) {
+    result.innerHTML = `<div class="empty-state"><strong>数据格式错误</strong><span>请确保至少 3 行数据，最后一列为因变量。</span></div>`;
+    return;
+  }
+  const analysis = computeDriverAnalysis(data);
+  lastDriverAnalysis = analysis;
+  projectDataBus.set("modelResults.driver", analysis, { type: "关键驱动", factors: analysis.k, r2: analysis.r2 });
+  document.querySelector("#exportDriverExcel").disabled = false;
+  document.querySelector("#exportDriverPng").disabled = false;
+  const maxImp = Math.max(...analysis.results.map((r) => r.importance));
+  const barChart = analysis.results.map((r) => {
+    const pct = (r.importance * 100).toFixed(1);
+    const barW = Math.round((r.importance / maxImp) * 200);
+    return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="width:100px;text-align:right;font-size:12px">${escapeHtml(r.name)}</span><div style="height:18px;width:${barW}px;background:var(--accent);border-radius:3px"></div><span style="font-size:12px;color:var(--muted)">${pct}%</span></div>`;
+  }).join("");
+  const tableRows = analysis.results.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.name)}</td><td>${r.beta.toFixed(3)}</td><td>${(r.importance * 100).toFixed(1)}%</td><td>${r.mean.toFixed(2)}</td></tr>`).join("");
+  result.innerHTML = `
+    <article class="audit-issue">
+      <div class="issue-head"><strong>关键驱动分析结果</strong><span class="issue-tag low">R²=${analysis.r2.toFixed(3)} · N=${analysis.n} · 因变量: ${escapeHtml(analysis.dvName)}</span></div>
+      <div style="margin:12px 0">${barChart}</div>
+      <table style="width:100%;font-size:13px;border-collapse:collapse">
+        <thead><tr><th>#</th><th>维度</th><th>标准化系数</th><th>相对重要性</th><th>均值</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+      <p style="font-size:12px;color:var(--muted);margin-top:8px">解读：重要性表示该维度对「${escapeHtml(analysis.dvName)}」的相对贡献；均值为当前表现。重要性高且均值低的维度是优先改进方向。</p>
+    </article>`;
+  markWorkspaceStatus("models");
+}
+
+const exampleDriverData = `产品质量,价格合理性,售后服务,品牌形象,购买便利,总体满意度
+4,3,5,4,4,4
+5,4,4,3,5,4
+3,2,4,4,3,3
+4,4,3,5,4,4
+5,5,5,4,4,5
+2,3,2,3,3,2
+4,3,4,4,5,4
+3,4,3,3,4,3
+5,4,5,5,4,5
+4,2,3,4,3,3
+3,3,4,3,4,3
+4,4,4,4,4,4
+5,3,5,4,5,4
+2,2,3,2,3,2
+4,5,4,4,4,4`;
+
+document.querySelector("#runDriverAnalysis").addEventListener("click", renderDriverAnalysis);
+document.querySelector("#loadDriverExample").addEventListener("click", () => {
+  document.querySelector("#driverData").value = exampleDriverData;
+  renderDriverAnalysis();
+});
+document.querySelector("#exportDriverExcel").addEventListener("click", () => {
+  if (!lastDriverAnalysis) return;
+  const rows = [["关键驱动分析"], ["R²", lastDriverAnalysis.r2.toFixed(4)], ["N", lastDriverAnalysis.n], ["因变量", lastDriverAnalysis.dvName], [], ["#", "维度", "标准化系数", "相对重要性", "均值"]];
+  lastDriverAnalysis.results.forEach((r, i) => rows.push([i + 1, r.name, r.beta.toFixed(4), (r.importance * 100).toFixed(1) + "%", r.mean.toFixed(2)]));
+  downloadExcelFromRows("关键驱动分析.xlsx", rows);
+});
+document.querySelector("#exportDriverPng").addEventListener("click", () => {
+  exportSvgChartAsPng("#driverResults", "关键驱动分析.png");
+});
+
+// ═════════════ TURF 分析 ═════════════
+let lastTurfResult = null;
+
+function parseTurfData(text) {
+  const lines = text.trim().split(/\n/).filter((l) => l.trim());
+  if (lines.length < 2) return null;
+  const sep = lines[0].includes("\t") ? "\t" : ",";
+  const options = lines[0].split(sep).map((h) => h.trim());
+  const matrix = lines.slice(1).map((line) => line.split(sep).map((v) => (v.trim() === "1" ? 1 : 0)));
+  const valid = matrix.filter((row) => row.length === options.length);
+  if (!valid.length) return null;
+  return { options, matrix: valid };
+}
+
+function turfCoverage(matrix, combo) {
+  let covered = 0;
+  for (const row of matrix) {
+    if (combo.some((idx) => row[idx] === 1)) covered++;
+  }
+  return covered;
+}
+
+function computeTurf(options, matrix, comboSize) {
+  const n = matrix.length;
+  const k = options.length;
+  const size = Math.min(comboSize, k);
+  // 单个选项覆盖率
+  const individualReach = options.map((_, idx) => turfCoverage(matrix, [idx]) / n);
+  // 贪心搜索最优组合
+  let bestCombo = [];
+  let bestReach = 0;
+  const remaining = new Set(options.map((_, i) => i));
+  for (let step = 0; step < size; step++) {
+    let bestIdx = -1;
+    let bestStepReach = -1;
+    for (const idx of remaining) {
+      const candidate = [...bestCombo, idx];
+      const reach = turfCoverage(matrix, candidate);
+      if (reach > bestStepReach) { bestStepReach = reach; bestIdx = idx; }
+    }
+    if (bestIdx >= 0) { bestCombo.push(bestIdx); remaining.delete(bestIdx); bestReach = bestStepReach; }
+  }
+  // 枚举前 Top-N 组合（精确搜索，当选项数≤15 时）
+  let topCombos = [{ combo: bestCombo, reach: bestReach / n }];
+  if (k <= 15 && size <= 5) {
+    const allCombos = [];
+    function combine(start, current) {
+      if (current.length === size) {
+        allCombos.push([...current]);
+        return;
+      }
+      for (let i = start; i < k; i++) { current.push(i); combine(i + 1, current); current.pop(); }
+    }
+    combine(0, []);
+    topCombos = allCombos.map((combo) => ({ combo, reach: turfCoverage(matrix, combo) / n }))
+      .sort((a, b) => b.reach - a.reach).slice(0, 10);
+  }
+  return { options, individualReach, topCombos, n, comboSize: size };
+}
+
+function renderTurf() {
+  const text = document.querySelector("#turfData").value;
+  const comboSize = Math.max(1, Number(document.querySelector("#turfComboSize").value) || 3);
+  const result = document.querySelector("#turfResults");
+  const data = parseTurfData(text);
+  if (!data) {
+    result.innerHTML = `<div class="empty-state"><strong>数据格式错误</strong><span>请确保第一行为选项名，后续行为 0/1 矩阵。</span></div>`;
+    return;
+  }
+  const turf = computeTurf(data.options, data.matrix, comboSize);
+  lastTurfResult = turf;
+  projectDataBus.set("modelResults.turf", turf, { type: "TURF", options: turf.options.length, n: turf.n });
+  document.querySelector("#exportTurf").disabled = false;
+  const best = turf.topCombos[0];
+  const comboNames = best.combo.map((i) => turf.options[i]);
+  const tableRows = turf.topCombos.map((item, rank) => {
+    const names = item.combo.map((i) => turf.options[i]).join(" + ");
+    const incr = rank === 0 ? "-" : `+${((item.reach - turf.topCombos[rank - 1].reach) * 100).toFixed(1)}pp`;
+    return `<tr><td>${rank + 1}</td><td>${escapeHtml(names)}</td><td>${(item.reach * 100).toFixed(1)}%</td><td>${incr}</td></tr>`;
+  }).join("");
+  const indRows = turf.options.map((name, i) => `<tr><td>${escapeHtml(name)}</td><td>${(turf.individualReach[i] * 100).toFixed(1)}%</td></tr>`).join("");
+  result.innerHTML = `
+    <article class="audit-issue">
+      <div class="issue-head"><strong>最优组合（Size=${turf.comboSize}）</strong><span class="issue-tag low">N=${turf.n} · 覆盖率 ${(best.reach * 100).toFixed(1)}%</span></div>
+      <p style="font-size:14px;margin:8px 0"><b>${escapeHtml(comboNames.join(" + "))}</b></p>
+      <table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:8px">
+        <thead><tr><th>#</th><th>组合</th><th>覆盖率</th><th>增量</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </article>
+    <article class="audit-issue">
+      <div class="issue-head"><strong>单项覆盖率</strong></div>
+      <table style="width:100%;font-size:13px;border-collapse:collapse">
+        <thead><tr><th>选项</th><th>覆盖率</th></tr></thead>
+        <tbody>${indRows}</tbody>
+      </table>
+    </article>`;
+  markWorkspaceStatus("models");
+}
+
+const exampleTurfData = `口味好,包装精美,价格实惠,购买便利,品牌知名,健康成分
+1,0,1,1,0,0
+0,1,1,0,1,0
+1,1,0,1,0,1
+0,0,1,1,1,0
+1,0,0,0,1,1
+0,1,1,1,0,0
+1,1,0,0,0,1
+0,0,1,1,1,0
+1,0,1,0,0,1
+0,1,0,1,1,0
+1,1,1,0,0,0
+0,0,0,1,1,1
+1,0,1,1,0,0
+0,1,0,0,1,1
+1,1,1,1,0,0
+0,0,1,0,1,0
+1,0,0,1,0,1
+0,1,1,0,0,1
+1,1,0,1,1,0
+0,0,1,1,0,1`;
+
+document.querySelector("#runTurf").addEventListener("click", renderTurf);
+document.querySelector("#loadTurfExample").addEventListener("click", () => {
+  document.querySelector("#turfData").value = exampleTurfData;
+  renderTurf();
+});
+document.querySelector("#exportTurf").addEventListener("click", () => {
+  if (!lastTurfResult) return;
+  const rows = [["TURF 分析"], ["N", lastTurfResult.n], ["组合大小", lastTurfResult.comboSize], [], ["#", "组合", "覆盖率"]];
+  lastTurfResult.topCombos.forEach((item, i) => rows.push([i + 1, item.combo.map((idx) => lastTurfResult.options[idx]).join(" + "), (item.reach * 100).toFixed(1) + "%"]));
+  rows.push([], ["单项覆盖率"], ["选项", "覆盖率"]);
+  lastTurfResult.options.forEach((name, i) => rows.push([name, (lastTurfResult.individualReach[i] * 100).toFixed(1) + "%"]));
+  downloadExcelFromRows("TURF分析.xlsx", rows);
+});
+
+// === 联合分析（Conjoint / CBC 简化版）===
+let lastConjointResult = null;
+
+function parseConjointAttributes(text) {
+  const lines = text.trim().split(/\n/).filter((l) => l.trim());
+  if (!lines.length) return null;
+  const sep = lines[0].includes("\t") ? "\t" : ",";
+  const attrs = lines.map((line) => {
+    const parts = line.split(sep).map((s) => s.trim());
+    return { name: parts[0], levels: parts.slice(1) };
+  }).filter((a) => a.levels.length >= 2);
+  return attrs.length ? attrs : null;
+}
+
+function parseConjointChoices(text, attrs) {
+  const lines = text.trim().split(/\n/).filter((l) => l.trim());
+  if (lines.length < 2) return null;
+  const sep = lines[0].includes("\t") ? "\t" : ",";
+  const header = lines[0].split(sep).map((h) => h.trim());
+  // 找到 choice 列（最后一列）
+  const choiceIdx = header.length - 1;
+  // 属性列：跳过 resp/task/alt 前缀列
+  const attrColStart = 3; // resp, task, alt
+  const attrCols = header.slice(attrColStart, choiceIdx);
+  if (attrCols.length !== attrs.length) return null;
+  const rows = lines.slice(1).map((line) => line.split(sep).map((v) => v.trim()));
+  // 按 (resp, task) 分组
+  const tasks = new Map();
+  for (const row of rows) {
+    if (row.length < header.length) continue;
+    const key = `${row[0]}_${row[1]}`;
+    if (!tasks.has(key)) tasks.set(key, []);
+    tasks.get(key).push({
+      levels: attrCols.map((_, i) => parseInt(row[attrColStart + i], 10) - 1), // 0-based
+      chosen: parseInt(row[choiceIdx], 10) === 1,
+    });
+  }
+  const taskList = [...tasks.values()].filter((alts) => alts.length >= 2 && alts.some((a) => a.chosen));
+  return taskList.length ? taskList : null;
+}
+
+function estimateCbcUtilities(attrs, tasks) {
+  // 效果编码：每个属性最后一个水平为基准（效用 = -sum(其他水平)）
+  // 参数数量 = sum(levels_i - 1)
+  const paramCounts = attrs.map((a) => a.levels.length - 1);
+  const totalParams = paramCounts.reduce((s, c) => s + c, 0);
+  // 参数偏移
+  const offsets = [];
+  let off = 0;
+  for (const pc of paramCounts) { offsets.push(off); off += pc; }
+
+  // 构建设计矩阵：将方案转为参数向量
+  function designVector(levelIndices) {
+    const x = new Float64Array(totalParams);
+    for (let a = 0; a < attrs.length; a++) {
+      const lvl = levelIndices[a];
+      const nLevels = attrs[a].levels.length;
+      if (lvl < nLevels - 1) {
+        x[offsets[a] + lvl] = 1;
+      } else {
+        // 基准水平：所有该属性参数 = -1
+        for (let p = 0; p < paramCounts[a]; p++) x[offsets[a] + p] = -1;
+      }
+    }
+    return x;
+  }
+
+  // Newton-Raphson 最大似然估计
+  let beta = new Float64Array(totalParams); // 初始值 0
+  const maxIter = 100;
+  const tol = 1e-6;
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    const grad = new Float64Array(totalParams);
+    const hessian = Array.from({ length: totalParams }, () => new Float64Array(totalParams));
+
+    for (const alts of tasks) {
+      // 计算每个方案的效用
+      const utils = alts.map((alt) => {
+        const x = designVector(alt.levels);
+        let u = 0;
+        for (let p = 0; p < totalParams; p++) u += beta[p] * x[p];
+        return { u, x, chosen: alt.chosen };
+      });
+      // softmax
+      const maxU = Math.max(...utils.map((item) => item.u));
+      const exps = utils.map((item) => Math.exp(item.u - maxU));
+      const sumExp = exps.reduce((s, e) => s + e, 0);
+      const probs = exps.map((e) => e / sumExp);
+
+      for (let j = 0; j < utils.length; j++) {
+        const { x, chosen } = utils[j];
+        const w = (chosen ? 1 : 0) - probs[j];
+        for (let p = 0; p < totalParams; p++) {
+          grad[p] += w * x[p];
+          for (let q = p; q < totalParams; q++) {
+            hessian[p][q] -= probs[j] * x[p] * x[q];
+          }
+        }
+      }
+    }
+    // 对称化 Hessian
+    for (let p = 0; p < totalParams; p++)
+      for (let q = 0; q < p; q++) hessian[p][q] = hessian[q][p];
+
+    // 解 Hessian * delta = -grad => delta = -H^{-1} * grad
+    // 用 Gauss-Jordan 求逆
+    const n = totalParams;
+    const aug = Array.from({ length: n }, (_, i) => {
+      const row = new Float64Array(2 * n);
+      for (let j = 0; j < n; j++) row[j] = -hessian[i][j]; // -H
+      row[n + i] = 1;
+      return row;
+    });
+    for (let col = 0; col < n; col++) {
+      let pivot = col;
+      for (let row = col + 1; row < n; row++)
+        if (Math.abs(aug[row][col]) > Math.abs(aug[pivot][col])) pivot = row;
+      [aug[col], aug[pivot]] = [aug[pivot], aug[col]];
+      const div = aug[col][col] || 1e-10;
+      for (let j = 0; j < 2 * n; j++) aug[col][j] /= div;
+      for (let row = 0; row < n; row++) {
+        if (row === col) continue;
+        const factor = aug[row][col];
+        for (let j = 0; j < 2 * n; j++) aug[row][j] -= factor * aug[col][j];
+      }
+    }
+    // delta = inv(-H) * grad
+    const delta = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      let s = 0;
+      for (let j = 0; j < n; j++) s += aug[i][n + j] * grad[j];
+      delta[i] = s;
+    }
+    // 更新 beta
+    let maxDelta = 0;
+    for (let p = 0; p < n; p++) {
+      beta[p] += delta[p];
+      maxDelta = Math.max(maxDelta, Math.abs(delta[p]));
+    }
+    if (maxDelta < tol) break;
+  }
+
+  // 提取部分效用（含基准水平）
+  const partWorths = attrs.map((attr, a) => {
+    const nLevels = attr.levels.length;
+    const utils = [];
+    let sum = 0;
+    for (let l = 0; l < nLevels - 1; l++) {
+      utils.push(beta[offsets[a] + l]);
+      sum += beta[offsets[a] + l];
+    }
+    utils.push(-sum); // 基准水平
+    return { attr: attr.name, levels: attr.levels, utilities: utils };
+  });
+
+  // 属性重要性：效用极差
+  const ranges = partWorths.map((pw) => Math.max(...pw.utilities) - Math.min(...pw.utilities));
+  const totalRange = ranges.reduce((s, r) => s + r, 0) || 1;
+  const importance = ranges.map((r) => r / totalRange);
+
+  return { partWorths, importance, ranges, totalParams, beta: [...beta] };
+}
+
+function simulateMarketShare(attrs, partWorths, products) {
+  // products: [{name, levels: [levelIndex per attr]}]
+  const utils = products.map((prod) => {
+    let u = 0;
+    for (let a = 0; a < attrs.length; a++) {
+      u += partWorths[a].utilities[prod.levels[a]];
+    }
+    return u;
+  });
+  const maxU = Math.max(...utils);
+  const exps = utils.map((u) => Math.exp(u - maxU));
+  const sumExp = exps.reduce((s, e) => s + e, 0);
+  return products.map((prod, i) => ({ name: prod.name, share: exps[i] / sumExp }));
+}
+
+function renderConjoint() {
+  const attrText = document.querySelector("#conjointAttributes").value;
+  const choiceText = document.querySelector("#conjointChoices").value;
+  const result = document.querySelector("#conjointResults");
+  const attrs = parseConjointAttributes(attrText);
+  if (!attrs) {
+    result.innerHTML = `<div class="empty-state"><strong>属性定义错误</strong><span>每行格式：属性名,水平1,水平2,...（至少 2 个水平）</span></div>`;
+    return;
+  }
+  const tasks = parseConjointChoices(choiceText, attrs);
+  if (!tasks) {
+    result.innerHTML = `<div class="empty-state"><strong>选择集数据错误</strong><span>请确保表头为 resp,task,alt,属性1,属性2,...,choice，且属性列数与定义匹配。</span></div>`;
+    return;
+  }
+  const model = estimateCbcUtilities(attrs, tasks);
+  // 市场份额模拟：每个属性取最优水平 vs 最差水平
+  const bestProduct = { name: "最优组合", levels: model.partWorths.map((pw) => pw.utilities.indexOf(Math.max(...pw.utilities))) };
+  const worstProduct = { name: "最差组合", levels: model.partWorths.map((pw) => pw.utilities.indexOf(Math.min(...pw.utilities))) };
+  const midProduct = { name: "中间组合", levels: model.partWorths.map((pw) => {
+    const sorted = pw.utilities.map((u, i) => ({ u, i })).sort((a, b) => b.u - a.u);
+    return sorted[Math.floor(sorted.length / 2)].i;
+  })};
+  const shares = simulateMarketShare(attrs, model.partWorths, [bestProduct, midProduct, worstProduct]);
+
+  lastConjointResult = { attrs, tasks, model, shares, nTasks: tasks.length };
+  projectDataBus.set("modelResults.conjoint", { importance: model.importance, attrs: attrs.map((a) => a.name) }, { type: "Conjoint/CBC", tasks: tasks.length });
+  document.querySelector("#exportConjoint").disabled = false;
+
+  // 渲染属性重要性柱状图
+  const maxImp = Math.max(...model.importance);
+  const impBars = attrs.map((attr, i) => {
+    const pct = (model.importance[i] * 100).toFixed(1);
+    const w = maxImp > 0 ? (model.importance[i] / maxImp) * 100 : 0;
+    return `<div style="display:flex;align-items:center;margin:4px 0"><span style="width:80px;font-size:12px;text-align:right;padding-right:8px">${escapeHtml(attr.name)}</span><div style="flex:1;background:#e8f0fe;border-radius:3px;height:20px"><div style="width:${w}%;background:#4285f4;height:100%;border-radius:3px;min-width:2px"></div></div><span style="width:50px;font-size:12px;padding-left:6px">${pct}%</span></div>`;
+  }).join("");
+
+  // 部分效用表
+  const pwRows = model.partWorths.map((pw) => {
+    const levelRows = pw.levels.map((lvl, li) => `<tr><td>${li === 0 ? escapeHtml(pw.attr) : ""}</td><td>${escapeHtml(lvl)}</td><td>${pw.utilities[li].toFixed(4)}</td></tr>`).join("");
+    return levelRows;
+  }).join("");
+
+  // 市场份额
+  const shareRows = shares.map((s) => `<tr><td>${escapeHtml(s.name)}</td><td>${(s.share * 100).toFixed(1)}%</td></tr>`).join("");
+
+  result.innerHTML = `
+    <article class="audit-issue">
+      <div class="issue-head"><strong>属性重要性</strong><span class="issue-tag low">${tasks.length} 个选择任务</span></div>
+      <div style="padding:8px 0">${impBars}</div>
+    </article>
+    <article class="audit-issue">
+      <div class="issue-head"><strong>部分效用值（Part-Worth Utilities）</strong></div>
+      <table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:8px">
+        <thead><tr><th>属性</th><th>水平</th><th>效用值</th></tr></thead>
+        <tbody>${pwRows}</tbody>
+      </table>
+    </article>
+    <article class="audit-issue">
+      <div class="issue-head"><strong>市场份额模拟</strong></div>
+      <table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:8px">
+        <thead><tr><th>产品方案</th><th>份额</th></tr></thead>
+        <tbody>${shareRows}</tbody>
+      </table>
+      <p style="font-size:12px;color:#666;margin-top:6px">基于 Logit 规则模拟，最优组合 = 各属性取效用最高水平。</p>
+    </article>`;
+  markWorkspaceStatus("models");
+}
+
+const exampleConjointAttrs = `价格,低,中,高
+品牌,品牌A,品牌B,品牌C
+包装,简约,豪华`;
+
+const exampleConjointChoices = `resp,task,alt,价格,品牌,包装,choice
+1,1,1,1,1,1,0
+1,1,2,2,2,2,1
+1,1,3,3,3,1,0
+1,2,1,1,2,2,1
+1,2,2,2,3,1,0
+1,2,3,3,1,2,0
+1,3,1,2,1,2,0
+1,3,2,1,3,1,1
+1,3,3,3,2,2,0
+2,1,1,1,1,2,1
+2,1,2,2,2,1,0
+2,1,3,3,3,2,0
+2,2,1,2,1,1,0
+2,2,2,1,2,2,1
+2,2,3,3,3,1,0
+2,3,1,1,3,2,0
+2,3,2,2,1,1,1
+2,3,3,3,2,2,0
+3,1,1,1,2,1,1
+3,1,2,2,1,2,0
+3,1,3,3,3,1,0
+3,2,1,2,2,2,0
+3,2,2,1,1,1,1
+3,2,3,3,3,2,0
+3,3,1,1,1,2,1
+3,3,2,2,3,1,0
+3,3,3,3,2,2,0
+4,1,1,1,1,1,1
+4,1,2,3,2,2,0
+4,1,3,2,3,2,0
+4,2,1,2,1,2,0
+4,2,2,1,2,1,1
+4,2,3,3,3,2,0
+4,3,1,1,3,1,0
+4,3,2,2,2,2,1
+4,3,3,3,1,1,0
+5,1,1,1,1,2,1
+5,1,2,2,3,1,0
+5,1,3,3,2,2,0
+5,2,1,1,2,1,1
+5,2,2,2,1,2,0
+5,2,3,3,3,1,0
+5,3,1,2,1,1,0
+5,3,2,1,2,2,1
+5,3,3,3,3,2,0`;
+
+document.querySelector("#runConjoint").addEventListener("click", renderConjoint);
+document.querySelector("#loadConjointExample").addEventListener("click", () => {
+  document.querySelector("#conjointAttributes").value = exampleConjointAttrs;
+  document.querySelector("#conjointChoices").value = exampleConjointChoices;
+  renderConjoint();
+});
+document.querySelector("#exportConjoint").addEventListener("click", () => {
+  if (!lastConjointResult) return;
+  const { attrs, model, shares, nTasks } = lastConjointResult;
+  const rows = [["联合分析（CBC）结果"], ["选择任务数", nTasks], [], ["属性重要性"]];
+  attrs.forEach((attr, i) => rows.push([attr.name, (model.importance[i] * 100).toFixed(1) + "%"]));
+  rows.push([], ["部分效用值"], ["属性", "水平", "效用值"]);
+  model.partWorths.forEach((pw) => pw.levels.forEach((lvl, li) => rows.push([pw.attr, lvl, pw.utilities[li].toFixed(4)])));
+  rows.push([], ["市场份额模拟"], ["方案", "份额"]);
+  shares.forEach((s) => rows.push([s.name, (s.share * 100).toFixed(1) + "%"]));
+  downloadExcelFromRows("联合分析CBC.xlsx", rows);
+});
 
 document.querySelector("#generateAbc").addEventListener("click", () => {
   runAbcAnalysis();
@@ -14600,6 +15988,7 @@ document.querySelector("#generateAiBrief").addEventListener("click", renderAiBri
 document.querySelector("#copyAiPrompt").addEventListener("click", copyAiPrompt);
 document.querySelector("#exportAiPrompt").addEventListener("click", exportAiPrompt);
 document.querySelector("#exportAiWord").addEventListener("click", exportAiWord);
+document.querySelector("#exportAiPlatformFormat")?.addEventListener("click", exportAiPlatformFormat);
 document.querySelector("#applyAiQuestionnaire").addEventListener("click", applyAiQuestionnaireToWorkspace);
 document.querySelector("#reviseAiQuestionnaire").addEventListener("click", reviseAiQuestionnaire);
 document.querySelector("#aiProvider").addEventListener("change", applyAiProviderPreset);
@@ -14868,3 +16257,135 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
+// === 移动端侧边栏抽屉式切换 ===
+(function initMobileSidebar() {
+  const menuBtn = document.querySelector("#mobileMenuBtn");
+  const sidebar = document.querySelector("#appSidebar");
+  const overlay = document.querySelector("#sidebarOverlay");
+  if (!menuBtn || !sidebar) return;
+  function openSidebar() { sidebar.classList.add("open"); overlay?.classList.add("active"); }
+  function closeSidebar() { sidebar.classList.remove("open"); overlay?.classList.remove("active"); }
+  menuBtn.addEventListener("click", () => sidebar.classList.contains("open") ? closeSidebar() : openSidebar());
+  overlay?.addEventListener("click", closeSidebar);
+  // 点击导航项后自动关闭
+  sidebar.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", closeSidebar));
+})();
+
+// === 全局错误捕获：友好提示而非白屏 ===
+window.addEventListener("error", (event) => {
+  console.error("[GlobalError]", event.message, event.filename, event.lineno);
+  if (typeof showToast === "function") {
+    showToast("操作出现异常，请重试。若反复出现请刷新页面。", "error", 5000);
+  }
+});
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("[UnhandledRejection]", event.reason);
+  if (typeof showToast === "function") {
+    showToast("异步操作失败，请检查网络后重试。", "error", 5000);
+  }
+});
+
+// === 首次使用 Tooltip Tour ===
+(function initTooltipTour() {
+  const TOUR_KEY = "surveykit_tour_done";
+  if (localStorage.getItem(TOUR_KEY)) return;
+
+  const steps = [
+    {
+      selector: ".sidebar .nav-group:first-child .nav-item:first-of-type",
+      title: "👋 欢迎使用调研工具箱",
+      desc: "这里按调研阶段组织了所有工具。从「样本量计算」开始，逐步完成调研设计。",
+    },
+    {
+      selector: "#workspaceProjectSelect",
+      title: "📁 项目管理",
+      desc: "所有分析数据都保存在项目里。新建项目后，数据会自动保存在浏览器中，也可以导出 .json 文件与团队分享。",
+    },
+    {
+      selector: '[data-view="crosstab-analysis"]',
+      title: "📊 核心工作流",
+      desc: "导入交叉表数据 → 设计表头 → 生成 PPT 报告，这是最常用的工作流。表头决定了报告中如何拆分人群对比。",
+    },
+    {
+      selector: '[data-view="pptx-report"]',
+      title: "📄 一键生成报告",
+      desc: "上传数据文件、选择分析维度、预览报告结构，确认后即可生成可编辑的 PPT 报告。支持上传公司模板。",
+    },
+    {
+      selector: '[data-view="research-models"]',
+      title: "🔍 研究模型",
+      desc: "PSM、KANO、MaxDiff、关键驱动、TURF、联合分析等模型统一从这里进入，可直接粘贴数据计算。点击每个工具旁的 ? 按钮可以查看使用说明。",
+    },
+    {
+      selector: '[data-view="faq"]',
+      title: "❓ 需要帮助？",
+      desc: "常见问题都在这里。也可以点击每个工具旁的 ? 按钮查看模型说明。祝你使用愉快！",
+    },
+  ];
+
+  let currentStep = 0;
+  let overlay = null;
+  let tooltip = null;
+  let highlightEl = null;
+
+  function cleanup() {
+    overlay?.remove();
+    tooltip?.remove();
+    highlightEl?.classList.remove("tour-highlight");
+    overlay = tooltip = highlightEl = null;
+  }
+
+  function showStep(idx) {
+    cleanup();
+    if (idx >= steps.length) {
+      localStorage.setItem(TOUR_KEY, "1");
+      return;
+    }
+    const step = steps[idx];
+    const target = document.querySelector(step.selector);
+
+    overlay = document.createElement("div");
+    overlay.className = "tour-overlay";
+    document.body.appendChild(overlay);
+
+    tooltip = document.createElement("div");
+    tooltip.className = "tour-tooltip";
+    tooltip.innerHTML = `
+      <h4>${step.title}</h4>
+      <p>${step.desc}</p>
+      <div class="tour-progress">${idx + 1} / ${steps.length}</div>
+      <div class="tour-actions">
+        <button type="button" class="tour-skip-btn">跳过</button>
+        <button type="button" class="tour-next-btn">${idx === steps.length - 1 ? "完成" : "下一步"}</button>
+      </div>
+    `;
+    document.body.appendChild(tooltip);
+
+    if (target) {
+      target.classList.add("tour-highlight");
+      highlightEl = target;
+      const rect = target.getBoundingClientRect();
+      const tipRect = tooltip.getBoundingClientRect();
+      let top = rect.bottom + 12;
+      let left = rect.left;
+      if (top + tipRect.height > window.innerHeight - 20) top = rect.top - tipRect.height - 12;
+      if (left + tipRect.width > window.innerWidth - 20) left = window.innerWidth - tipRect.width - 20;
+      if (left < 12) left = 12;
+      tooltip.style.top = `${top}px`;
+      tooltip.style.left = `${left}px`;
+    } else {
+      tooltip.style.top = "50%";
+      tooltip.style.left = "50%";
+      tooltip.style.transform = "translate(-50%, -50%)";
+    }
+
+    tooltip.querySelector(".tour-next-btn").addEventListener("click", () => { currentStep++; showStep(currentStep); });
+    tooltip.querySelector(".tour-skip-btn").addEventListener("click", () => { currentStep = steps.length; showStep(currentStep); });
+    overlay.addEventListener("click", () => { currentStep = steps.length; showStep(currentStep); });
+  }
+
+  // 延迟启动，确保页面渲染完成
+  setTimeout(() => {
+    if (!localStorage.getItem(TOUR_KEY)) showStep(0);
+  }, 1500);
+})();

@@ -12,3 +12,6 @@ __pycache__/
 *.py[cod]
 tests/output/
 /qa_template_alignment_fixed.pptx
+dist/
+*.bundle
+*.git-bundle

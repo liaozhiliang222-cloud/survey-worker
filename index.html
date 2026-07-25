@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#102a56" />
     <title>调研工具箱</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=20260718-3" />
+    <link rel="stylesheet" href="./styles.css?v=20260725-2" />
   </head>
   <body>
     <div class="app-loading-overlay" id="appLoading">
@@ -15,7 +15,8 @@
     </div>
     <div class="toast-container" id="toastContainer"></div>
     <div class="app-shell">
-      <aside class="sidebar">
+      <button class="mobile-menu-btn" id="mobileMenuBtn" type="button" aria-label="打开菜单">☰</button>
+      <aside class="sidebar" id="appSidebar">
         <div class="brand">
           <div class="brand-mark">研</div>
           <div>
@@ -60,13 +61,26 @@
             <button class="nav-item" data-view="pptx-report">PPT 报告生成</button>
             <button class="nav-item" data-view="ai-report">AI 报告生成</button>
             <button class="nav-item" data-view="ai-workbench" style="display:none">AI 辅助面板</button>
-            <button class="nav-item" data-view="psm">PSM 分析</button>
-            <button class="nav-item" data-view="kano">KANO 分析</button>
-            <button class="nav-item" data-view="maxdiff">MaxDiff</button>
+            <button class="nav-item" data-view="research-models">研究模型</button>
+            <button class="nav-item" data-view="psm" style="display:none">PSM 分析</button>
+            <button class="nav-item" data-view="kano" style="display:none">KANO 分析</button>
+            <button class="nav-item" data-view="maxdiff" style="display:none">MaxDiff</button>
+            <button class="nav-item" data-view="driver-analysis" style="display:none">关键驱动分析</button>
+            <button class="nav-item" data-view="turf" style="display:none">TURF 分析</button>
+            <button class="nav-item" data-view="conjoint" style="display:none">联合分析</button>
             <button class="nav-item" data-view="abc-value" style="display:none">ABC 价值模型</button>
+          </div>
+          <div class="nav-group">
+            <div class="nav-phase">
+              <strong>❓</strong>
+              <span>帮助</span>
+              <small>引导与常见问题</small>
+            </div>
+            <button class="nav-item" data-view="faq">常见问题 FAQ</button>
           </div>
         </nav>
       </aside>
+      <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
       <main class="content">
         <section class="view active" id="overview">
@@ -92,6 +106,7 @@
                 <button class="primary-btn" id="workspaceNewProject" type="button">＋ 新建项目</button>
                 <button class="ghost-btn" id="workspaceDuplicateProject" type="button">复制项目</button>
                 <button class="ghost-btn" id="workspaceExportProject" type="button">导出项目</button>
+                <button class="ghost-btn" id="workspaceDeliveryPack" type="button">一键交付包</button>
                 <button class="ghost-btn" id="workspaceImportProject" type="button">导入项目</button>
                 <button class="danger-btn" id="workspaceDeleteProject" type="button">删除项目</button>
                 <label class="workspace-archived-toggle"><input id="workspaceShowArchived" type="checkbox" />显示已归档</label>
@@ -1105,6 +1120,10 @@
 
           <div class="link-tester">
             <div class="panel">
+              <div class="data-bus-hint hidden" id="weightingDataBusHint">
+                <span>💡 数据清洗已完成，可一键使用清洗后数据。</span>
+                <button class="ghost-btn" id="useCleanedDataForWeighting" type="button">使用清洗后数据</button>
+              </div>
               <label>
                 加权方式
                 <select id="weightingMode">
@@ -1170,6 +1189,53 @@
           </div>
 
           <button class="secondary-btn guide-back" type="button" data-jump="data-weighting">返回数据加权</button>
+        </section>
+
+        <section class="view" id="research-models">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">调研后</p>
+              <h2>研究模型</h2>
+            </div>
+          </div>
+
+          <div class="workflow-grid research-model-grid">
+            <button class="tool-card ready" type="button" data-jump="psm">
+              <span>价格研究</span>
+              <h3>PSM 价格敏感度分析</h3>
+              <p>通过四价法（便宜/贵/太便宜/太贵）测算最优价格区间，识别可接受价格带。</p>
+            </button>
+            <button class="tool-card ready" type="button" data-jump="kano">
+              <span>需求优先级</span>
+              <h3>KANO 分析</h3>
+              <p>将产品功能分为必备、期望、魅力、无差异、反向五类，排定功能优先级。</p>
+            </button>
+            <button class="tool-card ready" type="button" data-jump="maxdiff">
+              <span>偏好测量</span>
+              <h3>MaxDiff</h3>
+              <p>通过多次最佳-最差选择，量化属性或卖点间的相对偏好强度。</p>
+            </button>
+            <button class="tool-card ready" type="button" data-jump="driver-analysis">
+              <span>归因分析</span>
+              <h3>关键驱动分析</h3>
+              <p>基于回归或重要性-表现分析，定位驱动整体满意度或购买意愿的核心因素。</p>
+            </button>
+            <button class="tool-card ready" type="button" data-jump="turf">
+              <span>组合优化</span>
+              <h3>TURF 分析</h3>
+              <p>在可达人口最大化目标下，筛选最优的产品/卖点组合，避免冗余。</p>
+            </button>
+            <button class="tool-card ready" type="button" data-jump="conjoint">
+              <span>效用测量</span>
+              <h3>联合分析（CBC）</h3>
+              <p>通过选择式联合分析拆解各属性与水平的效用，模拟产品组合的市场份额。</p>
+            </button>
+            <button class="tool-card ready" type="button" data-jump="abc-value" style="display:none">
+              <span>用户价值</span>
+              <h3>ABC 用户价值模型</h3>
+              <p>从 A 态度、B 行为、C 消费三维合成用户价值指数，识别高价值人群与提升机会。</p>
+            </button>
+          </div>
         </section>
 
         <section class="view" id="pptx-report">
@@ -1257,6 +1323,18 @@
                     </select>
                     <small class="field-note">标准规则适合快速出稿；AI 规划会在确保题目全覆盖的基础上，重组章节、页面题目组合与默认分析维度，完成后仍可手动调整。</small>
                   </label>
+                  <label class="span-row field">
+                    <span class="field-heading">章节结构模板</span>
+                    <select id="pptxStructureTemplate">
+                      <option value="" selected>自动（根据数据智能分配）</option>
+                      <option value="ua">U&A 使用与态度研究</option>
+                      <option value="brand">品牌追踪研究</option>
+                      <option value="concept">概念测试</option>
+                      <option value="satisfaction">满意度研究</option>
+                      <option value="pricing">价格研究</option>
+                    </select>
+                    <small class="field-note">选择行业模板后，报告将按预设章节结构组织内容（如“背景→总体→细分→建议”）。</small>
+                  </label>
                   <div class="field">
                     <span class="field-heading">维度分组（按合并单元格拆分，如分品牌 / 分平台）</span>
                     <div class="multiselect-dropdown" id="pptxDimensionDropdown">
@@ -1338,6 +1416,10 @@
                     <span class="panel-note">先生成基础版 PPT；AI 将读取 Python 汇总后的逐页数据，生成可编辑的标题与分点洞察。</span>
                   </div>
                   <p class="panel-note" id="pptxAiWriteStatus"></p>
+                  <div class="pptx-history-panel" id="pptxHistoryPanel" style="margin-top:16px">
+                    <div class="issue-head"><strong>最近生成</strong><button class="secondary-btn mini" id="pptxHistoryClear" type="button">清空</button></div>
+                    <div id="pptxHistoryList"><p class="panel-note">暂无生成记录</p></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1531,8 +1613,9 @@
                 <button class="primary-btn" id="generateMaxDiff" type="button">生成设计</button>
                 <button class="secondary-btn" id="loadMaxDiffExample" type="button">载入示例</button>
                 <button class="secondary-btn span-row" id="exportMaxDiffDesign" type="button" disabled>导出设计 Excel</button>
+                <button class="secondary-btn" id="exportMaxDiffValidation" type="button" disabled>导出校验报告</button>
               </div>
-              <p class="panel-note">第一版使用轻量均衡分配，适合快速生成问卷题组草案；正式大样本建议再做实验设计校验。</p>
+              <p class="panel-note">生成设计后自动运行平衡性校验（出现次数、配对覆盖度、位置分布），评分 ≥ 85 可用于正式采样。</p>
             </div>
 
             <div class="audit-results" id="maxdiffDesignResults" aria-live="polite">
@@ -1546,7 +1629,7 @@
           <div class="link-tester secondary-tool">
             <div class="panel">
               <label>
-                计分数据
+                计分数据（汇总次数）
                 <textarea id="maxdiffScoreData" placeholder="每行一个项目，列顺序为：项目名, 最佳次数, 最差次数, 展示次数&#10;例如：口味更好,48,12,80"></textarea>
               </label>
               <div class="button-row">
@@ -1562,6 +1645,34 @@
               <div class="empty-state">
                 <strong>等待计分</strong>
                 <span>粘贴汇总次数后点击“计算得分”，这里会显示相对偏好排序。</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="link-tester secondary-tool">
+            <div class="panel">
+              <label>
+                原始响应数据（个体级选择）
+                <textarea id="maxdiffResponses" placeholder="每行一条选择记录，列顺序：受访者ID, 题组编号, best 项目, worst 项目, 展示项目(以 | 分隔)&#10;例如：R1,1,口味更好,售后更安心,口味更好|包装更高级|价格更划算|售后更安心"></textarea>
+              </label>
+              <label class="field">
+                迭代次数
+                <input id="maxdiffIterations" type="number" min="50" value="400" />
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="runMaxDiffMNL" type="button">运行 MNL 模型</button>
+                <button class="primary-btn" id="runMaxDiffHB" type="button">运行 HB 模型</button>
+                <button class="secondary-btn" id="loadMaxDiffResponsesExample" type="button">载入响应示例</button>
+                <button class="secondary-btn" id="exportMaxDiffMNL" type="button" disabled>导出 MNL Excel</button>
+                <button class="secondary-btn" id="exportMaxDiffHB" type="button" disabled>导出 HB Excel</button>
+              </div>
+              <p class="panel-note">MNL 为多项逻辑斯蒂回归（群体级效用）；HB 为层级贝叶斯（个体级效用 + 群体收缩），适合做市场模拟或异质性分析。</p>
+            </div>
+
+            <div class="audit-results" id="maxdiffModelResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待运行模型</strong>
+                <span>粘贴原始响应数据后点击“运行 MNL”或“运行 HB”，这里会显示效用估计与偏好份额。</span>
               </div>
             </div>
           </div>
@@ -1596,9 +1707,27 @@
             </article>
 
             <article class="guide-card">
+              <span>设计校验</span>
+              <h3>平衡性评分 ≥ 85 分为良好</h3>
+              <p>生成设计后自动运行校验，从出现次数、配对覆盖度、位置分布三个维度评估，并提示是否存在未覆盖项目对或位置偏误。</p>
+            </article>
+
+            <article class="guide-card">
               <span>简单计分</span>
               <h3>Score = (最佳次数 - 最差次数) / 展示次数</h3>
               <p>第一版使用简单计分，适合快速排序和草案判断；如果要做更正式的偏好份额或市场模拟，可进一步使用 MNL 或 HB 模型。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>MNL 模型</span>
+              <h3>多项逻辑斯蒂回归估计群体效用</h3>
+              <p>基于 best 选择建模，使用梯度下降加 L2 正则估计每个项目的相对效用值，输出偏好份额可用于市场模拟。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>HB 模型</span>
+              <h3>层级贝叶斯估计个体级效用</h3>
+              <p>对每个受访者单独估计效用，再通过经验贝叶斯收缩到群体均值，能同时输出群体效用与个体异质性，适合细分分析。</p>
             </article>
 
             <article class="guide-card">
@@ -1609,6 +1738,243 @@
           </div>
 
           <button class="secondary-btn guide-back" type="button" data-jump="maxdiff">返回 MaxDiff 工具</button>
+        </section>
+
+        <section class="view" id="driver-analysis">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">调研后</p>
+              <h2 class="title-with-help">
+                <span>关键驱动分析</span>
+                <button class="model-help-btn" type="button" data-jump="driver-guide" aria-label="查看关键驱动分析说明">?</button>
+              </h2>
+            </div>
+          </div>
+          <div class="link-tester">
+            <div class="panel">
+              <label>
+                数据输入（CSV 格式，第一行字段名，最后一列为因变量）
+                <textarea id="driverData" placeholder="第一行为字段名，最后一列为因变量（如总体满意度/NPS），其余列为自变量（各维度满意度）。&#10;例如：&#10;产品质量,价格合理性,售后服务,品牌形象,总体满意度&#10;4,3,5,4,4&#10;5,4,4,3,4&#10;3,2,4,4,3"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="runDriverAnalysis" type="button">计算驱动力</button>
+                <button class="secondary-btn" id="loadDriverExample" type="button">载入示例</button>
+                <button class="secondary-btn" id="exportDriverExcel" type="button" disabled>导出 Excel</button>
+                <button class="secondary-btn" id="exportDriverPng" type="button" disabled>导出 PNG</button>
+              </div>
+              <p class="panel-note">方法：多元线性回归标准化系数 + 相对重要性（Shapley 值简化版）。因变量应为等距/等比尺度（如 5 点量表均值或 NPS）。</p>
+            </div>
+            <div class="audit-results" id="driverResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待计算</strong>
+                <span>粘贴数据后点击“计算驱动力”。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="turf">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">调研后</p>
+              <h2 class="title-with-help">
+                <span>TURF 分析</span>
+                <button class="model-help-btn" type="button" data-jump="turf-guide" aria-label="查看 TURF 分析说明">?</button>
+              </h2>
+            </div>
+          </div>
+          <div class="link-tester">
+            <div class="panel">
+              <label>
+                多选矩阵（CSV，第一行选项名，每行一位受访者，0/1 表示是否选择）
+                <textarea id="turfData" placeholder="第一行为选项名称，每行一位受访者，1=选择，0=未选。&#10;例如：&#10;口味好,包装精美,价格实惠,购买便利,品牌知名&#10;1,0,1,1,0&#10;0,1,1,0,1&#10;1,1,0,1,0"></textarea>
+              </label>
+              <label class="field">
+                组合大小（最多选几个）
+                <input id="turfComboSize" type="number" min="1" max="10" value="3" />
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="runTurf" type="button">计算最优组合</button>
+                <button class="secondary-btn" id="loadTurfExample" type="button">载入示例</button>
+                <button class="secondary-btn" id="exportTurf" type="button" disabled>导出 Excel</button>
+              </div>
+              <p class="panel-note">TURF（Total Unduplicated Reach and Frequency）：找到指定大小的最优组合，使覆盖人数最大化。</p>
+            </div>
+            <div class="audit-results" id="turfResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待计算</strong>
+                <span>粘贴多选矩阵后点击“计算最优组合”。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+       <section class="view" id="conjoint">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">调研后</p>
+              <h2 class="title-with-help">
+                <span>联合分析（CBC）</span>
+                <button class="model-help-btn" type="button" data-jump="conjoint-guide" aria-label="查看联合分析说明">?</button>
+              </h2>
+            </div>
+          </div>
+          <div class="link-tester">
+            <div class="panel">
+              <label>
+                属性-水平定义（每行一个属性，逗号分隔水平）
+                <textarea id="conjointAttributes" placeholder="每行格式：属性名,水平1,水平2,...&#10;例如：&#10;价格,低,中,高&#10;品牌,品牌A,品牌B,品牌C&#10;包装,简约,豪华"></textarea>
+              </label>
+              <label>
+                选择集数据（CSV：受访者ID,任务编号,方案编号,各属性水平编号...,选择）
+                <textarea id="conjointChoices" placeholder="第一行为表头，最后一列为选择（1=选中，0=未选）&#10;例如：&#10;resp,task,alt,价格,品牌,包装,choice&#10;1,1,1,1,2,1,0&#10;1,1,2,2,1,2,1&#10;1,1,3,3,3,1,0"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="runConjoint" type="button">估计效用值</button>
+                <button class="secondary-btn" id="loadConjointExample" type="button">载入示例</button>
+                <button class="secondary-btn" id="exportConjoint" type="button" disabled>导出 Excel</button>
+              </div>
+              <p class="panel-note">基于选择的联合分析（CBC）：通过条件 Logit 模型估计各属性水平的部分效用值，计算属性重要性并进行市场份额模拟。</p>
+            </div>
+            <div class="audit-results" id="conjointResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待计算</strong>
+                <span>定义属性和水平，粘贴选择集数据后点击"估计效用值"。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="driver-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">模型说明</p>
+              <h2>关键驱动分析</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="driver-analysis">返回工具</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>适用场景</span>
+              <h3>找出影响总体满意度/NPS 的关键驱动因素</h3>
+              <p>关键驱动分析用于识别哪些维度对总体评价指标影响最大，帮助团队优先改善最能撬动整体评分的环节，如产品、服务、品牌等。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>数据格式</span>
+              <h3>CSV，最后一列为因变量</h3>
+              <p>第一行为字段名，最后一列为因变量（如总体满意度、NPS），其余列为自变量（各维度满意度）。数据应为等距尺度（如 5 点量表均值）。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>分析方法</span>
+              <h3>多元线性回归 + 相对重要性</h3>
+              <p>通过标准化回归系数反映各维度影响力大小，结合 Shapley 值简化版计算相对重要性占比，直观呈现驱动力排序。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>结果解读</span>
+              <h3>系数越大，驱动力越强</h3>
+              <p>正向系数表示该维度提升会拉升总体评分；系数接近零说明影响有限。建议优先关注系数最高且当前得分偏低的维度。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>使用提醒</span>
+              <h3>自变量之间避免高度共线性</h3>
+              <p>如果维度之间高度相关（如"产品质量"与"整体品质"），系数可能不稳定。建议合并相似维度或分批次分析。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="driver-analysis">返回关键驱动分析</button>
+        </section>
+
+        <section class="view" id="turf-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">模型说明</p>
+              <h2>TURF 分析</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="turf">返回工具</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>适用场景</span>
+              <h3>找到覆盖最多人的最优选项组合</h3>
+              <p>TURF（Total Unduplicated Reach and Frequency）用于在资源有限时选择最优组合，如确定最能触达消费者的渠道组合、最有吸引力的卖点组合、最优广告创意组合等。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>数据格式</span>
+              <h3>0/1 多选矩阵</h3>
+              <p>第一行为选项名称，每行一位受访者，1 表示选择了该选项，0 表示未选。数据通常来自多选题或偏好筛选题。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>组合大小</span>
+              <h3>设定你要选几个项目</h3>
+              <p>组合大小取决于实际资源约束，如渠道预算能覆盖几个渠道、广告素材能投放几版。工具会穷举所有组合，找出覆盖率最高的方案。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>结果解读</span>
+              <h3>Reach 是核心指标</h3>
+              <p>Reach（覆盖率）表示至少选择组合中一个选项的人数占比；Frequency 表示平均每人选择了组合中几个选项，反映触达深度。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>使用提醒</span>
+              <h3>选项过多时计算量会增大</h3>
+              <p>组合数 = C(n, k)，选项多且组合大时计算量指数增长。建议先将选项控制在 15 个以内，或分阶段分析。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="turf">返回 TURF 分析</button>
+        </section>
+
+        <section class="view" id="conjoint-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">模型说明</p>
+              <h2>联合分析（CBC）</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="conjoint">返回工具</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>适用场景</span>
+              <h3>量化产品各属性的价值，模拟市场份额</h3>
+              <p>基于选择的联合分析（Choice-Based Conjoint）用于产品配置、定价策略、功能优先级等决策。它通过模拟真实购买场景，量化消费者对每个属性水平的偏好强度。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>属性与水平</span>
+              <h3>每个属性包含 2-6 个水平</h3>
+              <p>属性是产品的维度（如价格、品牌、包装），水平是每个维度的具体选项。属性不宜过多（通常 4-7 个），水平数量建议均衡。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>选择集数据</span>
+              <h3>每位受访者完成多道选择题</h3>
+              <p>每道题包含 2-4 个方案，受访者选择最倾向的方案。数据格式：受访者ID、任务编号、方案编号、各属性水平编号、是否选中（1/0）。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>条件 Logit</span>
+              <h3>通过最大似然估计计算部分效用</h3>
+              <p>使用效果编码 + Newton-Raphson 迭代求解，输出各属性水平的部分效用值。属性重要性 = 该属性效用极差 / 所有属性极差之和。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>市场模拟</span>
+              <h3>Logit 规则预测份额</h3>
+              <p>定义竞争产品方案后，基于效用值用 Logit 规则（Share = exp(Ui) / Σexp(Uj)）模拟各产品的市场份额占比。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="conjoint">返回联合分析</button>
         </section>
 
         <section class="view" id="abc-value" style="display:none">
@@ -2083,6 +2449,7 @@
                 <button class="secondary-btn" id="copyAiPrompt" type="button" disabled>复制问卷</button>
                 <button class="secondary-btn" id="exportAiPrompt" type="button" disabled>导出 Markdown</button>
                 <button class="secondary-btn" id="exportAiWord" type="button" disabled>导出 Word</button>
+                <button class="secondary-btn" id="exportAiPlatformFormat" type="button" disabled>导出平台格式</button>
                 <button class="secondary-btn" id="applyAiQuestionnaire" type="button" disabled>同步到项目稿</button>
               </div>
               <div class="ai-revise-panel">
@@ -2165,6 +2532,89 @@
             </div>
           </div>
         </section>
+
+        <section class="view" id="faq">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">帮助中心</p>
+              <h2>常见问题 FAQ</h2>
+            </div>
+          </div>
+
+          <div class="faq-container">
+            <div class="faq-category">
+              <h3>📥 数据导入</h3>
+              <details class="faq-item">
+                <summary>支持哪些数据格式？</summary>
+                <p>交叉表分析支持粘贴 CSV（包括从 Excel 复制）、导入 SAV（SPSS）、XLSX/XLS 文件。清洗和加权模块同样支持 CSV 和 Excel 格式。导入时第一行应为字段名。</p>
+              </details>
+              <details class="faq-item">
+                <summary>数据量有上限吗？</summary>
+                <p>前端单表支持处理数万行数据。超过 5000 行时系统会自动启用 Web Worker 后台计算，避免页面卡顿。如需处理更大规模数据，建议先在后端完成预处理。</p>
+              </details>
+              <details class="faq-item">
+                <summary>导入数据报错怎么办？</summary>
+                <p>常见原因：①字段名缺失或重复；②数值列包含非数字字符；③编码非 UTF-8。建议先用 Excel 打开检查，确保第一行为纯文字字段名、数据区无合并单元格。</p>
+              </details>
+            </div>
+
+            <div class="faq-category">
+              <h3>📊 分析与模型</h3>
+              <details class="faq-item">
+                <summary>PSM 价格敏感度结果如何解读？</summary>
+                <p>核心看四个价格点：PMC（可接受价格下限）、PME（上限）、IPP（便宜/贵平衡点）、OPP（最优价格点）。正式定价建议取 PMC-PME 区间内，以 OPP 为锚点，结合竞品和成本判断。</p>
+              </details>
+              <details class="faq-item">
+                <summary>KANO 模型的必备/期望/魅力属性如何区分？</summary>
+                <p>必备属性：没有会不满，有了认为理所当然。期望属性：越好越满意，线性关系。魅力属性：有了惊喜，没有也不在意。分类基于正向/反向问题的交叉矩阵判定。</p>
+              </details>
+              <details class="faq-item">
+                <summary>关键驱动分析的 R² 偏低怎么办？</summary>
+                <p>R² 偏低说明自变量未能充分解释因变量的变异，可能原因：①遗漏重要维度；②数据质量不佳（方差小）；③非线性关系。建议检查变量覆盖度或尝试非线性模型。</p>
+              </details>
+              <details class="faq-item">
+                <summary>TURF 计算很慢怎么办？</summary>
+                <p>组合数 = C(n, k)，选项多或组合大时计算量指数增长。建议：①减少组合大小；②先通过单选项 Reach 率筛除低价值选项；③将选项分组后分层分析。</p>
+              </details>
+              <details class="faq-item">
+                <summary>联合分析的属性重要性加起来不等于 100%？</summary>
+                <p>属性重要性本身就是归一化到 100% 的。如果计算结果偏差较大，通常说明数据质量不足（样本量小、选择任务少）或属性水平设置不合理（水平差异太小难以区分）。</p>
+              </details>
+            </div>
+
+            <div class="faq-category">
+              <h3>📄 报告生成</h3>
+              <details class="faq-item">
+                <summary>PPT 报告生成需要多长时间？</summary>
+                <p>通常 1-3 分钟，取决于题目数量和数据复杂度。AI 规划模式和 AI 写报告会额外增加 1-2 分钟。进度条会显示当前阶段（上传→解析→渲染→质检→打包）。</p>
+              </details>
+              <details class="faq-item">
+                <summary>上传公司 PPTX 模板有什么要求？</summary>
+                <p>支持 .pptx 格式，最大 25MB。模板会保留母版、背景、Logo、版式和主题色。建议模板中包含封面、内页、封底三种版式，避免放过多示例页。上传后可导出 Profile 方便团队复用。</p>
+              </details>
+              <details class="faq-item">
+                <summary>报告生成失败怎么排查？</summary>
+                <p>①检查交叉表数据是否完整（字段名+数据行）；②确认表头设计中至少有一个人群维度；③查看质检报告中的错误项（红色标记）；④如果模板上传了，检查模板版式是否兼容。</p>
+              </details>
+            </div>
+
+            <div class="faq-category">
+              <h3>🔧 工具使用</h3>
+              <details class="faq-item">
+                <summary>项目数据如何保存？</summary>
+                <p>所有数据保存在浏览器 localStorage 中，不会上传到服务器。建议使用"导出项目"功能定期备份 .json 文件，防止浏览器缓存被清理后丢失。</p>
+              </details>
+              <details class="faq-item">
+                <summary>如何与团队成员协作？</summary>
+                <p>通过"导出项目"生成 .json 文件，发送给团队成员后对方使用"导入项目"即可恢复完整项目状态，包括交叉表数据、表头、清洗规则和分析结果。</p>
+              </details>
+              <details class="faq-item">
+                <summary>移动端能用吗？</summary>
+                <p>支持移动端浏览，侧边栏会自动收起为抽屉式菜单，点击左上角菜单按钮可展开。建议在平板或电脑上进行复杂的数据分析和报告生成操作。</p>
+              </details>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -2182,9 +2632,14 @@
     })();
     </script>
     <script src="./ppt-report-ai.js?v=20260724-1"></script>
-    <script src="./app.js?v=20260724-1"></script>
+    <script src="./app.js?v=20260725-2"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
     <!-- Vite 模块化入口（Phase 1 过渡期：共享模块已提取，功能模块渐进迁移） -->
     <script type="module" src="/src/main.js"></script>
+    <!-- MaxDiff 模块桥接：在 legacy 服务器（无 Vite）下也能加载阶段三/四的校验与 MNL/HB 模型 -->
+    <script type="module">
+      import * as maxdiff from "/src/modules/maxdiff/index.js?v=20260725-2";
+      window.SurveyKitMaxDiff = maxdiff;
+    </script>
   </body>
 </html>
