@@ -304,7 +304,7 @@ def _render_kano(slide, payload: Any) -> None:
         series.marker.size = 8
         series.format.fill.solid()
         series.format.fill.fore_color.rgb = _rgb(color)
-        series.format.line.color.rgb = _rgb(color)
+        series.format.line.fill.background()
 
     ranked = sorted(valid, key=lambda row: abs(float(row["worse"])) + float(row["better"]), reverse=True)
     entries = [

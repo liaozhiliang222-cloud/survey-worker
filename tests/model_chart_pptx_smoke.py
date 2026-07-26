@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 from pptx import Presentation
+from pptx.enum.dml import MSO_FILL_TYPE
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +31,7 @@ SAMPLES = {
     "kano": [
         {"name": "配送速度", "classification": "期望属性", "better": 0.72, "worse": -0.66},
         {"name": "包装设计", "classification": "魅力属性", "better": 0.65, "worse": -0.25},
+        {"name": "包装质感", "classification": "魅力属性", "better": 0.38, "worse": -0.69},
         {"name": "售后保障", "classification": "必备属性", "better": 0.42, "worse": -0.81},
     ],
     "maxdiff": [
@@ -63,6 +65,11 @@ def main() -> None:
         text = "\n".join(shape.text for shape in shapes if getattr(shape, "has_text_frame", False))
         assert "可编辑" in text
         assert charts[0].chart.part.chart_workbook.xlsx_part is not None
+        if model_type == "kano":
+            assert all(
+                series.format.line.fill.type == MSO_FILL_TYPE.BACKGROUND
+                for series in charts[0].chart.series
+            )
 
     api_source = (ROOT / "deploy" / "aliyun_api.py").read_text(encoding="utf-8")
     assert '/api/pptx-report/model-chart' in api_source
