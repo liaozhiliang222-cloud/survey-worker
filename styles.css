@@ -5342,3 +5342,135 @@ tbody tr.warn td {
   box-shadow: 0 0 0 4px rgba(59,130,246,0.3);
   border-radius: 8px;
 }
+
+/* Report Narrative review */
+
+.pptx-brief-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pptx-brief-badge.modified {
+  color: #075985;
+  background: #e0f2fe;
+}
+
+.pptx-brief-badge.locked {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.pptx-brief-lock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #f1d49a;
+  border-radius: 10px;
+  padding: 9px 11px;
+  color: #78350f;
+  background: #fffbeb;
+}
+
+.pptx-brief-lock input {
+  width: auto;
+  margin: 0;
+}
+
+.pptx-brief-evidence > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pptx-brief-evidence code {
+  border-radius: 6px;
+  padding: 3px 7px;
+  color: #334155;
+  background: #f1f5f9;
+  font-size: 11px;
+}
+
+.pptx-preview-field textarea:disabled,
+.pptx-preview-field select:disabled {
+  cursor: not-allowed;
+  color: #64748b;
+  background: #f8fafc;
+}
+
+.pptx-narrative-content {
+  display: grid;
+  gap: 14px;
+  margin: 14px 0 18px;
+}
+
+.pptx-narrative-thesis {
+  padding: 18px;
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+}
+
+.pptx-narrative-thesis small,
+.pptx-narrative-chapter small {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.pptx-narrative-thesis strong {
+  display: block;
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+.pptx-narrative-chapters {
+  display: grid;
+  gap: 10px;
+}
+
+.pptx-narrative-chapter {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.pptx-narrative-chapter > span {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 800;
+}
+
+.pptx-narrative-chapter strong,
+.pptx-narrative-chapter p {
+  margin: 0;
+}
+
+.pptx-narrative-chapter p {
+  margin-top: 5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.pptx-narrative-fallback {
+  padding: 16px;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  background: #fffbeb;
+  color: #92400e;
+}

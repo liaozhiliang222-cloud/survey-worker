@@ -1380,7 +1380,8 @@
                   <h3>预览 & 编辑报告结构</h3>
                   <p class="panel-note">以下是系统自动规划的报告页面。分维度对比会自动包含总体列；图表按列数与选项数量匹配，您也可以逐页手动调整。</p>
                   <div class="ai-report-data-actions" style="margin-bottom:12px;">
-                    <button class="primary-btn" id="pptxConfirmBtn" type="button" disabled>确认生成 PPT</button>
+                    <button class="primary-btn" id="pptxAiWriteBtn" type="button" disabled>AI 生成报告框架</button>
+                    <button class="secondary-btn" id="pptxConfirmBtn" type="button" disabled>跳过故事线，直接生成 PPT</button>
                     <button class="secondary-btn" id="pptxSavePlanBtn" type="button" disabled>保存报告方案</button>
                     <button class="ghost-btn" id="pptxLoadPlanBtn" type="button">加载已保存方案</button>
                     <button class="ghost-btn" id="pptxUndoPlanBtn" type="button" disabled>撤销</button>
@@ -1398,6 +1399,23 @@
               </div>
             </div>
 
+            <!-- 步骤 2.7：AI 报告故事线 -->
+            <div class="ai-report-config panel" id="pptxNarrativePanel" style="display:none;">
+              <div class="ai-report-step">
+                <div class="step-badge">2.7</div>
+                <div class="step-body">
+                  <h3>AI 生成报告框架</h3>
+                  <p class="panel-note">先确认整份报告的核心观点与章节逻辑，再生成逐页 SlideBrief 和 PPT。</p>
+                  <div class="pptx-narrative-content" id="pptxNarrativeContent"></div>
+                  <div class="ai-report-data-actions">
+                    <button class="primary-btn" id="pptxNarrativeConfirmBtn" type="button">生成蓝图并继续编辑</button>
+                    <button class="secondary-btn" id="pptxNarrativeRegenerateBtn" type="button">重新生成故事线</button>
+                    <button class="secondary-btn hidden" id="pptxContinueEditBtn" type="button">继续编辑</button>
+                  </div>
+                  <p class="panel-note" id="pptxAiWriteStatus"></p>
+                </div>
+              </div>
+            </div>
             <!-- 步骤 3：结果 -->
             <div class="ai-report-config panel">
               <div class="ai-report-step">
@@ -1412,10 +1430,8 @@
                     </div>
                   </div>
                   <div class="pptx-ai-report-actions">
-                    <button class="primary-btn" id="pptxAiWriteBtn" type="button" disabled>AI 写报告</button>
-                    <span class="panel-note">先生成基础版 PPT；AI 将读取 Python 汇总后的逐页数据，生成可编辑的标题与分点洞察。</span>
+                    <span class="panel-note">AI 报告请在上方先确认故事线；Narrative 不可用时仍可按原有确定性流程生成。</span>
                   </div>
-                  <p class="panel-note" id="pptxAiWriteStatus"></p>
                   <div class="pptx-history-panel" id="pptxHistoryPanel" style="margin-top:16px">
                     <div class="issue-head"><strong>最近生成</strong><button class="secondary-btn mini" id="pptxHistoryClear" type="button">清空</button></div>
                     <div id="pptxHistoryList"><p class="panel-note">暂无生成记录</p></div>

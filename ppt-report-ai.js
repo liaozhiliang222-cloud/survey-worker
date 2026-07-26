@@ -2,6 +2,31 @@
   "use strict";
 
   const DEFAULT_BATCH_SIZE = 4;
+  const REPORT_STORYLINE_TYPES = [
+    "problem_solution",
+    "user_journey",
+    "funnel",
+    "diagnosis",
+    "opportunity",
+  ];
+
+  const REPORT_NARRATIVE_SYSTEM_PROMPT = [
+    "你是资深市场研究顾问。请根据 DataFact、Insight 列表和研究目标，先设计整份报告的 Report Narrative。",
+    "先形成一个中心论点，不要简单罗列发现。central_thesis 必须是一个完整判断，不是主题描述或报告标题。",
+    "章节必须形成连续论证，例如用户是谁→为什么购买→为什么流失→如何提升；禁止按满意度、购买因素、会员等指标机械分章。",
+    "默认规划 4–6 章，硬性限制 3–8 章。每章都必须包含 chapter_id、title、purpose、key_question。",
+    "storyline_type 只能是 problem_solution、user_journey、funnel、diagnosis、opportunity 之一。",
+    "不得编造 DataFact 中不存在的数字或结论；confidence 必须在 0 到 1 之间。",
+    "只返回 JSON：{\"report_title\":\"\",\"central_thesis\":\"\",\"storyline_type\":\"diagnosis\",\"chapters\":[{\"chapter_id\":\"chapter_01\",\"title\":\"\",\"purpose\":\"\",\"key_question\":\"\"}],\"key_questions\":[],\"ending_message\":\"\",\"confidence\":0.9}。",
+  ].join("\n");
+
+  const SLIDE_BRIEF_SYSTEM_PROMPT = [
+    "你是资深市场研究报告总监。请在给定 Report Narrative 下，为每页生成 SlideBrief 文案。",
+    "每页输入都包含 central_thesis、chapter_context、previous_chapter、next_chapter；标题和正文必须服务于本章目的，并与前后章节连续。",
+    "只允许使用该页 questions、DataFact、evidence_fact_ids、evidence_question_ids 中的证据，不得重新计算或编造数字。",
+    "标题直接表达唯一结论；正文采用观察+数据证据+解释；相邻页面不得重复完全相同的结论。",
+    "只返回 JSON：{\"pages\":[{\"page_idx\":1,\"title\":\"\",\"bullets\":[\"\",\"\"],\"business_implication\":\"\",\"evidence_fact_ids\":[],\"evidence_question_ids\":[]}]}。",
+  ].join("\n");
 
   function uniqueStrings(values) {
     return Array.from(new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean)));
@@ -51,6 +76,110 @@
     };
   }
 
+  function buildReportNarrativeInput(context, researchObjective = "") {
+    const pages = context?.pages || [];
+    const chapters = [];
+    pages.forEach((page) => {
+      const title = String(page.chapter || "其他研究");
+      let chapter = chapters.find((item) => item.title === title);
+      if (!chapter) {
+        chapter = { title, page_idxs: [], question_ids: [] };
+        chapters.push(chapter);
+      }
+      chapter.page_idxs.push(Number(page.page_idx));
+      chapter.question_ids.push(...pageQuestionIds(page));
+      chapter.question_ids = uniqueStrings(chapter.question_ids);
+    });
+    return {
+      report_title: String(researchObjective || context?.research_objective || context?.source || "调研报告"),
+      research_objective: String(researchObjective || context?.research_objective || ""),
+      data_facts: (context?.data_facts || []).map((fact) => ({ ...fact })),
+      insights: (context?.global_findings || []).map((finding) => ({ ...finding })),
+      current_report_structure: chapters,
+    };
+  }
+
+  function validateReportNarrative(payload, context = {}) {
+    if (!payload || typeof payload !== "object") throw new Error("Report Narrative 必须是 JSON 对象");
+    const centralThesis = String(payload.central_thesis || "").trim();
+    if (!centralThesis) throw new Error("Report Narrative 缺少 central_thesis");
+    const storylineType = String(payload.storyline_type || "").trim();
+    if (!REPORT_STORYLINE_TYPES.includes(storylineType)) throw new Error("Report Narrative 的 storyline_type 非法");
+    const rawChapters = Array.isArray(payload.chapters) ? payload.chapters : [];
+    if (rawChapters.length < 3 || rawChapters.length > 8) throw new Error("Report Narrative 章节数必须在 3–8 章之间");
+    const chapters = rawChapters.map((chapter, index) => {
+      const normalized = {
+        chapter_id: String(chapter?.chapter_id || `chapter_${String(index + 1).padStart(2, "0")}`).trim(),
+        title: String(chapter?.title || "").trim(),
+        purpose: String(chapter?.purpose || "").trim(),
+        key_question: String(chapter?.key_question || "").trim(),
+      };
+      if (!normalized.title || !normalized.purpose || !normalized.key_question) {
+        throw new Error(`Report Narrative 第 ${index + 1} 章缺少 title、purpose 或 key_question`);
+      }
+      return normalized;
+    });
+    const keyQuestions = uniqueStrings(payload.key_questions);
+    return {
+      report_title: String(payload.report_title || context?.research_objective || context?.source || "调研报告").trim(),
+      central_thesis: centralThesis,
+      storyline_type: storylineType,
+      chapters,
+      key_questions: keyQuestions.length ? keyQuestions : chapters.map((chapter) => chapter.key_question),
+      ending_message: String(payload.ending_message || centralThesis).trim(),
+      confidence: Math.max(0, Math.min(1, Number(payload.confidence) || 0)),
+    };
+  }
+
+  async function generateReportNarrativeOrFallback(generateNarrative, context) {
+    try {
+      const payload = await generateNarrative();
+      return {
+        report_narrative: validateReportNarrative(payload, context),
+        fallback_used: false,
+        error: "",
+      };
+    } catch (error) {
+      return {
+        report_narrative: null,
+        fallback_used: true,
+        error: String(error?.message || error || "Report Narrative 生成失败"),
+      };
+    }
+  }
+
+  function chapterForPage(page, reportNarrative, allPages) {
+    const chapters = reportNarrative?.chapters || [];
+    if (!chapters.length) return { chapter: null, index: -1 };
+    const pageChapter = String(page?.chapter || "");
+    const pageChapterId = String(page?.chapter_id || "");
+    let index = chapters.findIndex((chapter) =>
+      (pageChapterId && String(chapter.chapter_id || "") === pageChapterId)
+      || (pageChapter && String(chapter.title || "") === pageChapter)
+    );
+    if (index < 0) {
+      const pageChapterOrder = uniqueStrings((allPages || []).map((item) => item.chapter || "其他研究"));
+      index = Math.min(Math.max(0, pageChapterOrder.indexOf(pageChapter)), chapters.length - 1);
+    }
+    return { chapter: chapters[index], index };
+  }
+
+  function buildPageNarrativeContext(page, reportNarrative, allPages = []) {
+    const { chapter, index } = chapterForPage(page, reportNarrative, allPages);
+    const chapters = reportNarrative?.chapters || [];
+    return {
+      central_thesis: String(reportNarrative?.central_thesis || ""),
+      chapter_context: chapter ? {
+        chapter_id: chapter.chapter_id,
+        title: chapter.title,
+        purpose: chapter.purpose,
+        key_question: chapter.key_question,
+      } : null,
+      previous_chapter: index > 0 ? String(chapters[index - 1]?.title || "") : "",
+      next_chapter: index >= 0 && index + 1 < chapters.length ? String(chapters[index + 1]?.title || "") : "",
+    };
+  }
+
   function fallbackNarrative(context) {
     const findings = (context?.global_findings || []).map((finding, index) => ({
       finding_id: `finding_${String(index + 1).padStart(2, "0")}`,
@@ -92,7 +221,6 @@
       business_implication: String(finding.business_implication || "").trim(),
       confidence: Math.max(0, Math.min(1, Number(finding.confidence) || 0)),
     })).filter((finding) => finding.headline && finding.fact_ids.length);
-
     const proposedStoryline = new Map(
       (Array.isArray(payload.storyline) ? payload.storyline : [])
         .map((item) => [Number(item.page_idx), item])
@@ -120,21 +248,48 @@
     };
   }
 
-  function buildPageBatchInput(batch, narrative, previousPage = null) {
+  function buildPageBatchInput(batch, reportNarrative, previousPage = null, allPages = batch) {
     const pageIds = new Set((batch || []).map((page) => Number(page.page_idx)));
+    const pageContexts = (batch || []).map((page) => ({
+      page_idx: Number(page.page_idx),
+      ...buildPageNarrativeContext(page, reportNarrative, allPages || batch),
+    }));
     return {
+      report_narrative: reportNarrative?.central_thesis ? reportNarrative : null,
+      central_thesis: String(reportNarrative?.central_thesis || ""),
+      fallback_mode: reportNarrative?.central_thesis ? null : "data_fact_to_slide_brief",
       narrative: {
-        findings: narrative?.findings || [],
-        storyline: (narrative?.storyline || []).filter((item) => pageIds.has(Number(item.page_idx))),
+        findings: reportNarrative?.findings || [],
+        storyline: (reportNarrative?.storyline || []).filter((item) => pageIds.has(Number(item.page_idx))),
       },
       previous_page: previousPage ? {
         page_idx: Number(previousPage.page_idx),
         title: previousPage.title,
         business_implication: previousPage.business_implication,
       } : null,
-      pages: batch || [],
+      page_contexts: pageContexts,
+      pages: (batch || []).map((page, index) => ({
+        ...page,
+        narrative_context: pageContexts[index],
+      })),
     };
   }
+
+  function buildFallbackSlideBriefInput(context) {
+    return buildPageBatchInput(context?.pages || [], null, null, context?.pages || []);
+  }
+
+  function mergeSlideBriefSuggestion(existingBrief, suggestion) {
+    const current = { ...(existingBrief || {}) };
+    if (current.locked || current.user_modified) return current;
+    return {
+      ...current,
+      ...(suggestion || {}),
+      locked: Boolean(current.locked),
+      user_modified: false,
+    };
+  }
+
 
   function fitBullets(values) {
     const bullets = uniqueStrings(values);
@@ -167,12 +322,21 @@
 
   root.PptReportAi = {
     DEFAULT_BATCH_SIZE,
+    REPORT_NARRATIVE_SYSTEM_PROMPT,
+    REPORT_STORYLINE_TYPES,
+    SLIDE_BRIEF_SYSTEM_PROMPT,
+    buildFallbackSlideBriefInput,
     buildNarrativeInput,
     buildPageBatchInput,
+    buildPageNarrativeContext,
+    buildReportNarrativeInput,
     chunkPages,
     fallbackNarrative,
+    generateReportNarrativeOrFallback,
+    mergeSlideBriefSuggestion,
     parseJsonObject,
     validateNarrative,
     validatePageOutput,
+    validateReportNarrative,
   };
 })(typeof window !== "undefined" ? window : globalThis);
