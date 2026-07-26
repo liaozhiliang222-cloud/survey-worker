@@ -653,6 +653,25 @@ async def patch_report_slide(report_id: str, slide_id: str, request: Request):
         return _blueprint_error(exc)
 
 
+@app.post("/api/report/{report_id}/slide/{slide_id}/regenerate")
+@app.post("/api/pptx-report/report/{report_id}/slide/{slide_id}/regenerate")
+async def regenerate_report_slide(report_id: str, slide_id: str, request: Request):
+    try:
+        payload = await request.json()
+        suggestion = payload.get("suggestion") if isinstance(payload, dict) else None
+        if not isinstance(suggestion, dict):
+            raise BlueprintConflictError("suggestion must be an object")
+        result = REPORT_BLUEPRINT_STORE.regenerate_slide(
+            report_id,
+            slide_id,
+            suggestion,
+            force_user_modified=payload.get("force_user_modified") is True,
+        )
+        return JSONResponse(result)
+    except (BlueprintNotFoundError, BlueprintConflictError, ValueError, json.JSONDecodeError) as exc:
+        return _blueprint_error(exc)
+
+
 @app.post("/api/report/{report_id}/slides/reorder")
 @app.post("/api/pptx-report/report/{report_id}/slides/reorder")
 async def reorder_report_slides(report_id: str, request: Request):

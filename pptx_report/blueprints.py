@@ -38,6 +38,19 @@ EDITABLE_FIELDS = {
 VALID_SLIDE_TYPES = {value.value for value in PageType}
 VALID_LAYOUT_FAMILIES = {value.value for value in LayoutType}
 LOCK_PROTECTED_FIELDS = {"title", "claim", "slide_type", "layout_family"}
+REGENERATED_FIELDS = {
+    "title",
+    "claim",
+    "business_implication",
+    "evidence_fact_ids",
+    "evidence_question_ids",
+    "slide_type",
+    "layout_family",
+    "question_answered",
+    "visual_intent",
+    "density",
+    "bullets",
+}
 
 
 def _slide_id(slide: dict[str, Any]) -> str:
@@ -114,6 +127,75 @@ def reorder_slides(
         raise BlueprintConflictError("order must contain every slide_id exactly once")
     by_id = {_slide_id(slide): slide for slide in slides}
     return [deepcopy(by_id[slide_id]) for slide_id in normalized_order]
+
+
+def apply_single_slide_regeneration(
+    slide: dict[str, Any],
+    suggestion: dict[str, Any],
+    *,
+    force_user_modified: bool = False,
+) -> dict[str, Any]:
+    """Apply a validated AI rewrite without changing stable slide identity."""
+    updated = deepcopy(slide)
+    brief = updated.setdefault("slide_brief", {})
+    if brief.get("locked"):
+        raise BlueprintConflictError("locked slide cannot be regenerated")
+    if brief.get("user_modified") and not force_user_modified:
+        raise BlueprintConflictError(
+            "user-modified slide requires explicit overwrite confirmation"
+        )
+    if not isinstance(suggestion, dict):
+        raise BlueprintConflictError("regeneration suggestion must be an object")
+
+    requested = {
+        key: value for key, value in suggestion.items() if key in REGENERATED_FIELDS
+    }
+    if not str(requested.get("title") or "").strip():
+        raise BlueprintConflictError("regeneration suggestion requires title")
+    if (
+        "slide_type" in requested
+        and str(requested["slide_type"] or "") not in VALID_SLIDE_TYPES
+    ):
+        raise BlueprintConflictError("unsupported slide_type")
+    if (
+        "layout_family" in requested
+        and str(requested["layout_family"] or "") not in VALID_LAYOUT_FAMILIES
+    ):
+        raise BlueprintConflictError("unsupported layout_family")
+
+    for key, value in requested.items():
+        if key in {"evidence_fact_ids", "evidence_question_ids"}:
+            if not isinstance(value, list):
+                raise BlueprintConflictError(f"{key} must be an array")
+            brief[key] = list(dict.fromkeys(
+                str(item).strip() for item in value if str(item).strip()
+            ))
+        elif key == "bullets":
+            if not isinstance(value, list):
+                raise BlueprintConflictError("bullets must be an array")
+            updated["insight_bullets"] = [
+                str(item).strip() for item in value if str(item).strip()
+            ][:4]
+        else:
+            brief[key] = str(value or "").strip()
+
+    title = brief.get("title", "")
+    brief["claim"] = str(brief.get("claim") or title).strip()
+    brief["user_modified"] = False
+    brief["ai_regenerated_at"] = time.time()
+    brief["regeneration_count"] = int(brief.get("regeneration_count") or 0) + 1
+    updated["title"] = title
+    updated["insight_override"] = title
+    updated["business_implication"] = brief.get("business_implication", "")
+    updated["evidence_fact_ids"] = list(brief.get("evidence_fact_ids") or [])
+    updated["evidence_question_ids"] = list(
+        brief.get("evidence_question_ids") or []
+    )
+    if "slide_type" in requested:
+        updated["slide_type"] = brief["slide_type"]
+    if "layout_family" in requested:
+        updated["layout_family"] = brief["layout_family"]
+    return updated
 
 
 class ReportBlueprintStore:
@@ -195,6 +277,33 @@ class ReportBlueprintStore:
         with self._lock:
             payload = self.get(report_id)
             payload["slides"] = reorder_slides(payload["slides"], order)
+            return self._write_payload(report_id, payload)
+
+    def regenerate_slide(
+        self,
+        report_id: str,
+        slide_id: str,
+        suggestion: dict,
+        *,
+        force_user_modified: bool = False,
+    ) -> dict:
+        with self._lock:
+            payload = self.get(report_id)
+            index = next(
+                (
+                    index
+                    for index, slide in enumerate(payload["slides"])
+                    if _slide_id(slide) == slide_id
+                ),
+                -1,
+            )
+            if index < 0:
+                raise BlueprintNotFoundError(slide_id)
+            payload["slides"][index] = apply_single_slide_regeneration(
+                payload["slides"][index],
+                suggestion,
+                force_user_modified=force_user_modified,
+            )
             return self._write_payload(report_id, payload)
 
     def delete_slide(self, report_id: str, slide_id: str) -> dict:
