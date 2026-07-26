@@ -56,7 +56,13 @@ def main() -> None:
             if progress_callback:
                 progress_callback(20, "blocking")
             release.wait(3)
-            return Response(pptx_bytes(), media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+            return (
+                Response(
+                    pptx_bytes(),
+                    media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                ),
+                {},
+            )
 
         api._generate_core = blocking_generate
         headers = {
@@ -78,8 +84,12 @@ def main() -> None:
         cancelled = wait_for(client, first_state["job_id"], {"cancelled"})
         assert cancelled["finished_at"] and not api._job_output_path(first_state["job_id"]).exists()
 
-        api._generate_core = lambda data, qs, metadata, progress_callback=None, **kwargs: Response(
-            pptx_bytes(), media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        api._generate_core = lambda data, qs, metadata, progress_callback=None, **kwargs: (
+            Response(
+                pptx_bytes(),
+                media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ),
+            {},
         )
         ready_response = client.post("/api/pptx-report/jobs", content=envelope({"title": "ready"}, b"xlsx-2"), headers=headers)
         ready = wait_for(client, ready_response.json()["job_id"], {"ready"})
@@ -94,6 +104,7 @@ def main() -> None:
         api._write_job_state(lost_id, {"status": "running", "service_instance_id": "old-instance"})
         raw = json.loads(api._job_state_path(lost_id).read_text(encoding="utf-8"))
         raw["service_instance_id"] = "old-instance"
+        raw["updated_at"] = time.time() - api.JOB_STALE_TIMEOUT_SECONDS - 1
         api._job_state_path(lost_id).write_text(json.dumps(raw), encoding="utf-8")
         lost = client.get(f"/api/pptx-report/jobs/{lost_id}").json()
         assert lost["status"] == "lost" and lost["finished_at"]
