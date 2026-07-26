@@ -6599,39 +6599,41 @@ function downloadBlob(filename, blob) {
   URL.revokeObjectURL(link.href);
 }
 
-function exportSvgChartAsPng(containerSelector, filename) {
-  const svg = document.querySelector(`${containerSelector} svg`);
-  if (!svg) return;
-  const clone = svg.cloneNode(true);
-  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-  const viewBox = clone.getAttribute("viewBox")?.split(/\s+/).map(Number) || [];
-  const width = viewBox[2] || svg.clientWidth || 900;
-  const height = viewBox[3] || svg.clientHeight || 520;
-  clone.setAttribute("width", width);
-  clone.setAttribute("height", height);
-
-  const svgText = new XMLSerializer().serializeToString(clone);
-  const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
-  const url = URL.createObjectURL(svgBlob);
-  const image = new Image();
-  image.onload = () => {
-    const canvas = document.createElement("canvas");
-    canvas.width = width * 2;
-    canvas.height = height * 2;
-    const context = canvas.getContext("2d");
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.scale(2, 2);
-    context.drawImage(image, 0, 0, width, height);
-    URL.revokeObjectURL(url);
-    canvas.toBlob((blob) => {
-      if (blob) downloadBlob(filename, blob);
-    }, "image/png");
-  };
-  image.onerror = () => URL.revokeObjectURL(url);
-  image.src = url;
+async function exportResearchModelPptx(modelType, data, filename, button) {
+  if (!data) return;
+  const originalText = button?.textContent || "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "PPT 生成中…";
+  }
+  try {
+    const response = await fetch("/pptx-api/model-chart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model_type: modelType, data }),
+    });
+    if (!response.ok) {
+      let message = "研究模型 PPTX 导出失败";
+      try {
+        const payload = await response.json();
+        message = payload?.error?.message || message;
+      } catch {
+        // Keep the stable fallback message for non-JSON proxy errors.
+      }
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    downloadBlob(filename, blob);
+    showToast("已导出单页可编辑图表 PPT。");
+  } catch (error) {
+    showToast(error.message || "研究模型 PPTX 导出失败", "warning");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
 }
-
 function interpolateCurveValue(points, key, price) {
   if (!Number.isFinite(price)) return null;
   if (price <= points[0].price) return points[0][key];
@@ -6766,12 +6768,12 @@ function runPsmAnalysis() {
   const rows = parsePsmRows(document.querySelector("#psmData").value);
   const result = document.querySelector("#psmResults");
   const exportButton = document.querySelector("#exportPsm");
-  const exportPngButton = document.querySelector("#exportPsmPng");
+  const exportPptxButton = document.querySelector("#exportPsmPptx");
 
   if (!rows.length) {
     lastPsmAnalysis = null;
     exportButton.disabled = true;
-    exportPngButton.disabled = true;
+    exportPptxButton.disabled = true;
     result.innerHTML = `
       <div class="empty-state">
         <strong>未识别到有效数据</strong>
@@ -6803,7 +6805,7 @@ function runPsmAnalysis() {
   };
   projectDataBus.set("modelResults.psm", lastPsmAnalysis, { type: "PSM", samples: rows.length });
   exportButton.disabled = false;
-  exportPngButton.disabled = false;
+  exportPptxButton.disabled = false;
   const noteBlock = psmNotes.length
     ? `
       <div class="psm-note">
@@ -7014,13 +7016,13 @@ function renderKanoChart(items) {
 function runKanoAnalysis() {
   const result = document.querySelector("#kanoResults");
   const exportButton = document.querySelector("#exportKano");
-  const exportPngButton = document.querySelector("#exportKanoPng");
+  const exportPptxButton = document.querySelector("#exportKanoPptx");
   const rows = parseKanoRows(document.querySelector("#kanoData").value);
 
   if (!rows.length) {
     lastKanoAnalysis = null;
     exportButton.disabled = true;
-    exportPngButton.disabled = true;
+    exportPptxButton.disabled = true;
     result.innerHTML = `
       <div class="empty-state">
         <strong>未识别到有效 KANO 数据</strong>
@@ -7034,7 +7036,7 @@ function runKanoAnalysis() {
   lastKanoAnalysis = items;
   projectDataBus.set("modelResults.kano", items, { type: "KANO", attributes: items.length });
   exportButton.disabled = false;
-  exportPngButton.disabled = false;
+  exportPptxButton.disabled = false;
   const tableRows = items
     .map((item) => `
       <tr>
@@ -7333,13 +7335,13 @@ function renderMaxDiffScoreChart(rows) {
 function renderMaxDiffScore() {
   const result = document.querySelector("#maxdiffScoreResults");
   const exportButton = document.querySelector("#exportMaxDiffScore");
-  const exportPngButton = document.querySelector("#exportMaxDiffPng");
+  const exportPptxButton = document.querySelector("#exportMaxDiffPptx");
   const rows = parseMaxDiffScores(document.querySelector("#maxdiffScoreData").value);
 
   if (!rows.length) {
     lastMaxDiffScore = null;
     exportButton.disabled = true;
-    exportPngButton.disabled = true;
+    exportPptxButton.disabled = true;
     result.innerHTML = `
       <div class="empty-state">
         <strong>未识别到有效计分数据</strong>
@@ -7352,7 +7354,7 @@ function renderMaxDiffScore() {
   lastMaxDiffScore = rows;
   projectDataBus.set("modelResults.maxdiff", rows, { type: "MaxDiff", items: rows.length });
   exportButton.disabled = false;
-  exportPngButton.disabled = false;
+  exportPptxButton.disabled = false;
   const maxAbs = Math.max(0.01, ...rows.map((row) => Math.abs(row.score)));
   const tableRows = rows
     .map((row, index) => `
@@ -15827,8 +15829,8 @@ document.querySelector("#runPsm").addEventListener("click", () => {
   if (lastPsmAnalysis) markWorkspaceStatus("models");
 });
 document.querySelector("#exportPsm").addEventListener("click", exportPsmAnalysis);
-document.querySelector("#exportPsmPng").addEventListener("click", () => {
-  exportSvgChartAsPng("#psmResults", "PSM价格敏感度曲线.png");
+document.querySelector("#exportPsmPptx").addEventListener("click", (event) => {
+  exportResearchModelPptx("psm", lastPsmAnalysis, "PSM价格敏感度分析.pptx", event.currentTarget);
 });
 document.querySelector("#loadPsmExample").addEventListener("click", () => {
   document.querySelector("#psmData").value = examplePsmData;
@@ -15841,8 +15843,8 @@ document.querySelector("#runKano").addEventListener("click", () => {
   if (lastKanoAnalysis) markWorkspaceStatus("models");
 });
 document.querySelector("#exportKano").addEventListener("click", exportKanoAnalysis);
-document.querySelector("#exportKanoPng").addEventListener("click", () => {
-  exportSvgChartAsPng("#kanoResults", "KANO_Better-Worse图.png");
+document.querySelector("#exportKanoPptx").addEventListener("click", (event) => {
+  exportResearchModelPptx("kano", lastKanoAnalysis, "KANO_Better-Worse分析.pptx", event.currentTarget);
 });
 document.querySelector("#loadKanoExample").addEventListener("click", () => {
   document.querySelector("#kanoData").value = exampleKanoData;
@@ -15865,8 +15867,8 @@ document.querySelector("#scoreMaxDiff").addEventListener("click", () => {
   if (lastMaxDiffScore) markWorkspaceStatus("models");
 });
 document.querySelector("#exportMaxDiffScore").addEventListener("click", exportMaxDiffScore);
-document.querySelector("#exportMaxDiffPng").addEventListener("click", () => {
-  exportSvgChartAsPng("#maxdiffScoreResults", "MaxDiff相对偏好得分图.png");
+document.querySelector("#exportMaxDiffPptx").addEventListener("click", (event) => {
+  exportResearchModelPptx("maxdiff", lastMaxDiffScore, "MaxDiff相对偏好得分.pptx", event.currentTarget);
 });
 document.querySelector("#loadMaxDiffScoreExample").addEventListener("click", () => {
   document.querySelector("#maxdiffScoreData").value = exampleMaxDiffScoreData;
@@ -15973,7 +15975,7 @@ function renderDriverAnalysis() {
   lastDriverAnalysis = analysis;
   projectDataBus.set("modelResults.driver", analysis, { type: "关键驱动", factors: analysis.k, r2: analysis.r2 });
   document.querySelector("#exportDriverExcel").disabled = false;
-  document.querySelector("#exportDriverPng").disabled = false;
+  document.querySelector("#exportDriverPptx").disabled = false;
   const maxImp = Math.max(...analysis.results.map((r) => r.importance));
   const barChart = analysis.results.map((r) => {
     const pct = (r.importance * 100).toFixed(1);
@@ -16022,8 +16024,8 @@ document.querySelector("#exportDriverExcel").addEventListener("click", () => {
   lastDriverAnalysis.results.forEach((r, i) => rows.push([i + 1, r.name, r.beta.toFixed(4), (r.importance * 100).toFixed(1) + "%", r.mean.toFixed(2)]));
   downloadExcelFromRows("关键驱动分析.xlsx", rows);
 });
-document.querySelector("#exportDriverPng").addEventListener("click", () => {
-  exportSvgChartAsPng("#driverResults", "关键驱动分析.png");
+document.querySelector("#exportDriverPptx").addEventListener("click", (event) => {
+  exportResearchModelPptx("driver", lastDriverAnalysis, "关键驱动分析.pptx", event.currentTarget);
 });
 
 // ═════════════ TURF 分析 ═════════════
