@@ -54,6 +54,11 @@ for p in (str(HERE), str(PARENT)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+from pptx_report.blueprints import (
+    BlueprintConflictError,
+    BlueprintNotFoundError,
+    ReportBlueprintStore,
+)
 from pptx_report.cli import _collect_segments
 from pptx_report.common.qa import inspect_presentation
 from pptx_report.build_jd_report import parse_crosstab
@@ -76,6 +81,39 @@ JOB_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATE_DIR = Path(tempfile.gettempdir()) / "surveykit-ppt-templates"
 TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATE_TTL_SECONDS = 24 * 60 * 60
+REPORT_BLUEPRINT_STORE = ReportBlueprintStore()
+
+
+def _blueprint_slides(page_config: dict | None) -> list[dict]:
+    slides = json.loads(json.dumps(list((page_config or {}).get("pages") or [])))
+    seen = set()
+    for index, slide in enumerate(slides, 1):
+        brief = slide.setdefault("slide_brief", {})
+        slide_id = str(
+            brief.get("slide_id")
+            or slide.get("slide_id")
+            or f"slide_{index:03d}"
+        )
+        if slide_id in seen:
+            slide_id = f"slide_{index:03d}_{uuid.uuid4().hex[:8]}"
+        seen.add(slide_id)
+        slide["slide_id"] = slide_id
+        brief["slide_id"] = slide_id
+        brief.setdefault("chapter_id", str(slide.get("chapter_id") or ""))
+        brief.setdefault("chapter", str(slide.get("chapter") or "其他研究"))
+        brief.setdefault("title", str(slide.get("insight_override") or slide.get("title") or ""))
+        brief.setdefault("claim", str(slide.get("insight_override") or slide.get("title") or ""))
+        brief.setdefault("user_modified", False)
+        brief.setdefault("locked", False)
+    return slides
+
+
+def _blueprint_error(exc: Exception) -> JSONResponse:
+    if isinstance(exc, BlueprintNotFoundError):
+        return JSONResponse({"error": {"message": "报告蓝图或页面不存在。"}}, status_code=404)
+    if isinstance(exc, BlueprintConflictError):
+        return JSONResponse({"error": {"message": str(exc)}}, status_code=409)
+    return JSONResponse({"error": {"message": str(exc)}}, status_code=400)
 
 
 def _job_request_data_path(job_id: str) -> Path:
@@ -574,6 +612,72 @@ async def preview_render(request: Request):
         },
     )
 
+@app.get("/api/report/{report_id}/slide-briefs")
+@app.get("/api/pptx-report/report/{report_id}/slide-briefs")
+async def get_report_slide_briefs(report_id: str):
+    try:
+        return JSONResponse(REPORT_BLUEPRINT_STORE.get(report_id))
+    except (BlueprintNotFoundError, ValueError) as exc:
+        return _blueprint_error(exc)
+
+
+@app.put("/api/report/{report_id}/slide-briefs")
+@app.put("/api/pptx-report/report/{report_id}/slide-briefs")
+async def put_report_slide_briefs(report_id: str, request: Request):
+    try:
+        payload = await request.json()
+        slides = payload.get("slides") if isinstance(payload, dict) else None
+        if not isinstance(slides, list):
+            raise BlueprintConflictError("slides must be an array")
+        result = REPORT_BLUEPRINT_STORE.save(
+            report_id,
+            payload.get("narrative"),
+            slides,
+            payload.get("deleted_slide_ids"),
+        )
+        return JSONResponse(result)
+    except (BlueprintNotFoundError, BlueprintConflictError, ValueError, json.JSONDecodeError) as exc:
+        return _blueprint_error(exc)
+
+
+@app.patch("/api/report/{report_id}/slide/{slide_id}")
+@app.patch("/api/pptx-report/report/{report_id}/slide/{slide_id}")
+async def patch_report_slide(report_id: str, slide_id: str, request: Request):
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise BlueprintConflictError("slide patch must be an object")
+        result = REPORT_BLUEPRINT_STORE.patch_slide(report_id, slide_id, payload)
+        return JSONResponse(result)
+    except (BlueprintNotFoundError, BlueprintConflictError, ValueError, json.JSONDecodeError) as exc:
+        return _blueprint_error(exc)
+
+
+@app.post("/api/report/{report_id}/slides/reorder")
+@app.post("/api/pptx-report/report/{report_id}/slides/reorder")
+async def reorder_report_slides(report_id: str, request: Request):
+    try:
+        payload = await request.json()
+        order = payload.get("order") if isinstance(payload, dict) else None
+        if not isinstance(order, list):
+            raise BlueprintConflictError("order must be an array")
+        result = REPORT_BLUEPRINT_STORE.reorder(
+            report_id,
+            [str(slide_id) for slide_id in order],
+        )
+        return JSONResponse(result)
+    except (BlueprintNotFoundError, BlueprintConflictError, ValueError, json.JSONDecodeError) as exc:
+        return _blueprint_error(exc)
+
+
+@app.delete("/api/report/{report_id}/slide/{slide_id}")
+@app.delete("/api/pptx-report/report/{report_id}/slide/{slide_id}")
+async def delete_report_slide(report_id: str, slide_id: str):
+    try:
+        return JSONResponse(REPORT_BLUEPRINT_STORE.delete_slide(report_id, slide_id))
+    except (BlueprintNotFoundError, BlueprintConflictError, ValueError) as exc:
+        return _blueprint_error(exc)
+
 @app.post("/api/pptx-report/insight-context")
 async def insight_context(request: Request):
     """返回 AI 写报告所需的逐页聚合证据，不传输原始答卷。"""
@@ -600,7 +704,19 @@ async def insight_context(request: Request):
             questions,
             page_config,
             source=str(metadata.get("source") or ""),
+            research_objective=str(
+                metadata.get("research_objective") or metadata.get("title") or ""
+            ),
         )
+        report_id = str(metadata.get("report_id") or uuid.uuid4().hex)
+        blueprint = REPORT_BLUEPRINT_STORE.save(
+            report_id,
+            page_config.get("report_narrative"),
+            _blueprint_slides(page_config),
+            page_config.get("deleted_slide_ids"),
+        )
+        context["report_id"] = report_id
+        context["blueprint_updated_at"] = blueprint["updated_at"]
         return JSONResponse(context, headers={"Cache-Control": "no-store"})
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(
@@ -631,6 +747,18 @@ def _generate_core(
     title = metadata.get("title") or qs.get("title") or "调研分析报告"
     dimension = metadata.get("dimension") or qs.get("dimension") or None
     page_config = metadata.get("page_config")
+    report_id = str(metadata.get("report_id") or "")
+    if report_id:
+        try:
+            blueprint = REPORT_BLUEPRINT_STORE.get(report_id)
+            page_config = {
+                **(page_config if isinstance(page_config, dict) else {}),
+                "report_narrative": blueprint.get("narrative"),
+                "pages": blueprint.get("slides") or [],
+                "deleted_slide_ids": blueprint.get("deleted_slide_ids") or [],
+            }
+        except (BlueprintNotFoundError, ValueError):
+            pass
     theme_key = metadata.get("theme") or qs.get("theme") or "blue"
     template_id = metadata.get("template_id") or qs.get("template_id") or ""
     template_path = _template_path(str(template_id)) if template_id else None

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Iterable
+from typing import Any, Iterable
 
 from .slide_brief import SlideBrief
 
@@ -44,9 +44,51 @@ def _claim_from_fact(fact: dict) -> str:
     return f"「{category}」是当前最突出的结果（{float(value):.1f}{suffix}）"
 
 
+def _narrative_payload(value: Any) -> dict:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "to_dict"):
+        payload = value.to_dict()
+        return payload if isinstance(payload, dict) else {}
+    return {}
+
+
+def _chapter_for_page(
+    page: dict,
+    chapters: list[dict],
+    page_chapter_order: list[str],
+) -> tuple[dict, int]:
+    page_chapter = str(page.get("chapter") or "")
+    page_chapter_id = str(page.get("chapter_id") or "")
+    for index, chapter in enumerate(chapters):
+        if page_chapter_id and page_chapter_id == str(chapter.get("chapter_id") or ""):
+            return chapter, index
+        if page_chapter and page_chapter == str(chapter.get("title") or ""):
+            return chapter, index
+    try:
+        fallback_index = page_chapter_order.index(page_chapter)
+    except ValueError:
+        fallback_index = 0
+    if chapters:
+        fallback_index = min(fallback_index, len(chapters) - 1)
+        return chapters[fallback_index], fallback_index
+    return {}, -1
+
+
+def _chapter_context(chapter: dict) -> str:
+    purpose = str(chapter.get("purpose") or "").strip()
+    key_question = str(chapter.get("key_question") or "").strip()
+    if purpose and key_question:
+        return f"本章目的：{purpose}；核心问题：{key_question}"
+    return purpose or key_question
+
+
 def build_slide_briefs(
     pages: Iterable[dict],
     facts: Iterable[dict],
+    report_narrative: Any = None,
 ) -> list[SlideBrief]:
     fact_list = list(facts)
     by_question: dict[str, list[dict]] = defaultdict(list)
@@ -56,6 +98,15 @@ def build_slide_briefs(
     briefs: list[SlideBrief] = []
     used_claims: set[str] = set()
     values = list(pages)
+    narrative = _narrative_payload(report_narrative)
+    central_thesis = str(narrative.get("central_thesis") or "").strip()
+    narrative_chapters = [
+        chapter for chapter in narrative.get("chapters", [])
+        if isinstance(chapter, dict)
+    ]
+    page_chapter_order = list(dict.fromkeys(
+        str(page.get("chapter") or "其他研究") for page in values
+    ))
     for index, page in enumerate(values):
         question_ids = [
             str(item.get("code") or "")
@@ -90,6 +141,17 @@ def build_slide_briefs(
         used_claims.add(claim)
 
         chapter = str(page.get("chapter") or "其他研究")
+        narrative_chapter, narrative_chapter_index = _chapter_for_page(
+            page, narrative_chapters, page_chapter_order
+        )
+        previous_chapter = (
+            str(narrative_chapters[narrative_chapter_index - 1].get("title") or "")
+            if narrative_chapter_index > 0 else ""
+        )
+        next_chapter = (
+            str(narrative_chapters[narrative_chapter_index + 1].get("title") or "")
+            if 0 <= narrative_chapter_index < len(narrative_chapters) - 1 else ""
+        )
         question_answered, visual_intent, default_layout = CHAPTER_STORY.get(
             chapter, CHAPTER_STORY["其他研究"]
         )
@@ -111,6 +173,11 @@ def build_slide_briefs(
             business_implication=(
                 "将该事实用于识别优先人群、问题或机会，并在后续建议页转化为行动。"
             ),
+            chapter_id=str(
+                narrative_chapter.get("chapter_id")
+                or page.get("chapter_id")
+                or f"chapter_{page_chapter_order.index(chapter) + 1:02d}"
+            ),
             evidence_question_ids=question_ids,
             evidence_fact_ids=[
                 str(fact.get("fact_id"))
@@ -122,6 +189,11 @@ def build_slide_briefs(
             layout_family=str(page.get("layout_family") or default_layout),
             relation_type=RELATIONS.get(chapter, "sequential"),
             density=str(page.get("density") or "medium"),
+            central_thesis=central_thesis,
+            chapter_context=_chapter_context(narrative_chapter),
+            previous_chapter=previous_chapter,
+            next_chapter=next_chapter,
+            user_modified=bool(page.get("user_modified")),
             locked=bool(page.get("locked")),
         )
         briefs.append(brief)

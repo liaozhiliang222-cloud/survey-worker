@@ -21,6 +21,7 @@ class SlideBrief:
     question_answered: str
     claim: str
     business_implication: str
+    chapter_id: str = ""
     evidence_question_ids: list[str] = field(default_factory=list)
     evidence_fact_ids: list[str] = field(default_factory=list)
     source_references: list[str] = field(default_factory=list)
@@ -28,6 +29,11 @@ class SlideBrief:
     layout_family: str = "chart_with_insight"
     relation_type: str = "sequential"
     density: str = "medium"
+    central_thesis: str = ""
+    chapter_context: str = ""
+    previous_chapter: str = ""
+    next_chapter: str = ""
+    user_modified: bool = False
     relationship_to_previous: str = ""
     relationship_to_next: str = ""
     locked: bool = False

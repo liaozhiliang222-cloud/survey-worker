@@ -82,6 +82,100 @@ class DataKind(str, Enum):
     NPS = "nps"
 
 
+REPORT_STORYLINE_TYPES = {
+    "problem_solution",
+    "user_journey",
+    "funnel",
+    "diagnosis",
+    "opportunity",
+}
+
+
+@dataclass
+class ReportNarrative:
+    """Renderer-independent story contract for an entire research report."""
+
+    report_title: str
+    central_thesis: str
+    storyline_type: str
+    chapters: list[dict]
+    key_questions: list[str]
+    ending_message: str
+    confidence: float = 0.0
+
+    def validate(self) -> List[Dict[str, Any]]:
+        issues: List[Dict[str, Any]] = []
+        if not str(self.central_thesis or "").strip():
+            issues.append({
+                "level": "error",
+                "code": "report_narrative_required",
+                "field": "central_thesis",
+            })
+        if self.storyline_type not in REPORT_STORYLINE_TYPES:
+            issues.append({
+                "level": "error",
+                "code": "invalid_storyline_type",
+                "field": "storyline_type",
+                "value": self.storyline_type,
+            })
+        if not 3 <= len(self.chapters) <= 8:
+            issues.append({
+                "level": "error",
+                "code": "invalid_chapter_count",
+                "field": "chapters",
+                "value": len(self.chapters),
+            })
+        for index, chapter in enumerate(self.chapters):
+            if not isinstance(chapter, dict):
+                issues.append({
+                    "level": "error",
+                    "code": "invalid_report_narrative_chapter",
+                    "field": "chapters",
+                    "chapter_index": index,
+                })
+                continue
+            for field_name in ("title", "purpose", "key_question"):
+                if not str(chapter.get(field_name) or "").strip():
+                    issues.append({
+                        "level": "error",
+                        "code": "report_narrative_chapter_required",
+                        "field": field_name,
+                        "chapter_index": index,
+                    })
+        return issues
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "report_title": self.report_title,
+            "central_thesis": self.central_thesis,
+            "storyline_type": self.storyline_type,
+            "chapters": [dict(chapter) for chapter in self.chapters],
+            "key_questions": list(self.key_questions),
+            "ending_message": self.ending_message,
+            "confidence": self.confidence,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ReportNarrative":
+        return cls(
+            report_title=str(data.get("report_title") or ""),
+            central_thesis=str(data.get("central_thesis") or ""),
+            storyline_type=str(data.get("storyline_type") or ""),
+            chapters=[
+                dict(chapter)
+                for chapter in (data.get("chapters") or [])
+                if isinstance(chapter, dict)
+            ],
+            key_questions=[
+                str(value)
+                for value in (data.get("key_questions") or [])
+                if str(value).strip()
+            ],
+            ending_message=str(data.get("ending_message") or ""),
+            confidence=max(0.0, min(1.0, float(data.get("confidence") or 0.0))),
+        )
+
+
 @dataclass
 class DataFact:
     """A verified quantitative fact that can be cited by AI-written claims."""
@@ -592,6 +686,7 @@ class ReportSpec:
     chart_pages: List[Any] = field(default_factory=list)
     facts: List[DataFact] = field(default_factory=list)
     slide_briefs: List[SlideBrief] = field(default_factory=list)
+    report_narrative: Optional[ReportNarrative] = None
     render_audit: Dict[str, Any] = field(default_factory=dict)
     appendix: Optional[AppendixContent] = None
     template_path: Optional[str] = None  # 可选 .pptx 模板作为设计底
@@ -615,6 +710,10 @@ class ReportSpec:
             raise ReportDataError("执行摘要至少包含 1 个 KPI")
         if not self.chart_pages:
             raise ReportDataError("至少需要 1 个图表页(chart_pages)")
+        if self.report_narrative is not None:
+            narrative_issues = self.report_narrative.validate()
+            if narrative_issues:
+                raise ReportDataError(f"Report Narrative 校验失败: {narrative_issues[0]}")
         for i, page in enumerate(self.chart_pages):
             if isinstance(page, MultiGroupBarPageContent):
                 if not page.groups_data:
@@ -639,6 +738,7 @@ class ReportSpec:
                         ChartType(ch.type)
                     except ValueError:
                         raise UnsupportedChartTypeError(ch.type)
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the report without losing new optional semantic fields."""
         return {
@@ -648,10 +748,12 @@ class ReportSpec:
             "chart_pages": [_serialize_value(page) for page in self.chart_pages],
             "facts": [fact.to_dict() for fact in self.facts],
             "slide_briefs": [brief.to_dict() for brief in self.slide_briefs],
+            "report_narrative": self.report_narrative.to_dict() if self.report_narrative else None,
             "render_audit": _serialize_value(self.render_audit),
             "appendix": _serialize_value(self.appendix) if self.appendix else None,
             "template_path": self.template_path,
         }
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ReportSpec":
         """从嵌套字典解析出 ReportSpec（数据与渲染分离的关键入口）。
@@ -803,6 +905,11 @@ class ReportSpec:
             chart_pages=chart_pages,
             facts=[DataFact.from_dict(item) for item in data.get("facts", [])],
             slide_briefs=[SlideBrief.from_dict(item) for item in data.get("slide_briefs", [])],
+            report_narrative=(
+                ReportNarrative.from_dict(data["report_narrative"])
+                if isinstance(data.get("report_narrative"), dict)
+                else None
+            ),
             render_audit=dict(data.get("render_audit") or {}),
             appendix=appendix,
             template_path=data.get("template_path"),

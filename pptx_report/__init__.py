@@ -26,6 +26,7 @@ from .model import (
     ExecutiveSummaryContent,
     KPI,
     LayoutType,
+    ReportNarrative,
     ReportSpec,
     Series,
     TableData,
@@ -51,7 +52,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - environment dependent
 __version__ = "0.1.0"
 
 __all__ = [
-    "ReportSpec", "ReportRenderer", "Theme",
+    "ReportSpec", "ReportNarrative", "ReportRenderer", "Theme",
     "CoverContent", "TocContent", "ExecutiveSummaryContent",
     "ChartPageContent", "AppendixContent", "ChartSpec", "ChartType",
     "LayoutType", "Series", "KPI", "TableData",

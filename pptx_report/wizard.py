@@ -49,6 +49,7 @@ from .model import (
     SectionDividerContent,
     LayoutType,
     MultiGroupBarPageContent,
+    ReportNarrative,
     ReportSpec,
     TableData,
     TocContent,
@@ -754,6 +755,17 @@ def _page_question_ids(page) -> list[str]:
     return list(dict.fromkeys(question_ids))
 
 
+def _report_narrative_from_config(page_config: dict | None) -> ReportNarrative | None:
+    payload = (page_config or {}).get("report_narrative")
+    if not isinstance(payload, dict):
+        return None
+    try:
+        narrative = ReportNarrative.from_dict(payload)
+    except (TypeError, ValueError):
+        return None
+    return narrative if not narrative.validate() else None
+
+
 def _enhance_report_pages(
     pages: list,
     questions: list,
@@ -790,7 +802,8 @@ def _enhance_report_pages(
             "questions": [{"code": question_id} for question_id in question_ids],
             "density": getattr(page, "density", "medium"),
         })
-    briefs = build_slide_briefs(semantic_pages, fact_payload)
+    narrative = _report_narrative_from_config(page_config)
+    briefs = build_slide_briefs(semantic_pages, fact_payload, narrative)
     configured_semantics = list((page_config or {}).get("pages") or [])
     valid_fact_ids = {str(fact.fact_id) for fact in facts}
     valid_question_ids = {str(question.get("code") or "") for question in questions}
@@ -799,7 +812,31 @@ def _enhance_report_pages(
     for page_index, (page, brief) in enumerate(zip(pages, briefs)):
         configured = configured_semantics[page_index] if page_index < len(configured_semantics) else {}
         semantic_override = configured.get("slide_brief") if isinstance(configured.get("slide_brief"), dict) else configured
+        requested_layout_family = ""
         if isinstance(semantic_override, dict):
+            is_user_owned = bool(
+                semantic_override.get("user_modified")
+                or semantic_override.get("locked")
+            )
+            brief.user_modified = bool(semantic_override.get("user_modified"))
+            for field_name in ("chapter_id", "chapter"):
+                value = str(semantic_override.get(field_name) or "").strip()
+                if value:
+                    setattr(brief, field_name, value)
+            if is_user_owned:
+                title_override = str(semantic_override.get("title") or "").strip()
+                claim_override = str(semantic_override.get("claim") or "").strip()
+                slide_type_override = str(semantic_override.get("slide_type") or "").strip()
+                requested_layout_family = str(
+                    semantic_override.get("layout_family") or ""
+                ).strip()
+                if title_override:
+                    brief.title = title_override
+                    page.title = title_override
+                if claim_override:
+                    brief.claim = claim_override
+                if slide_type_override:
+                    brief.slide_type = slide_type_override
             implication = str(semantic_override.get("business_implication") or configured.get("business_implication") or "").strip()
             if implication:
                 brief.business_implication = implication
@@ -821,9 +858,23 @@ def _enhance_report_pages(
                 brief.evidence_fact_ids = list(dict.fromkeys(fact_ids))
             if question_ids:
                 brief.evidence_question_ids = list(dict.fromkeys(question_ids))
+            for field_name in (
+                "central_thesis",
+                "chapter_context",
+                "previous_chapter",
+                "next_chapter",
+            ):
+                value = str(semantic_override.get(field_name) or "").strip()
+                if value:
+                    setattr(brief, field_name, value)
             if semantic_override.get("locked") is not None:
                 brief.locked = bool(semantic_override.get("locked"))
-        brief.claim = str(page.title or brief.claim)
+        if not (
+            isinstance(semantic_override, dict)
+            and (semantic_override.get("user_modified") or semantic_override.get("locked"))
+            and str(semantic_override.get("claim") or "").strip()
+        ):
+            brief.claim = str(page.title or brief.claim)
         page.brief = brief
         page.slide_type = brief.slide_type
         category_count = sum(
@@ -848,10 +899,10 @@ def _enhance_report_pages(
         usage[template.template_id] += 1
         previous = template.template_id
         page.template_id = template.template_id
-        page.layout_family = template.layout_family
+        page.layout_family = requested_layout_family or template.layout_family
         page.density = request["density"]
         brief.template_id = template.template_id
-        brief.layout_family = template.layout_family
+        brief.layout_family = requested_layout_family or template.layout_family
 
     total_base = max(
         (
@@ -1388,6 +1439,7 @@ def build_auto_report(
         chart_pages=chart_pages,
         facts=facts,
         slide_briefs=slide_briefs,
+        report_narrative=_report_narrative_from_config(page_config),
         render_audit={
             "input_blocks": sum(len(getattr(page, "charts", [])) or len(getattr(page, "groups_data", [])) for page in chart_pages),
             "rendered_blocks": sum(len(getattr(page, "charts", [])) or len(getattr(page, "groups_data", [])) for page in chart_pages),
@@ -1612,6 +1664,7 @@ def build_insight_context(
     page_config: dict,
     *,
     source: str = "",
+    research_objective: str = "",
 ) -> dict:
     """生成供 AI 写报告使用的逐页结构化数据证据。
 
@@ -1726,6 +1779,12 @@ def build_insight_context(
         "pages": pages,
         "page_count": len(pages),
         "source": source,
+        "research_objective": research_objective,
+        "report_narrative": (
+            dict(page_config.get("report_narrative"))
+            if isinstance(page_config.get("report_narrative"), dict)
+            else None
+        ),
         "data_facts": [fact.to_dict() for fact in all_facts],
         "global_findings": [finding.to_dict() for finding in _build_executive_findings(renderable, all_facts)],
         "rules": {
