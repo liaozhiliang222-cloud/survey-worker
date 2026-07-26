@@ -28,7 +28,8 @@ assert.ok(confirmStart >= 0 && generateStart > confirmStart);
 const confirmFlow = app.slice(confirmStart, generateStart);
 assert.doesNotMatch(confirmFlow, /await doGeneratePptx/);
 assert.match(confirmFlow, /persistSlideBriefBlueprint/);
-assert.match(confirmFlow, /确认并生成 PPT/);
+assert.match(confirmFlow, /页面顺序发生变化/);
+assert.match(confirmFlow, /narrativePanel\.style\.display = "none"/);
 const batchStart = app.indexOf("async function generatePptxSlideBriefs(reportNarrative)");
 const singleStart = app.indexOf("async function regenerateSinglePptxSlide", batchStart);
 assert.ok(batchStart >= 0 && singleStart > batchStart);
@@ -72,6 +73,8 @@ assert.match(quickFlow, /Math\.min\(2/);
 assert.match(quickFlow, /brief\.locked \|\| brief\.user_modified/);
 assert.match(quickFlow, /report_workflow = "quick"/);
 assert.match(quickFlow, /ai_enhancement = "copy"/);
+assert.match(quickFlow, /setPptxProgress/);
+assert.match(quickFlow, /await doGeneratePptx\(\)/);
 assert.doesNotMatch(quickFlow, /REPORT_NARRATIVE_SYSTEM_PROMPT/);
 
 const workflowDispatch = app.slice(workflowDispatchStart, app.indexOf("async function generatePptxAiReport()", workflowDispatchStart));

@@ -8,8 +8,11 @@ const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 
 assert.match(html, /id="pptxCancelJobBtn"/);
 assert.match(app, /X-SurveyKit-Client-ID/);
-assert.match(app, /jobs\/\$\{encodeURIComponent\(lastPptxJobId\)\}\/cancel/);
+assert.match(app, /jobs\/\$\{encodeURIComponent\(jobId\)\}\/cancel/);
 assert.match(app, /download\?delete_after=true/);
+assert.match(app, /setPptxCancelState\(Boolean\(lastPptxJobId\)\)/);
+assert.match(app, /const readyState = await waitForPptxJob\(job\.job_id\);\s*setPptxCancelState\(false\)/);
+assert.match(app, /if \(!lastPptxJobId \|\| cancelJobBtn\.disabled\) return/);
 assert.match(app, /\["failed", "cancelled", "lost"\]/);
 assert.match(app, /readyState\.overall_score/);
 assert.match(app, /duplicate_divider_lines/);

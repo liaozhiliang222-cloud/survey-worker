@@ -13102,14 +13102,28 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     function updatePptxWorkflowActions(plan = editedPagePlan) {
       const workflow = plan?.report_workflow || selectedPptxReportWorkflow();
       const isResearch = workflow === "research";
+      if (previewBtn) {
+        previewBtn.textContent = isResearch ? "AI 规划报告结构" : "预览快速报告结构";
+      }
       if (aiWriteBtn) {
         aiWriteBtn.textContent = isResearch
-          ? (plan?.ai_enhancement === "narrative" ? "重新生成故事线" : "AI 生成研究框架")
-          : (plan?.ai_enhancement === "copy" ? "重新生成 AI 洞察" : "AI 快速写报告");
+          ? (plan?.ai_enhancement === "narrative" ? "重新生成故事线" : "生成核心观点与章节逻辑")
+          : (plan?.ai_enhancement === "copy" ? "重新 AI 写作并生成 PPT" : "AI 写作并生成 PPT");
+        aiWriteBtn.classList.toggle("primary-btn", isResearch);
+        aiWriteBtn.classList.toggle("secondary-btn", !isResearch);
       }
       if (confirmBtn) {
-        confirmBtn.textContent = isResearch ? "暂不使用故事线，直接生成 PPT" : "直接生成 PPT";
+        confirmBtn.textContent = isResearch ? "不使用故事线，直接生成 PPT" : "直接生成 PPT";
+        confirmBtn.classList.toggle("primary-btn", !isResearch);
+        confirmBtn.classList.toggle("secondary-btn", isResearch);
       }
+    }
+
+    function setPptxCancelState(active) {
+      if (!cancelJobBtn) return;
+      cancelJobBtn.disabled = !active;
+      cancelJobBtn.classList.toggle("hidden", !active);
+      if (!active) lastPptxJobId = "";
     }
 
     const SLIDE_TYPE_OPTIONS = [
@@ -13534,7 +13548,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (previewPanel) previewPanel.style.display = "none";
       pagePlan = null;
       editedPagePlan = null;
-      lastPptxJobId = "";
+      setPptxCancelState(false);
       if (aiWriteBtn) aiWriteBtn.disabled = true;
     }
 
@@ -13959,8 +13973,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         renderPreviewTable(editedPagePlan);
         persistSlideBriefBlueprint().catch((error) => showToast(error.message, "warning"));
         if (previewPanel) previewPanel.style.display = "";
-        const modeLabel = pagePlan.report_workflow === "research" ? "AI研究方案" : "快速报告方案";
-        genStatus.textContent = `预览完成：${modeLabel}，共 ${pagePlan.total_pages} 页（${pagePlan.renderable_questions} 道可渲染题）。`;
+        const isResearchWorkflow = pagePlan.report_workflow === "research";
+        genStatus.textContent = isResearchWorkflow
+          ? `第一步完成：AI 已规划 ${pagePlan.total_pages} 页（${pagePlan.renderable_questions} 道可渲染题）。下一步请点击“生成核心观点与章节逻辑”。`
+          : `快速报告结构已准备：共 ${pagePlan.total_pages} 页（${pagePlan.renderable_questions} 道可渲染题）。可直接生成 PPT，或先让 AI 写作并自动导出。`;
         // Scroll to preview panel
         previewPanel && previewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (err) {
@@ -15085,18 +15101,19 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       });
     }
 
-    function setPptxProgress(percent, text) {
+    function setPptxProgress(percent, text, stageOverride = "") {
       const value = Math.max(0, Math.min(100, Math.round(percent)));
       progressFill.style.width = value + "%";
       progress.setAttribute("aria-valuenow", String(value));
-      // 细化阶段指示
-      let stage = "";
-      if (value < 10) stage = "上传";
-      else if (value < 48) stage = "解析";
-      else if (value < 90) stage = "渲染";
-      else if (value < 95) stage = "质检";
-      else if (value < 100) stage = "打包";
-      else stage = "完成";
+      let stage = stageOverride;
+      if (!stage) {
+        if (value < 10) stage = "上传";
+        else if (value < 48) stage = "解析";
+        else if (value < 90) stage = "渲染";
+        else if (value < 95) stage = "质检";
+        else if (value < 100) stage = "打包";
+        else stage = "完成";
+      }
       progressText.textContent = `[${stage}] ${text} · ${value}%`;
     }
 
@@ -15240,11 +15257,16 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         return;
       }
       aiWriteBtn.disabled = true;
-      aiWriteStatus.textContent = "正在汇总逐页数据证据…";
+      if (confirmBtn) confirmBtn.disabled = true;
+      setPptxCancelState(false);
+      progress.classList.remove("hidden");
+      setPptxProgress(5, "正在汇总逐页数据证据", "AI 写作");
+      aiWriteStatus.textContent = "AI 写作已开始；完成后将自动生成并下载 PPT。";
       const startedAt = Date.now();
       try {
         const context = await requestPptxInsightContext();
         lastPptxInsightContext = context;
+        setPptxProgress(14, "数据证据已准备，开始逐页写作", "AI 写作");
         const currentPlanByPage = new Map(
           editedPagePlan.pages.map((page) => [Number(page.page_idx), page])
         );
@@ -15301,6 +15323,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               batchResults[batchIndex] = parseAiInsightJson(output).pages;
             }
             completed += 1;
+            const batchProgress = batches.length ? 15 + (completed / batches.length) * 65 : 80;
+            setPptxProgress(batchProgress, `已完成 ${completed}/${batches.length} 批页面`, "AI 写作");
             aiWriteStatus.textContent = `AI 正在快速写报告：已完成 ${completed}/${batches.length} 批…`;
           }
         };
@@ -15329,6 +15353,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           if (page.insight_override || page.insight_bullets.length) applied += 1;
         });
 
+        setPptxProgress(84, "逐页写作完成，正在生成执行摘要", "AI 写作");
         const summaryInput = editedPagePlan.pages.map((page) => ({
           page_idx: page.page_idx,
           title: page.insight_override || page.title,
@@ -15345,6 +15370,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           editedPagePlan.executive_summary = "";
         }
 
+        setPptxProgress(90, "执行摘要已完成，正在保存报告蓝图", "AI 写作");
         editedPagePlan.report_narrative = null;
         editedPagePlan.storyline = [];
         editedPagePlan.report_workflow = "quick";
@@ -15353,16 +15379,20 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         editedPagePlan.planning_mode = "rule";
         ensureStableSlideBriefs();
         renderPreviewTable(editedPagePlan);
+        setPptxProgress(94, "正在保存 AI 写作结果", "AI 写作");
         await persistSlideBriefBlueprint();
         updatePptxWorkflowActions(editedPagePlan);
-        if (confirmBtn) confirmBtn.textContent = "确认并生成 PPT";
         const elapsed = Math.max(0, (Date.now() - startedAt) / 1000);
-        aiWriteStatus.textContent = `快速报告已完成 ${applied}/${editedPagePlan.pages.length} 页 AI 洞察（${batches.length} 批/并发 2，耗时 ${elapsed.toFixed(1)} 秒）。请检查后生成 PPT。`;
-        previewPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+        aiWriteStatus.textContent = `AI 已更新 ${applied}/${editedPagePlan.pages.length} 页（${batches.length} 批/并发 2，耗时 ${elapsed.toFixed(1)} 秒），正在生成并下载 PPT…`;
+        setPptxProgress(96, "AI 写作完成，正在生成 PPT", "AI 写作");
+        await doGeneratePptx();
       } catch (error) {
         aiWriteStatus.textContent = `AI 快速写报告失败：${error.message}。您仍可直接生成基础报告。`;
+        setPptxProgress(0, "AI 写作失败", "AI 写作");
+        setTimeout(() => progress.classList.add("hidden"), 1500);
       } finally {
         aiWriteBtn.disabled = false;
+        if (confirmBtn) confirmBtn.disabled = false;
       }
     }
 
@@ -15386,11 +15416,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       }
       aiWriteBtn.disabled = true;
       if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = true;
-      aiWriteStatus.textContent = "阶段 1/2：Python 正在汇总 DataFact 与 Insight…";
+      setPptxCancelState(false);
+      progress.classList.remove("hidden");
+      setPptxProgress(8, "正在汇总 DataFact 与 Insight", "AI 研究");
+      aiWriteStatus.textContent = "阶段 1/2：正在汇总 DataFact 与 Insight…";
       try {
         const context = await requestPptxInsightContext();
         lastPptxInsightContext = context;
         if (!context.pages?.length) throw new Error("没有可用于规划故事线的报告页面。");
+        setPptxProgress(30, "证据已准备，正在形成核心观点", "AI 研究");
         aiWriteStatus.textContent = "阶段 2/2：AI 正在形成中心论点与章节逻辑…";
         const outcome = await aiPlanner.generateReportNarrativeOrFallback(async () => {
           const output = await callAiChatCompletion(settings, [
@@ -15412,12 +15446,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           return aiPlanner.parseJsonObject(output);
         }, context);
 
+        setPptxProgress(65, "核心观点已生成，正在组织章节逻辑", "AI 研究");
         pendingReportNarrative = outcome.report_narrative;
         editedPagePlan.report_narrative = pendingReportNarrative;
         renderReportNarrative(pendingReportNarrative, outcome.error);
         if (pendingReportNarrative) {
           aiWriteBtn.textContent = "重新生成故事线";
-          aiWriteStatus.textContent = "报告故事线已生成。请确认核心观点与章节结构，再生成逐页 SlideBrief 和 PPT。";
+          aiWriteStatus.textContent = "核心观点与章节逻辑已生成。确认后仅写入当前页面蓝图，不改变页数和顺序。";
+          setPptxProgress(100, "核心观点与章节逻辑已生成", "AI 研究");
         } else {
           aiWriteStatus.textContent = `Report Narrative 生成失败，已启用兼容流程：${outcome.error}`;
         }
@@ -15427,9 +15463,11 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         editedPagePlan.report_narrative = null;
         renderReportNarrative(null, error.message);
         aiWriteStatus.textContent = `故事线准备失败：${error.message}。仍可按原流程生成报告。`;
+        setPptxProgress(0, "AI 研究规划失败", "AI 研究");
       } finally {
         aiWriteBtn.disabled = false;
         if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = false;
+        setTimeout(() => progress.classList.add("hidden"), 1200);
       }
         }
 
@@ -15551,7 +15589,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           };
         },
         (completed, total) => {
-          aiWriteStatus.textContent = `正在并发生成 ${completed}/${total} 批 SlideBrief（每批最多 ${aiPlanner.DEFAULT_BATCH_SIZE} 页，并发 ${concurrency}）…`;
+          const briefProgress = 10 + (completed / Math.max(1, total)) * 80;
+          setPptxProgress(briefProgress, `正在写入当前蓝图：${completed}/${total} 批`, "AI 蓝图");
+          aiWriteStatus.textContent = `正在写入当前蓝图 ${completed}/${total} 批（每批最多 ${aiPlanner.DEFAULT_BATCH_SIZE} 页，并发 ${concurrency}）…`;
         }
       );
 
@@ -15790,42 +15830,61 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (!selectedFile || !editedPagePlan?.pages?.length) return;
       if (narrativeConfirmBtn) narrativeConfirmBtn.disabled = true;
       if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = true;
+      if (confirmBtn) confirmBtn.disabled = true;
+      progress.classList.remove("hidden");
+      setPptxCancelState(false);
+      setPptxProgress(5, "准备把故事线写入当前蓝图（不重排）", "AI 蓝图");
+      const originalOrder = editedPagePlan.pages.map(
+        (page) => page.slide_brief?.slide_id || `page_${page.page_idx}`
+      );
       try {
         let applied = 0;
         if (pendingReportNarrative) {
           applied = await generatePptxSlideBriefs(pendingReportNarrative);
         } else {
           ensureStableSlideBriefs();
+          renderPreviewTable(editedPagePlan);
         }
+        const currentOrder = editedPagePlan.pages.map(
+          (page) => page.slide_brief?.slide_id || `page_${page.page_idx}`
+        );
+        if (JSON.stringify(currentOrder) !== JSON.stringify(originalOrder)) {
+          throw new Error("写入故事线时页面顺序发生变化，已停止保存。");
+        }
+        setPptxProgress(94, "页面标题与结论已更新，正在保存", "AI 蓝图");
         await persistSlideBriefBlueprint();
-        renderPreviewTable(editedPagePlan);
         const stats = lastPptxSlideBriefStats;
         const performanceText = stats
           ? `；耗时 ${stats.elapsed_seconds.toFixed(1)} 秒，${stats.batch_count} 批/并发 ${stats.concurrency}${stats.retried_pages ? `，补写 ${stats.retried_pages} 页` : ""}${stats.failed_pages ? `，${stats.failed_pages} 页降级` : ""}`
           : "";
-        aiWriteStatus.textContent = pendingReportNarrative
-          ? `报告蓝图已生成：AI 更新 ${applied}/${editedPagePlan.pages.length} 页；人工修改或锁定页均已保留${performanceText}。请编辑后确认生成 PPT。`
-          : "Report Narrative 不可用，已生成兼容蓝图。请编辑后确认生成 PPT。";
+        const message = pendingReportNarrative
+          ? `故事线已写入当前 ${editedPagePlan.pages.length} 页，页数与顺序保持不变；AI 更新 ${applied} 页，人工修改或锁定页均已保留${performanceText}。`
+          : "Report Narrative 不可用，已保留当前确定性蓝图，可继续编辑或生成 PPT。";
+        aiWriteStatus.textContent = message;
+        if (confirmStatus) confirmStatus.textContent = message;
+        setPptxProgress(100, "故事线已写入当前蓝图", "AI 蓝图");
+        if (narrativePanel) narrativePanel.style.display = "none";
       } catch (error) {
         console.warn("PPT SlideBrief AI fallback:", error);
         ensureStableSlideBriefs();
         renderPreviewTable(editedPagePlan);
         aiWriteStatus.textContent = `逐页 AI 写作未完成，已保留确定性 SlideBrief 供编辑：${error.message}`;
+        setPptxProgress(0, "故事线写入失败，已保留原蓝图", "AI 蓝图");
       } finally {
         if (confirmBtn) {
           confirmBtn.disabled = false;
-          confirmBtn.textContent = "确认并生成 PPT";
+          updatePptxWorkflowActions(editedPagePlan);
         }
         if (continueEditBtn) continueEditBtn.classList.remove("hidden");
         if (narrativeConfirmBtn) {
           narrativeConfirmBtn.disabled = false;
-          narrativeConfirmBtn.textContent = "更新报告蓝图";
-      }
+          narrativeConfirmBtn.textContent = "重新写入当前蓝图";
+        }
         if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = false;
+        setTimeout(() => progress.classList.add("hidden"), 1200);
         previewPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }
-    }
-
     async function doGeneratePptx() {
       if (!selectedFile) return;
       if (!segmentPanel) return;
@@ -15842,6 +15901,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       }
       if (confirmBtn) confirmBtn.disabled = true;
       if (generateBtn) generateBtn.disabled = true;
+      setPptxCancelState(false);
       progress.classList.remove("hidden");
       startPptxProgress();
       (genStatus || confirmStatus).textContent = "";
@@ -15884,8 +15944,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const job = await createResp.json();
         lastPptxJobId = job.job_id || "";
         setPptxProgress(job.progress || 6, job.message || "任务已创建");
-        if (cancelJobBtn) cancelJobBtn.classList.remove("hidden");
+        setPptxCancelState(Boolean(lastPptxJobId));
         const readyState = await waitForPptxJob(job.job_id);
+        setPptxCancelState(false);
         setPptxProgress(97, "正在下载报告");
         const downloadResp = await fetch(`/pptx-api/jobs/${encodeURIComponent(job.job_id)}/download?delete_after=true`, {
           cache: "no-store",
@@ -15947,9 +16008,11 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             : "AI 标题与逐页洞察已用于本次快速报告。")
           : "基础版报告已生成。";
       } catch (err) {
+        setPptxCancelState(false);
         (genStatus || confirmStatus).textContent = "生成失败：" + err.message;
         setPptxProgress(0, "生成失败");
       } finally {
+        setPptxCancelState(false);
         if (confirmBtn) confirmBtn.disabled = false;
         if (generateBtn) generateBtn.disabled = false;
         setTimeout(() => progress.classList.add("hidden"), 1500);
@@ -15957,19 +16020,22 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     }
 
     cancelJobBtn?.addEventListener("click", async () => {
-      if (!lastPptxJobId) return;
+      if (!lastPptxJobId || cancelJobBtn.disabled) return;
+      const jobId = lastPptxJobId;
+      let cancelled = false;
       cancelJobBtn.disabled = true;
       try {
-        const response = await fetch(`/pptx-api/jobs/${encodeURIComponent(lastPptxJobId)}/cancel`, { method: "POST", cache: "no-store" });
+        const response = await fetch(`/pptx-api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST", cache: "no-store" });
         if (!response.ok) throw new Error(await readPptxApiError(response, "取消任务失败"));
-        setPptxProgress(0, "正在取消任务");
+        cancelled = true;
+        setPptxProgress(0, "任务已取消");
+        setPptxCancelState(false);
       } catch (error) {
         (genStatus || confirmStatus).textContent = `取消任务失败：${error.message}`;
       } finally {
-        cancelJobBtn.disabled = false;
+        if (!cancelled && lastPptxJobId === jobId) cancelJobBtn.disabled = false;
       }
     });
-
     confirmBtn && confirmBtn.addEventListener("click", () => doGeneratePptx());
     aiWriteBtn && aiWriteBtn.addEventListener("click", () => runSelectedPptxAiWorkflow());
     narrativeRegenerateBtn?.addEventListener("click", () => generatePptxAiReport());
@@ -15977,7 +16043,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     continueEditBtn?.addEventListener("click", () => previewPanel?.scrollIntoView({ behavior: "smooth", block: "start" }));
     titleInput?.addEventListener("input", () => invalidatePptxPreview());
     themeInput?.addEventListener("change", () => invalidatePptxPreview("主题色已更新，请重新预览后再生成。"));
-    planningModeInput?.addEventListener("change", () => invalidatePptxPreview("规划模式已更新，请重新预览。"));
+    planningModeInput?.addEventListener("change", () => {
+      invalidatePptxPreview("规划模式已更新，请重新预览。");
+      updatePptxWorkflowActions();
+    });
+    updatePptxWorkflowActions();
+    setPptxCancelState(false);
 
     // === PPT 生成历史（localStorage）===
     const PPTX_HISTORY_KEY = "surveykit_pptx_history";

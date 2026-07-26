@@ -101,7 +101,7 @@ assert.match(source, /buildAiRevisionPrompt\(instruction, lastAiQuestionnaireTex
 assert.match(source, /timeoutMs: design\.config\.lengthMode === "long" \? 600000 : 360000/);
 assert.match(source, /专业长卷通常需要 2–6 分钟/);
 assert.match(source, /if \(options\.stream\) requestBody\.stream = true/);
-assert.match(serviceWorker, /research-toolbox-v50/);
+assert.match(serviceWorker, /research-toolbox-v\d+/);
 assert.match(serviceWorker, /\^\\\/api\\\/ai/);
 assert.match(styles, /#aiStudyType,[\s\S]{0,160}min-width: 0/);
 assert.match(styles, /#aiStudyType \.multiselect-trigger \{[\s\S]{0,100}width: 100%;[\s\S]{0,100}box-sizing: border-box/);

@@ -6,9 +6,10 @@ const source = readFileSync(new URL("../ppt-report-ai.js", import.meta.url), "ut
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 assert.ok(html.indexOf("ppt-report-ai.js") < html.indexOf("app.js"), "PPT AI module must load before app.js.");
 assert.match(html, /id="pptxNarrativePanel"/);
-assert.match(html, /id="pptxNarrativeConfirmBtn"[^>]*>生成蓝图并继续编辑</);
+assert.match(html, /id="pptxNarrativeConfirmBtn"[^>]*>写入当前蓝图（不重排）</);
 assert.match(html, /id="pptxContinueEditBtn"/);
 assert.match(html, /id="pptxNarrativeRegenerateBtn"[^>]*>重新生成故事线</);
+assert.ok(html.indexOf('pptxNarrativeConfirmBtn') < html.indexOf('pptxNarrativeContent'), 'Narrative actions must appear before the long content.');
 const context = vm.createContext({ globalThis: {}, Set, Map, Array, String, Number, JSON, Math, Promise, setTimeout });
 vm.runInContext(source, context);
 const ai = context.globalThis.PptReportAi;

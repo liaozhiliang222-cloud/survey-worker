@@ -1362,11 +1362,6 @@
                   <div class="ai-report-data-actions">
                     <button class="primary-btn" id="pptxPreviewBtn" type="button" disabled>预览报告结构</button>
                   </div>
-                  <div class="progress-bar hidden" id="pptxProgress">
-                    <div class="progress-fill" id="pptxProgressFill"></div>
-                    <span class="progress-text" id="pptxProgressText">生成中…</span>
-                  </div>
-                  <button class="ghost-btn hidden" id="pptxCancelJobBtn" type="button">取消生成任务</button>
                   <p class="panel-note" id="pptxGenStatus"></p>
                 </div>
               </div>
@@ -1380,14 +1375,20 @@
                   <h3>预览 & 编辑报告结构</h3>
                   <p class="panel-note">以下是系统自动规划的报告页面。分维度对比会自动包含总体列；图表按列数与选项数量匹配，您也可以逐页手动调整。</p>
                   <div class="ai-report-data-actions" style="margin-bottom:12px;">
-                    <button class="primary-btn" id="pptxAiWriteBtn" type="button" disabled>AI 快速写报告</button>
-                    <button class="secondary-btn" id="pptxConfirmBtn" type="button" disabled>直接生成 PPT</button>
+                    <button class="primary-btn" id="pptxConfirmBtn" type="button" disabled>直接生成 PPT</button>
+                    <button class="secondary-btn" id="pptxAiWriteBtn" type="button" disabled>AI 写作并生成 PPT</button>
                     <button class="secondary-btn" id="pptxSavePlanBtn" type="button" disabled>保存报告方案</button>
                     <button class="ghost-btn" id="pptxLoadPlanBtn" type="button">加载已保存方案</button>
                     <button class="ghost-btn" id="pptxUndoPlanBtn" type="button" disabled>撤销</button>
                     <button class="ghost-btn" id="pptxRedoPlanBtn" type="button" disabled>重做</button>
                     <button class="ghost-btn" id="pptxBackToConfig" type="button">返回修改配置</button>
                   </div>
+                  <div class="progress-bar hidden" id="pptxProgress" aria-live="polite">
+                    <div class="progress-fill" id="pptxProgressFill"></div>
+                    <span class="progress-text" id="pptxProgressText">生成中…</span>
+                  </div>
+                  <button class="ghost-btn hidden" id="pptxCancelJobBtn" type="button" disabled>取消生成任务</button>
+                  <p class="panel-note pptx-ai-progress-note" id="pptxAiWriteStatus"></p>
                   <div class="audit-results" id="pptxPreviewTable">
                     <div class="empty-state">
                       <strong>等待预览</strong>
@@ -1404,15 +1405,14 @@
               <div class="ai-report-step">
                 <div class="step-badge">2.7</div>
                 <div class="step-body">
-                  <h3>AI 生成报告框架</h3>
-                  <p class="panel-note">先确认整份报告的核心观点与章节逻辑，再生成逐页 SlideBrief 和 PPT。</p>
-                  <div class="pptx-narrative-content" id="pptxNarrativeContent"></div>
-                  <div class="ai-report-data-actions">
-                    <button class="primary-btn" id="pptxNarrativeConfirmBtn" type="button">生成蓝图并继续编辑</button>
+                  <h3>确认核心观点与章节逻辑</h3>
+                  <p class="panel-note">确认后会把故事线写入当前页面蓝图，只更新标题与结论，不改变当前页数和顺序。</p>
+                  <div class="ai-report-data-actions pptx-narrative-actions">
+                    <button class="primary-btn" id="pptxNarrativeConfirmBtn" type="button">写入当前蓝图（不重排）</button>
                     <button class="secondary-btn" id="pptxNarrativeRegenerateBtn" type="button">重新生成故事线</button>
-                    <button class="secondary-btn hidden" id="pptxContinueEditBtn" type="button">继续编辑</button>
+                    <button class="secondary-btn hidden" id="pptxContinueEditBtn" type="button">返回页面蓝图</button>
                   </div>
-                  <p class="panel-note" id="pptxAiWriteStatus"></p>
+                  <div class="pptx-narrative-content" id="pptxNarrativeContent"></div>
                 </div>
               </div>
             </div>
@@ -2648,7 +2648,7 @@
     })();
     </script>
     <script src="./ppt-report-ai.js?v=20260726-2"></script>
-    <script src="./app.js?v=20260726-4"></script>
+    <script src="./app.js?v=20260726-5"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
     <!-- Vite 模块化入口（Phase 1 过渡期：共享模块已提取，功能模块渐进迁移） -->
     <script type="module" src="/src/main.js"></script>

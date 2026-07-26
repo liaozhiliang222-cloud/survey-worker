@@ -5474,3 +5474,23 @@ tbody tr.warn td {
   background: #fffbeb;
   color: #92400e;
 }
+.pptx-narrative-actions {
+  position: sticky;
+  top: 12px;
+  z-index: 4;
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px solid #d9e4f2;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 22px rgba(30, 64, 175, 0.08);
+  backdrop-filter: blur(8px);
+}
+
+.pptx-ai-progress-note:not(:empty) {
+  margin: 8px 0 12px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1e40af;
+}
