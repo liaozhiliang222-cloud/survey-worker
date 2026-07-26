@@ -66,6 +66,10 @@ from pptx_report.wizard import build_insight_context, build_page_plan, run_wizar
 from pptx import Presentation
 from pptx_report.template import analyze_template, build_template_mapping
 from pptx_report.proposal_deck import DeckValidationError, audit_deck, render_proposal_deck
+from pptx_report.model_chart_export import (
+    ModelChartExportError,
+    render_model_chart_pptx,
+)
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 REQUEST_ENVELOPE_MAGIC = b"SKPPTX1\n"
@@ -426,6 +430,46 @@ async def update_template_profile(template_id: str, request: Request):
 @app.get("/healthz")
 def healthz():
     return {"ok": True, "service": "pptx-report"}
+
+
+@app.post("/api/pptx-report/model-chart")
+async def export_model_chart(request: Request):
+    body = await request.body()
+    if len(body) > MAX_METADATA_BYTES:
+        return JSONResponse(
+            {"error": {"message": "研究模型图表数据不能超过 1MB。"}},
+            status_code=413,
+        )
+    try:
+        payload = json.loads(body.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ModelChartExportError("request body must be an object")
+        model_type = str(payload.get("model_type") or "").strip().lower()
+        content = render_model_chart_pptx(model_type, payload.get("data"))
+        filenames = {
+            "psm": "PSM价格敏感度分析.pptx",
+            "kano": "KANO_Better-Worse分析.pptx",
+            "maxdiff": "MaxDiff相对偏好得分.pptx",
+            "driver": "关键驱动分析.pptx",
+        }
+        filename = filenames[model_type]
+        utf8_name = quote(filename.encode("utf-8"))
+        return Response(
+            content,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={
+                "Content-Disposition": f'attachment; filename="model-chart.pptx"; filename*=UTF-8\'\'{utf8_name}',
+                "Cache-Control": "no-store",
+                "X-SurveyKit-Editable-Chart": "true",
+            },
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ModelChartExportError) as exc:
+        return JSONResponse({"error": {"message": str(exc)}}, status_code=400)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(
+            {"error": {"message": f"研究模型 PPTX 导出失败：{exc}"}},
+            status_code=500,
+        )
 
 
 def _proposal_project_guard(request: Request, deck: dict) -> JSONResponse | None:
