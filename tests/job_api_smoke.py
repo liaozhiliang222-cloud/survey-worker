@@ -4,6 +4,7 @@ from io import BytesIO
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import threading
 import time
@@ -12,7 +13,8 @@ from fastapi import Response
 from fastapi.testclient import TestClient
 from pptx import Presentation
 
-from deploy import aliyun_api as api
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from deploy import aliyun_api as api  # noqa: E402
 
 
 def pptx_bytes() -> bytes:
