@@ -1,7 +1,8 @@
 (function initPptReportAi(root) {
   "use strict";
 
-  const DEFAULT_BATCH_SIZE = 4;
+  const DEFAULT_BATCH_SIZE = 6;
+  const SLIDE_BRIEF_CONCURRENCY = 2;
   const REPORT_STORYLINE_TYPES = [
     "problem_solution",
     "user_journey",
@@ -22,10 +23,10 @@
 
   const SLIDE_BRIEF_SYSTEM_PROMPT = [
     "你是资深市场研究报告总监。请在给定 Report Narrative 下，为每页生成 SlideBrief 文案。",
-    "每页输入都包含 central_thesis、chapter_context、previous_chapter、next_chapter；标题和正文必须服务于本章目的，并与前后章节连续。",
+    "每批输入包含 central_thesis、chapter_context、previous_chapter、next_chapter；标题和正文必须服务于本章目的，并与前后章节连续。",
     "只允许使用该页 questions、DataFact、evidence_fact_ids、evidence_question_ids 中的证据，不得重新计算或编造数字。",
     "标题直接表达唯一结论；正文采用观察+数据证据+解释；相邻页面不得重复完全相同的结论。",
-    "只返回 JSON：{\"pages\":[{\"page_idx\":1,\"title\":\"\",\"claim\":\"\",\"bullets\":[\"\",\"\"],\"business_implication\":\"\",\"evidence_fact_ids\":[],\"evidence_question_ids\":[]}]}。",
+    "只返回 JSON：{\"pages\":[{\"page_idx\":1,\"title\":\"\",\"claim\":\"\",\"bullets\":[\"\",\"\"],\"business_implication\":\"\"}]}。证据 ID 由系统按页面确定性回填。",
   ].join("\n");
 
   function uniqueStrings(values) {
@@ -41,7 +42,7 @@
   }
 
   function chunkPages(pages, requestedSize = DEFAULT_BATCH_SIZE) {
-    const size = Math.max(3, Math.min(5, Number(requestedSize) || DEFAULT_BATCH_SIZE));
+    const size = Math.max(3, Math.min(6, Number(requestedSize) || DEFAULT_BATCH_SIZE));
     const result = [];
     for (let index = 0; index < (pages || []).length; index += size) {
       result.push(pages.slice(index, index + size));
@@ -49,10 +50,87 @@
     return result;
   }
 
+  function chunkPagesByChapter(pages, requestedSize = DEFAULT_BATCH_SIZE) {
+    const size = Math.max(3, Math.min(6, Number(requestedSize) || DEFAULT_BATCH_SIZE));
+    const result = [];
+    let current = [];
+    let chapter = "";
+    (pages || []).forEach((page) => {
+      const pageChapter = String(page?.chapter || "其他研究");
+      if (current.length && (current.length >= size || pageChapter !== chapter)) {
+        result.push(current);
+        current = [];
+      }
+      chapter = pageChapter;
+      current.push(page);
+    });
+    if (current.length) result.push(current);
+    return result;
+  }
+
+  function filterWritablePages(pages) {
+    return (pages || []).filter((page) => {
+      const brief = page?.slide_brief || {};
+      return !brief.locked && !brief.user_modified;
+    });
+  }
+
+  async function mapWithConcurrency(items, requestedConcurrency, worker, onProgress) {
+    const values = Array.from(items || []);
+    if (!values.length) return [];
+    const concurrency = Math.max(1, Math.min(values.length, Number(requestedConcurrency) || 1));
+    const results = new Array(values.length);
+    let cursor = 0;
+    let completed = 0;
+    let firstError = null;
+    async function runWorker() {
+      while (!firstError) {
+        const index = cursor;
+        cursor += 1;
+        if (index >= values.length) return;
+        try {
+          results[index] = await worker(values[index], index);
+          completed += 1;
+          if (typeof onProgress === "function") onProgress(completed, values.length, index);
+        } catch (error) {
+          firstError = error;
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
+    if (firstError) throw firstError;
+    return results;
+  }
   function pageQuestionIds(page) {
     return uniqueStrings((page?.questions || []).map((question) => question.code));
   }
 
+
+  function compactFact(fact) {
+    const result = {};
+    [
+      "fact_id", "fact_type", "metric_name", "segment", "category", "value",
+      "benchmark_value", "gap_pp", "rank", "base", "significant",
+    ].forEach((key) => {
+      const value = fact?.[key];
+      if (value !== null && value !== undefined && value !== "") result[key] = value;
+    });
+    return result;
+  }
+
+  function compactQuestion(question) {
+    return {
+      code: String(question?.code || ""),
+      title: String(question?.title || ""),
+      data_kind: String(question?.data_kind || ""),
+      base: question?.base || {},
+      rows: (question?.rows || []).map((row) => ({
+        option: String(row?.option || ""),
+        values: row?.values || {},
+      })),
+      facts: (question?.facts || []).map(compactFact),
+    };
+  }
   function buildNarrativeInput(context) {
     return {
       source: String(context?.source || ""),
@@ -249,28 +327,31 @@
   }
 
   function buildPageBatchInput(batch, reportNarrative, previousPage = null, allPages = batch) {
-    const pageIds = new Set((batch || []).map((page) => Number(page.page_idx)));
-    const pageContexts = (batch || []).map((page) => ({
-      page_idx: Number(page.page_idx),
-      ...buildPageNarrativeContext(page, reportNarrative, allPages || batch),
-    }));
+    const pages = batch || [];
+    const narrativeContext = buildPageNarrativeContext(
+      pages[0] || {}, reportNarrative, allPages || pages
+    );
     return {
-      report_narrative: reportNarrative?.central_thesis ? reportNarrative : null,
       central_thesis: String(reportNarrative?.central_thesis || ""),
+      storyline_type: String(reportNarrative?.storyline_type || ""),
       fallback_mode: reportNarrative?.central_thesis ? null : "data_fact_to_slide_brief",
-      narrative: {
-        findings: reportNarrative?.findings || [],
-        storyline: (reportNarrative?.storyline || []).filter((item) => pageIds.has(Number(item.page_idx))),
-      },
+      chapter_context: narrativeContext.chapter_context,
+      previous_chapter: narrativeContext.previous_chapter,
+      next_chapter: narrativeContext.next_chapter,
       previous_page: previousPage ? {
         page_idx: Number(previousPage.page_idx),
-        title: previousPage.title,
+        title: previousPage.title || previousPage.current_title,
         business_implication: previousPage.business_implication,
       } : null,
-      page_contexts: pageContexts,
-      pages: (batch || []).map((page, index) => ({
-        ...page,
-        narrative_context: pageContexts[index],
+      pages: pages.map((page) => ({
+        page_idx: Number(page.page_idx),
+        chapter: String(page.chapter || "其他研究"),
+        current_title: String(page.current_title || ""),
+        chart_type: String(page.chart_type || "auto"),
+        dimensions: uniqueStrings(page.dimensions),
+        evidence_fact_ids: uniqueStrings(page.evidence_fact_ids),
+        evidence_question_ids: pageQuestionIds(page),
+        questions: (page.questions || []).map(compactQuestion),
       })),
     };
   }
@@ -323,6 +404,7 @@
 
   root.PptReportAi = {
     DEFAULT_BATCH_SIZE,
+    SLIDE_BRIEF_CONCURRENCY,
     REPORT_NARRATIVE_SYSTEM_PROMPT,
     REPORT_STORYLINE_TYPES,
     SLIDE_BRIEF_SYSTEM_PROMPT,
@@ -332,9 +414,12 @@
     buildPageNarrativeContext,
     buildReportNarrativeInput,
     chunkPages,
+    chunkPagesByChapter,
+    filterWritablePages,
     fallbackNarrative,
     generateReportNarrativeOrFallback,
     mergeSlideBriefSuggestion,
+    mapWithConcurrency,
     parseJsonObject,
     validateNarrative,
     validatePageOutput,

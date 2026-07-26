@@ -9,7 +9,7 @@ assert.match(html, /id="pptxNarrativePanel"/);
 assert.match(html, /id="pptxNarrativeConfirmBtn"[^>]*>生成蓝图并继续编辑</);
 assert.match(html, /id="pptxContinueEditBtn"/);
 assert.match(html, /id="pptxNarrativeRegenerateBtn"[^>]*>重新生成故事线</);
-const context = vm.createContext({ globalThis: {}, Set, Map, Array, String, Number, JSON, Math });
+const context = vm.createContext({ globalThis: {}, Set, Map, Array, String, Number, JSON, Math, Promise, setTimeout });
 vm.runInContext(source, context);
 const ai = context.globalThis.PptReportAi;
 assert.ok(ai, "PptReportAi must be exported.");
@@ -29,7 +29,7 @@ const reportContext = {
     action_implication: "优先经营核心用户",
   }],
   pages: [
-    { page_idx: 1, chapter: "用户画像", evidence_fact_ids: ["F1"], questions: [{ code: "Q1" }], slide_brief: { question_answered: "用户是谁" } },
+    { page_idx: 1, chapter: "用户画像", evidence_fact_ids: ["F1"], questions: [{ code: "Q1", title: "年龄分布", data_kind: "percentage", base: { "总体": 320 }, rows: [{ option: "18-25岁", values: { "总体": 42.5 } }], facts: [{ fact_id: "F1", fact_type: "top_category", metric_name: "18-25岁", category: "18-25岁", value: 42.5, base: 320, source_reference: "Q1.年龄分布", confidence: 1 }] }], slide_brief: { question_answered: "用户是谁" } },
     { page_idx: 2, chapter: "消费行为", evidence_fact_ids: ["F2"], questions: [{ code: "Q2" }] },
     { page_idx: 3, chapter: "体验评价", evidence_fact_ids: ["F3"], questions: [{ code: "Q3" }] },
     { page_idx: 4, chapter: "体验评价", evidence_fact_ids: ["F3"], questions: [{ code: "Q3" }] },
@@ -39,7 +39,24 @@ const reportContext = {
 };
 
 assert.deepEqual(Array.from(ai.chunkPages(reportContext.pages, 2), (batch) => batch.length), [3, 3]);
-assert.deepEqual(Array.from(ai.chunkPages(reportContext.pages, 9), (batch) => batch.length), [5, 1]);
+assert.deepEqual(Array.from(ai.chunkPages(reportContext.pages, 9), (batch) => batch.length), [6]);
+assert.equal(ai.DEFAULT_BATCH_SIZE, 6);
+assert.equal(ai.SLIDE_BRIEF_CONCURRENCY, 2);
+const chapterBatches = ai.chunkPagesByChapter(reportContext.pages, 6);
+assert.deepEqual(Array.from(chapterBatches, (batch) => batch.length), [1, 1, 2, 2]);
+assert.ok(Array.from(chapterBatches).every((batch) => new Set(Array.from(batch, (page) => page.chapter)).size === 1));
+assert.equal(ai.filterWritablePages([
+  { slide_brief: { locked: true } },
+  { slide_brief: { user_modified: true } },
+  { slide_brief: { locked: false, user_modified: false } },
+]).length, 1);
+const largePlan = Array.from({ length: 84 }, (_, index) => ({
+  page_idx: index + 1,
+  chapter: `章节${Math.floor(index / 21) + 1}`,
+}));
+const largePlanBatches = ai.chunkPagesByChapter(largePlan, 6);
+assert.equal(largePlanBatches.length, 16);
+assert.ok(Array.from(largePlanBatches).every((batch) => batch.length <= 6));
 
 const narrative = ai.validateNarrative({
   findings: [{
@@ -80,8 +97,12 @@ assert.equal(pageOutput[0].bullets.length, 3);
 assert.match(pageOutput[0].bullets[2], /解释；行动/);
 
 const batchInput = ai.buildPageBatchInput(reportContext.pages.slice(0, 3), narrative, pageOutput[0]);
-assert.equal(batchInput.narrative.storyline.length, 3);
 assert.equal(batchInput.previous_page.page_idx, 1);
+assert.equal(batchInput.pages[0].questions[0].facts[0].fact_id, "F1");
+assert.equal(batchInput.pages[0].questions[0].facts[0].value, 42.5);
+assert.equal(batchInput.pages[0].questions[0].rows[0].values["总体"], 42.5);
+assert.equal(batchInput.pages[0].questions[0].facts[0].source_reference, undefined);
+assert.doesNotMatch(JSON.stringify(batchInput), /"slide_brief":|"page_contexts":|"narrative_context":|"report_narrative":/);
 const reportNarrative = ai.validateReportNarrative({
   report_title: "年轻用户手机购买体验研究",
   central_thesis: "年轻用户的购买阻碍主要来自价值感知与决策确定性不足，而非价格本身。",
@@ -106,9 +127,10 @@ const narrativeBatch = ai.buildPageBatchInput(
   reportContext.pages.slice(0, 3), reportNarrative, null, reportContext.pages
 );
 assert.equal(narrativeBatch.central_thesis, reportNarrative.central_thesis);
-assert.equal(narrativeBatch.pages[0].narrative_context.chapter_context.purpose, "界定核心用户");
-assert.equal(narrativeBatch.pages[0].narrative_context.next_chapter, "消费行为");
-assert.equal(narrativeBatch.pages[1].narrative_context.previous_chapter, "用户画像");
+assert.equal(narrativeBatch.chapter_context.purpose, "界定核心用户");
+assert.equal(narrativeBatch.previous_chapter, "");
+assert.equal(narrativeBatch.next_chapter, "消费行为");
+assert.equal(narrativeBatch.pages[0].narrative_context, undefined);
 
 const fallbackResult = await ai.generateReportNarrativeOrFallback(async () => {
   throw new Error("simulated narrative failure");
@@ -118,9 +140,23 @@ assert.equal(fallbackResult.fallback_used, true);
 const fallbackInput = ai.buildFallbackSlideBriefInput(reportContext);
 assert.equal(fallbackInput.fallback_mode, "data_fact_to_slide_brief");
 assert.equal(fallbackInput.pages.length, reportContext.pages.length);
-assert.equal(fallbackInput.pages[0].narrative_context.central_thesis, "");
+assert.equal(fallbackInput.central_thesis, "");
+assert.equal(fallbackInput.chapter_context, null);
 
-
+let activeWorkers = 0;
+let maxActiveWorkers = 0;
+const progressEvents = [];
+const mapped = await ai.mapWithConcurrency([1, 2, 3, 4, 5], 2, async (value) => {
+  activeWorkers += 1;
+  maxActiveWorkers = Math.max(maxActiveWorkers, activeWorkers);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  activeWorkers -= 1;
+  return value * 2;
+}, (completed, total) => progressEvents.push([completed, total]));
+assert.deepEqual(Array.from(mapped), [2, 4, 6, 8, 10]);
+assert.equal(maxActiveWorkers, 2);
+assert.equal(progressEvents.length, 5);
+assert.deepEqual(progressEvents.at(-1), [5, 5]);
 const modifiedBrief = {
   slide_id: "slide_01",
   title: "研究员标题",
