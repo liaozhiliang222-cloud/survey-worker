@@ -53,4 +53,29 @@ for (const route of [
 ]) {
   assert.ok(backend.includes(route));
 }
+assert.match(html, /快速报告（快速、稳定）/);
+assert.match(html, /AI 研究报告（故事线驱动）/);
+assert.match(app, /function selectedPptxReportWorkflow\(\)/);
+assert.match(app, /function normalizePptxWorkflow\(plan, preferredWorkflow = ""\)/);
+assert.match(app, /report_workflow: editedPagePlan\?\.report_workflow/);
+assert.match(app, /page_planning_mode: editedPagePlan\?\.page_planning_mode/);
+assert.match(app, /ai_enhancement: editedPagePlan\?\.ai_enhancement/);
+assert.doesNotMatch(app, /planning_mode\s*=\s*"ai_report"/);
+
+const quickStart = app.indexOf("async function generatePptxQuickAiReport()");
+const workflowDispatchStart = app.indexOf("function runSelectedPptxAiWorkflow()", quickStart);
+assert.ok(quickStart >= 0 && workflowDispatchStart > quickStart);
+const quickFlow = app.slice(quickStart, workflowDispatchStart);
+assert.match(quickFlow, /index \+= 10/);
+assert.match(quickFlow, /Promise\.all/);
+assert.match(quickFlow, /Math\.min\(2/);
+assert.match(quickFlow, /brief\.locked \|\| brief\.user_modified/);
+assert.match(quickFlow, /report_workflow = "quick"/);
+assert.match(quickFlow, /ai_enhancement = "copy"/);
+assert.doesNotMatch(quickFlow, /REPORT_NARRATIVE_SYSTEM_PROMPT/);
+
+const workflowDispatch = app.slice(workflowDispatchStart, app.indexOf("async function generatePptxAiReport()", workflowDispatchStart));
+assert.match(workflowDispatch, /report_workflow === "research"/);
+assert.match(workflowDispatch, /generatePptxAiReport\(\)/);
+assert.match(workflowDispatch, /generatePptxQuickAiReport\(\)/);
 console.log("slide brief UI/API smoke: ok");
