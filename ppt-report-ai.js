@@ -25,7 +25,7 @@
     "每页输入都包含 central_thesis、chapter_context、previous_chapter、next_chapter；标题和正文必须服务于本章目的，并与前后章节连续。",
     "只允许使用该页 questions、DataFact、evidence_fact_ids、evidence_question_ids 中的证据，不得重新计算或编造数字。",
     "标题直接表达唯一结论；正文采用观察+数据证据+解释；相邻页面不得重复完全相同的结论。",
-    "只返回 JSON：{\"pages\":[{\"page_idx\":1,\"title\":\"\",\"bullets\":[\"\",\"\"],\"business_implication\":\"\",\"evidence_fact_ids\":[],\"evidence_question_ids\":[]}]}。",
+    "只返回 JSON：{\"pages\":[{\"page_idx\":1,\"title\":\"\",\"claim\":\"\",\"bullets\":[\"\",\"\"],\"business_implication\":\"\",\"evidence_fact_ids\":[],\"evidence_question_ids\":[]}]}。",
   ].join("\n");
 
   function uniqueStrings(values) {
@@ -312,6 +312,7 @@
       return {
         page_idx: pageIdx,
         title: String(suggestion.title || "").trim(),
+        claim: String(suggestion.claim || suggestion.title || "").trim(),
         bullets: fitBullets(suggestion.bullets),
         business_implication: String(suggestion.business_implication || "").trim(),
         evidence_fact_ids: evidenceFactIds,

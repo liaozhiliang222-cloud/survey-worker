@@ -14520,6 +14520,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 </div>
               </div>
               <div class="pptx-page-actions pptx-preview-field-wide">
+                <button type="button" class="secondary-btn" data-pptx-action="regenerate-slide" data-page-index="${idx}" ${isLocked ? "disabled" : ""}>AI &#37325;&#20889;&#27492;&#39029;</button>
                 <button type="button" class="secondary-btn" data-pptx-action="render-preview" data-page-index="${idx}">真实预览</button>
                 <button type="button" class="ghost-btn" data-pptx-action="duplicate-page" data-page-index="${idx}">复制</button>
                 <button type="button" class="ghost-btn" data-pptx-action="split-page" data-page-index="${idx}" ${(p.questions || []).length < 2 ? "disabled" : ""}>拆分</button>
@@ -14924,7 +14925,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       event.stopPropagation();
       const action = control.dataset.pptxAction;
       const pageIndex = Number(control.dataset.pageIndex);
-      if (action === "render-preview") {
+      if (action === "regenerate-slide") {
+        regenerateSinglePptxSlide(pageIndex, control);
+      } else if (action === "render-preview") {
         renderRealPptxPreview(pageIndex, control);
       } else if (action === "close-preview") {
         const panel = control.closest("[data-real-preview]");
@@ -15311,7 +15314,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           chapter: page.chapter,
           title: page.insight_override || page.title,
           question_answered: chapter?.key_question || existingBrief.question_answered || "",
-            claim: page.insight_override || page.title,
+            claim: suggestion.claim || page.insight_override || page.title,
             business_implication: suggestion.business_implication,
             evidence_fact_ids: suggestion.evidence_fact_ids,
             evidence_question_ids: suggestion.evidence_question_ids,
@@ -15341,6 +15344,154 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       ensureStableSlideBriefs();
       renderPreviewTable(editedPagePlan);
       return applied;
+    }
+
+    async function regenerateSinglePptxSlide(pageIndex, control) {
+      const page = editedPagePlan?.pages?.[pageIndex];
+      const brief = page?.slide_brief || {};
+      if (!page) return;
+      if (brief.locked) {
+        showToast("\u9501\u5b9a\u9875\u9762\u4e0d\u80fd\u7531 AI \u91cd\u65b0\u751f\u6210\u3002", "warning");
+        return;
+      }
+
+      const forceUserModified = Boolean(brief.user_modified);
+      if (forceUserModified && !window.confirm(
+        "\u8be5\u9875\u5305\u542b\u4eba\u5de5\u4fee\u6539\u3002\u7ee7\u7eed\u5c06\u7528 AI \u7ed3\u679c\u8986\u76d6\u6807\u9898\u3001\u6838\u5fc3\u7ed3\u8bba\u548c\u6b63\u6587\uff0c\u662f\u5426\u7ee7\u7eed\uff1f"
+      )) return;
+
+      const settings = loadAiSettings();
+      const errors = validateAiSettings(settings);
+      if (settings.mode === "local" || errors.length) {
+        showToast(errors.join("\uff1b") || "\u8bf7\u5148\u5b8c\u6210 AI \u8bbe\u7f6e\u3002", "warning");
+        return;
+      }
+      const aiPlanner = window.PptReportAi;
+      if (!aiPlanner) {
+        showToast("PPT AI \u6a21\u5757\u672a\u52a0\u8f7d\uff0c\u8bf7\u5237\u65b0\u540e\u91cd\u8bd5\u3002", "warning");
+        return;
+      }
+
+      const originalText = control?.textContent || "AI";
+      if (control) {
+        control.disabled = true;
+        control.textContent = "AI \u91cd\u5199\u4e2d\u2026";
+      }
+      if (aiWriteStatus) {
+        aiWriteStatus.textContent = `AI \u6b63\u5728\u91cd\u5199\u7b2c ${pageIndex + 1} \u9875\uff0c\u5176\u4ed6\u9875\u4e0d\u53d7\u5f71\u54cd\u2026`;
+      }
+
+      try {
+        const context = await requestPptxInsightContext();
+        lastPptxInsightContext = context;
+        ensureStableSlideBriefs();
+        const evidenceIndex = (context.pages || []).findIndex(
+          (item) => Number(item.page_idx) === Number(page.page_idx)
+        );
+        if (evidenceIndex < 0) throw new Error("\u672a\u627e\u5230\u8be5\u9875\u7684 DataFact \u8bc1\u636e\u3002");
+        const evidence = context.pages[evidenceIndex];
+        const previousEvidence = evidenceIndex > 0 ? context.pages[evidenceIndex - 1] : null;
+        const reportNarrative = pendingReportNarrative
+          || editedPagePlan.report_narrative
+          || null;
+        const input = aiPlanner.buildPageBatchInput(
+          [evidence],
+          reportNarrative,
+          previousEvidence,
+          context.pages
+        );
+        const messages = [
+          { role: "system", content: aiPlanner.SLIDE_BRIEF_SYSTEM_PROMPT },
+          { role: "user", content: JSON.stringify(input) },
+        ];
+        const callOptions = {
+          maxTokens: 2200,
+          timeoutMs: 240000,
+          temperature: 0.1,
+          responseFormat: "json_object",
+          stream: true,
+        };
+        let output = await callAiChatCompletion(settings, messages, callOptions);
+        let suggestions;
+        try {
+          suggestions = aiPlanner.validatePageOutput(
+            aiPlanner.parseJsonObject(output),
+            [evidence]
+          );
+          if (!suggestions.length) throw new Error("invalid suggestion");
+        } catch {
+          output = await callAiChatCompletion(settings, [
+            ...messages,
+            { role: "assistant", content: String(output).slice(0, 12000) },
+            {
+              role: "user",
+              content: "\u4e0a\u4e00\u6b21\u8f93\u51fa\u672a\u901a\u8fc7 JSON \u6216\u8bc1\u636e ID \u6821\u9a8c\u3002\u8bf7\u53ea\u91cd\u5199\u5f53\u524d\u9875\uff0c\u5e76\u6309\u6307\u5b9a\u7ed3\u6784\u8f93\u51fa\u3002",
+            },
+          ], { ...callOptions, temperature: 0 });
+          suggestions = aiPlanner.validatePageOutput(
+            aiPlanner.parseJsonObject(output),
+            [evidence]
+          );
+          if (!suggestions.length) throw new Error("\u6a21\u578b\u672a\u8fd4\u56de\u53ef\u9a8c\u8bc1\u7684\u5355\u9875 SlideBrief\u3002");
+        }
+
+        const suggestion = suggestions[0];
+        const supportedText = [
+          suggestion.title,
+          suggestion.claim,
+          ...(suggestion.bullets || []),
+        ].every((value) => isAiInsightSupported(value, evidence));
+        if (!supportedText) {
+          throw new Error("AI \u8f93\u51fa\u5305\u542b\u65e0\u6cd5\u7531\u5f53\u524d\u9875\u8bc1\u636e\u652f\u6301\u7684\u6570\u5b57\u3002");
+        }
+
+        const slideId = brief.slide_id;
+        const response = await fetch(
+          `/pptx-api/report/${encodeURIComponent(currentReportId)}/slide/${encodeURIComponent(slideId)}/regenerate`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              force_user_modified: forceUserModified,
+              suggestion: {
+                title: suggestion.title,
+                claim: suggestion.claim || suggestion.title,
+                business_implication: suggestion.business_implication,
+                bullets: suggestion.bullets,
+                evidence_fact_ids: suggestion.evidence_fact_ids,
+                evidence_question_ids: suggestion.evidence_question_ids,
+                slide_type: brief.slide_type,
+                layout_family: brief.layout_family,
+                question_answered: brief.question_answered,
+              },
+            }),
+          }
+        );
+        if (!response.ok) {
+          throw new Error(await readPptxApiError(response, "\u5199\u56de\u5355\u9875 SlideBrief \u5931\u8d25"));
+        }
+        const blueprint = await response.json();
+        const storedSlide = (blueprint.slides || []).find(
+          (item) => item?.slide_brief?.slide_id === slideId
+        );
+        if (!storedSlide) throw new Error("\u5355\u9875\u91cd\u751f\u6210\u7ed3\u679c\u7f3a\u5c11\u7a33\u5b9a slide_id\u3002");
+
+        pushPptxPlanHistory();
+        editedPagePlan.pages[pageIndex] = storedSlide;
+        renderPreviewTable(editedPagePlan);
+        if (aiWriteStatus) {
+          aiWriteStatus.textContent = `\u7b2c ${pageIndex + 1} \u9875\u5df2\u7531 AI \u91cd\u5199\uff1b\u9875\u9762 ID\u3001\u7ae0\u8282\u548c\u5176\u4ed6\u9875\u4fdd\u6301\u4e0d\u53d8\u3002`;
+        }
+        showToast("\u5355\u9875 SlideBrief \u5df2\u91cd\u65b0\u751f\u6210\u3002");
+      } catch (error) {
+        if (aiWriteStatus) aiWriteStatus.textContent = `\u5355\u9875\u91cd\u5199\u5931\u8d25\uff1a${error.message}`;
+        showToast(error.message || "\u5355\u9875\u91cd\u5199\u5931\u8d25\u3002", "warning");
+      } finally {
+        if (control) {
+          control.disabled = false;
+          control.textContent = originalText;
+        }
+      }
     }
 
     async function confirmReportNarrativeAndGenerate() {

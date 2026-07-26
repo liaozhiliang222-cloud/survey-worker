@@ -66,12 +66,14 @@ assert.deepEqual(Array.from(narrative.storyline[0].focus_fact_ids), ["F1"]);
 const pageOutput = ai.validatePageOutput({ pages: [{
   page_idx: 1,
   title: "核心用户评价更集中",
+  claim: "Decision certainty is the core barrier.",
   bullets: ["观察", "证据", "解释", "行动"],
   business_implication: "优先跟进",
   evidence_fact_ids: ["invented"],
   evidence_question_ids: ["Q999"],
 }] }, reportContext.pages.slice(0, 3));
 assert.equal(pageOutput.length, 1);
+assert.equal(pageOutput[0].claim, "Decision certainty is the core barrier.");
 assert.deepEqual(Array.from(pageOutput[0].evidence_fact_ids), ["F1"]);
 assert.deepEqual(Array.from(pageOutput[0].evidence_question_ids), ["Q1"]);
 assert.equal(pageOutput[0].bullets.length, 3);
