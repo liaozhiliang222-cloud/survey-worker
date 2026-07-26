@@ -28,7 +28,7 @@ const backend = http.createServer((req, res) => {
     setTimeout(() => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
-    }, 100);
+    }, 300);
     return;
   }
   res.writeHead(200, { "Content-Type": "application/json" });
@@ -37,7 +37,7 @@ const backend = http.createServer((req, res) => {
 const backendPort = await listen(backend);
 const handler = createPptxProxyHandler({
   backendUrl: `http://127.0.0.1:${backendPort}`,
-  timeoutMs: 25,
+  timeoutMs: 100,
   maxBodyBytes: 1024,
 });
 const proxy = http.createServer(handler);
