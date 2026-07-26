@@ -29,6 +29,18 @@ const confirmFlow = app.slice(confirmStart, generateStart);
 assert.doesNotMatch(confirmFlow, /await doGeneratePptx/);
 assert.match(confirmFlow, /persistSlideBriefBlueprint/);
 assert.match(confirmFlow, /确认并生成 PPT/);
+const batchStart = app.indexOf("async function generatePptxSlideBriefs(reportNarrative)");
+const singleStart = app.indexOf("async function regenerateSinglePptxSlide", batchStart);
+assert.ok(batchStart >= 0 && singleStart > batchStart);
+const batchFlow = app.slice(batchStart, singleStart);
+assert.match(batchFlow, /filterWritablePages/);
+assert.match(batchFlow, /chunkPagesByChapter/);
+assert.match(batchFlow, /mapWithConcurrency/);
+assert.match(batchFlow, /SLIDE_BRIEF_CONCURRENCY/);
+assert.match(batchFlow, /maxTokens: 5000/);
+assert.match(batchFlow, /repair_instruction/);
+assert.match(batchFlow, /lastPptxSlideBriefStats/);
+assert.doesNotMatch(batchFlow, /content: String\(output\)\.slice/);
 
 const generateFlow = app.slice(generateStart, app.indexOf("cancelJobBtn", generateStart));
 assert.ok(generateFlow.indexOf("persistSlideBriefBlueprint") < generateFlow.indexOf("selectedFile.arrayBuffer"));

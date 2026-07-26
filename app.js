@@ -13070,6 +13070,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     let moveQuestionContext = null;
     let pendingReportNarrative = null;
     let lastPptxInsightContext = null;
+    let lastPptxSlideBriefStats = null;
     let currentReportId = "";
 
     const SLIDE_TYPE_OPTIONS = [
@@ -15254,72 +15255,156 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const context = lastPptxInsightContext || await requestPptxInsightContext();
       lastPptxInsightContext = context;
       ensureStableSlideBriefs();
-      const contextByPage = new Map((context.pages || []).map((page) => [Number(page.page_idx), page]));
-        const batches = aiPlanner.chunkPages(context.pages, 4);
-        const generated = [];
-        let previousPage = null;
-        for (let i = 0; i < batches.length; i += 1) {
-        aiWriteStatus.textContent = `正在生成第 ${i + 1}/${batches.length} 批 SlideBrief…`;
-        const batchInput = aiPlanner.buildPageBatchInput(batches[i], reportNarrative, previousPage, context.pages);
-          const messages = [
-          { role: "system", content: aiPlanner.SLIDE_BRIEF_SYSTEM_PROMPT },
-            { role: "user", content: JSON.stringify(batchInput) },
-          ];
-          let output = await callAiChatCompletion(settings, messages, {
-          maxTokens: 5000, timeoutMs: 240000, temperature: 0.12,
-          responseFormat: "json_object", stream: true,
-          });
-        let validatedPages = [];
-          try {
-            validatedPages = aiPlanner.validatePageOutput(aiPlanner.parseJsonObject(output), batches[i]);
-            if (!validatedPages.length) throw new Error("本批页面缺少有效证据引用");
-          } catch {
-            output = await callAiChatCompletion(settings, [
-              ...messages,
-              { role: "assistant", content: String(output).slice(0, 12000) },
-            { role: "user", content: "上一次输出未通过 JSON 或证据 ID 校验。请严格按指定结构重新输出。" },
-            ], {
-            maxTokens: 5000, timeoutMs: 240000, temperature: 0,
-            responseFormat: "json_object", stream: true,
-            });
-            validatedPages = aiPlanner.validatePageOutput(aiPlanner.parseJsonObject(output), batches[i]);
-          if (!validatedPages.length) throw new Error(`第 ${i + 1} 批页面未返回可验证的 SlideBrief`);
-          }
-          generated.push(...validatedPages);
-          previousPage = validatedPages[validatedPages.length - 1] || previousPage;
-        }
 
-        const generatedByPage = new Map(generated.map((page) => [Number(page.page_idx), page]));
-        let applied = 0;
-        editedPagePlan.pages.forEach((page) => {
-          const pageIdx = Number(page.page_idx);
-          const suggestion = generatedByPage.get(pageIdx);
-          const evidence = contextByPage.get(pageIdx);
-          if (!suggestion || !evidence) return;
+      const currentPlanByPage = new Map(
+        (editedPagePlan.pages || []).map((page) => [Number(page.page_idx), page])
+      );
+      const contextPages = (context.pages || []).map((page) => {
+        const currentPage = currentPlanByPage.get(Number(page.page_idx));
+        return {
+          ...page,
+          chapter: currentPage?.chapter || page.chapter,
+          slide_brief: currentPage?.slide_brief || page.slide_brief || {},
+        };
+      });
+      const contextByPage = new Map(contextPages.map((page) => [Number(page.page_idx), page]));
+      const writablePages = aiPlanner.filterWritablePages(contextPages);
+      const batches = aiPlanner.chunkPagesByChapter(writablePages, aiPlanner.DEFAULT_BATCH_SIZE);
+      const concurrency = aiPlanner.SLIDE_BRIEF_CONCURRENCY;
+      const startedAt = Date.now();
+      let inputCharacters = 0;
+      let retriedPages = 0;
+
+      if (!batches.length) {
+        lastPptxSlideBriefStats = {
+          elapsed_seconds: 0,
+          total_pages: contextPages.length,
+          writable_pages: 0,
+          skipped_pages: contextPages.length,
+          batch_count: 0,
+          concurrency,
+          retried_pages: 0,
+          failed_pages: 0,
+          input_characters: 0,
+        };
+        editedPagePlan.report_narrative = reportNarrative;
+        editedPagePlan.executive_summary = reportNarrative.central_thesis;
+        editedPagePlan.storyline = (reportNarrative.chapters || []).map((chapter) => ({
+          chapter_id: chapter.chapter_id,
+          title: chapter.title,
+          purpose: chapter.purpose,
+          key_question: chapter.key_question,
+        }));
+        editedPagePlan.planning_mode = "ai_report";
+        ensureStableSlideBriefs();
+        renderPreviewTable(editedPagePlan);
+        return 0;
+      }
+
+      aiWriteStatus.textContent = `正在并发生成 0/${batches.length} 批 SlideBrief（每批最多 ${aiPlanner.DEFAULT_BATCH_SIZE} 页，并发 ${concurrency}）…`;
+
+      const batchResults = await aiPlanner.mapWithConcurrency(
+        batches,
+        concurrency,
+        async (batch, batchIndex) => {
+          const firstPageIndex = contextPages.findIndex(
+            (page) => Number(page.page_idx) === Number(batch[0]?.page_idx)
+          );
+          const previousPage = firstPageIndex > 0 ? contextPages[firstPageIndex - 1] : null;
+
+          const requestPages = async (targetPages, repairMode = false) => {
+            const batchInput = aiPlanner.buildPageBatchInput(
+              targetPages, reportNarrative, previousPage, contextPages
+            );
+            if (repairMode) {
+              batchInput.repair_instruction = "仅补齐这些缺失页面；严格返回 pages JSON，不要重复其他页面。";
+            }
+            const userContent = JSON.stringify(batchInput);
+            inputCharacters += userContent.length;
+            try {
+              const output = await callAiChatCompletion(settings, [
+                { role: "system", content: aiPlanner.SLIDE_BRIEF_SYSTEM_PROMPT },
+                { role: "user", content: userContent },
+              ], {
+                maxTokens: 5000,
+                timeoutMs: 240000,
+                temperature: repairMode ? 0 : 0.12,
+                responseFormat: "json_object",
+                stream: true,
+              });
+              return aiPlanner.validatePageOutput(
+                aiPlanner.parseJsonObject(output), targetPages
+              );
+            } catch (error) {
+              console.warn(`SlideBrief batch ${batchIndex + 1}${repairMode ? " repair" : ""}:`, error);
+              return [];
+            }
+          };
+
+          const initialPages = await requestPages(batch);
+          const generatedByPage = new Map(
+            initialPages.map((page) => [Number(page.page_idx), page])
+          );
+          const missingPages = batch.filter(
+            (page) => !generatedByPage.has(Number(page.page_idx))
+          );
+          if (missingPages.length) {
+            retriedPages += missingPages.length;
+            const repairedPages = await requestPages(missingPages, true);
+            repairedPages.forEach((page) => generatedByPage.set(Number(page.page_idx), page));
+          }
+          const unresolvedPages = batch.filter(
+            (page) => !generatedByPage.has(Number(page.page_idx))
+          );
+          return {
+            pages: Array.from(generatedByPage.values()),
+            unresolved_page_idxs: unresolvedPages.map((page) => Number(page.page_idx)),
+          };
+        },
+        (completed, total) => {
+          aiWriteStatus.textContent = `正在并发生成 ${completed}/${total} 批 SlideBrief（每批最多 ${aiPlanner.DEFAULT_BATCH_SIZE} 页，并发 ${concurrency}）…`;
+        }
+      );
+
+      const generated = batchResults.flatMap((result) => result.pages || []);
+      const failedPageIndexes = batchResults.flatMap(
+        (result) => result.unresolved_page_idxs || []
+      );
+      if (!generated.length && writablePages.length) {
+        throw new Error("所有 SlideBrief 批次均未返回有效页面，已保留确定性蓝图。");
+      }
+
+      const generatedByPage = new Map(generated.map((page) => [Number(page.page_idx), page]));
+      let applied = 0;
+      editedPagePlan.pages.forEach((page) => {
+        const pageIdx = Number(page.page_idx);
+        const suggestion = generatedByPage.get(pageIdx);
+        const evidence = contextByPage.get(pageIdx);
+        if (!suggestion || !evidence) return;
         const existingBrief = page.slide_brief || {};
         if (existingBrief.locked || existingBrief.user_modified) return;
-        const narrativeContext = aiPlanner.buildPageNarrativeContext(evidence, reportNarrative, context.pages);
+        const narrativeContext = aiPlanner.buildPageNarrativeContext(evidence, reportNarrative, contextPages);
         const chapter = narrativeContext.chapter_context;
         const chapterContextText = chapter
           ? `本章目的：${chapter.purpose}；核心问题：${chapter.key_question}`
           : "";
-          const title = String(suggestion.title || "").trim();
-          const bullets = (suggestion.bullets || []).map((text) => String(text || "").trim()).filter(Boolean);
-          if (title && isAiInsightSupported(title, evidence)) page.insight_override = title;
-          page.insight_bullets = bullets.filter((text) => isAiInsightSupported(text, evidence));
-          page.business_implication = suggestion.business_implication;
-          page.evidence_fact_ids = suggestion.evidence_fact_ids;
-          page.evidence_question_ids = suggestion.evidence_question_ids;
+        const title = String(suggestion.title || "").trim();
+        const bullets = (suggestion.bullets || []).map((value) => String(value || "").trim()).filter(Boolean);
+        if (title && isAiInsightSupported(title, evidence)) page.insight_override = title;
+        page.insight_bullets = bullets.filter((value) => isAiInsightSupported(value, evidence));
+        page.business_implication = suggestion.business_implication;
+        page.evidence_fact_ids = suggestion.evidence_fact_ids;
+        page.evidence_question_ids = suggestion.evidence_question_ids;
         if (chapter?.title) page.chapter = chapter.title;
         const suggestedBrief = {
           chapter_id: chapter?.chapter_id || existingBrief.chapter_id || "",
           chapter: page.chapter,
           title: page.insight_override || page.title,
           question_answered: chapter?.key_question || existingBrief.question_answered || "",
-            claim: suggestion.claim || page.insight_override || page.title,
-            business_implication: suggestion.business_implication,
-            evidence_fact_ids: suggestion.evidence_fact_ids,
-            evidence_question_ids: suggestion.evidence_question_ids,
+          claim: suggestion.claim || page.insight_override || page.title,
+          business_implication: suggestion.business_implication,
+          evidence_fact_ids: suggestion.evidence_fact_ids,
+          evidence_question_ids: suggestion.evidence_question_ids,
           central_thesis: narrativeContext.central_thesis,
           chapter_context: chapterContextText,
           previous_chapter: narrativeContext.previous_chapter,
@@ -15330,24 +15415,38 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           relationship_to_next: narrativeContext.next_chapter
             ? `为下一章“${narrativeContext.next_chapter}”提供证据。`
             : "",
-          };
+        };
         page.slide_brief = aiPlanner.mergeSlideBriefSuggestion(existingBrief, suggestedBrief);
-          if (page.insight_override || page.insight_bullets.length) applied += 1;
-        });
+        if (page.insight_override || page.insight_bullets.length) applied += 1;
+      });
 
       editedPagePlan.report_narrative = reportNarrative;
       editedPagePlan.executive_summary = reportNarrative.central_thesis;
       editedPagePlan.global_findings = context.global_findings || [];
       editedPagePlan.storyline = (reportNarrative.chapters || []).map((chapter) => ({
-        chapter_id: chapter.chapter_id, title: chapter.title,
-        purpose: chapter.purpose, key_question: chapter.key_question,
+        chapter_id: chapter.chapter_id,
+        title: chapter.title,
+        purpose: chapter.purpose,
+        key_question: chapter.key_question,
       }));
-        editedPagePlan.planning_mode = "ai_report";
+      editedPagePlan.planning_mode = "ai_report";
       ensureStableSlideBriefs();
       renderPreviewTable(editedPagePlan);
+
+      lastPptxSlideBriefStats = {
+        elapsed_seconds: Math.max(0, (Date.now() - startedAt) / 1000),
+        total_pages: contextPages.length,
+        writable_pages: writablePages.length,
+        skipped_pages: contextPages.length - writablePages.length,
+        batch_count: batches.length,
+        concurrency,
+        retried_pages: retriedPages,
+        failed_pages: failedPageIndexes.length,
+        input_characters: inputCharacters,
+      };
+      console.info("SlideBrief generation stats", lastPptxSlideBriefStats);
       return applied;
     }
-
     async function regenerateSinglePptxSlide(pageIndex, control) {
       const page = editedPagePlan?.pages?.[pageIndex];
       const brief = page?.slide_brief || {};
@@ -15509,8 +15608,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         }
         await persistSlideBriefBlueprint();
         renderPreviewTable(editedPagePlan);
+        const stats = lastPptxSlideBriefStats;
+        const performanceText = stats
+          ? `；耗时 ${stats.elapsed_seconds.toFixed(1)} 秒，${stats.batch_count} 批/并发 ${stats.concurrency}${stats.retried_pages ? `，补写 ${stats.retried_pages} 页` : ""}${stats.failed_pages ? `，${stats.failed_pages} 页降级` : ""}`
+          : "";
         aiWriteStatus.textContent = pendingReportNarrative
-          ? `报告蓝图已生成：AI 更新 ${applied}/${editedPagePlan.pages.length} 页；人工修改或锁定页均已保留。请编辑后确认生成 PPT。`
+          ? `报告蓝图已生成：AI 更新 ${applied}/${editedPagePlan.pages.length} 页；人工修改或锁定页均已保留${performanceText}。请编辑后确认生成 PPT。`
           : "Report Narrative 不可用，已生成兼容蓝图。请编辑后确认生成 PPT。";
       } catch (error) {
         console.warn("PPT SlideBrief AI fallback:", error);
