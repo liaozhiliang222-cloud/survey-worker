@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#102a56" />
     <title>调研工具箱</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=20260725-2" />
+    <link rel="stylesheet" href="./styles.css?v=20260726-3" />
   </head>
   <body>
     <div class="app-loading-overlay" id="appLoading">
@@ -1199,6 +1199,7 @@
             </div>
           </div>
 
+          <input class="hidden" id="researchModelExcelInput" type="file" accept=".xlsx" />
           <div class="workflow-grid research-model-grid">
             <button class="tool-card ready" type="button" data-jump="psm">
               <span>价格研究</span>
@@ -1461,6 +1462,8 @@
               </label>
               <div class="button-row">
                 <button class="primary-btn" id="runPsm" type="button">计算 PSM</button>
+                <a class="secondary-btn" href="./templates/research-models/psm-template.xlsx" download>下载 Excel 模板</a>
+                <button class="secondary-btn" type="button" data-model-import="psm">上传 Excel 数据</button>
                 <button class="secondary-btn" id="loadPsmExample" type="button">载入示例</button>
                 <button class="secondary-btn" id="exportPsm" type="button" disabled>导出 Excel</button>
                 <button class="secondary-btn" id="exportPsmPptx" type="button" disabled>导出可编辑 PPT</button>
@@ -1540,11 +1543,13 @@
               </label>
               <div class="button-row">
                 <button class="primary-btn" id="runKano" type="button">计算 KANO</button>
+                <a class="secondary-btn" href="./templates/research-models/kano-template.xlsx" download>下载 Excel 模板</a>
+                <button class="secondary-btn" type="button" data-model-import="kano">上传 Excel 数据</button>
                 <button class="secondary-btn" id="loadKanoExample" type="button">载入示例</button>
                 <button class="secondary-btn" id="exportKano" type="button" disabled>导出 Excel</button>
                 <button class="secondary-btn" id="exportKanoPptx" type="button" disabled>导出可编辑 PPT</button>
               </div>
-              <p class="panel-note">第一版按已汇总的 KANO 分类人数计算 Better-Worse 系数；适合从问卷平台或表格中复制结果。</p>
+              <p class="panel-note">支持已汇总的 A/O/M/I/R/Q 人数，也支持原始正反向题 Excel（如 data 页 A1__1/A1__2，code 页题目名称）。Better-Worse 矩阵交叉线按全部有效属性均值计算。</p>
             </div>
 
             <div class="audit-results" id="kanoResults" aria-live="polite">
@@ -1627,6 +1632,8 @@
               </label>
               <div class="button-row">
                 <button class="primary-btn" id="generateMaxDiff" type="button">生成设计</button>
+                <a class="secondary-btn" href="./templates/research-models/maxdiff-template.xlsx" download>下载 Excel 模板</a>
+                <button class="secondary-btn" type="button" data-model-import="maxdiff">上传 Excel 数据</button>
                 <button class="secondary-btn" id="loadMaxDiffExample" type="button">载入示例</button>
                 <button class="secondary-btn span-row" id="exportMaxDiffDesign" type="button" disabled>导出设计 Excel</button>
                 <button class="secondary-btn" id="exportMaxDiffValidation" type="button" disabled>导出校验报告</button>
@@ -1774,6 +1781,8 @@
               </label>
               <div class="button-row">
                 <button class="primary-btn" id="runDriverAnalysis" type="button">计算驱动力</button>
+                <a class="secondary-btn" href="./templates/research-models/driver-template.xlsx" download>下载 Excel 模板</a>
+                <button class="secondary-btn" type="button" data-model-import="driver">上传 Excel 数据</button>
                 <button class="secondary-btn" id="loadDriverExample" type="button">载入示例</button>
                 <button class="secondary-btn" id="exportDriverExcel" type="button" disabled>导出 Excel</button>
                 <button class="secondary-btn" id="exportDriverPptx" type="button" disabled>导出可编辑 PPT</button>
@@ -1811,6 +1820,8 @@
               </label>
               <div class="button-row">
                 <button class="primary-btn" id="runTurf" type="button">计算最优组合</button>
+                <a class="secondary-btn" href="./templates/research-models/turf-template.xlsx" download>下载 Excel 模板</a>
+                <button class="secondary-btn" type="button" data-model-import="turf">上传 Excel 数据</button>
                 <button class="secondary-btn" id="loadTurfExample" type="button">载入示例</button>
                 <button class="secondary-btn" id="exportTurf" type="button" disabled>导出 Excel</button>
               </div>
@@ -1847,6 +1858,8 @@
               </label>
               <div class="button-row">
                 <button class="primary-btn" id="runConjoint" type="button">估计效用值</button>
+                <a class="secondary-btn" href="./templates/research-models/conjoint-template.xlsx" download>下载 Excel 模板</a>
+                <button class="secondary-btn" type="button" data-model-import="conjoint">上传 Excel 数据</button>
                 <button class="secondary-btn" id="loadConjointExample" type="button">载入示例</button>
                 <button class="secondary-btn" id="exportConjoint" type="button" disabled>导出 Excel</button>
               </div>
@@ -2647,8 +2660,8 @@
       };
     })();
     </script>
-    <script src="./ppt-report-ai.js?v=20260726-2"></script>
-    <script src="./app.js?v=20260726-5"></script>
+    <script src="./ppt-report-ai.js?v=20260726-3"></script>
+    <script src="./app.js?v=20260726-7"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
     <!-- Vite 模块化入口（Phase 1 过渡期：共享模块已提取，功能模块渐进迁移） -->
     <script type="module" src="/src/main.js"></script>

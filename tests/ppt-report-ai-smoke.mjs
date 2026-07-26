@@ -133,6 +133,19 @@ assert.equal(narrativeBatch.previous_chapter, "");
 assert.equal(narrativeBatch.next_chapter, "消费行为");
 assert.equal(narrativeBatch.pages[0].narrative_context, undefined);
 
+const repeatedSourceChapters = ["画像", "行为", "画像", "体验", "行为"].map((chapter, index) => ({
+  page_idx: index + 1,
+  chapter,
+}));
+const assignedNarrativeChapters = repeatedSourceChapters.map((page) =>
+  ai.buildPageNarrativeContext(page, reportNarrative, repeatedSourceChapters).chapter_context.title
+);
+assert.deepEqual(
+  Array.from(assignedNarrativeChapters),
+  ["用户画像", "消费行为", "消费行为", "优化机会", "优化机会"],
+  "Narrative chapters must move forward without creating repeated section dividers",
+);
+
 const fallbackResult = await ai.generateReportNarrativeOrFallback(async () => {
   throw new Error("simulated narrative failure");
 }, reportContext);

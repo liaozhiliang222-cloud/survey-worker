@@ -70,6 +70,10 @@ def main() -> None:
                 series.format.line.fill.type == MSO_FILL_TYPE.BACKGROUND
                 for series in charts[0].chart.series
             )
+            for label in ("魅力属性", "期望属性", "必备属性", "无差异属性", "Worse 均值", "Better 均值"):
+                assert label in text
+            for item in ("配送速度", "包装设计", "包装质感", "售后保障"):
+                assert item in text
 
     api_source = (ROOT / "deploy" / "aliyun_api.py").read_text(encoding="utf-8")
     assert '/api/pptx-report/model-chart' in api_source

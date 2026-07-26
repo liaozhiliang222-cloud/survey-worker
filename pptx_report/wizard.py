@@ -777,10 +777,18 @@ def _enhance_report_pages(
     """Add narrative page families without changing editable chart ownership."""
     question_by_id = {str(question.get("code") or ""): question for question in questions}
     fact_payload = facts_as_dicts(facts)
+    configured_semantics = list((page_config or {}).get("pages") or [])
     semantic_pages = []
     for index, page in enumerate(pages, 1):
         question_ids = _page_question_ids(page)
-        chapter = getattr(page, "chapter", "") or next(
+        configured = configured_semantics[index - 1] if index - 1 < len(configured_semantics) else {}
+        semantic_override = (
+            configured.get("slide_brief")
+            if isinstance(configured.get("slide_brief"), dict)
+            else configured
+        )
+        configured_chapter = str(semantic_override.get("chapter") or configured.get("chapter") or "").strip()
+        chapter = configured_chapter or getattr(page, "chapter", "") or next(
             (
                 _categorize_question(question_by_id[question_id])
                 for question_id in question_ids
@@ -804,7 +812,6 @@ def _enhance_report_pages(
         })
     narrative = _report_narrative_from_config(page_config)
     briefs = build_slide_briefs(semantic_pages, fact_payload, narrative)
-    configured_semantics = list((page_config or {}).get("pages") or [])
     valid_fact_ids = {str(fact.fact_id) for fact in facts}
     valid_question_ids = {str(question.get("code") or "") for question in questions}
     usage = Counter()

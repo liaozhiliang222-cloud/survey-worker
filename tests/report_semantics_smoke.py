@@ -113,12 +113,13 @@ def check_ai_semantic_overrides():
     )
     questions = [{"code": "Q1", "title": "Satisfaction", "categories": ["Satisfied", "Not satisfied"], "segments": ["Total"], "data": {"Total": [65, 35]}, "base": {"Total": 400}}]
     page_config = {"pages": [{
+        "chapter": "蓝图章节",
         "business_implication": "Prioritize the service recovery journey",
         "evidence_fact_ids": ["F1", "invented"],
         "evidence_question_ids": ["Q1", "Q999"],
         "slide_brief": {"locked": True},
     }]}
-    _enhanced, briefs = _enhance_report_pages(
+    enhanced, briefs = _enhance_report_pages(
         [page], questions, [fact], [], "source.xlsx", page_config=page_config
     )
     assert briefs[0].claim == "AI finding title"
@@ -126,6 +127,9 @@ def check_ai_semantic_overrides():
     assert briefs[0].evidence_fact_ids == ["F1"]
     assert briefs[0].evidence_question_ids == ["Q1"]
     assert briefs[0].locked is True
+    assert page.chapter == "蓝图章节"
+    assert isinstance(enhanced[1], SectionDividerContent)
+    assert enhanced[1].chapter == "蓝图章节"
 def check_rendered_page_families():
     finding = ExecutiveFinding("核心用户更关注体验", "年轻用户评价更集中。", ["Q1__top_rank__001"],
                                "优先优化关键触点", "high", ["Q1"], ["Q1.满意度"])

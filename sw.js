@@ -1,9 +1,15 @@
-const CACHE_NAME = "research-toolbox-v52";
+const CACHE_NAME = "research-toolbox-v54";
 const ASSETS = [
   "./manifest.webmanifest",
   "./icon.svg",
   "./cloudflare-pages-verification.txt",
-  "./templates/crosstab/crosstab-header-template.xlsx"
+  "./templates/crosstab/crosstab-header-template.xlsx",
+  "./templates/research-models/psm-template.xlsx",
+  "./templates/research-models/kano-template.xlsx",
+  "./templates/research-models/maxdiff-template.xlsx",
+  "./templates/research-models/driver-template.xlsx",
+  "./templates/research-models/turf-template.xlsx",
+  "./templates/research-models/conjoint-template.xlsx"
 ];
 
 function isAppShellRequest(request) {

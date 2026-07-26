@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
@@ -62,6 +63,29 @@ assert.match(app, /report_workflow: editedPagePlan\?\.report_workflow/);
 assert.match(app, /page_planning_mode: editedPagePlan\?\.page_planning_mode/);
 assert.match(app, /ai_enhancement: editedPagePlan\?\.ai_enhancement/);
 assert.doesNotMatch(app, /planning_mode\s*=\s*"ai_report"/);
+assert.match(app, /const hasNarrativeBlueprint = isResearch && plan\?\.ai_enhancement === "narrative"/);
+assert.match(app, /hasNarrativeBlueprint \? "确认蓝图并生成 PPT"/);
+assert.match(app, /isResearch && !hasNarrativeBlueprint/);
+assert.match(app, /const chapterGroups = \[\]/);
+assert.match(app, /报告目录（按实际顺序）/);
+assert.match(app, /PPT 第 \$\{outputProjection\.contentSlideNumbers\[idx\]\} 页/);
+assert.match(app, /qa\.slide_count/);
+
+const projectionStart = app.indexOf("function getPptxOutputPageProjection");
+const projectionEnd = app.indexOf("function setPptxCancelState", projectionStart);
+assert.ok(projectionStart >= 0 && projectionEnd > projectionStart);
+const projectionContext = vm.createContext({ result: null, plan: {
+  pages: [{ chapter: "A" }, { chapter: "B" }, { chapter: "A" }],
+  global_findings: [{ title: "finding" }],
+  data_facts: [{ fact_type: "segment_gap", value: 12 }],
+  appendix: { count: 2 },
+} });
+vm.runInContext(app.slice(projectionStart, projectionEnd) + "; result = getPptxOutputPageProjection(plan);", projectionContext);
+assert.equal(projectionContext.result.analysisPages, 3);
+assert.equal(projectionContext.result.sectionPages, 3);
+assert.equal(projectionContext.result.fixedSystemPages, 8);
+assert.equal(projectionContext.result.totalPages, 14);
+assert.deepEqual(Array.from(projectionContext.result.contentSlideNumbers), [7, 9, 11]);
 
 const quickStart = app.indexOf("async function generatePptxQuickAiReport()");
 const workflowDispatchStart = app.indexOf("function runSelectedPptxAiWorkflow()", quickStart);

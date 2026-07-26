@@ -1616,7 +1616,7 @@ function rowsToDelimitedTableWithContext(rows) {
   return rows.map((row) => row.map(csvCell).join(",")).join("\n");
 }
 
-async function xlsxToDelimitedTableText(arrayBuffer) {
+async function xlsxToWorkbookSheets(arrayBuffer) {
   const sharedXml = await readZipText(arrayBuffer, "xl/sharedStrings.xml").catch(() => "");
   const workbookXml = await readZipText(arrayBuffer, "xl/workbook.xml").catch(() => "");
   const relationshipXml = await readZipText(arrayBuffer, "xl/_rels/workbook.xml.rels").catch(() => "");
@@ -1631,6 +1631,12 @@ async function xlsxToDelimitedTableText(arrayBuffer) {
     const rows = xlsxSheetXmlToRows(sheetXml, sharedStrings);
     if (rows.length) sheets.push({ index, name: sheetNames[index] || ("Sheet" + (index + 1)), rows });
   }
+
+  return sheets;
+}
+
+async function xlsxToDelimitedTableText(arrayBuffer) {
+  const sheets = await xlsxToWorkbookSheets(arrayBuffer);
 
   // --- Crosstab format detection ---
   const isCrosstab = sheets.some((s) =>
@@ -6961,6 +6967,8 @@ function renderKanoChart(items) {
   const chartHeight = height - padding.top - padding.bottom;
   const x = (value) => padding.left + value * chartWidth;
   const y = (value) => padding.top + (1 - value) * chartHeight;
+  const meanWorse = items.reduce((sum, item) => sum + Math.abs(item.worse), 0) / items.length;
+  const meanBetter = items.reduce((sum, item) => sum + item.better, 0) / items.length;
   const colors = {
     "魅力属性": "#2f8f5b",
     "期望属性": "#1f6fb8",
@@ -6981,13 +6989,40 @@ function renderKanoChart(items) {
     `)
     .join("");
 
+  const compactLabels = items.length > 20;
+  const occupiedLabels = [];
+  const overlaps = (a, b) => !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
   const points = items
-    .map((item) => `
-      <g>
-        <circle cx="${x(Math.abs(item.worse))}" cy="${y(item.better)}" r="6" fill="${colors[item.classification]}" stroke="#fff" stroke-width="2" />
-        <text x="${x(Math.abs(item.worse)) + 10}" y="${y(item.better) + 4}" font-size="12" font-weight="700" fill="#314253">${escapeHtml(item.name)}</text>
-      </g>
-    `)
+    .map((item, index) => {
+      const pointX = x(Math.abs(item.worse));
+      const pointY = y(item.better);
+      const label = compactLabels ? `A${String(index + 1).padStart(2, "0")}` : item.name;
+      const labelWidth = compactLabels ? 28 : Math.min(150, Math.max(52, label.length * 12));
+      const candidates = compactLabels
+        ? [10, 18, 28, 40, 54, 70, 88].flatMap((radius) => [0, 45, 90, 135, 180, 225, 270, 315].map((angle) => {
+            const rad = angle * Math.PI / 180;
+            return { x: pointX + Math.cos(rad) * radius, y: pointY + Math.sin(rad) * radius };
+          }))
+        : [{ x: pointX + 10, y: pointY }];
+      let box = null;
+      for (const candidate of candidates) {
+        const next = {
+          x: Math.max(padding.left + 2, Math.min(width - padding.right - labelWidth, candidate.x)),
+          y: Math.max(padding.top + 12, Math.min(padding.top + chartHeight - 4, candidate.y)),
+          w: labelWidth,
+          h: 13
+        };
+        if (!occupiedLabels.some((entry) => overlaps(next, entry))) { box = next; break; }
+      }
+      box ||= { x: Math.min(width - padding.right - labelWidth, pointX + 8), y: pointY, w: labelWidth, h: 13 };
+      occupiedLabels.push(box);
+      return `
+        <g>
+          <circle cx="${pointX}" cy="${pointY}" r="6" fill="${colors[item.classification] || colors["无差异属性"]}" stroke="#fff" stroke-width="2" />
+          <text x="${box.x}" y="${box.y}" font-size="${compactLabels ? 9 : 11}" font-weight="700" fill="#314253">${escapeHtml(label)}</text>
+          <title>${escapeHtml(item.name)} · Better ${item.better.toFixed(2)} · Worse ${item.worse.toFixed(2)}</title>
+        </g>`;
+    })
     .join("");
 
   return `
@@ -6997,8 +7032,10 @@ function renderKanoChart(items) {
         <text x="18" y="${padding.top + chartHeight / 2}" font-size="13" font-weight="800" fill="#314253" transform="rotate(-90 18 ${padding.top + chartHeight / 2})">Better 系数</text>
         <line x1="${padding.left}" y1="${padding.top + chartHeight}" x2="${width - padding.right}" y2="${padding.top + chartHeight}" stroke="#b7b7b7" />
         <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartHeight}" stroke="#b7b7b7" />
-        <line x1="${x(0.5)}" y1="${padding.top}" x2="${x(0.5)}" y2="${padding.top + chartHeight}" stroke="#d9e2ea" stroke-dasharray="5 5" />
-        <line x1="${padding.left}" y1="${y(0.5)}" x2="${width - padding.right}" y2="${y(0.5)}" stroke="#d9e2ea" stroke-dasharray="5 5" />
+        <line x1="${x(meanWorse)}" y1="${padding.top}" x2="${x(meanWorse)}" y2="${padding.top + chartHeight}" stroke="#8fa3b8" stroke-width="1.5" />
+        <line x1="${padding.left}" y1="${y(meanBetter)}" x2="${width - padding.right}" y2="${y(meanBetter)}" stroke="#8fa3b8" stroke-width="1.5" />
+        <text x="${x(meanWorse) + 5}" y="${padding.top + chartHeight - 7}" font-size="10" font-weight="700" fill="#64748b">Worse 均值 ${meanWorse.toFixed(2)}</text>
+        <text x="${padding.left + 6}" y="${y(meanBetter) - 6}" font-size="10" font-weight="700" fill="#64748b">Better 均值 ${meanBetter.toFixed(2)}</text>
         ${quadrantLabels}
         ${[0, 0.25, 0.5, 0.75, 1].map((tick) => `
           <text x="${x(tick)}" y="${height - 34}" text-anchor="middle" font-size="12" fill="#555">${tick.toFixed(2).replace("0.", ".")}</text>
@@ -7073,6 +7110,7 @@ function runKanoAnalysis() {
         <strong>Better-Worse 图</strong>
         <span class="issue-tag low">图表</span>
       </div>
+      ${items.length > 20 ? `<p class="panel-note">点位使用 A01、A02…编号，并按上方明细表顺序与完整属性名称一一对应；悬停点位也可查看完整名称。</p>` : ""}
       ${renderKanoChart(items)}
     </article>
   `;
@@ -12836,6 +12874,12 @@ function renderAiReportImportState(text, filename) {
 function detectAiReportFields() {
   const rawText = document.querySelector("#aiReportData").value;
 
+  return sheets;
+}
+
+async function xlsxToDelimitedTableText(arrayBuffer) {
+  const sheets = await xlsxToWorkbookSheets(arrayBuffer);
+
   // --- Crosstab format detection ---
   if (rawText.startsWith("[CROSSTAB]")) {
     const crosstabText = rawText.slice("[CROSSTAB]".length).trim();
@@ -13102,21 +13146,71 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     function updatePptxWorkflowActions(plan = editedPagePlan) {
       const workflow = plan?.report_workflow || selectedPptxReportWorkflow();
       const isResearch = workflow === "research";
+      const hasNarrativeBlueprint = isResearch && plan?.ai_enhancement === "narrative";
       if (previewBtn) {
         previewBtn.textContent = isResearch ? "AI 规划报告结构" : "预览快速报告结构";
       }
       if (aiWriteBtn) {
         aiWriteBtn.textContent = isResearch
-          ? (plan?.ai_enhancement === "narrative" ? "重新生成故事线" : "生成核心观点与章节逻辑")
+          ? (hasNarrativeBlueprint ? "重新生成故事线" : "生成核心观点与章节逻辑")
           : (plan?.ai_enhancement === "copy" ? "重新 AI 写作并生成 PPT" : "AI 写作并生成 PPT");
-        aiWriteBtn.classList.toggle("primary-btn", isResearch);
-        aiWriteBtn.classList.toggle("secondary-btn", !isResearch);
+        aiWriteBtn.classList.toggle("primary-btn", isResearch && !hasNarrativeBlueprint);
+        aiWriteBtn.classList.toggle("secondary-btn", !isResearch || hasNarrativeBlueprint);
       }
       if (confirmBtn) {
-        confirmBtn.textContent = isResearch ? "不使用故事线，直接生成 PPT" : "直接生成 PPT";
-        confirmBtn.classList.toggle("primary-btn", !isResearch);
-        confirmBtn.classList.toggle("secondary-btn", isResearch);
+        confirmBtn.textContent = isResearch
+          ? (hasNarrativeBlueprint ? "确认蓝图并生成 PPT" : "不使用故事线，直接生成 PPT")
+          : "直接生成 PPT";
+        confirmBtn.classList.toggle("primary-btn", !isResearch || hasNarrativeBlueprint);
+        confirmBtn.classList.toggle("secondary-btn", isResearch && !hasNarrativeBlueprint);
       }
+    }
+
+    function getPptxOutputPageProjection(plan = editedPagePlan) {
+      const pages = Array.isArray(plan?.pages) ? plan.pages : [];
+      const hasFindings = Array.isArray(plan?.global_findings)
+        ? plan.global_findings.length > 0
+        : pages.length > 0;
+      const hasOpportunity = Array.isArray(plan?.data_facts) && plan.data_facts.some((fact) =>
+        ["segment_gap", "benchmark_gap", "bottom_rank"].includes(fact?.fact_type)
+        && fact?.value !== null
+        && fact?.value !== undefined
+      );
+      const hasRecommendations = hasFindings;
+      const hasAppendix = Number(plan?.appendix?.count || 0) > 0;
+      const preContentPages = 4 + (hasFindings ? 1 : 0);
+      let previousChapter = null;
+      let sectionPages = 0;
+      const contentSlideNumbers = pages.map((page, index) => {
+        const chapter = String(page?.chapter || "其他研究");
+        if (chapter !== previousChapter) {
+          sectionPages += 1;
+          previousChapter = chapter;
+        }
+        return preContentPages + sectionPages + index + 1;
+      });
+      const fixedSystemPages = preContentPages
+        + (hasOpportunity ? 1 : 0)
+        + (hasRecommendations ? 1 : 0)
+        + (hasAppendix ? 1 : 0);
+      const systemPageLabels = [
+        "封面",
+        "目录",
+        "执行摘要",
+        "研究概览",
+        ...(hasFindings ? ["核心发现总览"] : []),
+        ...(hasOpportunity ? ["优先机会"] : []),
+        ...(hasRecommendations ? ["行动建议"] : []),
+        ...(hasAppendix ? ["附录"] : []),
+      ];
+      return {
+        analysisPages: pages.length,
+        sectionPages,
+        fixedSystemPages,
+        totalPages: pages.length + sectionPages + fixedSystemPages,
+        contentSlideNumbers,
+        systemPageLabels,
+      };
     }
 
     function setPptxCancelState(active) {
@@ -13974,9 +14068,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         persistSlideBriefBlueprint().catch((error) => showToast(error.message, "warning"));
         if (previewPanel) previewPanel.style.display = "";
         const isResearchWorkflow = pagePlan.report_workflow === "research";
+        const projection = getPptxOutputPageProjection(pagePlan);
         genStatus.textContent = isResearchWorkflow
-          ? `第一步完成：AI 已规划 ${pagePlan.total_pages} 页（${pagePlan.renderable_questions} 道可渲染题）。下一步请点击“生成核心观点与章节逻辑”。`
-          : `快速报告结构已准备：共 ${pagePlan.total_pages} 页（${pagePlan.renderable_questions} 道可渲染题）。可直接生成 PPT，或先让 AI 写作并自动导出。`;
+          ? `第一步完成：AI 已规划 ${projection.analysisPages} 个分析页；加上 ${projection.sectionPages} 个章节页和 ${projection.fixedSystemPages} 个系统页，最终 PPT 预计 ${projection.totalPages} 页（${pagePlan.renderable_questions} 道可渲染题）。下一步请点击“生成核心观点与章节逻辑”。`
+          : `快速报告结构已准备：${projection.analysisPages} 个分析页；最终 PPT 预计 ${projection.totalPages} 页（含 ${projection.sectionPages} 个章节页、${projection.fixedSystemPages} 个系统页）。可直接生成 PPT，或先让 AI 写作并自动导出。`;
         // Scroll to preview panel
         previewPanel && previewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (err) {
@@ -14438,27 +14533,35 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         }
       });
 
-      const chapterGroups = new Map();
+      const outputProjection = getPptxOutputPageProjection(plan);
+      plan.output_total_pages = outputProjection.totalPages;
+      const chapterGroups = [];
       pages.forEach((page, idx) => {
         const chapterName = page.chapter || "其他研究";
-        if (!chapterGroups.has(chapterName)) chapterGroups.set(chapterName, []);
-        chapterGroups.get(chapterName).push({ page, idx });
+        let group = chapterGroups[chapterGroups.length - 1];
+        if (!group || group.name !== chapterName) {
+          group = { name: chapterName, items: [] };
+          chapterGroups.push(group);
+        }
+        group.items.push({ page, idx });
       });
+      const uniqueChapterNames = Array.from(new Set(chapterGroups.map((group) => group.name)));
+
 
       const catalog = getPptxQuestionCatalog(plan);
       const assignedCodes = new Set(pages.flatMap((page) => (page.questions || []).map((question) => question.code)));
       const unassignedQuestions = catalog.filter((question) => !assignedCodes.has(question.code));
-      let html = `${renderPptxQuestionDropDock()}<div class="pptx-plan-toolbar">
+      let html = `<div class="pptx-output-projection"><div><strong>最终 PPT 预计 ${outputProjection.totalPages} 页</strong><span>${outputProjection.analysisPages} 个分析页 + ${outputProjection.sectionPages} 个章节页 + ${outputProjection.fixedSystemPages} 个系统页</span></div><small>系统页：${outputProjection.systemPageLabels.join("、")}</small></div>${renderPptxQuestionDropDock()}<div class="pptx-plan-toolbar">
         <strong>页面题目覆盖：${assignedCodes.size}/${catalog.length}</strong>
         <span>${catalog.length - assignedCodes.size} 道题尚未安排 · 可拖动页面排序，也可直接拖动题目标签到其他页面。</span>
       </div><div class="pptx-editor-shell"><aside class="pptx-editor-outline">
-        <strong>报告目录</strong>
-        ${Array.from(chapterGroups.entries()).map(([name, items], chapterIndex) => `<button type="button" data-pptx-action="scroll-chapter" data-target-chapter="chapter-${chapterIndex}"><span>${chapterIndex + 1}</span><b>${escapeHtml(name)}</b><small>${items.length}页</small></button>`).join("")}
+        <strong>报告目录（按实际顺序）</strong>
+        ${chapterGroups.map(({ name, items }, chapterIndex) => `<button type="button" data-pptx-action="scroll-chapter" data-target-chapter="chapter-${chapterIndex}"><span>${chapterIndex + 1}</span><b>${escapeHtml(name)}</b><small>${items.length}页</small></button>`).join("")}
         ${unassignedQuestions.length ? `<div class="pptx-unassigned-bank"><strong>未安排题目（${unassignedQuestions.length}）</strong>${unassignedQuestions.slice(0, 30).map((question) => `<span class="pptx-question-chip" draggable="true" data-question-code="${escapeHtml(question.code)}" data-source-index="-1" title="${escapeHtml(question.title || question.code)}">${escapeHtml(question.code)}</span>`).join("")}${unassignedQuestions.length > 30 ? `<small>另有 ${unassignedQuestions.length - 30} 题，请用“调整题目”搜索</small>` : ""}</div>` : ""}
         <p>拖动页面可调整顺序或切换章节；拖动题号可移动题目。</p>
       </aside><div class="pptx-preview-chapters">`;
       let chapterIndex = 0;
-      chapterGroups.forEach((items, chapterName) => {
+      chapterGroups.forEach(({ name: chapterName, items }) => {
         const chapterDims = items[0]?.page?.selected_dimensions || ["总体"];
         const eligibleChapterPages = items.filter(({ page }) => isPptxChapterChartEligible(page));
         const chapterChartTypes = new Set(
@@ -14511,7 +14614,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           html += `<details class="pptx-preview-page" data-page-index="${idx}">
             <summary>
               <span class="pptx-page-drag-handle" draggable="true" title="拖动页面排序" aria-label="拖动第 ${p.page_idx} 页排序">⋮⋮</span>
-              <span class="pptx-preview-page-number">第 ${p.page_idx} 页</span>
+              <span class="pptx-preview-page-number">分析页 ${p.page_idx}</span>
+              <span class="pptx-preview-output-number">PPT 第 ${outputProjection.contentSlideNumbers[idx]} 页</span>
               <span class="pptx-preview-page-title">${escapeHtml(p.insight_override || brief.title || p.title || "未命名页面")}</span>
               <span class="pptx-preview-page-type">${escapeHtml(typeLabel || "自动匹配")}</span>
               ${brief.user_modified ? `<span class="pptx-brief-badge modified">用户已修改</span>` : ""}
@@ -14567,7 +14671,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               <label class="pptx-preview-field">
                 <span>所属章节</span>
                 <select data-preview-idx="${idx}" data-field="chapter">
-                  ${Array.from(chapterGroups.keys()).map((name) => `<option value="${escapeHtml(name)}" ${name === (p.chapter || "其他研究") ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+                  ${uniqueChapterNames.map((name) => `<option value="${escapeHtml(name)}" ${name === (p.chapter || "其他研究") ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
                 </select>
               </label>
               <div class="pptx-preview-field pptx-preview-field-wide">
@@ -15857,8 +15961,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const performanceText = stats
           ? `；耗时 ${stats.elapsed_seconds.toFixed(1)} 秒，${stats.batch_count} 批/并发 ${stats.concurrency}${stats.retried_pages ? `，补写 ${stats.retried_pages} 页` : ""}${stats.failed_pages ? `，${stats.failed_pages} 页降级` : ""}`
           : "";
+        const narrativeProjection = getPptxOutputPageProjection(editedPagePlan);
         const message = pendingReportNarrative
-          ? `故事线已写入当前 ${editedPagePlan.pages.length} 页，页数与顺序保持不变；AI 更新 ${applied} 页，人工修改或锁定页均已保留${performanceText}。`
+          ? `故事线已写入 ${narrativeProjection.analysisPages} 个分析页，形成 ${narrativeProjection.sectionPages} 个连续章节段；最终 PPT 预计 ${narrativeProjection.totalPages} 页。AI 更新 ${applied} 页，人工修改或锁定页均已保留${performanceText}。`
           : "Report Narrative 不可用，已保留当前确定性蓝图，可继续编辑或生成 PPT。";
         aiWriteStatus.textContent = message;
         if (confirmStatus) confirmStatus.textContent = message;
@@ -15999,8 +16104,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const qaDetailHtml = qaIssues.length
           ? `<details class="pptx-qa-details"><summary>查看对象 QA 明细（涉及 ${(qa.slides_with_issues || []).length || new Set(qaIssues.map((issue) => issue.slide).filter(Boolean)).size} 页）</summary><ul>${qaIssues.slice(0, 30).map((issue) => `<li><b>第 ${Number(issue.slide || 0) || "?"} 页</b> · ${escapeHtml(qaLabels[issue.code] || issue.code || "未知问题")} · ${issue.level === "error" ? "错误" : "提醒"}</li>`).join("")}</ul>${qaIssues.length > 30 ? `<small>另有 ${qaIssues.length - 30} 项未展开，请下载后按页检查。</small>` : ""}</details>`
           : `<span>对象 QA 未发现结构问题。</span>`;
+        const outputProjection = getPptxOutputPageProjection(editedPagePlan);
+        const actualSlideCount = Number(qa.slide_count || 0);
+        const pageCountMatched = actualSlideCount > 0 && actualSlideCount === outputProjection.totalPages;
+        const pageCountText = actualSlideCount > 0
+          ? `蓝图预计 ${outputProjection.totalPages} 页 / PPT 实际 ${actualSlideCount} 页${pageCountMatched ? " ✓" : "，请检查章节过渡页"}`
+          : `蓝图预计 ${outputProjection.totalPages} 页 / PPT 实际页数待核对`;
         const workflowLabel = editedPagePlan?.report_workflow === "research" ? "AI 研究报告" : "快速报告";
-        resultEl.innerHTML = `<div class="empty-state"><strong>${workflowLabel}生成成功</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span><span>综合QA：${Number(readyState.overall_score ?? qa.score ?? 0)}分 · 对象级 ${qaErrors}项错误 / ${qaWarnings}项提醒</span>${qaDetailHtml}</div>`;
+        resultEl.innerHTML = `<div class="empty-state"><strong>${workflowLabel}生成成功</strong><span>报告已下载：${escapeHtml(title)}.pptx（${Math.round(blob.size / 1024)} KB）</span><span class="pptx-page-count-check ${pageCountMatched ? "matched" : "warning"}">${pageCountText}</span><span>综合QA：${Number(readyState.overall_score ?? qa.score ?? 0)}分 · 对象级 ${qaErrors}项错误 / ${qaWarnings}项提醒</span>${qaDetailHtml}</div>`;
         if (aiWriteBtn) aiWriteBtn.disabled = false;
         if (aiWriteStatus) aiWriteStatus.textContent = isAiEnhanced
           ? (editedPagePlan?.ai_enhancement === "narrative"
@@ -16195,6 +16306,163 @@ document.querySelectorAll(".ai-report-advanced-toggle").forEach((toggle) => {
   });
 });
 
+function worksheetByName(sheets, pattern) {
+  return sheets.find((sheet) => pattern.test(String(sheet.name || ""))) || null;
+}
+
+function rowsToCsvText(rows) {
+  return rows
+    .filter((row) => row.some((cell) => String(cell ?? "").trim()))
+    .map((row) => row.map(csvCell).join(","))
+    .join("\n");
+}
+
+function kanoResponseIndex(value) {
+  const match = String(value ?? "").trim().match(/^[1-5]/);
+  if (!match) return -1;
+  return 5 - Number(match[0]);
+}
+
+function classifyKanoPair(functional, dysfunctional) {
+  const f = kanoResponseIndex(functional);
+  const d = kanoResponseIndex(dysfunctional);
+  if (f < 0 || d < 0) return null;
+  const matrix = [
+    ["Q", "A", "A", "A", "O"],
+    ["R", "I", "I", "I", "M"],
+    ["R", "I", "I", "I", "M"],
+    ["R", "I", "I", "I", "M"],
+    ["R", "R", "R", "R", "Q"]
+  ];
+  return matrix[f][d];
+}
+
+function kanoFeatureNames(sheets) {
+  const names = {};
+  const metadata = worksheetByName(sheets, /feature|属性|题目/i);
+  if (metadata?.rows?.length > 1) {
+    metadata.rows.slice(1).forEach((row) => {
+      const id = String(row[0] || "").match(/A?(\d+)/i)?.[1];
+      if (id && row[1]) names[id] = String(row[1]).trim();
+    });
+  }
+  const code = worksheetByName(sheets, /^code$|编码|码表/i);
+  code?.rows?.forEach((row) => {
+    const text = String(row[1] ?? row[0] ?? "").trim();
+    const match = text.match(/^A(\d+)\.\s*(?:A\d+\.)?\s*(.*?)(?:【|$)/i);
+    if (match && match[2]) names[match[1]] = match[2].trim();
+  });
+  return names;
+}
+
+function kanoSummaryFromRawWorkbook(sheets) {
+  const data = worksheetByName(sheets, /^data$|数据|response|答卷/i) || sheets[0];
+  if (!data?.rows?.length) return [];
+  const headers = data.rows[0].map((cell) => String(cell || "").trim());
+  const pairs = new Map();
+  headers.forEach((header, index) => {
+    const match = header.match(/^A(\d+)__(1|2)$/i);
+    if (!match) return;
+    const entry = pairs.get(match[1]) || { id: match[1] };
+    entry[match[2]] = index;
+    pairs.set(match[1], entry);
+  });
+  const names = kanoFeatureNames(sheets);
+  return [...pairs.values()]
+    .filter((pair) => Number.isInteger(pair["1"]) && Number.isInteger(pair["2"]))
+    .sort((a, b) => Number(a.id) - Number(b.id))
+    .map((pair) => {
+      const counts = { A: 0, O: 0, M: 0, I: 0, R: 0, Q: 0 };
+      data.rows.slice(1).forEach((row) => {
+        const category = classifyKanoPair(row[pair["1"]], row[pair["2"]]);
+        if (category) counts[category] += 1;
+      });
+      return { id: pair.id, name: names[pair.id] || `A${pair.id}`, ...counts };
+    })
+    .filter((item) => item.A + item.O + item.M + item.I + item.R + item.Q > 0);
+}
+
+function importKanoWorkbook(sheets) {
+  const raw = kanoSummaryFromRawWorkbook(sheets);
+  if (raw.length) {
+    document.querySelector("#kanoData").value = raw
+      .map((item) => [item.name, item.A, item.O, item.M, item.I, item.R, item.Q].join(","))
+      .join("\n");
+    runKanoAnalysis();
+    return `${raw.length} 个 KANO 功能项（原始正反向题）`;
+  }
+  const sheet = worksheetByName(sheets, /summary|汇总|kano/i) || sheets[0];
+  const rows = sheet?.rows || [];
+  const start = rows.length && rows[0].some((cell) => /属性|feature|魅力|attractive/i.test(String(cell || ""))) ? 1 : 0;
+  document.querySelector("#kanoData").value = rowsToCsvText(rows.slice(start).map((row) => row.slice(0, 7)));
+  runKanoAnalysis();
+  return `${Math.max(0, rows.length - start)} 个 KANO 汇总项`;
+}
+
+function dataRowsWithoutHeader(rows, pattern) {
+  if (!rows.length) return [];
+  return rows[0].some((cell) => pattern.test(String(cell || ""))) ? rows.slice(1) : rows;
+}
+
+async function handleResearchModelExcelImport(file, model) {
+  if (!file) return;
+  const sheets = await xlsxToWorkbookSheets(await file.arrayBuffer());
+  if (!sheets.length) throw new Error("Excel 中没有可读取的工作表");
+  let detail = "";
+  if (model === "kano") {
+    detail = importKanoWorkbook(sheets);
+  } else if (model === "psm") {
+    const rows = dataRowsWithoutHeader((worksheetByName(sheets, /^data$|数据/i) || sheets[0]).rows, /太便宜|too.?cheap|受访者|respondent/i);
+    const values = rows.map((row) => row.length >= 5 ? row.slice(-4) : row.slice(0, 4));
+    document.querySelector("#psmData").value = rowsToCsvText(values);
+    runPsmAnalysis();
+    detail = `${values.length} 行 PSM 数据`;
+  } else if (model === "driver") {
+    const rows = (worksheetByName(sheets, /^data$|数据/i) || sheets[0]).rows;
+    document.querySelector("#driverData").value = rowsToCsvText(rows);
+    renderDriverAnalysis();
+    detail = `${Math.max(0, rows.length - 1)} 行驱动分析数据`;
+  } else if (model === "turf") {
+    const rows = (worksheetByName(sheets, /^data$|数据/i) || sheets[0]).rows;
+    document.querySelector("#turfData").value = rowsToCsvText(rows);
+    renderTurf();
+    detail = `${Math.max(0, rows.length - 1)} 行 TURF 数据`;
+  } else if (model === "conjoint") {
+    const attrRows = (worksheetByName(sheets, /attributes|属性/i) || sheets[0]).rows;
+    const choiceRows = (worksheetByName(sheets, /choices|选择/i) || sheets[1] || sheets[0]).rows;
+    document.querySelector("#conjointAttributes").value = rowsToCsvText(dataRowsWithoutHeader(attrRows, /属性|attribute/i));
+    document.querySelector("#conjointChoices").value = rowsToCsvText(choiceRows);
+    renderConjoint();
+    detail = `${Math.max(0, choiceRows.length - 1)} 行联合分析选择数据`;
+  } else if (model === "maxdiff") {
+    const itemRows = (worksheetByName(sheets, /^items$|项目/i) || sheets[0]).rows;
+    const scoreRows = (worksheetByName(sheets, /score|计分|汇总/i) || sheets[1])?.rows || [];
+    const responseRows = (worksheetByName(sheets, /response|响应/i) || sheets[2])?.rows || [];
+    document.querySelector("#maxdiffItems").value = dataRowsWithoutHeader(itemRows, /项目|item/i).map((row) => row[0]).filter(Boolean).join("\n");
+    document.querySelector("#maxdiffScoreData").value = rowsToCsvText(dataRowsWithoutHeader(scoreRows, /项目|item|最佳|best/i));
+    document.querySelector("#maxdiffResponses").value = rowsToCsvText(dataRowsWithoutHeader(responseRows, /受访者|respondent|resp/i));
+    if (document.querySelector("#maxdiffScoreData").value.trim()) renderMaxDiffScore();
+    detail = "MaxDiff 项目、汇总计分与原始响应数据";
+  }
+  markWorkspaceStatus("models");
+  showToast(`已导入 ${detail}`, "success", 3600);
+}
+
+let pendingResearchModelImport = "";
+document.querySelectorAll("[data-model-import]").forEach((button) => {
+  button.addEventListener("click", () => {
+    pendingResearchModelImport = button.dataset.modelImport || "";
+    const input = document.querySelector("#researchModelExcelInput");
+    if (input) { input.value = ""; input.click(); }
+  });
+});
+document.querySelector("#researchModelExcelInput")?.addEventListener("change", async (event) => {
+  try {
+    await handleResearchModelExcelImport(event.target.files?.[0], pendingResearchModelImport);
+  } catch (error) {
+    showToast(`Excel 导入失败：${error.message || error}`, "error", 4800);
+  }
+});
 document.querySelector("#runPsm").addEventListener("click", () => {
   runPsmAnalysis();
   if (lastPsmAnalysis) markWorkspaceStatus("models");

@@ -25,5 +25,9 @@ assert.match(app, /model_type: modelType/);
 assert.match(backend, /@app\.post\("\/api\/pptx-report\/model-chart"\)/);
 assert.doesNotMatch(app, /exportSvgChartAsPng/);
 assert.doesNotMatch(html, /导出图表 PNG|导出 PNG/);
+assert.equal((html.match(/下载 Excel 模板/g) || []).length, 6);
+assert.match(app, /kanoSummaryFromRawWorkbook/);
+assert.match(app, /meanWorse/);
+assert.match(app, /meanBetter/);
 
 console.log("editable model chart PPTX UI/API smoke: ok");

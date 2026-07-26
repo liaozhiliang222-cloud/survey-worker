@@ -229,15 +229,30 @@
   function chapterForPage(page, reportNarrative, allPages) {
     const chapters = reportNarrative?.chapters || [];
     if (!chapters.length) return { chapter: null, index: -1 };
-    const pageChapter = String(page?.chapter || "");
-    const pageChapterId = String(page?.chapter_id || "");
-    let index = chapters.findIndex((chapter) =>
-      (pageChapterId && String(chapter.chapter_id || "") === pageChapterId)
-      || (pageChapter && String(chapter.title || "") === pageChapter)
+    const pages = allPages || [];
+    const pageChapterOrder = uniqueStrings(pages.map((item) => item.chapter || "其他研究"));
+    const directIndex = (item) => {
+      const itemChapter = String(item?.chapter || "");
+      const itemChapterId = String(item?.chapter_id || item?.slide_brief?.chapter_id || "");
+      const exactIndex = chapters.findIndex((chapter) =>
+        (itemChapterId && String(chapter.chapter_id || "") === itemChapterId)
+        || (itemChapter && String(chapter.title || "") === itemChapter)
+      );
+      if (exactIndex >= 0) return exactIndex;
+      return Math.min(
+        Math.max(0, pageChapterOrder.indexOf(itemChapter)),
+        chapters.length - 1,
+      );
+    };
+    const pagePosition = pages.findIndex((item) =>
+      item === page || Number(item?.page_idx) === Number(page?.page_idx)
     );
-    if (index < 0) {
-      const pageChapterOrder = uniqueStrings((allPages || []).map((item) => item.chapter || "其他研究"));
-      index = Math.min(Math.max(0, pageChapterOrder.indexOf(pageChapter)), chapters.length - 1);
+    let index = directIndex(page);
+    if (pagePosition >= 0) {
+      index = pages.slice(0, pagePosition + 1).reduce(
+        (highest, item) => Math.max(highest, directIndex(item)),
+        0,
+      );
     }
     return { chapter: chapters[index], index };
   }

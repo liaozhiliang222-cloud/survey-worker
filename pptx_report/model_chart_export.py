@@ -115,6 +115,27 @@ def _add_panel(slide, x: float, y: float, w: float, h: float) -> None:
     shape.line.width = Pt(0.8)
 
 
+def _add_badge(slide, text: str, x: float, y: float, w: float, color: str) -> None:
+    shape = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(0.28)
+    )
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = _rgb(color)
+    shape.line.fill.background()
+    _add_text(slide, text, x + 0.03, y + 0.01, w - 0.06, 0.24, size=8.5, bold=True, color=COLORS["white"], align=PP_ALIGN.CENTER)
+
+
+def _add_matrix_line(slide, x: float, y: float, w: float, h: float) -> None:
+    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = _rgb("8FA3B8")
+    shape.line.fill.background()
+
+
+def _short_label(value: Any, limit: int = 16) -> str:
+    text = str(value or "").strip()
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
 def _add_kpis(slide, title: str, entries: Iterable[tuple[str, Any]]) -> None:
     x, y, w = 10.25, 1.38, 2.43
     _add_text(slide, title, x, y, w, 0.35, size=13, bold=True, color=COLORS["navy"])
@@ -251,14 +272,14 @@ def _render_psm(slide, payload: dict[str, Any]) -> None:
 
 
 def _render_kano(slide, payload: Any) -> None:
-    rows = _rows(payload, limit=40)
+    rows = _rows(payload, limit=80)
     valid = []
     for row in rows:
         better = _number(row.get("better"))
         worse = _number(row.get("worse"))
         name = str(row.get("name") or "").strip()
         if name and better is not None and worse is not None:
-            valid.append({**row, "name": name, "better": better, "worse": worse})
+            valid.append({**row, "name": name, "better": better, "worse": worse, "_code": f"A{len(valid) + 1:02d}"})
     if not valid:
         raise ModelChartExportError("KANO data requires name, better, and worse")
 
@@ -306,16 +327,64 @@ def _render_kano(slide, payload: Any) -> None:
         series.format.fill.fore_color.rgb = _rgb(color)
         series.format.line.fill.background()
 
+    mean_worse = sum(abs(float(row["worse"])) for row in valid) / len(valid)
+    mean_better = sum(float(row["better"]) for row in valid) / len(valid)
+    plot_left, plot_top, plot_width, plot_height = 1.46, 1.91, 7.70, 3.92
+    line_x = plot_left + mean_worse * plot_width
+    line_y = plot_top + (1.0 - mean_better) * plot_height
+    _add_matrix_line(slide, line_x, plot_top, 0.018, plot_height)
+    _add_matrix_line(slide, plot_left, line_y, plot_width, 0.018)
+    _add_text(slide, f"Worse 均值 {mean_worse:.2f}", line_x + 0.05, plot_top + plot_height - 0.22, 1.18, 0.18, size=7, bold=True, color=COLORS["muted"])
+    _add_text(slide, f"Better 均值 {mean_better:.2f}", plot_left + 0.05, line_y - 0.22, 1.18, 0.18, size=7, bold=True, color=COLORS["muted"])
+    _add_badge(slide, "魅力属性", plot_left + 0.05, plot_top + 0.05, 0.92, COLORS["green"])
+    _add_badge(slide, "期望属性", plot_left + plot_width - 0.97, plot_top + 0.05, 0.92, COLORS["blue"])
+    _add_badge(slide, "无差异属性", plot_left + 0.05, plot_top + plot_height - 0.33, 1.05, COLORS["muted"])
+    _add_badge(slide, "必备属性", plot_left + plot_width - 0.97, plot_top + plot_height - 0.33, 0.92, COLORS["amber"])
+
+    compact_labels = len(valid) > 20
+    occupied: list[tuple[float, float, float, float]] = []
+
+    def overlaps(box: tuple[float, float, float, float]) -> bool:
+        x1, y1, w1, h1 = box
+        return any(not (x1 + w1 <= x2 or x2 + w2 <= x1 or y1 + h1 <= y2 or y2 + h2 <= y1) for x2, y2, w2, h2 in occupied)
+
+    for row in valid:
+        px = plot_left + abs(float(row["worse"])) * plot_width
+        py = plot_top + (1.0 - float(row["better"])) * plot_height
+        label = row["_code"] if compact_labels else _short_label(row["name"])
+        label_w, label_h = (0.34, 0.14) if compact_labels else (1.10, 0.18)
+        candidates = []
+        for radius in ((0.10, 0.18, 0.28, 0.40, 0.56, 0.74, 0.94, 1.16) if compact_labels else (0.10,)):
+            for angle in (0, 45, 90, 135, 180, 225, 270, 315):
+                radians = math.radians(angle)
+                candidates.append((px + math.cos(radians) * radius, py + math.sin(radians) * radius))
+        chosen = None
+        for candidate_x, candidate_y in candidates:
+            box = (
+                max(plot_left, min(plot_left + plot_width - label_w, candidate_x)),
+                max(plot_top, min(plot_top + plot_height - label_h, candidate_y)),
+                label_w,
+                label_h,
+            )
+            if not overlaps(box):
+                chosen = box
+                break
+        chosen = chosen or (max(plot_left, min(plot_left + plot_width - label_w, px + 0.08)), py, label_w, label_h)
+        occupied.append(chosen)
+        _add_text(
+            slide, label, *chosen, size=5.8 if compact_labels else 8.2,
+            bold=True, color=COLORS["ink"], align=PP_ALIGN.CENTER if compact_labels else PP_ALIGN.LEFT,
+        )
     ranked = sorted(valid, key=lambda row: abs(float(row["worse"])) + float(row["better"]), reverse=True)
     entries = [
         (
-            str(row.get("name")),
+            f"{row.get('_code')} · {_short_label(row.get('name'), 10)}",
             f"B {float(row['better']):.2f} · W {float(row['worse']):.2f}",
         )
         for row in ranked[:5]
     ]
     _add_kpis(slide, "重点属性坐标", entries)
-    _add_footer(slide, f"KANO · {len(valid)} 个属性")
+    _add_footer(slide, f"KANO · {len(valid)} 个属性 · 象限交叉线为有效属性系数均值" + (" · A01 起按导入顺序编号" if compact_labels else ""))
 
 
 def _add_bar_chart(
