@@ -6,7 +6,8 @@ const source = readFileSync(new URL("../ppt-report-ai.js", import.meta.url), "ut
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 assert.ok(html.indexOf("ppt-report-ai.js") < html.indexOf("app.js"), "PPT AI module must load before app.js.");
 assert.match(html, /id="pptxNarrativePanel"/);
-assert.match(html, /id="pptxNarrativeConfirmBtn"[^>]*>写入当前蓝图（不重排）</);
+assert.match(html, /id="pptxNarrativeConfirmBtn"[^>]*>按故事线重构蓝图</);
+assert.doesNotMatch(html, /不改变当前页数和顺序|不重排/);
 assert.match(html, /id="pptxContinueEditBtn"/);
 assert.match(html, /id="pptxNarrativeRegenerateBtn"[^>]*>重新生成故事线</);
 assert.ok(html.indexOf('pptxNarrativeConfirmBtn') < html.indexOf('pptxNarrativeContent'), 'Narrative actions must appear before the long content.');
@@ -109,9 +110,9 @@ const reportNarrative = ai.validateReportNarrative({
   central_thesis: "年轻用户的购买阻碍主要来自价值感知与决策确定性不足，而非价格本身。",
   storyline_type: "diagnosis",
   chapters: [
-    { chapter_id: "chapter_01", title: "用户画像", purpose: "界定核心用户", key_question: "谁是核心用户？" },
-    { chapter_id: "chapter_02", title: "消费行为", purpose: "理解购买动机", key_question: "为什么购买？" },
-    { chapter_id: "chapter_03", title: "优化机会", purpose: "形成增长动作", key_question: "如何提升转化？" },
+    { chapter_id: "chapter_01", title: "用户画像", purpose: "界定核心用户", key_question: "谁是核心用户？", page_idxs: [3, 1] },
+    { chapter_id: "chapter_02", title: "消费行为", purpose: "理解购买动机", key_question: "为什么购买？", page_idxs: [2, 4] },
+    { chapter_id: "chapter_03", title: "优化机会", purpose: "形成增长动作", key_question: "如何提升转化？", page_idxs: [6, 5] },
   ],
   key_questions: ["谁是核心用户？", "为什么购买？", "如何提升转化？"],
   ending_message: "提升决策确定性比单纯降价更能推动转化。",
@@ -123,6 +124,40 @@ assert.ok(reportNarrative.central_thesis);
 assert.equal(reportNarrative.confidence, 1);
 assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /中心论点/);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /chapter_context/);
+assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /page_idxs/);
+assert.equal(reportNarrative.chapters[0].page_idxs.join(","), "3,1");
+const pagesWithStableIds = reportContext.pages.map((page, index) => ({
+  ...page,
+  slide_brief: {
+    ...(page.slide_brief || {}),
+    slide_id: "slide_" + (index + 1),
+    title: index === 2 ? "Manual title" : "",
+    user_modified: index === 2,
+    locked: false,
+  },
+}));
+const reorganizedPages = ai.organizePagesByNarrative(pagesWithStableIds, reportNarrative);
+assert.deepEqual(
+  Array.from(reorganizedPages, (page) => page.slide_brief.slide_id),
+  ["slide_3", "slide_1", "slide_2", "slide_4", "slide_6", "slide_5"],
+  "Narrative page_idxs must control final chapter and page order",
+);
+assert.deepEqual(Array.from(reorganizedPages, (page) => page.page_idx), [1, 2, 3, 4, 5, 6]);
+assert.equal(reorganizedPages[0].slide_brief.title, "Manual title");
+assert.equal(reorganizedPages[0].slide_brief.user_modified, true);
+assert.equal(reorganizedPages[0].slide_brief.chapter_id, "chapter_01");
+const narrativeWithoutAssignments = {
+  ...reportNarrative,
+  chapters: reportNarrative.chapters.map(({ page_idxs, ...chapter }) => chapter),
+};
+const fallbackOrganizedPages = ai.organizePagesByNarrative(
+  pagesWithStableIds, narrativeWithoutAssignments
+);
+assert.equal(
+  new Set(Array.from(fallbackOrganizedPages, (page) => page.chapter_id)).size,
+  reportNarrative.chapters.length,
+  "Deterministic fallback must keep every Narrative chapter represented",
+);
 
 const narrativeBatch = ai.buildPageBatchInput(
   reportContext.pages.slice(0, 3), reportNarrative, null, reportContext.pages

@@ -13274,8 +13274,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           (chapter) => chapter.title === page.chapter
         );
         page.slide_brief.chapter_id = String(
-          page.slide_brief.chapter_id
-          || narrativeChapter?.chapter_id
+          narrativeChapter?.chapter_id
+          || page.chapter_id
+          || page.slide_brief.chapter_id
           || `chapter_${String(page.chapter || "other").replace(/\s+/g, "_")}`
         );
         page.slide_brief.chapter = String(page.chapter || "其他研究");
@@ -15690,7 +15691,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         renderReportNarrative(pendingReportNarrative, outcome.error);
         if (pendingReportNarrative) {
           aiWriteBtn.textContent = "重新生成故事线";
-          aiWriteStatus.textContent = "核心观点与章节逻辑已生成。确认后仅写入当前页面蓝图，不改变页数和顺序。";
+          aiWriteStatus.textContent = "核心观点与章节逻辑已生成。确认后将按新故事线重组章节并调整页面顺序。";
           setPptxProgress(100, "核心观点与章节逻辑已生成", "AI 研究");
         } else {
           aiWriteStatus.textContent = `Report Narrative 生成失败，已启用兼容流程：${outcome.error}`;
@@ -15722,7 +15723,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const currentPlanByPage = new Map(
         (editedPagePlan.pages || []).map((page) => [Number(page.page_idx), page])
       );
-      const contextPages = (context.pages || []).map((page) => {
+      const sourceContextPages = (context.pages || []).map((page) => {
         const currentPage = currentPlanByPage.get(Number(page.page_idx));
         return {
           ...page,
@@ -15730,7 +15731,40 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           slide_brief: currentPage?.slide_brief || page.slide_brief || {},
         };
       });
+      const contextPages = aiPlanner.organizePagesByNarrative(
+        sourceContextPages, reportNarrative, { renumber: false }
+      );
       const contextByPage = new Map(contextPages.map((page) => [Number(page.page_idx), page]));
+      const applyNarrativePageOrder = () => {
+        const planBySourcePage = new Map(
+          (editedPagePlan.pages || []).map((page) => [Number(page.page_idx), page])
+        );
+        editedPagePlan.pages = contextPages.map((contextPage, index) => {
+          const page = planBySourcePage.get(Number(contextPage.page_idx));
+          if (!page) return null;
+          page.page_idx = index + 1;
+          page.chapter = contextPage.chapter;
+          page.chapter_id = contextPage.chapter_id;
+          page.slide_brief = page.slide_brief || {};
+          page.slide_brief.chapter_id = contextPage.chapter_id;
+          page.slide_brief.chapter = contextPage.chapter;
+          page.slide_brief.chapter_context = contextPage.slide_brief?.chapter_context || "";
+          if (!page.slide_brief.locked && !page.slide_brief.user_modified) {
+            page.slide_brief.question_answered = contextPage.slide_brief?.question_answered
+              || page.slide_brief.question_answered || "";
+          }
+          return page;
+        }).filter(Boolean);
+        editedPagePlan.total_pages = editedPagePlan.pages.length;
+        editedPagePlan.template_structure_reused = false;
+        editedPagePlan.template_structure_overridden_by_narrative = true;
+        (reportNarrative.chapters || []).forEach((chapter) => {
+          chapter.page_idxs = editedPagePlan.pages
+            .filter((page) => page.chapter_id === chapter.chapter_id)
+            .map((page) => Number(page.page_idx));
+        });
+        lastPptxInsightContext = null;
+      };
       const writablePages = aiPlanner.filterWritablePages(contextPages);
       const batches = aiPlanner.chunkPagesByChapter(writablePages, aiPlanner.DEFAULT_BATCH_SIZE);
       const concurrency = aiPlanner.SLIDE_BRIEF_CONCURRENCY;
@@ -15761,6 +15795,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         editedPagePlan.report_workflow = "research";
         editedPagePlan.ai_enhancement = "narrative";
         editedPagePlan.planning_mode = editedPagePlan.page_planning_mode || "ai";
+        applyNarrativePageOrder();
         ensureStableSlideBriefs();
         renderPreviewTable(editedPagePlan);
         return 0;
@@ -15828,8 +15863,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         },
         (completed, total) => {
           const briefProgress = 10 + (completed / Math.max(1, total)) * 80;
-          setPptxProgress(briefProgress, `正在写入当前蓝图：${completed}/${total} 批`, "AI 蓝图");
-          aiWriteStatus.textContent = `正在写入当前蓝图 ${completed}/${total} 批（每批最多 ${aiPlanner.DEFAULT_BATCH_SIZE} 页，并发 ${concurrency}）…`;
+          setPptxProgress(briefProgress, `正在按故事线重构蓝图：${completed}/${total} 批`, "AI 蓝图");
+          aiWriteStatus.textContent = `正在按新章节生成并重排蓝图 ${completed}/${total} 批（每批最多 ${aiPlanner.DEFAULT_BATCH_SIZE} 页，并发 ${concurrency}）…`;
         }
       );
 
@@ -15899,6 +15934,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       editedPagePlan.report_workflow = "research";
       editedPagePlan.ai_enhancement = "narrative";
       editedPagePlan.planning_mode = editedPagePlan.page_planning_mode || "ai";
+      applyNarrativePageOrder();
       ensureStableSlideBriefs();
       renderPreviewTable(editedPagePlan);
 
@@ -16071,10 +16107,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (confirmBtn) confirmBtn.disabled = true;
       progress.classList.remove("hidden");
       setPptxCancelState(false);
-      setPptxProgress(5, "准备把故事线写入当前蓝图（不重排）", "AI 蓝图");
-      const originalOrder = editedPagePlan.pages.map(
-        (page) => page.slide_brief?.slide_id || `page_${page.page_idx}`
-      );
+      setPptxProgress(5, "准备按故事线重组章节与页面顺序", "AI 蓝图");
       try {
         let applied = 0;
         if (pendingReportNarrative) {
@@ -16083,13 +16116,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           ensureStableSlideBriefs();
           renderPreviewTable(editedPagePlan);
         }
-        const currentOrder = editedPagePlan.pages.map(
-          (page) => page.slide_brief?.slide_id || `page_${page.page_idx}`
-        );
-        if (JSON.stringify(currentOrder) !== JSON.stringify(originalOrder)) {
-          throw new Error("写入故事线时页面顺序发生变化，已停止保存。");
-        }
-        setPptxProgress(94, "页面标题与结论已更新，正在保存", "AI 蓝图");
+        setPptxProgress(94, "章节与页面顺序已重组，正在保存", "AI 蓝图");
         await persistSlideBriefBlueprint();
         const stats = lastPptxSlideBriefStats;
         const performanceText = stats
@@ -16097,11 +16124,11 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           : "";
         const narrativeProjection = getPptxOutputPageProjection(editedPagePlan);
         const message = pendingReportNarrative
-          ? `故事线已写入 ${narrativeProjection.analysisPages} 个分析页，形成 ${narrativeProjection.sectionPages} 个连续章节段；最终 PPT 预计 ${narrativeProjection.totalPages} 页。AI 更新 ${applied} 页，人工修改或锁定页均已保留${performanceText}。`
+          ? `已按故事线重组 ${narrativeProjection.analysisPages} 个分析页，形成 ${narrativeProjection.sectionPages} 个连续章节；最终 PPT 预计 ${narrativeProjection.totalPages} 页。AI 更新 ${applied} 页，题目证据与稳定页面 ID 已保留，人工修改或锁定内容未被覆盖${performanceText}。`
           : "Report Narrative 不可用，已保留当前确定性蓝图，可继续编辑或生成 PPT。";
         aiWriteStatus.textContent = message;
         if (confirmStatus) confirmStatus.textContent = message;
-        setPptxProgress(100, "故事线已写入当前蓝图", "AI 蓝图");
+        setPptxProgress(100, "已按故事线重构报告蓝图", "AI 蓝图");
         if (narrativePanel) narrativePanel.style.display = "none";
       } catch (error) {
         console.warn("PPT SlideBrief AI fallback:", error);
@@ -16117,7 +16144,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (continueEditBtn) continueEditBtn.classList.remove("hidden");
         if (narrativeConfirmBtn) {
           narrativeConfirmBtn.disabled = false;
-          narrativeConfirmBtn.textContent = "重新写入当前蓝图";
+          narrativeConfirmBtn.textContent = "重新按故事线重构";
         }
         if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = false;
         setTimeout(() => progress.classList.add("hidden"), 1200);
