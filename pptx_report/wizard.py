@@ -924,23 +924,49 @@ def _enhance_report_pages(
         (len(question.get("segments") or []) for question in questions),
         default=0,
     )
-    result = [
-        ResearchOverviewContent(
-            sample_size=total_base or None,
-            question_count=len(questions),
-            segment_count=max(0, segment_count - 1),
-            source_references=[source] if source else [],
-        )
+    structure_payload = (page_config or {}).get("template_report_structure")
+    template_sections = (
+        structure_payload.get("sections", [])
+        if (page_config or {}).get("template_structure_reused")
+        and isinstance(structure_payload, dict)
+        else []
+    )
+    template_sections = [
+        section for section in template_sections
+        if isinstance(section, dict) and str(section.get("title") or "").strip()
     ]
+    section_by_title = {
+        str(section.get("title")): section for section in template_sections
+    }
+    intro_section = template_sections[0] if template_sections else None
+    conclusion_section = template_sections[-1] if len(template_sections) > 1 else None
+    result = []
+    if intro_section:
+        result.append(SectionDividerContent(
+            title=str(intro_section.get("title") or "项目概述"),
+            chapter=str(intro_section.get("number") or "01"),
+            subtitle=" | ".join(str(item) for item in intro_section.get("topics", [])[:6]),
+            slide_id="section_template_intro",
+        ))
+    result.append(ResearchOverviewContent(
+        sample_size=total_base or None,
+        question_count=len(questions),
+        segment_count=max(0, segment_count - 1),
+        source_references=[source] if source else [],
+    ))
     if findings:
         result.append(FindingsOverviewContent(findings=findings))
-    previous_chapter = None
+    previous_chapter = str(intro_section.get("title")) if intro_section else None
     for page in pages:
         if page.chapter != previous_chapter:
+            matched_section = section_by_title.get(str(page.chapter))
             result.append(SectionDividerContent(
                 title=page.chapter,
-                chapter=page.chapter,
-                subtitle=(page.brief.question_answered if page.brief else ""),
+                chapter=str(matched_section.get("number") or page.chapter) if matched_section else page.chapter,
+                subtitle=(
+                    " | ".join(str(item) for item in matched_section.get("topics", [])[:6])
+                    if matched_section else (page.brief.question_answered if page.brief else "")
+                ),
                 key_message=(page.brief.claim if page.brief else ""),
                 slide_id=f"section_{len(result):03d}",
             ))
@@ -966,6 +992,14 @@ def _enhance_report_pages(
         )
         for fact in opportunity_facts[:6]
     ]
+    if conclusion_section and (opportunities or findings) and previous_chapter != str(conclusion_section.get("title")):
+        result.append(SectionDividerContent(
+            title=str(conclusion_section.get("title") or "结论与建议"),
+            chapter=str(conclusion_section.get("number") or "03"),
+            subtitle=" | ".join(str(item) for item in conclusion_section.get("topics", [])[:6]),
+            slide_id="section_template_conclusion",
+        ))
+        previous_chapter = str(conclusion_section.get("title"))
     if opportunities:
         result.append(OpportunityMatrixContent(
             title="优先机会集中在高差异、低表现的关键指标",

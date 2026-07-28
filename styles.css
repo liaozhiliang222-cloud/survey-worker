@@ -4780,6 +4780,34 @@ tbody tr.warn td {
   border: 1px solid rgba(15, 23, 42, 0.15);
 }
 
+.pptx-template-structure {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: rgba(239, 246, 255, 0.78);
+  color: #334155;
+}
+
+.pptx-template-structure ol,
+.pptx-template-structure ul {
+  margin: 8px 0 0 20px;
+  padding: 0;
+}
+
+.pptx-template-structure li {
+  margin: 4px 0;
+}
+
+.pptx-template-structure-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-weight: 650;
+  color: #1d4ed8;
+}
+
 .pptx-template-role-editor {
   margin-top: 6px;
   border-top: 1px solid #bfdbfe;

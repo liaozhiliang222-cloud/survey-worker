@@ -321,6 +321,9 @@ async def upload_template(request: Request):
             "safe_zones": {
                 role: (item.get("zones") or {}) for role, item in roles.items()
             },
+            "report_structure": analysis.get("report_structure") or {
+                "version": 1, "source": "template", "confidence": 0.0, "sections": []
+            },
             "created_at": time.time(),
         }
         _write_template_profile(template_id, profile)
@@ -826,6 +829,16 @@ def _generate_core(
     template_id = metadata.get("template_id") or qs.get("template_id") or ""
     template_path = _template_path(str(template_id)) if template_id else None
     template_profile = _read_template_profile(str(template_id)) if template_id else None
+    if metadata.get("template_structure_reused"):
+        report_structure = metadata.get("template_report_structure")
+        if not isinstance(report_structure, dict) and template_profile:
+            report_structure = template_profile.get("report_structure")
+        if isinstance(report_structure, dict) and isinstance(report_structure.get("sections"), list):
+            page_config = {
+                **(page_config if isinstance(page_config, dict) else {}),
+                "template_structure_reused": True,
+                "template_report_structure": report_structure,
+            }
     if template_id and template_path is None:
         return JSONResponse(
             {"error": {"message": "上传模板不存在或已过期，请重新上传模板。"}},

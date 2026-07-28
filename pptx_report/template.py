@@ -289,6 +289,115 @@ def build_template_mapping(prs: Presentation, role_overrides: dict | None = None
     }
 
 
+def _structure_text_items(slide, width: int, height: int) -> list[dict]:
+    """Return positioned text fragments used by the report-structure detector."""
+    items = []
+    for shape in slide.shapes:
+        text = _shape_text(shape)
+        if not text:
+            continue
+        try:
+            top = int(shape.top) / max(1, height)
+            left = int(shape.left) / max(1, width)
+        except (AttributeError, TypeError, ValueError):
+            top, left = 0.5, 0.5
+        size = _shape_font_size_pt(shape) or 0.0
+        for line in (part.strip() for part in re.split(r"[\r\n]+", text)):
+            if line:
+                items.append({"text": line, "top": top, "left": left, "font_size": size})
+    return items
+
+
+def _structure_title(items: list[dict], number_text: str) -> str:
+    ignored = {"目录", "contents", "谢谢", "thank you", "感谢聆听"}
+    candidates = []
+    for item in items:
+        text = item["text"].strip()
+        if (
+            text == number_text
+            or text.lower() in ignored
+            or "|" in text
+            or "｜" in text
+            or re.fullmatch(r"\d+(?:\.\d+)?", text)
+            or item["top"] > 0.84
+            or len(text) > 70
+        ):
+            continue
+        score = float(item["font_size"]) * 10 - item["top"] * 3 - item["left"]
+        candidates.append((score, text))
+    return max(candidates, default=(0, ""))[1][:80]
+
+
+def _structure_topics(items: list[dict]) -> list[str]:
+    topic_lines = [item["text"] for item in items if "|" in item["text"] or "｜" in item["text"]]
+    if not topic_lines:
+        return []
+    longest = max(topic_lines, key=len)
+    return [part.strip()[:80] for part in re.split(r"[|｜]", longest) if part.strip()][:12]
+
+
+def detect_report_structure(prs: Presentation) -> dict:
+    """Detect numbered section and subsection divider slides."""
+    width, height = int(prs.slide_width), int(prs.slide_height)
+    top_sections = []
+    subsections = []
+    for slide_index, slide in enumerate(prs.slides):
+        items = _structure_text_items(slide, width, height)
+        if not items:
+            continue
+        top_numbers = [item for item in items if re.fullmatch(r"0?[1-9]|[1-9]\d", item["text"])
+                       and item["top"] < 0.78
+                       and (item["text"].startswith("0") or item["font_size"] >= 24 or item["left"] < 0.2)]
+        sub_numbers = [item for item in items if re.fullmatch(r"[1-9]\d*\.[1-9]\d*", item["text"])
+                       and item["font_size"] >= 10 and item["top"] < 0.82]
+        if top_numbers:
+            number = max(top_numbers, key=lambda item: item["font_size"])["text"]
+            title = _structure_title(items, number)
+            if title:
+                top_sections.append({
+                    "section_id": f"section_{int(number):02d}", "number": number.zfill(2),
+                    "title": title, "topics": _structure_topics(items),
+                    "start_slide_index": slide_index, "end_slide_index": slide_index,
+                    "subsections": [],
+                })
+                continue
+        if sub_numbers:
+            number = max(sub_numbers, key=lambda item: item["font_size"])["text"]
+            title = _structure_title(items, number)
+            if title:
+                subsections.append({
+                    "subsection_id": f"subsection_{number.replace('.', '_')}", "number": number,
+                    "title": title, "topics": _structure_topics(items),
+                    "start_slide_index": slide_index, "end_slide_index": slide_index,
+                })
+
+    top_sections.sort(key=lambda item: item["start_slide_index"])
+    if len(top_sections) < 2:
+        return {"version": 1, "source": "template", "confidence": 0.0,
+                "sections": [], "detected_slide_indices": []}
+    for index, section in enumerate(top_sections):
+        next_start = top_sections[index + 1]["start_slide_index"] if index + 1 < len(top_sections) else len(prs.slides)
+        section["end_slide_index"] = next_start - 1
+        children = [item for item in subsections
+                    if section["start_slide_index"] < item["start_slide_index"] < next_start]
+        for child_index, child in enumerate(children):
+            child["end_slide_index"] = (children[child_index + 1]["start_slide_index"] - 1
+                                        if child_index + 1 < len(children) else next_start - 1)
+        section["subsections"] = children
+
+    numbered_sequence = all(int(item["number"]) == int(top_sections[0]["number"]) + index
+                            for index, item in enumerate(top_sections))
+    confidence = 0.72 + len(top_sections) * 0.05 + len(subsections) * 0.025
+    if numbered_sequence:
+        confidence += 0.05
+    detected_indices = [item["start_slide_index"] for item in top_sections]
+    detected_indices.extend(item["start_slide_index"] for item in subsections)
+    return {
+        "version": 1, "source": "template", "confidence": round(min(0.99, confidence), 2),
+        "sections": top_sections[:8], "detected_slide_indices": sorted(set(detected_indices)),
+    }
+
+
 def _theme_xml(path: str) -> bytes | None:
     with zipfile.ZipFile(path) as archive:
         members = archive.infolist()
@@ -345,6 +454,7 @@ def analyze_template(path: str, filename: str = "template.pptx") -> dict:
         })
     warnings = []
     mapping = build_template_mapping(prs)
+    report_structure = detect_report_structure(prs)
     if not (1.70 <= ratio <= 1.82):
         warnings.append("模板不是常见的 16:9 宽屏比例，生成内容会按模板原始比例缩放布局。")
     if not any((layout.name or "").lower() in {"blank", "空白"} for layout in prs.slide_layouts):
@@ -366,6 +476,7 @@ def analyze_template(path: str, filename: str = "template.pptx") -> dict:
         "fonts": fonts[:6],
         "layouts": layouts[:20],
         "mapping": mapping,
+        "report_structure": report_structure,
         "warnings": warnings,
     }
 

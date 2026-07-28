@@ -13107,6 +13107,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     let lastPptxJobId = "";
     let uploadedTemplateId = "";
     let uploadedTemplateAnalysis = null;
+    let reuseUploadedTemplateStructure = true;
     let planUndoStack = [];
     let planRedoStack = [];
     let draggedPageIndex = -1;
@@ -13179,8 +13180,11 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const hasRecommendations = hasFindings;
       const hasAppendix = Number(plan?.appendix?.count || 0) > 0;
       const preContentPages = 4 + (hasFindings ? 1 : 0);
-      let previousChapter = null;
-      let sectionPages = 0;
+      const templateSections = plan?.template_structure_reused
+        ? (plan?.template_report_structure?.sections || [])
+        : [];
+      let previousChapter = templateSections[0]?.title || null;
+      let sectionPages = templateSections.length ? 1 : 0;
       const contentSlideNumbers = pages.map((page, index) => {
         const chapter = String(page?.chapter || "其他研究");
         if (chapter !== previousChapter) {
@@ -13189,6 +13193,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         }
         return preContentPages + sectionPages + index + 1;
       });
+      if (templateSections.length) sectionPages = Math.max(sectionPages, templateSections.length);
       const fixedSystemPages = preContentPages
         + (hasOpportunity ? 1 : 0)
         + (hasRecommendations ? 1 : 0)
@@ -13412,6 +13417,54 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (hadPreview && genStatus) genStatus.textContent = message;
     }
 
+    function getUploadedTemplateStructure() {
+      if (templateModeInput?.value !== "upload") return null;
+      const structure = uploadedTemplateAnalysis?.profile?.report_structure
+        || uploadedTemplateAnalysis?.report_structure;
+      return Array.isArray(structure?.sections) && structure.sections.length >= 2 ? structure : null;
+    }
+
+    function templateStructurePlanningChapters(structure = getUploadedTemplateStructure()) {
+      const chapters = [];
+      (structure?.sections || []).forEach((section) => {
+        const children = Array.isArray(section.subsections) ? section.subsections : [];
+        if (children.length) {
+          children.forEach((child) => chapters.push({
+            ...child,
+            parent_number: section.number,
+            parent_title: section.title,
+            order: chapters.length,
+          }));
+        } else {
+          chapters.push({
+            ...section,
+            parent_number: section.number,
+            parent_title: section.title,
+            order: chapters.length,
+          });
+        }
+      });
+      return chapters;
+    }
+
+    function renderDetectedTemplateStructure(structure = getUploadedTemplateStructure()) {
+      if (!structure) return "";
+      const sections = structure.sections.map((section) => {
+        const children = (section.subsections || []).map((child) =>
+          `<li><b>${escapeHtml(child.number || "")}</b> ${escapeHtml(child.title || "")}</li>`
+        ).join("");
+        return `<li><b>${escapeHtml(section.number || "")}</b> ${escapeHtml(section.title || "")}${children ? `<ul>${children}</ul>` : ""}</li>`;
+      }).join("");
+      return `
+        <div class="pptx-template-structure">
+          <div><strong>已识别报告结构</strong><span> · 置信度 ${Math.round((structure.confidence || 0) * 100)}%</span></div>
+          <ol>${sections}</ol>
+          <label class="pptx-template-structure-toggle">
+            <input type="checkbox" data-template-structure-reuse ${reuseUploadedTemplateStructure ? "checked" : ""}>
+            <span>生成报告蓝图时复用上述章节顺序与命名</span>
+          </label>
+        </div>`;
+    }
     function renderTemplateAnalysis(analysis = uploadedTemplateAnalysis) {
       if (!templateAnalysisEl) return;
       if (!analysis) {
@@ -13445,6 +13498,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           ${colors ? `<span>主题色：<b class="pptx-template-colors">${colors}</b></span>` : ""}
           <span>${escapeHtml(mappingLabel)}</span>
         </div>
+        ${renderDetectedTemplateStructure()}
         ${warnings}
         <details class="pptx-template-role-editor">
           <summary>确认模板页面角色</summary>
@@ -13496,6 +13550,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       } finally {
         button.disabled = false;
       }
+    });
+    templateAnalysisEl?.addEventListener("change", (event) => {
+      const toggle = event.target.closest("[data-template-structure-reuse]");
+      if (!toggle) return;
+      reuseUploadedTemplateStructure = Boolean(toggle.checked);
+      invalidatePptxPreview(reuseUploadedTemplateStructure
+        ? "已启用模板报告结构，请重新预览。"
+        : "已停用模板报告结构，请重新预览。");
     });
     async function exportPptxTemplateProfile() {
       if (!uploadedTemplateId) return;
@@ -13579,6 +13641,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           fetch(`/pptx-api/templates/${encodeURIComponent(uploadedTemplateId)}`, { method: "DELETE" }).catch(() => {});
         }
         uploadedTemplateAnalysis = await response.json();
+        reuseUploadedTemplateStructure = Boolean(getUploadedTemplateStructure());
         uploadedTemplateId = uploadedTemplateAnalysis.template_id || "";
         if (themeInput && templateModeInput?.value === "upload" && uploadedTemplateId) themeInput.disabled = true;
         templateStatusEl.textContent = uploadedTemplateId ? "模板分析完成，生成报告时将自动套用。" : "模板未返回有效标识，请重新上传。";
@@ -13614,6 +13677,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const templateIdToDelete = uploadedTemplateId;
       uploadedTemplateId = "";
       uploadedTemplateAnalysis = null;
+      reuseUploadedTemplateStructure = true;
       if (templateInput) templateInput.value = "";
       if (templateClearBtn) templateClearBtn.disabled = true;
       if (templateProfileImportBtn) templateProfileImportBtn.disabled = true;
@@ -13861,6 +13925,70 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       return msg;
     }
 
+    function templateStructureTextForPage(page) {
+      return [
+        page?.chapter, page?.title, page?.analysis_focus,
+        ...(page?.questions || []).flatMap((question) => [question?.title, question?.code]),
+      ].filter(Boolean).join(" ").toLowerCase();
+    }
+
+    function scoreTemplateChapter(chapter, pageText) {
+      const title = String(chapter?.title || "");
+      const terms = [title, ...(chapter?.topics || [])]
+        .flatMap((value) => String(value || "").split(/[、，,：:\s/]+/))
+        .filter((value) => value.length >= 2);
+      let score = terms.reduce((total, term) => total + (pageText.includes(term.toLowerCase()) ? 5 : 0), 0);
+      const semanticRules = [
+        [/项目|概述|背景|执行|样本|方法|说明/, /背景|目的|执行|样本|方法|说明|研究设计/],
+        [/概念|测试|产品|市场接受/, /概念|接受|购买|意愿|功能|外观|佩戴|配件|服务|价格|偏好|需求/],
+        [/画像|用户/, /画像|用户|人口|年龄|性别|职业|收入|家庭|行为|设备|使用/],
+        [/旅程|渠道|决策/, /旅程|渠道|信息|触点|决策|考虑因素|购买路径/],
+        [/结论|建议|策略/, /结论|建议|策略|机会|行动|转化/],
+      ];
+      semanticRules.forEach(([chapterRule, pageRule]) => {
+        if (chapterRule.test(title) && pageRule.test(pageText)) score += 3;
+      });
+      return score;
+    }
+
+    function applyUploadedTemplateStructure(plan) {
+      const structure = reuseUploadedTemplateStructure ? getUploadedTemplateStructure() : null;
+      const pages = Array.isArray(plan?.pages) ? plan.pages : [];
+      const chapters = templateStructurePlanningChapters(structure);
+      if (!structure || !pages.length || chapters.length < 2) return plan;
+      const analytical = chapters.filter((chapter) => !/项目|概述|结论|建议|附录/.test(chapter.title || ""));
+      const fallbackChapters = analytical.length ? analytical : chapters;
+      const mapped = pages.map((page, originalIndex) => {
+        const pageText = templateStructureTextForPage(page);
+        const ranked = chapters.map((chapter) => ({ chapter, score: scoreTemplateChapter(chapter, pageText) }))
+          .sort((a, b) => b.score - a.score || a.chapter.order - b.chapter.order);
+        const fallbackIndex = Math.min(
+          fallbackChapters.length - 1,
+          Math.floor(originalIndex * fallbackChapters.length / Math.max(1, pages.length))
+        );
+        const selected = ranked[0]?.score > 0 ? ranked[0].chapter : fallbackChapters[fallbackIndex];
+        return {
+          ...page,
+          chapter: selected.parent_title || selected.title,
+          template_section_number: selected.parent_number || selected.number || "",
+          template_section_title: selected.parent_title || selected.title,
+          template_subsection_title: selected.parent_title !== selected.title ? selected.title : "",
+          template_subsection_number: selected.parent_title !== selected.title ? selected.number : "",
+          template_structure_order: selected.order,
+          _template_original_index: originalIndex,
+        };
+      }).sort((a, b) => a.template_structure_order - b.template_structure_order
+        || a._template_original_index - b._template_original_index)
+        .map((page, index) => {
+          const { _template_original_index, ...cleaned } = page;
+          return { ...cleaned, page_idx: index + 1 };
+        });
+      plan.pages = mapped;
+      plan.total_pages = mapped.length;
+      plan.template_report_structure = structure;
+      plan.template_structure_reused = true;
+      return plan;
+    }
     function parseAiPptxPlanOutput(output) {
       const text = String(output || "").trim();
       const jsonText = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] || text.match(/\{[\s\S]*\}/)?.[0] || text;
@@ -13888,10 +14016,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         current_chapter: question.chapter || "其他研究",
         option_count: Array.isArray(question.categories) ? question.categories.length : 0,
       }));
+      const templateStructure = reuseUploadedTemplateStructure ? getUploadedTemplateStructure() : null;
+      const templateStructureInstruction = templateStructure
+        ? `必须复用上传模板的章节层级、章节名称和顺序，不要另造同义章节。模板结构：${JSON.stringify(templateStructure.sections)}`
+        : "";
       const messages = [
         {
           role: "system",
           content: [
+            templateStructureInstruction,
             "你是资深市场研究报告总监。请基于问卷题目目录规划完整的量化调研报告框架。",
             "请设计章节顺序、每页放置的题目组合，以及章节默认分析维度。相关题目可合并在同一页，每页建议1-3题；选项很多的题目应单独成页。",
             "必须覆盖用户提供的全部题目代码，每个题目只能出现一次，不得创造不存在的题目代码。",
@@ -14049,6 +14182,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         } else {
           pagePlan.planning_mode = "rule";
         }
+        pagePlan = applyUploadedTemplateStructure(pagePlan);
         normalizePptxWorkflow(pagePlan, reportWorkflow);
         editedPagePlan = JSON.parse(JSON.stringify(pagePlan));  // deep copy for editing
         currentReportId = "";
@@ -16031,6 +16165,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           page_planning_mode: editedPagePlan?.page_planning_mode || planningModeInput?.value || "rule",
           ai_enhancement: editedPagePlan?.ai_enhancement || "none",
           structure_template: document.querySelector("#pptxStructureTemplate")?.value || "",
+          template_structure_reused: Boolean(editedPagePlan?.template_structure_reused),
+          template_report_structure: editedPagePlan?.template_report_structure || null,
           dimension: currentDimension || null,
           page_config: compactPptxPageConfig(editedPagePlan),
           report_id: reportIdForGeneration || null,
