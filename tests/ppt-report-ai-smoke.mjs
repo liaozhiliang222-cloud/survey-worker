@@ -268,14 +268,22 @@ const strictStableOutput = ai.validatePageOutput({ pages: [{
   title: "Stable ID binds",
   evidence_fact_ids: ["F1"],
   evidence_question_ids: ["Q1"],
-}] }, stableBatch, { requireSlideId: true, requireEvidenceIds: true });
+}] }, stableBatch, { requireSlideId: true });
 const invalidEvidenceOutput = ai.validatePageOutput({ pages: [{
   slide_id: "stable_1",
-  title: "Invalid evidence must not bind",
+  title: "Invalid evidence is replaced deterministically",
   evidence_fact_ids: ["invented"],
   evidence_question_ids: ["Q999"],
-}] }, stableBatch, { requireSlideId: true, requireEvidenceIds: true });
+}] }, stableBatch, { requireSlideId: true });
 assert.equal(strictStableOutput[0].slide_id, "stable_1");
+assert.deepEqual(invalidEvidenceOutput[0].evidence_fact_ids, ["F1"]);
+assert.deepEqual(invalidEvidenceOutput[0].evidence_question_ids, ["Q1"]);
+const missingEvidenceOutput = ai.validatePageOutput({ pages: [{
+  slide_id: "stable_1",
+  title: "System backfills omitted evidence IDs",
+}] }, stableBatch, { requireSlideId: true });
+assert.deepEqual(missingEvidenceOutput[0].evidence_fact_ids, ["F1"]);
+assert.deepEqual(missingEvidenceOutput[0].evidence_question_ids, ["Q1"]);
 
 const stableInput = ai.buildPageBatchInput(stableBatch, reportNarrative);
 assert.equal(stableInput.pages[0].slide_id, "stable_1");

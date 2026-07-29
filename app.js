@@ -15531,7 +15531,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                   "标题先给判断，不要堆数字。正文先解释关键关系或差异，再用1组关键数据作证据锚点，最后落到业务含义；证据不足时不要强行归因。",
                   "每页最多引用2个数字，不得逐项复述图表，不要让标题和正文重复同一数字；避免以‘数据显示’‘从数据看’‘其中’开头连续播报占比。",
                   "只返回 JSON：{\"pages\":[{\"slide_id\":\"finding_001\",\"page_idx\":1,\"title\":\"一句话判断\",\"bullets\":[\"解释或关系\",\"关键证据\"],\"business_implication\":\"业务含义\"}]}。",
-                  "每页必须返回 evidence_fact_ids 和 evidence_question_ids，且只能使用该页输入中提供的 ID。",
+                  "证据 ID 由系统根据稳定 slide_id 确定性回填，AI 不需要返回 evidence_fact_ids 或 evidence_question_ids。",
                 ].join("\n"),
               },
               { role: "user", content: JSON.stringify({ pages }) },
@@ -15546,7 +15546,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             });
             try {
               batchResults[batchIndex] = aiPlanner.validatePageOutput(
-                parseAiInsightJson(output), pages, { requireSlideId: true, requireEvidenceIds: true }
+                parseAiInsightJson(output), pages, { requireSlideId: true }
               );
               if (!batchResults[batchIndex].length) throw new Error("当前批次未返回可验证的稳定 slide_id。");
             } catch (_) {
@@ -15562,7 +15562,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 stream: false,
               });
               batchResults[batchIndex] = aiPlanner.validatePageOutput(
-                parseAiInsightJson(output), pages, { requireSlideId: true, requireEvidenceIds: true }
+                parseAiInsightJson(output), pages, { requireSlideId: true }
               );
             }
             } catch (error) {
@@ -15849,7 +15849,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 stream: false,
               });
               return aiPlanner.validatePageOutput(
-                aiPlanner.parseJsonObject(output), targetPages, { requireSlideId: true, requireEvidenceIds: true }
+                aiPlanner.parseJsonObject(output), targetPages, { requireSlideId: true }
               );
             } catch (error) {
               console.warn(`SlideBrief batch ${batchIndex + 1}${repairMode ? " repair" : ""}:`, error);
@@ -16041,7 +16041,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         try {
           suggestions = aiPlanner.validatePageOutput(
             aiPlanner.parseJsonObject(output),
-            [evidence], { requireSlideId: true, requireEvidenceIds: true }
+            [evidence], { requireSlideId: true }
           );
           if (!suggestions.length) throw new Error("invalid suggestion");
         } catch {
@@ -16055,7 +16055,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           ], { ...callOptions, temperature: 0 });
           suggestions = aiPlanner.validatePageOutput(
             aiPlanner.parseJsonObject(output),
-            [evidence], { requireSlideId: true, requireEvidenceIds: true }
+            [evidence], { requireSlideId: true }
           );
           if (!suggestions.length) throw new Error("\u6a21\u578b\u672a\u8fd4\u56de\u53ef\u9a8c\u8bc1\u7684\u5355\u9875 SlideBrief\u3002");
         }

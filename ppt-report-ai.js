@@ -534,7 +534,6 @@
 
   function validatePageOutput(payload, batch, options = {}) {
     const requireSlideId = Boolean(options.requireSlideId);
-    const requireEvidenceIds = Boolean(options.requireEvidenceIds);
     const allowedBySlideId = new Map((batch || []).map((page) => [
       String(page.slide_id || page.slide_brief?.slide_id || ""), page,
     ]).filter(([slideId]) => slideId));
@@ -549,7 +548,8 @@
       const allowedQuestions = new Set(pageQuestionIds(page));
       let evidenceFactIds = uniqueStrings(suggestion.evidence_fact_ids).filter((id) => allowedFacts.has(id));
       let evidenceQuestionIds = uniqueStrings(suggestion.evidence_question_ids).filter((id) => allowedQuestions.has(id));
-      if (requireEvidenceIds && (!evidenceFactIds.length || !evidenceQuestionIds.length)) return null;
+      // Evidence belongs to the matched stable slide. Do not depend on the
+      // model echoing IDs that the system already owns deterministically.
       if (!evidenceFactIds.length) evidenceFactIds = Array.from(allowedFacts).slice(0, 6);
       if (!evidenceQuestionIds.length) evidenceQuestionIds = Array.from(allowedQuestions);
       return {
