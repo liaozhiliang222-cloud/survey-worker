@@ -623,8 +623,70 @@ def apply_dimension(questions: list, dimension_groups: list, group_name: str = N
                 if total_stat is not None:
                     new_stats[stat] = {total_key: total_stat, **new_stats[stat]}
         nq["stats"] = new_stats
+        _repair_single_choice_dimension_outliers(nq)
         out.append(nq)
     return out
+
+def _repair_single_choice_dimension_outliers(question: dict) -> None:
+    """Repair one leaked cell in an otherwise valid single-choice slice.
+
+    Only the deterministic case is repaired: Total is a complete distribution,
+    one segment exceeds 108%, and removing exactly one cell leaves a valid
+    remainder. Multi-select questions are left untouched.
+    """
+    segments = list(question.get("segments") or [])
+    data = question.get("data") or {}
+    total_aliases = {
+        "total", "\u603b\u4f53", "\u6574\u4f53", "\u5408\u8ba1", "\u603b\u8ba1",
+    }
+    total_name = next(
+        (name for name in segments if str(name).strip().lower() in total_aliases),
+        None,
+    )
+    if not total_name:
+        return
+    total_values = data.get(total_name) or []
+    numeric_total = [float(value) for value in total_values if value is not None]
+    if len(numeric_total) < 2:
+        return
+    scale = 100.0 if max(abs(value) for value in numeric_total) > 1.5 else 1.0
+    total_sum = sum(numeric_total)
+    if not (0.97 * scale <= total_sum <= 1.03 * scale):
+        return
+
+    warnings = list(question.get("data_quality_warnings") or [])
+    for segment in segments:
+        if segment == total_name:
+            continue
+        raw_values = list(data.get(segment) or [])
+        if len(raw_values) != len(total_values) or any(value is None for value in raw_values):
+            continue
+        values = [float(value) for value in raw_values]
+        segment_sum = sum(values)
+        if segment_sum <= 1.08 * scale:
+            continue
+        candidates = []
+        for index, value in enumerate(values):
+            remaining = segment_sum - value
+            residual = scale - remaining
+            if -0.005 * scale <= residual <= 0.20 * scale:
+                expected = float(total_values[index] or 0)
+                candidates.append((abs(residual - expected), index, residual, value))
+        if len(candidates) != 1:
+            continue
+        _, index, residual, old_value = candidates[0]
+        values[index] = max(0.0, residual)
+        data[segment] = values
+        warnings.append({
+            "code": "single_choice_dimension_cell_repaired",
+            "segment": str(segment),
+            "category": str((question.get("categories") or [""])[index]),
+            "old_value": old_value,
+            "new_value": values[index],
+        })
+    if warnings:
+        question["data_quality_warnings"] = warnings
+
 
 
 def get_q(questions: list, code: str) -> dict:

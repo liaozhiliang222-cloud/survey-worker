@@ -26,8 +26,14 @@
     "你是资深市场研究报告总监。请在给定 Report Narrative 下，为每页生成 SlideBrief 文案。",
     "每批输入包含 central_thesis、chapter_context、previous_chapter、next_chapter；标题和正文必须服务于本章目的，并与前后章节连续。",
     "只允许使用该页 questions、DataFact、evidence_fact_ids、evidence_question_ids 中的证据，不得重新计算或编造数字。",
-    "标题直接表达唯一结论；正文采用观察+数据证据+解释；相邻页面不得重复完全相同的结论。",
-    "只返回 JSON：{\"pages\":[{\"page_idx\":1,\"title\":\"\",\"claim\":\"\",\"bullets\":[\"\",\"\"],\"business_implication\":\"\"}]}。证据 ID 由系统按页面确定性回填。",
+    "model_semantics 是指标的强约束定义：PSM 单条累计曲线不得解释为购买接受率、峰值或价格上下限，交点指标只能引用系统已计算结果。",
+    "如果 data_quality_warnings 非空，不得引用被修复前的值；所有数字、选项和人群必须能在同一行证据中对应，不能只校验数字是否在本页出现。",
+    "必须原样返回每页 slide_id；slide_id 是写回蓝图的唯一主键，page_idx 只用于展示顺序。",
+    "标题和 claim 必须先给判断；除非数字本身构成关键反差，否则不要把百分比堆进标题。",
+    "每页正文 2–3 条：先解释关键关系、差异或障碍，再用 1 组最有解释力的数据作证据锚点，最后给出业务含义；证据不足时不要强行补原因。",
+    "每页最多引用 2 个数字，不得逐项复述图表；同一数字不要在标题、claim 和 bullets 中重复。",
+    "允许使用‘反映’‘提示’‘可能与…有关’进行谨慎解释，但不得把推测写成已证实事实；相邻页面不得重复完全相同的结论。",
+    "只返回 JSON：{\"pages\":[{\"slide_id\":\"finding_001\",\"page_idx\":1,\"title\":\"\",\"claim\":\"\",\"bullets\":[\"\",\"\"],\"business_implication\":\"\"}]}。证据 ID 由系统按页面确定性回填。",
   ].join("\n");
 
   function uniqueStrings(values) {
@@ -124,6 +130,8 @@
       code: String(question?.code || ""),
       title: String(question?.title || ""),
       data_kind: String(question?.data_kind || ""),
+      model_semantics: question?.model_semantics || {},
+      data_quality_warnings: question?.data_quality_warnings || [],
       base: question?.base || {},
       rows: (question?.rows || []).map((row) => ({
         option: String(row?.option || ""),
@@ -490,6 +498,7 @@
       } : null,
       pages: pages.map((page) => ({
         page_idx: Number(page.page_idx),
+        slide_id: String(page.slide_id || page.slide_brief?.slide_id || ""),
         chapter: String(page.chapter || "其他研究"),
         current_title: String(page.current_title || ""),
         chart_type: String(page.chart_type || "auto"),
@@ -524,10 +533,14 @@
   }
 
   function validatePageOutput(payload, batch) {
-    const allowedPages = new Map((batch || []).map((page) => [Number(page.page_idx), page]));
+    const allowedBySlideId = new Map((batch || []).map((page) => [
+      String(page.slide_id || page.slide_brief?.slide_id || ""), page,
+    ]).filter(([slideId]) => slideId));
+    const allowedByPage = new Map((batch || []).map((page) => [Number(page.page_idx), page]));
     return (Array.isArray(payload?.pages) ? payload.pages : []).map((suggestion) => {
+      const slideId = String(suggestion.slide_id || "").trim();
       const pageIdx = Number(suggestion.page_idx);
-      const page = allowedPages.get(pageIdx);
+      const page = (slideId && allowedBySlideId.get(slideId)) || allowedByPage.get(pageIdx);
       if (!page) return null;
       const allowedFacts = new Set(uniqueStrings(page.evidence_fact_ids));
       const allowedQuestions = new Set(pageQuestionIds(page));
@@ -536,7 +549,8 @@
       if (!evidenceFactIds.length) evidenceFactIds = Array.from(allowedFacts).slice(0, 6);
       if (!evidenceQuestionIds.length) evidenceQuestionIds = Array.from(allowedQuestions);
       return {
-        page_idx: pageIdx,
+        slide_id: String(page.slide_id || page.slide_brief?.slide_id || slideId),
+        page_idx: Number(page.page_idx),
         title: String(suggestion.title || "").trim(),
         claim: String(suggestion.claim || suggestion.title || "").trim(),
         bullets: fitBullets(suggestion.bullets),

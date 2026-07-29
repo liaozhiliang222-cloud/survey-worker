@@ -744,6 +744,41 @@ def _build_executive_findings(questions: list, facts: list) -> list[ExecutiveFin
         ))
     return findings
 
+def _build_narrative_findings(page_config: dict | None, facts: list,
+                              fallback: list[ExecutiveFinding]) -> list[ExecutiveFinding]:
+    """Prefer validated SlideBrief conclusions for system summary pages."""
+    pages = list((page_config or {}).get("pages") or [])
+    valid_fact_ids = {str(fact.fact_id) for fact in facts}
+    findings = []
+    for page in pages:
+        brief = page.get("slide_brief") if isinstance(page.get("slide_brief"), dict) else {}
+        fact_ids = [
+            str(value) for value in (
+                brief.get("evidence_fact_ids") or page.get("evidence_fact_ids") or []
+            ) if str(value) in valid_fact_ids
+        ]
+        headline = str(brief.get("claim") or page.get("insight_override") or "").strip()
+        if not headline or not fact_ids:
+            continue
+        implication = str(brief.get("business_implication") or page.get("business_implication") or "").strip()
+        findings.append(ExecutiveFinding(
+            title=headline,
+            description=implication,
+            evidence_fact_ids=list(dict.fromkeys(fact_ids)),
+            evidence_question_ids=list(dict.fromkeys(
+                str(value) for value in (
+                    brief.get("evidence_question_ids") or page.get("evidence_question_ids") or []
+                ) if str(value)
+            )),
+            source_references=[],
+            action_implication=implication,
+            importance="high" if len(findings) < 2 else "medium",
+        ))
+        if len(findings) >= 5:
+            break
+    return findings or fallback
+
+
 def _page_question_ids(page) -> list[str]:
     question_ids = []
     for chart in getattr(page, "charts", []):
@@ -1165,7 +1200,7 @@ def _build_multi_group_bar_page(group: list, segments: list, source: str,
             for seg in segments:
                 vals = data.get(seg, [])
                 v = vals[ci] if ci < len(vals) else None
-                row[seg] = v * 100 if (v is not None and abs(v) <= 1) else (v or 0.0)
+                row[seg] = v if v is not None else 0.0
             df_rows.append(row)
 
         df = pd.DataFrame(df_rows)
@@ -1472,7 +1507,8 @@ def build_auto_report(
         chart_pages = configured_pages
 
     facts = extract_data_facts(questions)
-    findings = _build_executive_findings(renderable, facts)
+    deterministic_findings = _build_executive_findings(renderable, facts)
+    findings = _build_narrative_findings(page_config, facts, deterministic_findings)
     kpis = _extract_kpis(questions)
     conclusion = (
         f"基于 {len(renderable)} 道题目的交叉分析，覆盖 {len(display_segs)} 类人群；"
@@ -1720,6 +1756,45 @@ def build_page_plan(
     }
 
 
+def _research_model_semantics(question: dict) -> dict:
+    """Describe model-specific metric meaning without asking AI to infer it."""
+    title = str(question.get("title") or "")
+    lowered = title.lower()
+    psm_roles = [
+        (("\u592a\u4fbf\u5b9c", "\u6000\u7591\u54c1\u8d28", "\u62c5\u5fc3\u8d28\u91cf"), "too_cheap", "\u4f4e\u5230\u5f15\u53d1\u54c1\u8d28\u6000\u7591\u7684\u7d2f\u8ba1\u6bd4\u4f8b"),
+        (("\u6bd4\u8f83\u4fbf\u5b9c", "\u4fbf\u5b9c", "\u4e50\u610f\u8d2d\u4e70"), "cheap", "\u88ab\u8ba4\u4e3a\u4fbf\u5b9c\u6216\u503c\u5f97\u8d2d\u4e70\u7684\u7d2f\u8ba1\u6bd4\u4f8b"),
+        (("\u6bd4\u8f83\u8d35", "\u504f\u8d35", "\u4ecd\u53ef\u63a5\u53d7"), "expensive", "\u5f00\u59cb\u611f\u89c9\u504f\u8d35\u4f46\u4ecd\u53ef\u63a5\u53d7\u7684\u7d2f\u8ba1\u6bd4\u4f8b"),
+        (("\u592a\u8d35", "\u4e00\u5b9a\u4e0d\u4f1a", "\u4e0d\u4f1a\u8d2d\u4e70"), "too_expensive", "\u9ad8\u5230\u62d2\u7edd\u8d2d\u4e70\u7684\u7d2f\u8ba1\u6bd4\u4f8b"),
+    ]
+    if any(token.lower() in lowered for tokens, _, _ in psm_roles for token in tokens):
+        role = ""
+        meaning = "PSM \u5355\u6761\u4ef7\u683c\u611f\u77e5\u66f2\u7ebf"
+        for tokens, candidate_role, candidate_meaning in psm_roles:
+            if any(token.lower() in lowered for token in tokens):
+                role, meaning = candidate_role, candidate_meaning
+                break
+        return {
+            "analysis_model": "psm",
+            "metric_role": role,
+            "meaning": meaning,
+            "interpretation_rules": [
+                "\u5355\u6761\u7d2f\u8ba1\u66f2\u7ebf\u4e0d\u662f\u8d2d\u4e70\u63a5\u53d7\u7387\u6216\u8d2d\u4e70\u6982\u7387",
+                "\u4e0d\u5f97\u628a\u4efb\u610f\u4ef7\u683c\u70b9\u79f0\u4e3a\u5cf0\u503c\u3001\u6700\u4f18\u4ef7\u6216\u53ef\u63a5\u53d7\u4e0a\u4e0b\u9650",
+                "OPP\u3001IPP\u3001PMC\u3001PME \u5fc5\u987b\u7531\u56db\u6761\u6807\u51c6\u66f2\u7ebf\u4ea4\u70b9\u8ba1\u7b97\u540e\u624d\u80fd\u4e0b\u7ed3\u8bba",
+            ],
+        }
+    if "kano" in lowered or "better" in lowered or "worse" in lowered:
+        return {
+            "analysis_model": "kano",
+            "meaning": "Better/Worse \u7cfb\u6570\u7528\u4e8e\u9700\u6c42\u5c5e\u6027\u5b9a\u4f4d",
+            "interpretation_rules": [
+                "\u8c61\u9650\u5206\u754c\u5fc5\u987b\u4f7f\u7528\u5f53\u524d\u9009\u9879 Better \u4e0e Worse \u7cfb\u6570\u7684\u5e73\u5747\u503c",
+                "\u5c5e\u6027\u5206\u7c7b\u5fc5\u987b\u540c\u65f6\u53c2\u8003\u6a2a\u7eb5\u5750\u6807\uff0c\u4e0d\u5f97\u4ec5\u51ed\u5355\u8f74\u9ad8\u4f4e\u5224\u65ad",
+            ],
+        }
+    return {"analysis_model": "descriptive", "meaning": "\u63cf\u8ff0\u6027\u8c03\u67e5\u6307\u6807", "interpretation_rules": []}
+
+
 def build_insight_context(
     questions: list,
     page_config: dict,
@@ -1812,12 +1887,15 @@ def build_insight_context(
                 "base": bases,
                 "rows": rows,
                 "data_kind": infer_data_kind(question),
-                "facts": [fact.to_dict() for fact in facts_by_question.get(str(question.get("code") or ""), [])],
+                "model_semantics": _research_model_semantics(question),
+                "data_quality_warnings": list(question.get("data_quality_warnings") or []),
+                "facts": [fact.to_dict() for fact in extract_question_facts(question)],
             })
 
         pages.append({
             "page_idx": cfg.get("page_idx") or idx + 1,
             "chapter": cfg.get("chapter") or "其他研究",
+            "slide_id": str((cfg.get("slide_brief") or {}).get("slide_id") or cfg.get("slide_id") or f"finding_{idx + 1:03d}"),
             "current_title": cfg.get("insight_override") or cfg.get("title") or "",
             "chart_type": cfg.get("chart_type") or "auto",
             "dimensions": selected_dimensions or ["总体"],

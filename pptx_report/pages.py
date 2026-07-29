@@ -939,6 +939,7 @@ def _render_stacked_bars(slide, merged_rows, segments, all_options,
     # 数值轴（隐藏）
     val_axis = cht.value_axis
     val_axis.maximum_scale = 1.0
+    val_axis.minimum_scale = 0.0
     val_axis.number_format = "0%"
     try:
         val_axis.tick_labels.font.size = Pt(1)

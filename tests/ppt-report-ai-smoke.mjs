@@ -124,6 +124,9 @@ assert.ok(reportNarrative.central_thesis);
 assert.equal(reportNarrative.confidence, 1);
 assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /中心论点/);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /chapter_context/);
+assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /每页最多引用 2 个数字/);
+assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /不得逐项复述图表/);
+assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /可能与…有关/);
 assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /page_idxs/);
 assert.equal(reportNarrative.chapters[0].page_idxs.join(","), "3,1");
 const pagesWithStableIds = reportContext.pages.map((page, index) => ({
@@ -234,5 +237,32 @@ const aiOwnedBrief = ai.mergeSlideBriefSuggestion(
 assert.equal(aiOwnedBrief.title, "AI 更新标题");
 assert.equal(aiOwnedBrief.claim, "AI 更新结论");
 assert.equal(aiOwnedBrief.user_modified, false);
+
+const stableBatch = reportContext.pages.slice(0, 2).map((page, index) => ({
+  ...page,
+  slide_id: `stable_${index + 1}`,
+  questions: (page.questions || []).map((question) => ({
+    ...question,
+    model_semantics: { analysis_model: index === 0 ? "psm" : "descriptive" },
+    data_quality_warnings: index === 0 ? [{ code: "repaired" }] : [],
+  })),
+}));
+const stableOutput = ai.validatePageOutput({ pages: [{
+  slide_id: "stable_2",
+  page_idx: 1,
+  title: "Stable ID wins",
+  evidence_fact_ids: ["F2"],
+  evidence_question_ids: ["Q2"],
+}] }, stableBatch);
+assert.equal(stableOutput.length, 1);
+assert.equal(stableOutput[0].slide_id, "stable_2");
+assert.equal(stableOutput[0].page_idx, 2);
+
+const stableInput = ai.buildPageBatchInput(stableBatch, reportNarrative);
+assert.equal(stableInput.pages[0].slide_id, "stable_1");
+assert.equal(stableInput.pages[0].questions[0].model_semantics.analysis_model, "psm");
+assert.equal(stableInput.pages[0].questions[0].data_quality_warnings[0].code, "repaired");
+assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /slide_id/);
+assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /PSM/);
 
 console.log("PPT staged AI narrative smoke passed.");

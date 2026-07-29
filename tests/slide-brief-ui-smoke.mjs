@@ -103,6 +103,10 @@ assert.match(quickFlow, /ai_enhancement = "copy"/);
 assert.match(quickFlow, /setPptxProgress/);
 assert.match(quickFlow, /await doGeneratePptx\(\)/);
 assert.doesNotMatch(quickFlow, /REPORT_NARRATIVE_SYSTEM_PROMPT/);
+assert.match(quickFlow, /每页最多引用2个数字/);
+assert.match(quickFlow, /business_implication: page\.business_implication/);
+assert.match(app, /判断\/解释\/行动约70%/);
+assert.match(app, /禁止白描式复述/);
 
 const workflowDispatch = app.slice(workflowDispatchStart, app.indexOf("async function generatePptxAiReport()", workflowDispatchStart));
 assert.match(workflowDispatch, /report_workflow === "research"/);

@@ -11577,14 +11577,14 @@ function getProjectTypeGuidance(projectType) {
       "",
       "二、主要研究发现",
       "  这是报告主体，根据数据内容和你选中的项目类型分析要点自行组织章节。",
-      "  每个发现遵循金字塔结构：一句话结论（加粗）→ 数据支撑（精确到百分比，标注基数N）→ 业务解读（为什么重要）→ 反常延伸（如有矛盾数据必须提及）。",
+      "  每个发现遵循金字塔结构：一句话结论（加粗）→ 1组关键证据锚点 → 原因或机制解释 → 业务解读。图表已承载完整数字，正文不要逐项复述。",
       "  反常发现自然融入相关发现中，格式如「发现X：与预期相反，[现象]，[可能解释]」，不单独成章。",
       "  人群差异只写有显著差异且对业务有意义的维度，无差异时诚实写「各群体表现趋同」。",
       "  尽可能覆盖数据中有分析价值的题目，不要只挑3-5题就结束。",
       "",
       "三、结论与建议",
       "  直接回答研究目标是否成立，给出分人群/分场景策略建议和优先级排序。",
-      "  每个建议必须对应前面的具体发现，标注数据支撑。",
+      "  每个建议必须对应前面的具体发现；引用对应发现即可，除非必要不要重复正文中的整组数字。",
       "",
       "【本次项目类型：" + typeLabel + "】",
       "分析要点参考（根据数据情况灵活选择，不必全部覆盖）：",
@@ -11639,18 +11639,20 @@ function buildAiReportPrompt(context, summary, dataContext) {
         "阶段1（已完成）：系统已在本地完成统计摘要+质量诊断，数据已结构化为紧凑格式传入。",
         "阶段2 洞察挖掘：在正式撰写前，先内部完成洞察挖掘——关键发现（3-5个对业务决策最有影响的发现，按业务影响力×数据确定性排序）、人群差异（排除差异<5pp或样本<30的对比）、反常与矛盾（至少找到1个与常识矛盾的数据点，给出A/B两个可能解释）、弱信号（单项不显著但趋势一致的苗头）。",
         "阶段3 自适应框架：基于项目类型专属结构组织报告，但可根据洞察优先级调整顺序和详略；某章节无值得写的内容时允许精简或合并，不要硬凑。",
-        "阶段4 分段撰写：每个发现遵循金字塔结构——一句话结论（加粗）→数据支撑（精确到百分比，标注基数N=XXX）→业务解读（为什么重要）→反常延伸（如有矛盾数据必须提及）。回答So What：不仅写「是什么」，还要写「意味着什么」和「该怎么办」。",
+        "阶段4 分段撰写：每个发现遵循金字塔结构——一句话结论（加粗）→1组最关键的数据证据→原因/机制解释→业务含义与行动。回答 So What：正文重点写「为什么」「意味着什么」「该怎么办」，不要把图表数字换成句子再说一遍。",
         "阶段5 整合审查：确保执行摘要的结论在正文都有展开、建议都对应前面具体发现、无突然出现的数据。统一百分比精度（1位小数）和基数标注格式。",
         "",
         "【核心写作原则】",
-        "- 数据引用必须精确到百分比，保留1位小数；标注基数如「在都市白领中，45.2%（N=567）」；人群对比标注差异绝对值如「高出17.0pp」。",
-        "- 洞察标题使用『四字标签+一句话解读』格式，例如『认知断层：品牌知名度高但购买转化率仅12.3%』。",
+        "- 数据必须准确，但只作为证据锚点：每个核心发现最多引用1–2组最有解释力的数字，保留1位小数并在必要时标注基数；其余篇幅用于判断、解释和业务含义。",
+        "- 洞察标题使用『四字标签+一句话解读』格式，例如『认知断层：品牌知名度未能有效转化为购买意愿』；除非数字本身构成关键反差，标题不堆百分比。",
         "- 反常点不单独成章，作为核心发现中的「反常发现」自然融入，格式：「发现X：与预期相反，[数据现象]，[可能解释]」。",
         "- 样本质量信息只在执行摘要或开篇「研究说明」中1段带过，不单独成章。",
         "- 如存在样本量<30的细分单元格，必须标注「小样本，谨慎解读」。",
         "- 未达显著差异的数据，表述为「略高于」「与...接近」，禁止说「显著高于」。",
         "- 如果用户未填写核心假设，先基于数据提炼最可能的3个假设再展开分析。",
-        "- 禁止把表格内容用文字复述一遍；禁止使用「总体来看」「不难发现」「综上所述」等模板化过渡语。",
+        "- 禁止白描式复述：不要逐个罗列选项、百分比和人群数值，不要让标题、执行摘要与正文重复同一组数字；图表已展示的数据只提炼关键差距或转折。",
+        "- 正文建议保持‘判断/解释/行动约70%，数据证据约30%’；无法由数据直接证明的原因使用‘提示’‘反映’‘可能与…有关’，不要写成确定事实。",
+        "- 禁止使用「总体来看」「不难发现」「综上所述」等模板化过渡语。",
         "- 所有建议必须与研究目标和关键业务决策直接挂钩，不要输出免责套话。",
         "",
         "【输出纪律】直接输出报告正文，从第一行开始就是报告标题或正文内容。严禁输出『好的』『我已收到』『我来分析』『以下是』等对话过渡语。",
@@ -15449,22 +15451,55 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       return parsed;
     }
 
-    function evidencePercentages(contextPage) {
-      const values = [];
+    function pptxPageStableId(page) {
+      return String(page?.slide_id || page?.slide_brief?.slide_id || `page:${Number(page?.page_idx)}`);
+    }
+
+
+    function evidencePercentageRows(contextPage) {
+      const evidence = [];
       (contextPage?.questions || []).forEach((question) => (question.rows || []).forEach((row) => {
-        Object.values(row.values || {}).forEach((value) => {
+        Object.entries(row.values || {}).forEach(([segment, value]) => {
           const numeric = Number(value);
-          if (Number.isFinite(numeric)) values.push(numeric);
+          if (!Number.isFinite(numeric)) return;
+          evidence.push({
+            value: numeric,
+            option: String(row.option || "").trim(),
+            segment: String(segment || "").trim(),
+            question: String(question.title || question.code || "").trim(),
+          });
         });
       }));
-      return values;
+      return evidence;
     }
 
     function isAiInsightSupported(text, contextPage) {
-      const percentages = Array.from(String(text || "").matchAll(/(\d+(?:\.\d+)?)\s*%/g)).map((match) => Number(match[1]));
-      if (!percentages.length) return true;
-      const evidence = evidencePercentages(contextPage);
-      return percentages.every((value) => evidence.some((actual) => Math.abs(actual - value) <= 0.11));
+      const content = String(text || "");
+      const hasPsmEvidence = (contextPage?.questions || []).some(
+        (question) => question?.model_semantics?.analysis_model === "psm"
+      );
+      if (hasPsmEvidence && /\u5cf0\u503c|\u6700\u4f18\u4ef7|\u6700\u4f18\u4ef7\u683c|\u63a5\u53d7\u4e0a\u9650|\u63a5\u53d7\u4e0b\u9650|\u53ef\u63a5\u53d7\u6781\u9650|\u4ef7\u683c\u4e34\u754c\u70b9/.test(content)) {
+        return false;
+      }
+      const matches = Array.from(content.matchAll(/(\d+(?:\.\d+)?)\s*%/g));
+      if (!matches.length) return true;
+      const evidence = evidencePercentageRows(contextPage);
+      const allOptions = Array.from(new Set(evidence.map((item) => item.option).filter((item) => item.length >= 2)));
+      const allSegments = Array.from(new Set(evidence.map((item) => item.segment).filter((item) => item.length >= 2)));
+      return matches.every((match) => {
+        const value = Number(match[1]);
+        const start = Math.max(0, (match.index || 0) - 36);
+        const end = Math.min(content.length, (match.index || 0) + match[0].length + 36);
+        const clause = content.slice(start, end);
+        const mentionedOptions = allOptions.filter((label) => clause.includes(label));
+        const mentionedSegments = allSegments.filter((label) => clause.includes(label));
+        return evidence.some((item) => {
+          if (Math.abs(item.value - value) > 0.11) return false;
+          if (mentionedOptions.length && !mentionedOptions.includes(item.option)) return false;
+          if (mentionedSegments.length && !mentionedSegments.includes(item.segment)) return false;
+          return true;
+        });
+      });
     }
 
     async function requestPptxInsightContext() {
@@ -15537,12 +15572,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const context = await requestPptxInsightContext();
         lastPptxInsightContext = context;
         setPptxProgress(14, "数据证据已准备，开始逐页写作", "AI 写作");
-        const currentPlanByPage = new Map(
-          editedPagePlan.pages.map((page) => [Number(page.page_idx), page])
+        const currentPlanById = new Map(
+          editedPagePlan.pages.map((page) => [pptxPageStableId(page), page])
         );
-        const contextByPage = new Map((context.pages || []).map((page) => [Number(page.page_idx), page]));
+        const contextById = new Map((context.pages || []).map((page) => [pptxPageStableId(page), page]));
         const writablePages = (context.pages || []).filter((page) => {
-          const brief = currentPlanByPage.get(Number(page.page_idx))?.slide_brief || {};
+          const brief = currentPlanById.get(pptxPageStableId(page))?.slide_brief || {};
           return !brief.locked && !brief.user_modified;
         });
         const batches = [];
@@ -15561,10 +15596,13 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               {
                 role: "system",
                 content: [
-                  "你是资深市场研究报告顾问。请根据逐页结构化数据，为每页写一句话洞察标题和2-3条正文洞察。",
-                  "只能使用输入中出现的百分比和样本量，不得推测、改写或编造数字。",
-                  "标题应直接表达结论；正文采用观察+数据证据+业务含义，避免空话。",
-                  "只返回 JSON：{\"pages\":[{\"page_idx\":1,\"title\":\"一句话标题\",\"bullets\":[\"洞察1\",\"洞察2\"]}]}。",
+                  "你是资深市场研究报告顾问。请根据逐页结构化数据，为每页写一句话洞察标题、2-3条正文洞察和1条业务含义。",
+                  "只能使用输入中出现的百分比和样本量，不得改写或编造数字；允许用‘反映’‘提示’‘可能与…有关’做谨慎解释。",
+                  "必须遵守每道题的 model_semantics；PSM 单条累计曲线不得写成接受率、峰值、最优价或价格上下限。",
+                  "必须原样返回每页 slide_id；数字、人群和选项必须来自同一行证据，不能仅因某个数字在本页出现就视为匹配。",
+                  "标题先给判断，不要堆数字。正文先解释关键关系或差异，再用1组关键数据作证据锚点，最后落到业务含义；证据不足时不要强行归因。",
+                  "每页最多引用2个数字，不得逐项复述图表，不要让标题和正文重复同一数字；避免以‘数据显示’‘从数据看’‘其中’开头连续播报占比。",
+                  "只返回 JSON：{\"pages\":[{\"slide_id\":\"finding_001\",\"page_idx\":1,\"title\":\"一句话判断\",\"bullets\":[\"解释或关系\",\"关键证据\"],\"business_implication\":\"业务含义\"}]}。",
                 ].join("\n"),
               },
               { role: "user", content: JSON.stringify({ pages }) },
@@ -15600,24 +15638,33 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         };
         await Promise.all(Array.from({ length: Math.min(2, Math.max(1, batches.length)) }, () => runWorker()));
 
-        const generatedByPage = new Map(
-          batchResults.flat().filter(Boolean).map((page) => [Number(page.page_idx), page])
-        );
+        const generatedById = new Map(batchResults.flat().filter(Boolean).map((page) => {
+          const fallbackEvidence = (context.pages || []).find(
+            (item) => Number(item.page_idx) === Number(page.page_idx)
+          );
+          const stableSource = page.slide_id ? page : (fallbackEvidence || page);
+          return [pptxPageStableId(stableSource), page];
+        }));
         let applied = 0;
         editedPagePlan.pages.forEach((page) => {
-          const pageIdx = Number(page.page_idx);
-          const suggestion = generatedByPage.get(pageIdx);
-          const evidence = contextByPage.get(pageIdx);
+          const pageId = pptxPageStableId(page);
+          const suggestion = generatedById.get(pageId);
+          const evidence = contextById.get(pageId);
           const brief = page.slide_brief || {};
           if (!suggestion || !evidence || brief.locked || brief.user_modified) return;
           const title = String(suggestion.title || "").trim();
           const bullets = (suggestion.bullets || []).map((text) => String(text || "").trim()).filter(Boolean);
+          const businessImplication = String(suggestion.business_implication || "").trim();
           if (title && isAiInsightSupported(title, evidence)) page.insight_override = title.slice(0, 90);
           page.insight_bullets = bullets.filter((text) => isAiInsightSupported(text, evidence)).slice(0, 3);
+          page.business_implication = isAiInsightSupported(businessImplication, evidence)
+            ? businessImplication
+            : "";
           page.slide_brief = {
             ...brief,
             title: page.insight_override || brief.title || page.title || "",
             claim: page.insight_override || brief.claim || page.title || "",
+            business_implication: page.business_implication,
             user_modified: false,
           };
           if (page.insight_override || page.insight_bullets.length) applied += 1;
@@ -15631,7 +15678,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         }));
         try {
           const summaryOutput = await callAiChatCompletion(settings, [
-            { role: "system", content: "基于逐页洞察，写3句以内的执行摘要，不新增数字。只返回 JSON：{\"summary\":\"...\"}。" },
+            { role: "system", content: "基于逐页洞察写3句以内的执行摘要：先给总判断，再解释核心矛盾，最后给行动方向；不要按页面罗列发现，不新增数字，全文最多保留2个关键数字。只返回 JSON：{\"summary\":\"...\"}。" },
             { role: "user", content: JSON.stringify(summaryInput) },
           ], { maxTokens: 1200, timeoutMs: 180000, temperature: 0.15, responseFormat: "json_object", stream: true });
           const summaryText = String(summaryOutput || "").match(/\{[\s\S]*\}/)?.[0] || "{}";
@@ -15751,11 +15798,11 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       lastPptxInsightContext = context;
       ensureStableSlideBriefs();
 
-      const currentPlanByPage = new Map(
-        (editedPagePlan.pages || []).map((page) => [Number(page.page_idx), page])
+      const currentPlanById = new Map(
+        (editedPagePlan.pages || []).map((page) => [pptxPageStableId(page), page])
       );
       const sourceContextPages = (context.pages || []).map((page) => {
-        const currentPage = currentPlanByPage.get(Number(page.page_idx));
+        const currentPage = currentPlanById.get(pptxPageStableId(page));
         return {
           ...page,
           chapter: currentPage?.chapter || page.chapter,
@@ -15765,13 +15812,13 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const contextPages = aiPlanner.organizePagesByNarrative(
         sourceContextPages, reportNarrative, { renumber: false }
       );
-      const contextByPage = new Map(contextPages.map((page) => [Number(page.page_idx), page]));
+      const contextById = new Map(contextPages.map((page) => [pptxPageStableId(page), page]));
       const applyNarrativePageOrder = () => {
-        const planBySourcePage = new Map(
-          (editedPagePlan.pages || []).map((page) => [Number(page.page_idx), page])
+        const planBySourceId = new Map(
+          (editedPagePlan.pages || []).map((page) => [pptxPageStableId(page), page])
         );
         editedPagePlan.pages = contextPages.map((contextPage, index) => {
-          const page = planBySourcePage.get(Number(contextPage.page_idx));
+          const page = planBySourceId.get(pptxPageStableId(contextPage));
           if (!page) return null;
           page.page_idx = index + 1;
           page.chapter = contextPage.chapter;
@@ -15839,7 +15886,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         concurrency,
         async (batch, batchIndex) => {
           const firstPageIndex = contextPages.findIndex(
-            (page) => Number(page.page_idx) === Number(batch[0]?.page_idx)
+            (page) => pptxPageStableId(page) === pptxPageStableId(batch[0])
           );
           const previousPage = firstPageIndex > 0 ? contextPages[firstPageIndex - 1] : null;
 
@@ -15873,22 +15920,22 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           };
 
           const initialPages = await requestPages(batch);
-          const generatedByPage = new Map(
-            initialPages.map((page) => [Number(page.page_idx), page])
+          const generatedById = new Map(
+            initialPages.map((page) => [pptxPageStableId(page), page])
           );
           const missingPages = batch.filter(
-            (page) => !generatedByPage.has(Number(page.page_idx))
+            (page) => !generatedById.has(pptxPageStableId(page))
           );
           if (missingPages.length) {
             retriedPages += missingPages.length;
             const repairedPages = await requestPages(missingPages, true);
-            repairedPages.forEach((page) => generatedByPage.set(Number(page.page_idx), page));
+            repairedPages.forEach((page) => generatedById.set(pptxPageStableId(page), page));
           }
           const unresolvedPages = batch.filter(
-            (page) => !generatedByPage.has(Number(page.page_idx))
+            (page) => !generatedById.has(pptxPageStableId(page))
           );
           return {
-            pages: Array.from(generatedByPage.values()),
+            pages: Array.from(generatedById.values()),
             unresolved_page_idxs: unresolvedPages.map((page) => Number(page.page_idx)),
           };
         },
@@ -15907,12 +15954,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         throw new Error("所有 SlideBrief 批次均未返回有效页面，已保留确定性蓝图。");
       }
 
-      const generatedByPage = new Map(generated.map((page) => [Number(page.page_idx), page]));
+      const generatedById = new Map(generated.map((page) => [pptxPageStableId(page), page]));
       let applied = 0;
       editedPagePlan.pages.forEach((page) => {
-        const pageIdx = Number(page.page_idx);
-        const suggestion = generatedByPage.get(pageIdx);
-        const evidence = contextByPage.get(pageIdx);
+        const pageId = pptxPageStableId(page);
+        const suggestion = generatedById.get(pageId);
+        const evidence = contextById.get(pageId);
         if (!suggestion || !evidence) return;
         const existingBrief = page.slide_brief || {};
         if (existingBrief.locked || existingBrief.user_modified) return;
@@ -15922,10 +15969,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           ? `本章目的：${chapter.purpose}；核心问题：${chapter.key_question}`
           : "";
         const title = String(suggestion.title || "").trim();
+        const claim = String(suggestion.claim || suggestion.title || "").trim();
         const bullets = (suggestion.bullets || []).map((value) => String(value || "").trim()).filter(Boolean);
+        const businessImplication = String(suggestion.business_implication || "").trim();
         if (title && isAiInsightSupported(title, evidence)) page.insight_override = title;
         page.insight_bullets = bullets.filter((value) => isAiInsightSupported(value, evidence));
-        page.business_implication = suggestion.business_implication;
+        page.business_implication = isAiInsightSupported(businessImplication, evidence)
+          ? businessImplication
+          : "";
         page.evidence_fact_ids = suggestion.evidence_fact_ids;
         page.evidence_question_ids = suggestion.evidence_question_ids;
         if (chapter?.title) page.chapter = chapter.title;
@@ -15934,8 +15985,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           chapter: page.chapter,
           title: page.insight_override || page.title,
           question_answered: chapter?.key_question || existingBrief.question_answered || "",
-          claim: suggestion.claim || page.insight_override || page.title,
-          business_implication: suggestion.business_implication,
+          claim: isAiInsightSupported(claim, evidence)
+            ? claim
+            : (page.insight_override || page.title),
+          business_implication: page.business_implication,
           evidence_fact_ids: suggestion.evidence_fact_ids,
           evidence_question_ids: suggestion.evidence_question_ids,
           central_thesis: narrativeContext.central_thesis,
