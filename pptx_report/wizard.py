@@ -698,8 +698,9 @@ def _fact_headline(fact) -> str:
     if fact.fact_type == "low_base_warning":
         return f"{segment}样本量偏低，相关结论需谨慎解读"
     if value is not None:
-        return f"「{category}」是当前最突出的结果（{value:.1f}{suffix}）"
-    return f"「{category}」是需要优先关注的结果"
+        subject = "总体" if segment == "总体" else segment
+        return f"{subject}在「{category}」上的当前结果为{value:.1f}{suffix}"
+    return f"「{category}」需要结合业务目标进一步判断优先级"
 
 
 def _build_executive_findings(questions: list, facts: list) -> list[ExecutiveFinding]:
@@ -761,9 +762,15 @@ def _build_narrative_findings(page_config: dict | None, facts: list,
         if not headline or not fact_ids:
             continue
         implication = str(brief.get("business_implication") or page.get("business_implication") or "").strip()
+        supporting = [
+            str(value).strip() for value in (page.get("insight_bullets") or [])
+            if str(value).strip() and str(value).strip() != headline
+        ]
+        description = supporting[0] if supporting else implication
+        action_implication = implication if implication and implication != description else ""
         findings.append(ExecutiveFinding(
             title=headline,
-            description=implication,
+            description=description,
             evidence_fact_ids=list(dict.fromkeys(fact_ids)),
             evidence_question_ids=list(dict.fromkeys(
                 str(value) for value in (
@@ -771,7 +778,7 @@ def _build_narrative_findings(page_config: dict | None, facts: list,
                 ) if str(value)
             )),
             source_references=[],
-            action_implication=implication,
+            action_implication=action_implication,
             importance="high" if len(findings) < 2 else "medium",
         ))
         if len(findings) >= 5:
@@ -959,6 +966,14 @@ def _enhance_report_pages(
         (len(question.get("segments") or []) for question in questions),
         default=0,
     )
+    displayed_segment_names = {
+        str(series.name or "").strip()
+        for page in pages
+        for chart in getattr(page, "charts", [])
+        for series in getattr(chart, "series", [])
+        if str(series.name or "").strip()
+    }
+    displayed_segment_count = len(displayed_segment_names)
     structure_payload = (page_config or {}).get("template_report_structure")
     template_sections = (
         structure_payload.get("sections", [])
@@ -993,7 +1008,7 @@ def _enhance_report_pages(
     result.append(ResearchOverviewContent(
         sample_size=total_base or None,
         question_count=len(questions),
-        segment_count=max(0, segment_count - 1),
+        segment_count=displayed_segment_count or max(0, segment_count - 1),
         source_references=[source] if source else [],
     ))
     if findings:
@@ -1018,9 +1033,16 @@ def _enhance_report_pages(
                 chapter=str(matched_section.get("number") or page.chapter) if matched_section else page.chapter,
                 subtitle=(
                     " | ".join(str(item) for item in matched_section.get("topics", [])[:6])
-                    if matched_section else (page.brief.question_answered if page.brief else "")
+                    if matched_section else (
+                        (page.brief.chapter_context or page.brief.question_answered)
+                        if page.brief else ""
+                    )
                 ),
-                key_message=(page.brief.claim if page.brief else ""),
+                key_message=(
+                    page.brief.claim
+                    if page.brief and str(page.brief.claim).strip() != str(page.chapter).strip()
+                    else ""
+                ),
                 slide_id=f"section_{len(result):03d}",
             ))
             if matched_section and not parent_section:
@@ -1030,23 +1052,59 @@ def _enhance_report_pages(
 
     opportunity_facts = [
         fact for fact in facts
-        if fact.fact_type in {"segment_gap", "benchmark_gap", "bottom_rank"}
+        if fact.fact_type == "segment_gap"
         and fact.value is not None
+        and fact.gap_pp is not None
+        and str(fact.segment or "").strip().lower() not in {"", "total", "总体"}
+        and str(fact.category or "").strip()
+        and not any(
+            term in str(fact.segment or "")
+            and term in str(question_by_id.get(fact.question_id, {}).get("title") or "")
+            for term in ("购买", "兴趣", "满意", "推荐", "安装", "使用")
+        )
     ]
-    opportunity_facts.sort(
-        key=lambda fact: abs(float(fact.gap_pp or fact.value or 0)),
-        reverse=True,
+    opportunity_groups: dict[tuple[str, str], list] = {}
+    for fact in opportunity_facts:
+        key = (str(fact.question_id or ""), str(fact.segment or ""))
+        group = opportunity_groups.setdefault(key, [])
+        if not any(str(item.category) == str(fact.category) for item in group):
+            group.append(fact)
+    comparable_groups = [
+        group for group in opportunity_groups.values()
+        if len(group) >= 4
+    ]
+    selected_opportunity_facts = max(
+        comparable_groups,
+        key=lambda group: (
+            max(abs(float(item.gap_pp or 0)) for item in group),
+            len(group),
+        ),
+        default=[],
     )
+    selected_opportunity_facts = sorted(
+        selected_opportunity_facts,
+        key=lambda fact: abs(float(fact.gap_pp or 0)),
+        reverse=True,
+    )[:6]
     opportunities = [
         OpportunityItem(
-            label=str(fact.category or fact.metric_name),
-            importance=abs(float(fact.gap_pp or fact.value or 0)),
-            performance=float(fact.value or 0),
+            label=str(fact.category),
+            importance=min(95.0, 50.0 + abs(float(fact.gap_pp or 0)) * 2.0),
+            performance=max(0.0, min(100.0, float(fact.value or 0))),
             implication=_fact_headline(fact),
             fact_ids=[fact.fact_id],
         )
-        for fact in opportunity_facts[:6]
+        for fact in selected_opportunity_facts
     ]
+    opportunity_question = (
+        question_by_id.get(selected_opportunity_facts[0].question_id, {})
+        if selected_opportunity_facts else {}
+    )
+    opportunity_title = (
+        f"{str(opportunity_question.get('title') or '').strip()}：差异机会与优势分布"
+        if str(opportunity_question.get("title") or "").strip()
+        else "同一指标内的差异机会与优势分布"
+    )
     if conclusion_section and (opportunities or findings) and previous_chapter != str(conclusion_section.get("title")):
         result.append(SectionDividerContent(
             title=str(conclusion_section.get("title") or "结论与建议"),
@@ -1057,7 +1115,7 @@ def _enhance_report_pages(
         previous_chapter = str(conclusion_section.get("title"))
     if opportunities:
         result.append(OpportunityMatrixContent(
-            title="优先机会集中在高差异、低表现的关键指标",
+            title=opportunity_title,
             opportunities=opportunities,
             data_source=source,
             slide_id="opportunity_matrix",

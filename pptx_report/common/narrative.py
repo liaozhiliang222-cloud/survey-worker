@@ -41,7 +41,8 @@ def _claim_from_fact(fact: dict) -> str:
         )
     if fact_type == "low_base_warning":
         return f"{segment}样本量偏低，相关结论仅作方向性参考"
-    return f"「{category}」是当前最突出的结果（{float(value):.1f}{suffix}）"
+    subject = "总体" if segment.lower() in {"total", "总体"} else segment
+    return f"{subject}在「{category}」上的当前结果为{float(value):.1f}{suffix}"
 
 
 def _narrative_payload(value: Any) -> dict:

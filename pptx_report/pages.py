@@ -198,29 +198,47 @@ def build_toc(slide, toc: TocContent, theme: Theme, dims: Dims) -> None:
     _add_textbox(slide, "目录 CONTENTS", Inches(PAGE_MARGIN), Inches(TITLE_TOP),
                   slide_w - Inches(2 * PAGE_MARGIN), Inches(TITLE_HEIGHT), theme,
                   size=32, bold=True, color=theme.primary)
-    # 章节较多时压缩纵向节奏，确保最后一项完整落在安全区内。
     section_count = max(1, len(toc.sections))
     y = 1.55 if section_count >= 7 else 1.8
     step = min(0.85, (float(slide_h) / 914400.0 - y - BOTTOM_MARGIN - 0.18) / section_count)
     row_h = min(0.6, max(0.45, step - 0.12))
-    for i, sec in enumerate(toc.sections):
-        num = f"{i + 1:02d}"
-        _add_textbox(slide, num, Inches(PAGE_MARGIN), Inches(y),
-                      Inches(1.0), Inches(row_h), theme, size=22 if section_count >= 7 else 24, bold=True,
-                      color=theme.accent)
-        _add_textbox(slide, sec, Inches(PAGE_MARGIN + 1.1), Inches(y),
-                      slide_w - Inches(2 * PAGE_MARGIN + 1.1), Inches(row_h), theme,
-                      size=19 if section_count >= 7 else 20, color=theme.text_dark)
-        # 底部分隔线
+    top_index = 0
+    parent_number = 0
+    child_index = 0
+    for sec in toc.sections:
+        raw = str(sec)
+        is_child = bool(raw[:1].isspace())
+        label = raw.strip()
+        if is_child and parent_number:
+            child_index += 1
+            num = f"{parent_number:02d}.{child_index}"
+            number_size = 15
+            text_size = 17
+            number_x = PAGE_MARGIN + 0.34
+            text_x = PAGE_MARGIN + 1.42
+        else:
+            top_index += 1
+            parent_number = top_index
+            child_index = 0
+            num = f"{top_index:02d}"
+            number_size = 22 if section_count >= 7 else 24
+            text_size = 19 if section_count >= 7 else 20
+            number_x = PAGE_MARGIN
+            text_x = PAGE_MARGIN + 1.1
+        _add_textbox(slide, num, Inches(number_x), Inches(y),
+                      Inches(1.0), Inches(row_h), theme, size=number_size,
+                      bold=True, color=theme.accent)
+        _add_textbox(slide, label, Inches(text_x), Inches(y),
+                      slide_w - Inches(text_x + PAGE_MARGIN), Inches(row_h), theme,
+                      size=text_size, color=theme.text_dark)
         line_y = y + row_h + 0.02
         if line_y < slide_h - BOTTOM_MARGIN:
-            divider = _add_shape(slide,
-                MSO_SHAPE.RECTANGLE, Inches(PAGE_MARGIN), Inches(line_y),
-                slide_w - Inches(2 * PAGE_MARGIN), Inches(0.012))
-            set_shape_fill(divider, "D9D9D9")
+            divider = _add_shape(slide, MSO_SHAPE.RECTANGLE,
+                                 Inches(PAGE_MARGIN), Inches(line_y),
+                                 slide_w - Inches(2 * PAGE_MARGIN), Inches(0.012))
+            set_shape_fill(divider, "E4EAF1" if is_child else "D9D9D9")
             remove_shape_outline(divider)
         y += step
-
 
 # ------------------------- 执行摘要 -------------------------
 def build_exec_summary(slide, es, theme: Theme, dims: Dims) -> None:
@@ -245,10 +263,11 @@ def build_exec_summary(slide, es, theme: Theme, dims: Dims) -> None:
         gap_x, gap_y = 0.28, 0.22
         width_in = float(slide_w) / 914400.0
         height_in = float(slide_h) / 914400.0
-        content_top = 1.25
+        content_top = 2.1 if count == 1 else 1.25
         content_bottom = height_in - 0.65
         card_w = (width_in - 2 * PAGE_MARGIN - gap_x * (cols - 1)) / cols
-        card_h = min(2.2, (content_bottom - content_top - gap_y * (rows - 1)) / rows)
+        card_h = (1.85 if count == 1 else
+                  min(2.2, (content_bottom - content_top - gap_y * (rows - 1)) / rows))
         for index, finding in enumerate(findings):
             row, col = divmod(index, cols)
             x = PAGE_MARGIN + col * (card_w + gap_x)
@@ -274,32 +293,39 @@ def build_exec_summary(slide, es, theme: Theme, dims: Dims) -> None:
                 bold=True,
                 color=theme.accent,
             )
+            title = str(finding.title or "").strip()
+            title_size = 12.5 if cols == 2 and _text_width_units(title) > 42 else (14 if cols == 2 else 16)
             _add_textbox(
                 slide,
-                finding.title,
+                title,
                 Inches(x + 0.78),
-                Inches(y + 0.12),
+                Inches(y + 0.10),
                 Inches(card_w - 0.96),
-                Inches(0.62),
+                Inches(0.70),
                 theme,
-                size=14 if cols == 2 else 16,
+                size=title_size,
                 bold=True,
                 color=theme.primary,
             )
-            body = finding.description
-            if finding.action_implication:
-                body = f"{body}\n行动含义：{finding.action_implication}" if body else finding.action_implication
+            description = str(finding.description or "").strip()
+            implication = str(finding.action_implication or "").strip()
+            if implication and implication not in description and description not in implication:
+                body = f"{description}\n行动：{implication}" if description else implication
+            else:
+                body = description or implication
+            if _text_width_units(body) > 150:
+                body = _truncate_to_width(body, 150)
             _add_textbox(
                 slide,
                 body,
                 Inches(x + 0.78),
-                Inches(y + 0.76),
+                Inches(y + 0.84),
                 Inches(card_w - 0.96),
-                Inches(max(0.45, card_h - 1.02)),
+                Inches(max(0.48, card_h - 0.96)),
                 theme,
-                size=10.5 if rows >= 3 else 12,
+                size=9.5 if rows >= 3 else 11,
                 color=theme.text_dark,
-                line_spacing=1.08,
+                line_spacing=1.04,
             )
         return
 
@@ -467,29 +493,73 @@ def build_research_overview(slide, page: ResearchOverviewContent, theme: Theme, 
         _add_textbox(slide, value, x + Inches(.18), Inches(2.03), card_w - Inches(.36), Inches(.48), theme, size=24, bold=True, color=theme.primary)
     _add_textbox(slide, "研究方法", Inches(PAGE_MARGIN), Inches(3.2), Inches(2), Inches(.45), theme, size=16, bold=True, color=theme.primary)
     _add_textbox(slide, page.methodology, Inches(PAGE_MARGIN), Inches(3.72), slide_w - Inches(2 * PAGE_MARGIN), Inches(.9), theme, size=15, color=theme.text_dark, line_spacing=1.25)
-    _add_source(slide, "数据来源：" + "；".join(page.source_references), theme, dims)
+    source_text = "；".join(str(value) for value in page.source_references if str(value).strip())
+    if source_text:
+        _add_source(slide, "数据来源：" + source_text, theme, dims)
 
 
 def build_section_divider(slide, page: SectionDividerContent, theme: Theme, dims: Dims):
     slide_w, slide_h = dims
-    accent = _add_shape(slide, MSO_SHAPE.RECTANGLE, Inches(.72), Inches(1.55), Inches(.1), Inches(3.4)); set_shape_fill(accent, theme.primary); remove_shape_outline(accent)
-    _add_textbox(slide, page.chapter or "研究发现", Inches(1.08), Inches(1.62), slide_w - Inches(2), Inches(.45), theme, size=14, bold=True, color=theme.secondary)
-    _add_textbox(slide, page.title, Inches(1.08), Inches(2.18), slide_w - Inches(2), Inches(1.25), theme, size=34, bold=True, color=theme.primary, anchor=MSO_ANCHOR.MIDDLE)
-    if page.subtitle: _add_textbox(slide, page.subtitle, Inches(1.08), Inches(3.55), slide_w - Inches(2), Inches(.55), theme, size=17)
-    if page.key_message: _add_textbox(slide, page.key_message, Inches(1.08), Inches(4.35), slide_w - Inches(2), Inches(.85), theme, size=16, bold=True, color=theme.secondary)
-    footer = _add_shape(slide, MSO_SHAPE.RECTANGLE, 0, slide_h - Inches(.12), slide_w, Inches(.12)); set_shape_fill(footer, theme.primary); remove_shape_outline(footer)
-
+    title = str(page.title or "").strip()
+    chapter_label = str(page.chapter or "研究发现").strip()
+    if chapter_label == title:
+        chapter_label = "研究发现"
+    generic_prompts = {"还需要关注什么", "当前行为如何", "用户是谁", "问题背后的原因与机会是什么"}
+    subtitle = str(page.subtitle or "").strip()
+    if subtitle in generic_prompts or subtitle == title:
+        subtitle = ""
+    key_message = str(page.key_message or "").strip()
+    if key_message in generic_prompts or key_message in {title, subtitle}:
+        key_message = ""
+    accent = _add_shape(slide, MSO_SHAPE.RECTANGLE, Inches(.72), Inches(1.55), Inches(.1), Inches(3.4))
+    set_shape_fill(accent, theme.primary)
+    remove_shape_outline(accent)
+    _add_textbox(slide, chapter_label, Inches(1.08), Inches(1.62),
+                 slide_w - Inches(2), Inches(.45), theme,
+                 size=14, bold=True, color=theme.secondary)
+    _add_textbox(slide, title, Inches(1.08), Inches(2.18),
+                 slide_w - Inches(2), Inches(1.25), theme,
+                 size=34, bold=True, color=theme.primary, anchor=MSO_ANCHOR.MIDDLE)
+    if subtitle:
+        _add_textbox(slide, subtitle, Inches(1.08), Inches(3.55),
+                     slide_w - Inches(2), Inches(.55), theme, size=17)
+    if key_message:
+        _add_textbox(slide, key_message, Inches(1.08), Inches(4.35),
+                     slide_w - Inches(2), Inches(.85), theme,
+                     size=16, bold=True, color=theme.secondary)
+    footer = _add_shape(slide, MSO_SHAPE.RECTANGLE, 0,
+                        slide_h - Inches(.12), slide_w, Inches(.12))
+    set_shape_fill(footer, theme.primary)
+    remove_shape_outline(footer)
 
 def build_findings_overview(slide, page: FindingsOverviewContent, theme: Theme, dims: Dims):
-    slide_w, _ = dims; _add_page_title(slide, page.title, theme, dims)
-    findings = list(page.findings); rows = max(1, (len(findings) + 1) // 2); gx, gy = Inches(.24), Inches(.22); cw = (slide_w - Inches(2 * PAGE_MARGIN) - gx) / 2; ch = min(Inches(1.65), (Inches(5.55) - gy * (rows - 1)) / rows)
+    slide_w, _ = dims
+    _add_page_title(slide, page.title, theme, dims)
+    findings = list(page.findings)
+    rows = max(1, (len(findings) + 1) // 2)
+    gx, gy = Inches(.24), Inches(.22)
+    cw = (slide_w - Inches(2 * PAGE_MARGIN) - gx) / 2
+    ch = min(Inches(1.65), (Inches(5.55) - gy * (rows - 1)) / rows)
     for i, finding in enumerate(findings):
-        row, col = divmod(i, 2); x = Inches(PAGE_MARGIN) + col * (cw + gx); y = Inches(1.35) + row * (ch + gy)
-        card = _add_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, x, y, cw, ch); set_shape_fill(card, "F5F8FC"); card.line.color.rgb = RGBColor.from_string("D9E4F2")
-        _add_textbox(slide, f"{i+1:02d}", x + Inches(.15), y + Inches(.15), Inches(.55), Inches(.35), theme, size=15, bold=True, color=theme.secondary)
-        _add_textbox(slide, finding.title, x + Inches(.72), y + Inches(.12), cw - Inches(.88), Inches(.48), theme, size=15, bold=True, color=theme.primary)
-        _add_textbox(slide, finding.description, x + Inches(.18), y + Inches(.68), cw - Inches(.36), ch - Inches(.82), theme, size=11.5, line_spacing=1.1)
-
+        row, col = divmod(i, 2)
+        x = Inches(PAGE_MARGIN) + col * (cw + gx)
+        y = Inches(1.35) + row * (ch + gy)
+        card = _add_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, x, y, cw, ch)
+        set_shape_fill(card, "F5F8FC")
+        card.line.color.rgb = RGBColor.from_string("D9E4F2")
+        _add_textbox(slide, f"{i+1:02d}", x + Inches(.15), y + Inches(.15),
+                     Inches(.55), Inches(.35), theme, size=15,
+                     bold=True, color=theme.secondary)
+        title = str(finding.title or "").strip()
+        title_size = 13 if _text_width_units(title) > 42 else 14
+        _add_textbox(slide, title, x + Inches(.72), y + Inches(.10),
+                     cw - Inches(.88), Inches(.70), theme,
+                     size=title_size, bold=True, color=theme.primary)
+        description = str(finding.description or "").strip()
+        if description and description != title:
+            _add_textbox(slide, description, x + Inches(.18), y + Inches(.84),
+                         cw - Inches(.36), max(Inches(.42), ch - Inches(.96)),
+                         theme, size=10.5, line_spacing=1.05)
 
 def build_key_finding(slide, page: KeyFindingContent, theme: Theme, dims: Dims):
     slide_w, _ = dims; _add_page_title(slide, page.title, theme, dims); f = page.finding
@@ -511,13 +581,81 @@ def build_funnel_analysis(slide, page: FunnelAnalysisContent, theme: Theme, dims
 
 
 def build_opportunity_matrix(slide, page: OpportunityMatrixContent, theme: Theme, dims: Dims):
-    slide_w, _ = dims; _add_page_title(slide, page.title, theme, dims); x0,y0,w,h = Inches(1),Inches(1.45),Inches(8.2),Inches(4.95)
-    bg=_add_shape(slide, MSO_SHAPE.RECTANGLE,x0,y0,w,h);set_shape_fill(bg,"F7F9FC");bg.line.color.rgb=RGBColor.from_string("C8D4E3")
-    for x,y,cx,cy in ((x0+w/2,y0,Inches(.012),h),(x0,y0+h/2,w,Inches(.012))): line=_add_shape(slide, MSO_SHAPE.RECTANGLE,x,y,cx,cy);set_shape_fill(line,"B9C7D8");remove_shape_outline(line)
-    for i,item in enumerate(page.opportunities):
-        px=x0+int(max(.03,min(.97,item.performance/100))*w);py=y0+int((1-max(.03,min(.97,item.importance/100)))*h);dot=_add_shape(slide, MSO_SHAPE.OVAL,px-Inches(.12),py-Inches(.12),Inches(.24),Inches(.24));set_shape_fill(dot,theme.secondary if item.performance<50 else theme.primary);remove_shape_outline(dot);_add_textbox(slide,item.label,px+Inches(.08),py-Inches(.16),Inches(1.55),Inches(.35),theme,size=9.5,bold=i<3)
-    sx=Inches(9.55);sw=slide_w-sx-Inches(PAGE_MARGIN);_add_textbox(slide,"优先机会",sx,Inches(1.5),sw,Inches(.4),theme,size=16,bold=True,color=theme.primary);priorities=[f"{i.label}：{i.implication}" for i in sorted(page.opportunities,key=lambda v:v.importance-v.performance,reverse=True) if i.implication];_add_bulleted_insights(slide,priorities,sx,Inches(2.05),sw,Inches(3.9),theme,size=11.5);_add_source(slide,page.data_source,theme,dims)
-
+    slide_w, _ = dims
+    _add_page_title(slide, page.title, theme, dims)
+    x0, y0, w, h = Inches(.88), Inches(1.48), Inches(8.15), Inches(4.82)
+    bg = _add_shape(slide, MSO_SHAPE.RECTANGLE, x0, y0, w, h)
+    set_shape_fill(bg, "F7F9FC")
+    bg.line.color.rgb = RGBColor.from_string("C8D4E3")
+    for x, y, cx, cy in ((x0 + w / 2, y0, Inches(.012), h),
+                          (x0, y0 + h / 2, w, Inches(.012))):
+        line = _add_shape(slide, MSO_SHAPE.RECTANGLE, x, y, cx, cy)
+        set_shape_fill(line, "B9C7D8")
+        remove_shape_outline(line)
+    quadrant_style = dict(theme=theme, size=9.5, bold=True, color="718096")
+    _add_textbox(slide, "高差异 · 待改善", x0 + Inches(.16), y0 + Inches(.12),
+                 Inches(1.55), Inches(.30), **quadrant_style)
+    _add_textbox(slide, "高差异 · 已领先", x0 + w - Inches(1.78), y0 + Inches(.12),
+                 Inches(1.62), Inches(.30), **quadrant_style)
+    _add_textbox(slide, "低差异 · 基础项", x0 + Inches(.16), y0 + h - Inches(.40),
+                 Inches(1.55), Inches(.30), **quadrant_style)
+    _add_textbox(slide, "低差异 · 保持项", x0 + w - Inches(1.78), y0 + h - Inches(.40),
+                 Inches(1.62), Inches(.30), **quadrant_style)
+    _add_textbox(slide, "当前表现（0–100）→", x0 + w / 2 - Inches(.92), y0 + h + Inches(.10),
+                 Inches(1.84), Inches(.30), theme, size=10.5,
+                 bold=True, color=theme.secondary, align=PP_ALIGN.CENTER)
+    _add_textbox(slide, "差异强度指数（0–100）↑", x0 + Inches(.10), y0 - Inches(.34),
+                 Inches(2.25), Inches(.28), theme, size=10.5,
+                 bold=True, color=theme.secondary)
+    _add_textbox(slide, "表现基准 50", x0 + w / 2 + Inches(.08), y0 + h - Inches(.28),
+                 Inches(1.0), Inches(.22), theme, size=8.5, color="718096")
+    _add_textbox(slide, "差异基准 50", x0 + Inches(.08), y0 + h / 2 + Inches(.04),
+                 Inches(1.0), Inches(.22), theme, size=8.5, color="718096")
+    occupied = []
+    for i, item in enumerate(page.opportunities):
+        px = x0 + int(max(.04, min(.96, item.performance / 100)) * w)
+        py = y0 + int((1 - max(.04, min(.96, item.importance / 100))) * h)
+        dot = _add_shape(slide, MSO_SHAPE.OVAL, px - Inches(.12), py - Inches(.12),
+                         Inches(.24), Inches(.24))
+        set_shape_fill(dot, theme.secondary if item.performance < 50 else theme.primary)
+        remove_shape_outline(dot)
+        label_w = Inches(1.48)
+        if item.performance > 70:
+            label_x = max(x0 + Inches(.08), px - label_w - Inches(.10))
+            label_align = PP_ALIGN.RIGHT
+        else:
+            label_x = min(x0 + w - label_w - Inches(.08), px + Inches(.10))
+            label_align = PP_ALIGN.LEFT
+        label_y = py - Inches(.16)
+        attempts = 0
+        while any(abs(label_y - previous_y) < Inches(.26) and
+                  abs(label_x - previous_x) < Inches(1.35)
+                  for previous_x, previous_y in occupied) and attempts < 4:
+            label_y += Inches(.27 if attempts % 2 == 0 else -.54)
+            attempts += 1
+        label_y = max(y0 + Inches(.38), min(y0 + h - Inches(.64), label_y))
+        occupied.append((label_x, label_y))
+        _add_textbox(slide, item.label, label_x, label_y, label_w, Inches(.34),
+                     theme, size=9.5, bold=i < 3, align=label_align)
+    sx = Inches(9.38)
+    sw = slide_w - sx - Inches(PAGE_MARGIN)
+    _add_textbox(slide, "优先解读", sx, Inches(1.5), sw, Inches(.4),
+                 theme, size=16, bold=True, color=theme.primary)
+    ranked = sorted(page.opportunities,
+                    key=lambda item: (item.importance, -item.performance),
+                    reverse=True)
+    priority_items = [item for item in ranked if item.performance < 50] or ranked
+    priorities = list(dict.fromkeys(
+        (
+            f"优先改善「{item.label}」：{item.implication}"
+            if item.performance < 50
+            else f"保持优势「{item.label}」：{item.implication}"
+        )
+        for item in priority_items if item.implication
+    ))[:5]
+    _add_bulleted_insights(slide, priorities, sx, Inches(2.05), sw,
+                           Inches(3.9), theme, size=11.5)
+    _add_source(slide, page.data_source, theme, dims)
 
 def build_recommendation(slide, page: RecommendationContent, theme: Theme, dims: Dims):
     slide_w,_=dims;_add_page_title(slide,page.title,theme,dims);rows=list(page.recommendations);rh=min(Inches(1.15),Inches(5.55)/max(1,len(rows)));colors={"high":theme.secondary,"medium":"4A90E2","low":"8DA3B8"}
@@ -1201,34 +1339,43 @@ def build_appendix(slide, ap: AppendixContent, theme: Theme, dims: Dims) -> None
     _add_textbox(slide, ap.title, Inches(PAGE_MARGIN), Inches(TITLE_TOP),
                   slide_w - Inches(2 * PAGE_MARGIN), Inches(TITLE_HEIGHT), theme,
                   size=28, bold=True, color=theme.primary)
-
     tbl = ap.table
     if not tbl.headers:
         return
-
     rows = len(tbl.rows) + 1
     cols = len(tbl.headers)
     tx, ty = Inches(PAGE_MARGIN), Inches(1.4)
     tw = slide_w - Inches(2 * PAGE_MARGIN)
-    th = slide_h - Inches(1.4) - Inches(0.9)  # 底部留出来源注
+    available_h = slide_h - Inches(1.4) - Inches(0.9)
+    header_h = Inches(.48)
+    body_h = min(Inches(.48), max(Inches(.30),
+                 (available_h - header_h) / max(1, len(tbl.rows))))
+    th = header_h + body_h * max(1, len(tbl.rows))
     gf = slide.shapes.add_table(rows, cols, tx, ty, tw, th)
     table = gf.table
-
-    col_w = int(tw / cols)
-    for c in range(cols):
-        table.columns[c].width = col_w
-
-    for c, h in enumerate(tbl.headers):
+    table.rows[0].height = header_h
+    for row_index in range(1, len(table.rows)):
+        table.rows[row_index].height = body_h
+    if cols == 3:
+        table.columns[0].width = Inches(1.25)
+        table.columns[2].width = Inches(1.05)
+        table.columns[1].width = tw - table.columns[0].width - table.columns[2].width
+    else:
+        col_w = int(tw / cols)
+        for column in table.columns:
+            column.width = col_w
+    for c, heading in enumerate(tbl.headers):
         cell = table.cell(0, c)
-        cell.text = str(h)
+        cell.text = str(heading)
         _style_cell(cell, theme, header=True, row_index=0)
-
     for r, row in enumerate(tbl.rows, start=1):
-        for c, val in enumerate(row):
+        for c, value in enumerate(row):
             cell = table.cell(r, c)
-            cell.text = str(val)
+            cell.text = str(value)
             _style_cell(cell, theme, header=False, row_index=r)
-
+    source = str(getattr(ap, "source", "") or "").strip()
+    if source:
+        _add_source(slide, source, theme, dims)
 
 def _style_cell(cell, theme: Theme, header: bool, row_index: int) -> None:
     cell.vertical_anchor = MSO_ANCHOR.MIDDLE

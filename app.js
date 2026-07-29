@@ -15412,7 +15412,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const start = Math.max(0, (match.index || 0) - 36);
         const end = Math.min(content.length, (match.index || 0) + match[0].length + 36);
         const clause = content.slice(start, end);
-        const mentionedOptions = allOptions.filter((label) => clause.includes(label));
+        const mentionedOptions = allOptions.filter((label) => (
+          clause.includes(label)
+          || window.PptReportAi?.evidenceLabelMatchesClause?.(clause, label)
+        ));
         const mentionedSegments = allSegments.filter((label) => clause.includes(label));
         return evidence.some((item) => {
           if (Math.abs(item.value - value) > 0.11) return false;
@@ -15543,7 +15546,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                   "只能使用输入中出现的百分比和样本量，不得改写或编造数字；允许用‘反映’‘提示’‘可能与…有关’做谨慎解释。",
                   "必须遵守每道题的 model_semantics；PSM 单条累计曲线不得写成接受率、峰值、最优价或价格上下限。",
                   "必须原样返回每页 slide_id；数字、人群和选项必须来自同一行证据，不能仅因某个数字在本页出现就视为匹配。",
+                  "凡正文引用百分比，必须同时原样写出对应选项与人群标签；无法建立一一对应时删除该数字。",
                   "标题先给判断，不要堆数字。正文先解释关键关系或差异，再用1组关键数据作证据锚点，最后落到业务含义；证据不足时不要强行归因。",
+                  "页面包含多道题时，标题必须概括这些题的共同关系；子样本题和特定车型题必须保留适用范围，不得泛化到全部用户。",
                   "每页最多引用2个数字，不得逐项复述图表，不要让标题和正文重复同一数字；避免以‘数据显示’‘从数据看’‘其中’开头连续播报占比。",
                   "只返回 JSON：{\"pages\":[{\"slide_id\":\"finding_001\",\"page_idx\":1,\"title\":\"一句话判断\",\"bullets\":[\"解释或关系\",\"关键证据\"],\"business_implication\":\"业务含义\"}]}。",
                   "证据 ID 由系统根据稳定 slide_id 确定性回填，AI 不需要返回 evidence_fact_ids 或 evidence_question_ids。",

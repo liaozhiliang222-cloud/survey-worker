@@ -10,19 +10,24 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from pptx import Presentation
+from pptx.util import Inches
 
 from pptx_report.common.capacity import split_preserving_order
 from pptx_report.common.narrative import build_slide_briefs
 from pptx_report.facts import build_funnel_facts, extract_data_facts, infer_data_kind
 from pptx_report.model import (
-    ChartPageContent, ChartSpec, ChartType, CoverContent, DataFact, DataKind,
+    AppendixContent, ChartPageContent, ChartSpec, ChartType, CoverContent, DataFact, DataKind,
     ExecutiveFinding, ExecutiveSummaryContent, FindingsOverviewContent,
     FunnelAnalysisContent, FunnelStage, KeyFindingContent, OpportunityItem,
     OpportunityMatrixContent, RecommendationContent, RecommendationItem,
     ReportSpec, ResearchOverviewContent, SectionDividerContent, Series,
-    TocContent,
+    TableData, TocContent,
+)
+from pptx_report.pages import (
+    build_appendix, build_exec_summary, build_section_divider, build_toc,
 )
 from pptx_report.renderer import ReportRenderer
+from pptx_report.theme import Theme
 from pptx_report.report_templates import select_report_template
 from pptx_report.wizard import _enhance_report_pages
 
@@ -267,6 +272,9 @@ def check_rendered_page_families():
         assert len(prs.slides) == 10
         texts = "\n".join(shape.text for slide in prs.slides for shape in slide.shapes if getattr(shape, "has_text_frame", False))
         assert "核心发现" in texts and "行动建议" in texts and "数据来源：Q4" in texts
+        assert "高差异 · 待改善" in texts
+        assert "当前表现（0–100）→" in texts and "差异强度指数（0–100）↑" in texts
+        assert "表现基准 50" in texts and "差异基准 50" in texts
         with ZipFile(output) as archive:
             xml = "".join(archive.read(name).decode("utf-8", "ignore") for name in archive.namelist() if name.startswith("ppt/slides/slide") and name.endswith(".xml"))
         assert "NaN" not in xml
@@ -276,6 +284,138 @@ def check_rendered_page_families():
             shutil.copy2(output, target)
 
 
+def check_comparable_opportunity_matrix():
+    chart = ChartSpec(
+        "Purchase intent", ChartType.BAR,
+        ["Definitely buy", "Probably buy", "Unsure", "Probably not", "Definitely not"],
+        [Series("Total", [20, 30, 25, 15, 10]), Series("Target", [40, 32, 16, 8, 4])],
+        evidence_question_ids=["Q1"],
+    )
+    page = ChartPageContent("Purchase intent differs", charts=[chart])
+    questions = [
+        {
+            "code": "Q1", "title": "Purchase intent",
+            "categories": list(chart.categories),
+            "segments": ["Total", "Target"],
+            "data": {"Total": [20, 30, 25, 15, 10], "Target": [40, 32, 16, 8, 4]},
+            "base": {"Total": 500, "Target": 150},
+        },
+        {
+            "code": "Q2", "title": "Unrelated channel",
+            "categories": ["A", "B", "C", "D"],
+            "segments": ["Total", "Target"],
+            "data": {"Total": [25, 25, 25, 25], "Target": [28, 24, 24, 24]},
+            "base": {"Total": 500, "Target": 150},
+        },
+    ]
+    facts = []
+    for index, (category, value, gap) in enumerate(zip(chart.categories, [40, 32, 16, 8, 4], [20, 2, -9, -7, -6])):
+        facts.append(DataFact(
+            fact_id=f"Q1_gap_{index}", fact_type="segment_gap", question_id="Q1",
+            metric_name="percentage", category=category, segment="Target",
+            value=value, benchmark_value=value - gap, gap_pp=gap,
+        ))
+    for index, category in enumerate(["A", "B", "C", "D"]):
+        facts.append(DataFact(
+            fact_id=f"Q2_gap_{index}", fact_type="segment_gap", question_id="Q2",
+            metric_name="percentage", category=category, segment="Target",
+            value=24 + index, benchmark_value=25, gap_pp=index - 1,
+        ))
+    finding = ExecutiveFinding(
+        title="Purchase intent is polarized", description="Target users differ from total",
+        evidence_fact_ids=["Q1_gap_0"], action_implication="Prioritize high-intent conversion",
+        evidence_question_ids=["Q1"],
+    )
+    enhanced, _ = _enhance_report_pages(
+        [page], questions, facts, [finding], "source.xlsx"
+    )
+    matrix = next(item for item in enhanced if isinstance(item, OpportunityMatrixContent))
+    matrix_fact_ids = [fact_id for item in matrix.opportunities for fact_id in item.fact_ids]
+    assert len(matrix.opportunities) >= 4
+    assert all(fact_id.startswith("Q1_gap_") for fact_id in matrix_fact_ids)
+    assert matrix.title.startswith("Purchase intent")
+    overview = next(item for item in enhanced if isinstance(item, ResearchOverviewContent))
+    assert overview.segment_count == 2
+def check_summary_toc_appendix_layouts():
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+    theme = Theme()
+
+    toc_slide = prs.slides.add_slide(prs.slide_layouts[6])
+    build_toc(
+        toc_slide,
+        TocContent(["一、项目概述", "二、主要研究发现", "  用户画像", "  消费行为", "三、结论与建议"]),
+        theme,
+        (prs.slide_width, prs.slide_height),
+    )
+    toc_text = "\n".join(
+        shape.text for shape in toc_slide.shapes
+        if getattr(shape, "has_text_frame", False)
+    )
+    assert "02.1" in toc_text and "02.2" in toc_text
+    assert "04" not in toc_text
+
+    section_slide = prs.slides.add_slide(prs.slide_layouts[6])
+    build_section_divider(
+        section_slide,
+        SectionDividerContent(
+            title="用户画像与场景分化",
+            chapter="用户画像与场景分化",
+            subtitle="还需要关注什么",
+        ),
+        theme,
+        (prs.slide_width, prs.slide_height),
+    )
+    section_text = [
+        shape.text for shape in section_slide.shapes
+        if getattr(shape, "has_text_frame", False)
+    ]
+    assert section_text.count("用户画像与场景分化") == 1
+    assert "还需要关注什么" not in section_text
+
+    summary_slide = prs.slides.add_slide(prs.slide_layouts[6])
+    duplicate = "Prioritize differentiated communication"
+    build_exec_summary(
+        summary_slide,
+        ExecutiveSummaryContent(findings=[
+            ExecutiveFinding(
+                title="Target users need distinct messages",
+                description=duplicate,
+                action_implication=duplicate,
+            )
+        ]),
+        theme,
+        (prs.slide_width, prs.slide_height),
+    )
+    summary_text = "\n".join(
+        shape.text for shape in summary_slide.shapes
+        if getattr(shape, "has_text_frame", False)
+    )
+    assert summary_text.count(duplicate) == 1
+
+    appendix_slide = prs.slides.add_slide(prs.slide_layouts[6])
+    build_appendix(
+        appendix_slide,
+        AppendixContent(
+            title="Appendix",
+            table=TableData(
+                headers=["Question", "Description", "Options"],
+                rows=[["Q1", "Single appendix row", 2]],
+            ),
+        ),
+        theme,
+        (prs.slide_width, prs.slide_height),
+    )
+    table_shape = next(shape for shape in appendix_slide.shapes if getattr(shape, "has_table", False))
+    assert table_shape.height < Inches(1.2)
+    assert table_shape.table.rows[1].height <= Inches(.5)
+    layout_output = os.environ.get("REPORT_LAYOUT_QA_OUTPUT")
+    if layout_output:
+        target = Path(layout_output)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        prs.save(target)
+
 def main():
     facts = check_facts()
     check_capacity_and_briefs(facts)
@@ -284,6 +424,8 @@ def main():
     check_template_structure_sections()
     check_template_subsection_sections()
     check_rendered_page_families()
+    check_comparable_opportunity_matrix()
+    check_summary_toc_appendix_layouts()
     print("report semantics smoke: ok")
 
 

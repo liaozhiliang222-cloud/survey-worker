@@ -303,5 +303,8 @@ assert.equal(stableInput.pages[0].questions[0].model_semantics.analysis_model, "
 assert.equal(stableInput.pages[0].questions[0].data_quality_warnings[0].code, "repaired");
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /slide_id/);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /PSM/);
+assert.equal(ai.evidenceLabelMatchesClause("高购买意向用户几乎每天骑行", "几乎每天都骑"), true);
+assert.equal(ai.evidenceLabelMatchesClause("高购买意向用户几乎每天骑行", "每周3-5天"), false);
+assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /子样本/);
 
 console.log("PPT staged AI narrative smoke passed.");

@@ -31,9 +31,12 @@
     "只允许使用该页 questions、DataFact、evidence_fact_ids、evidence_question_ids 中的证据，不得重新计算或编造数字。",
     "model_semantics 是指标的强约束定义：PSM 单条累计曲线不得解释为购买接受率、峰值或价格上下限，交点指标只能引用系统已计算结果。",
     "如果 data_quality_warnings 非空，不得引用被修复前的值；所有数字、选项和人群必须能在同一行证据中对应，不能只校验数字是否在本页出现。",
+    "凡正文引用百分比，必须同时原样写出对应选项和人群标签；无法建立一一对应时删去该数字，不得截断小数或省略前导数字。",
     "必须原样返回每页 slide_id；slide_id 是写回蓝图的唯一主键，page_idx 只用于展示顺序。",
     "标题和 claim 必须先给判断；除非数字本身构成关键反差，否则不要把百分比堆进标题。",
     "每页正文 2–3 条：先解释关键关系、差异或障碍，再用 1 组最有解释力的数据作证据锚点，最后给出业务含义；证据不足时不要强行补原因。",
+    "页面包含多道题时，标题必须概括这些题之间的共同关系，不能只用其中一张图的选项替代整页主题；若无法综合，使用中性的组合标题。",
+    "子样本题、特定车型或特定用户题必须在标题或正文中保留适用范围；不得把自行车、摩托车、已安装用户等子样本结论泛化为全部两轮车用户。",
     "每页最多引用 2 个数字，不得逐项复述图表；同一数字不要在标题、claim 和 bullets 中重复。",
     "允许使用‘反映’‘提示’‘可能与…有关’进行谨慎解释，但不得把推测写成已证实事实；相邻页面不得重复完全相同的结论。",
     "只返回 JSON：{\"pages\":[{\"slide_id\":\"finding_001\",\"page_idx\":1,\"title\":\"\",\"claim\":\"\",\"bullets\":[\"\",\"\"],\"business_implication\":\"\"}]}。证据 ID 由系统按页面确定性回填。",
@@ -569,6 +572,29 @@
     return [bullets[0], bullets[1], bullets.slice(2).join("；")];
   }
 
+  function normalizeEvidenceLabel(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[\s\p{P}\p{S}]+/gu, "")
+      .replace(/[的了着过都进行相关方面情况用户人群]/g, "");
+  }
+
+  function evidenceLabelMatchesClause(clause, label) {
+    const haystack = normalizeEvidenceLabel(clause);
+    const needle = normalizeEvidenceLabel(label);
+    if (!haystack || needle.length < 2) return false;
+    if (haystack.includes(needle)) return true;
+    let longest = 0;
+    for (let start = 0; start < needle.length; start += 1) {
+      for (let end = start + 4; end <= needle.length; end += 1) {
+        if (haystack.includes(needle.slice(start, end))) {
+          longest = Math.max(longest, end - start);
+        }
+      }
+    }
+    const threshold = Math.min(6, Math.max(4, Math.ceil(needle.length * 0.45)));
+    return longest >= threshold;
+  }
   function validatePageOutput(payload, batch, options = {}) {
     const requireSlideId = Boolean(options.requireSlideId);
     const allowedBySlideId = new Map((batch || []).map((page) => [
@@ -616,6 +642,7 @@
     chunkPages,
     chunkPagesByChapter,
     filterWritablePages,
+    evidenceLabelMatchesClause,
     fallbackNarrative,
     generateReportNarrativeOrFallback,
     mergeSlideBriefSuggestion,

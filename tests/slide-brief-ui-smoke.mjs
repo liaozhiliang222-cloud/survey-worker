@@ -130,6 +130,8 @@ assert.match(app, /function evidenceNumericValues/);
 assert.match(app, /sampleClaims/);
 assert.match(app, /unitClaims/);
 assert.match(app, /coefficientClaims/);
+assert.match(app, /evidenceLabelMatchesClause/);
+assert.match(quickFlow, /子样本题和特定车型题/);
 
 const workflowDispatch = app.slice(workflowDispatchStart, app.indexOf("async function generatePptxAiReport()", workflowDispatchStart));
 assert.match(workflowDispatch, /report_workflow === "research"/);
