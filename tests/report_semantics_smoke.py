@@ -169,6 +169,76 @@ def check_template_structure_sections():
     ]
     assert section_pages[1].subtitle == "产品概念测试结果 | 目标用户画像"
 
+def check_template_subsection_sections():
+    chart = ChartSpec(
+        "Concept acceptance", ChartType.BAR, ["Like", "Dislike"],
+        [Series("Total", [70, 30])], evidence_question_ids=["Q1"],
+        evidence_fact_ids=["F1"], source_references=["Q1.Concept acceptance"],
+    )
+    pages = [
+        ChartPageContent("Concept acceptance is strong", charts=[chart]),
+        ChartPageContent("Target users have distinct needs", charts=[chart]),
+        ChartPageContent("The purchase journey has key friction", charts=[chart]),
+    ]
+    fact = DataFact(
+        fact_id="F1", fact_type="top_rank", question_id="Q1",
+        metric_name="percentage", category="Like", value=70,
+        source_reference="Q1.Concept acceptance",
+    )
+    finding = ExecutiveFinding(
+        "Concept is accepted", "70% select Like", ["F1"],
+        "Prioritize conversion", "high", ["Q1"], ["Q1.Concept acceptance"],
+    )
+    questions = [{
+        "code": "Q1", "title": "Concept acceptance", "categories": ["Like", "Dislike"],
+        "segments": ["Total"], "data": {"Total": [70, 30]}, "base": {"Total": 400},
+    }]
+    config = {
+        "template_structure_reused": True,
+        "template_report_structure": {"sections": [
+            {"number": "01", "title": "Project overview", "topics": ["Background"]},
+            {
+                "number": "02", "title": "Main findings", "topics": ["Concept", "Audience", "Journey"],
+                "subsections": [
+                    {"number": "2.1", "title": "Concept test", "topics": ["Acceptance", "Preference"]},
+                    {"number": "2.2", "title": "Target audience", "topics": ["Profile", "Behavior"]},
+                    {"number": "2.3", "title": "Purchase journey", "topics": ["Awareness", "Consideration"]},
+                ],
+            },
+            {"number": "03", "title": "Conclusions", "topics": ["Conclusions", "Actions"]},
+        ]},
+        "pages": [
+            {"chapter": "Concept test"},
+            {"chapter": "Target audience"},
+            {"chapter": "Purchase journey"},
+        ],
+    }
+    enhanced, _ = _enhance_report_pages(
+        pages, questions, [fact], [finding], "source.xlsx", page_config=config
+    )
+    section_pages = [item for item in enhanced if isinstance(item, SectionDividerContent)]
+    assert [(item.chapter, item.title) for item in section_pages] == [
+        ("01", "Project overview"),
+        ("02", "Main findings"),
+        ("2.1", "Concept test"),
+        ("2.2", "Target audience"),
+        ("2.3", "Purchase journey"),
+        ("03", "Conclusions"),
+    ]
+    assert section_pages[2].subtitle == "Acceptance | Preference"
+    assert section_pages[4].subtitle == "Awareness | Consideration"
+    hierarchy_output = os.environ.get("TEMPLATE_HIERARCHY_OUTPUT")
+    if hierarchy_output:
+        spec = ReportSpec(
+            CoverContent("Template hierarchy QA", "SurveyKit", "2026-07-29"),
+            TocContent([]),
+            ExecutiveSummaryContent(findings=[finding]),
+            enhanced,
+        )
+        renderer = ReportRenderer()
+        renderer.render(spec, hierarchy_output)
+        assert renderer.last_qa and renderer.last_qa["ok"], renderer.last_qa
+
 def check_rendered_page_families():
     finding = ExecutiveFinding("核心用户更关注体验", "年轻用户评价更集中。", ["Q1__top_rank__001"],
                                "优先优化关键触点", "high", ["Q1"], ["Q1.满意度"])
@@ -212,6 +282,7 @@ def main():
     check_templates_and_chart_semantics()
     check_ai_semantic_overrides()
     check_template_structure_sections()
+    check_template_subsection_sections()
     check_rendered_page_families()
     print("report semantics smoke: ok")
 

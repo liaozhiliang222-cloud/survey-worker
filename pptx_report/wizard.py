@@ -935,9 +935,16 @@ def _enhance_report_pages(
         section for section in template_sections
         if isinstance(section, dict) and str(section.get("title") or "").strip()
     ]
-    section_by_title = {
-        str(section.get("title")): section for section in template_sections
-    }
+    section_by_title = {}
+    for section in template_sections:
+        section_by_title[str(section.get("title"))] = section
+        for subsection in section.get("subsections") or []:
+            if not isinstance(subsection, dict) or not str(subsection.get("title") or "").strip():
+                continue
+            section_by_title[str(subsection.get("title"))] = {
+                **subsection,
+                "_parent_section": section,
+            }
     intro_section = template_sections[0] if template_sections else None
     conclusion_section = template_sections[-1] if len(template_sections) > 1 else None
     result = []
@@ -957,9 +964,20 @@ def _enhance_report_pages(
     if findings:
         result.append(FindingsOverviewContent(findings=findings))
     previous_chapter = str(intro_section.get("title")) if intro_section else None
+    previous_parent = previous_chapter
     for page in pages:
         if page.chapter != previous_chapter:
             matched_section = section_by_title.get(str(page.chapter))
+            parent_section = matched_section.get("_parent_section") if matched_section else None
+            parent_title = str(parent_section.get("title") or "") if parent_section else ""
+            if parent_section and parent_title != previous_parent:
+                result.append(SectionDividerContent(
+                    title=parent_title,
+                    chapter=str(parent_section.get("number") or parent_title),
+                    subtitle=" | ".join(str(item) for item in parent_section.get("topics", [])[:6]),
+                    slide_id=f"section_template_parent_{len(result):03d}",
+                ))
+                previous_parent = parent_title
             result.append(SectionDividerContent(
                 title=page.chapter,
                 chapter=str(matched_section.get("number") or page.chapter) if matched_section else page.chapter,
@@ -970,6 +988,8 @@ def _enhance_report_pages(
                 key_message=(page.brief.claim if page.brief else ""),
                 slide_id=f"section_{len(result):03d}",
             ))
+            if matched_section and not parent_section:
+                previous_parent = str(matched_section.get("title") or page.chapter)
             previous_chapter = page.chapter
         result.append(page)
 

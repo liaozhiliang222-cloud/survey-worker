@@ -21,4 +21,8 @@ assert.match(app, /data-template-structure-reuse/);
 assert.match(app, /function applyUploadedTemplateStructure\(plan\)/);
 assert.match(app, /template_structure_reused: Boolean/);
 assert.match(api, /"report_structure": analysis\.get\("report_structure"\)/);
+assert.match(app, /chapter: selected\.title/);
+assert.doesNotMatch(app, /chapter: selected\.parent_title \|\| selected\.title/);
+assert.match(app, /template_subsection_number \|\| page\.template_section_number/);
+assert.match(app, /templateChapterByTitle/);
 console.log("PPT template Profile UI smoke passed: import, export, validation and API compatibility");

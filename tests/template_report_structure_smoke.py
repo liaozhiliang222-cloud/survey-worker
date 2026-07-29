@@ -36,6 +36,7 @@ def main():
     add_divider(prs, "02", "主要研究发现", ["产品概念测试结果", "目标用户画像"])
     add_divider(prs, "2.1", "产品概念测试结果", ["市场接受度", "功能偏好"])
     add_divider(prs, "2.2", "目标用户画像", ["基础特征", "使用行为特征"])
+    add_divider(prs, "2.3", "视频拍摄设备购买旅程", ["信息了解渠道", "购买考虑因素"])
     add_divider(prs, "03", "结论与建议", ["核心结论", "行动建议"])
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "template.pptx"
@@ -43,7 +44,7 @@ def main():
         structure = analyze_template(str(path))["report_structure"]
     assert structure["confidence"] >= 0.85
     assert [item["title"] for item in structure["sections"]] == ["项目概述", "主要研究发现", "结论与建议"]
-    assert [item["title"] for item in structure["sections"][1]["subsections"]] == ["产品概念测试结果", "目标用户画像"]
+    assert [item["title"] for item in structure["sections"][1]["subsections"]] == ["产品概念测试结果", "目标用户画像", "视频拍摄设备购买旅程"]
     assert structure["sections"][1]["subsections"][0]["topics"] == ["市场接受度", "功能偏好"]
     print("template report structure smoke passed")
 

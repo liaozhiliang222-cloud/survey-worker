@@ -13183,17 +13183,43 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const templateSections = plan?.template_structure_reused
         ? (plan?.template_report_structure?.sections || [])
         : [];
-      let previousChapter = templateSections[0]?.title || null;
-      let sectionPages = templateSections.length ? 1 : 0;
+      const templateChapterByTitle = new Map();
+      templateSections.forEach((section) => {
+        templateChapterByTitle.set(String(section?.title || ""), { ...section, parent: null });
+        (section?.subsections || []).forEach((subsection) => {
+          templateChapterByTitle.set(String(subsection?.title || ""), {
+            ...subsection,
+            parent: section,
+          });
+        });
+      });
+      const introSection = templateSections[0] || null;
+      const conclusionSection = templateSections.length > 1
+        ? templateSections[templateSections.length - 1]
+        : null;
+      let previousChapter = introSection?.title || null;
+      let previousParent = introSection?.title || null;
+      let sectionPages = introSection ? 1 : 0;
       const contentSlideNumbers = pages.map((page, index) => {
         const chapter = String(page?.chapter || "其他研究");
         if (chapter !== previousChapter) {
+          const templateChapter = templateChapterByTitle.get(chapter);
+          const parent = templateChapter?.parent;
+          if (parent && String(parent.title || "") !== previousParent) {
+            sectionPages += 1;
+            previousParent = String(parent.title || "");
+          } else if (!parent && templateChapter) {
+            previousParent = chapter;
+          }
           sectionPages += 1;
           previousChapter = chapter;
         }
         return preContentPages + sectionPages + index + 1;
       });
-      if (templateSections.length) sectionPages = Math.max(sectionPages, templateSections.length);
+      if (conclusionSection && (hasOpportunity || hasRecommendations)
+          && previousChapter !== String(conclusionSection.title || "")) {
+        sectionPages += 1;
+      }
       const fixedSystemPages = preContentPages
         + (hasOpportunity ? 1 : 0)
         + (hasRecommendations ? 1 : 0)
@@ -13970,7 +13996,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const selected = ranked[0]?.score > 0 ? ranked[0].chapter : fallbackChapters[fallbackIndex];
         return {
           ...page,
-          chapter: selected.parent_title || selected.title,
+          chapter: selected.title,
           template_section_number: selected.parent_number || selected.number || "",
           template_section_title: selected.parent_title || selected.title,
           template_subsection_title: selected.parent_title !== selected.title ? selected.title : "",
@@ -14675,7 +14701,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const chapterName = page.chapter || "其他研究";
         let group = chapterGroups[chapterGroups.length - 1];
         if (!group || group.name !== chapterName) {
-          group = { name: chapterName, items: [] };
+          const templateNumber = page.template_subsection_number || page.template_section_number || "";
+          group = {
+            name: chapterName,
+            displayName: [templateNumber, chapterName].filter(Boolean).join(" "),
+            items: [],
+          };
           chapterGroups.push(group);
         }
         group.items.push({ page, idx });
@@ -14691,12 +14722,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         <span>${catalog.length - assignedCodes.size} 道题尚未安排 · 可拖动页面排序，也可直接拖动题目标签到其他页面。</span>
       </div><div class="pptx-editor-shell"><aside class="pptx-editor-outline">
         <strong>报告目录（按实际顺序）</strong>
-        ${chapterGroups.map(({ name, items }, chapterIndex) => `<button type="button" data-pptx-action="scroll-chapter" data-target-chapter="chapter-${chapterIndex}"><span>${chapterIndex + 1}</span><b>${escapeHtml(name)}</b><small>${items.length}页</small></button>`).join("")}
+        ${chapterGroups.map(({ name, displayName, items }, chapterIndex) => `<button type="button" data-pptx-action="scroll-chapter" data-target-chapter="chapter-${chapterIndex}"><span>${chapterIndex + 1}</span><b>${escapeHtml(displayName || name)}</b><small>${items.length}页</small></button>`).join("")}
         ${unassignedQuestions.length ? `<div class="pptx-unassigned-bank"><strong>未安排题目（${unassignedQuestions.length}）</strong>${unassignedQuestions.slice(0, 30).map((question) => `<span class="pptx-question-chip" draggable="true" data-question-code="${escapeHtml(question.code)}" data-source-index="-1" title="${escapeHtml(question.title || question.code)}">${escapeHtml(question.code)}</span>`).join("")}${unassignedQuestions.length > 30 ? `<small>另有 ${unassignedQuestions.length - 30} 题，请用“调整题目”搜索</small>` : ""}</div>` : ""}
         <p>拖动页面可调整顺序或切换章节；拖动题号可移动题目。</p>
       </aside><div class="pptx-preview-chapters">`;
       let chapterIndex = 0;
-      chapterGroups.forEach(({ name: chapterName, items }) => {
+      chapterGroups.forEach(({ name: chapterName, displayName, items }) => {
         const chapterDims = items[0]?.page?.selected_dimensions || ["总体"];
         const eligibleChapterPages = items.filter(({ page }) => isPptxChapterChartEligible(page));
         const chapterChartTypes = new Set(
@@ -14707,7 +14738,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           : "__mixed__";
         html += `<details class="pptx-preview-chapter" open data-editor-chapter="chapter-${chapterIndex++}">
           <summary>
-            <span class="pptx-preview-chapter-title">章节：${escapeHtml(chapterName)}</span>
+            <span class="pptx-preview-chapter-title">章节：${escapeHtml(displayName || chapterName)}</span>
             <span class="pptx-preview-chapter-count">${items.length} 页</span>
           </summary>
           <div class="pptx-preview-chapter-controls">
