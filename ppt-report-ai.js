@@ -15,16 +15,19 @@
     "你是资深市场研究顾问。请根据 DataFact、Insight 列表和研究目标，先设计整份报告的 Report Narrative。",
     "先形成一个中心论点，不要简单罗列发现。central_thesis 必须是一个完整判断，不是主题描述或报告标题。",
     "章节必须形成连续论证，例如用户是谁→为什么购买→为什么流失→如何提升；禁止按满意度、购买因素、会员等指标机械分章。",
-    "默认规划 4–6 章，硬性限制 3–8 章。每章都必须包含 chapter_id、title、purpose、key_question、page_idxs。",
+    "默认规划 4–6 章，硬性限制 3–8 章。每章都必须包含 chapter_id、title、purpose、key_question、page_idxs、analysis_strategy。",
     "page_idxs 必须把输入 page_catalog 中的全部页面分配到新章节，且每个页面只能出现一次；章节顺序和 page_idxs 顺序就是最终报告顺序。",
+    "必须先读取 dimension_catalog，再为每章确定分析维度。analysis_strategy 包含 baseline_dimension、primary_dimensions、supporting_dimensions、rationale、page_dimension_plan；只能使用 dimension_catalog 中存在的维度。",
+    "总体是默认基准；每章最多 1 个主维度和 1 个辅助维度。不要为了使用维度而强行分群，页面不适合对比时使用总体。page_dimension_plan 用 page_idx 精确覆盖页面。",
     "storyline_type 只能是 problem_solution、user_journey、funnel、diagnosis、opportunity 之一。",
     "不得编造 DataFact 中不存在的数字或结论；confidence 必须在 0 到 1 之间。",
-    "只返回 JSON：{\"report_title\":\"\",\"central_thesis\":\"\",\"storyline_type\":\"diagnosis\",\"chapters\":[{\"chapter_id\":\"chapter_01\",\"title\":\"\",\"purpose\":\"\",\"key_question\":\"\",\"page_idxs\":[1,2]}],\"key_questions\":[],\"ending_message\":\"\",\"confidence\":0.9}。",
+    "只返回 JSON：{\"report_title\":\"\",\"central_thesis\":\"\",\"storyline_type\":\"diagnosis\",\"chapters\":[{\"chapter_id\":\"chapter_01\",\"title\":\"\",\"purpose\":\"\",\"key_question\":\"\",\"page_idxs\":[1,2],\"analysis_strategy\":{\"baseline_dimension\":\"总体\",\"primary_dimensions\":[\"用户类型\"],\"supporting_dimensions\":[],\"rationale\":\"\",\"page_dimension_plan\":[{\"page_idx\":1,\"dimensions\":[\"用户类型\"]}]}}],\"key_questions\":[],\"ending_message\":\"\",\"confidence\":0.9}。",
   ].join("\n");
 
   const SLIDE_BRIEF_SYSTEM_PROMPT = [
     "你是资深市场研究报告总监。请在给定 Report Narrative 下，为每页生成 SlideBrief 文案。",
     "每批输入包含 central_thesis、chapter_context、previous_chapter、next_chapter；标题和正文必须服务于本章目的，并与前后章节连续。",
+    "chapter_context.analysis_strategy 定义本章分析维度；每页 dimensions 是本页实际图表维度。标题、claim 和 bullets 必须解释当前 dimensions 下的证据，不得沿用其他维度结论。",
     "只允许使用该页 questions、DataFact、evidence_fact_ids、evidence_question_ids 中的证据，不得重新计算或编造数字。",
     "model_semantics 是指标的强约束定义：PSM 单条累计曲线不得解释为购买接受率、峰值或价格上下限，交点指标只能引用系统已计算结果。",
     "如果 data_quality_warnings 非空，不得引用被修复前的值；所有数字、选项和人群必须能在同一行证据中对应，不能只校验数字是否在本页出现。",
@@ -180,6 +183,11 @@
     return {
       report_title: String(researchObjective || context?.research_objective || context?.source || "调研报告"),
       research_objective: String(researchObjective || context?.research_objective || ""),
+      dimension_catalog: (context?.available_dimensions || []).map((dimension) => ({
+        key: String(dimension?.key || "").trim(),
+        label: String(dimension?.label || dimension?.key || "").trim(),
+        segments: uniqueStrings(dimension?.segments),
+      })).filter((dimension) => dimension.key),
       data_facts: (context?.data_facts || []).map((fact) => ({ ...fact })),
       insights: (context?.global_findings || []).map((finding) => ({ ...finding })),
       current_report_structure: chapters,
@@ -188,11 +196,11 @@
         current_chapter: String(page.chapter || "其他研究"),
         current_title: String(page.current_title || page.title || ""),
         question_ids: pageQuestionIds(page),
+        current_dimensions: uniqueStrings(page.dimensions),
         question_titles: uniqueStrings((page.questions || []).map((question) => question.title)),
       })),
     };
   }
-
   function validateReportNarrative(payload, context = {}) {
     if (!payload || typeof payload !== "object") throw new Error("Report Narrative 必须是 JSON 对象");
     const centralThesis = String(payload.central_thesis || "").trim();
@@ -204,6 +212,14 @@
     const allowedPageIndexes = new Set(
       (context?.pages || []).map((page) => Number(page.page_idx)).filter(Number.isFinite)
     );
+    const rawDimensionCatalog = (context?.available_dimensions || []).map((dimension) =>
+      String(dimension?.key || dimension || "").trim()
+    ).filter(Boolean);
+    const hasDimensionCatalog = rawDimensionCatalog.length > 0;
+    const allowedDimensions = new Set(["总体", ...rawDimensionCatalog]);
+    const normalizeDimensions = (values, limit = 2) => uniqueStrings(values)
+      .filter((dimension) => !hasDimensionCatalog || allowedDimensions.has(dimension))
+      .slice(0, limit);
     const assignedPageIndexes = new Set();
     const chapters = rawChapters.map((chapter, index) => {
       const pageIndexes = (Array.isArray(chapter?.page_idxs) ? chapter.page_idxs : [])
@@ -212,12 +228,33 @@
           && (!allowedPageIndexes.size || allowedPageIndexes.has(pageIdx))
           && !assignedPageIndexes.has(pageIdx));
       pageIndexes.forEach((pageIdx) => assignedPageIndexes.add(pageIdx));
+      const rawStrategy = chapter?.analysis_strategy && typeof chapter.analysis_strategy === "object"
+        ? chapter.analysis_strategy : {};
+      const primaryDimensions = normalizeDimensions(rawStrategy.primary_dimensions, 1);
+      const supportingDimensions = normalizeDimensions(rawStrategy.supporting_dimensions, 1)
+        .filter((dimension) => !primaryDimensions.includes(dimension));
+      const pageDimensionPlan = (Array.isArray(rawStrategy.page_dimension_plan)
+        ? rawStrategy.page_dimension_plan : []).map((item) => ({
+          page_idx: Number(item?.page_idx),
+          dimensions: normalizeDimensions(item?.dimensions),
+        })).filter((item) => Number.isFinite(item.page_idx)
+          && pageIndexes.includes(item.page_idx)
+          && item.dimensions.length);
+      const baselineDimension = String(rawStrategy.baseline_dimension || "总体").trim();
       const normalized = {
         chapter_id: String(chapter?.chapter_id || `chapter_${String(index + 1).padStart(2, "0")}`).trim(),
         title: String(chapter?.title || "").trim(),
         purpose: String(chapter?.purpose || "").trim(),
         key_question: String(chapter?.key_question || "").trim(),
         page_idxs: pageIndexes,
+        analysis_strategy: {
+          baseline_dimension: (!hasDimensionCatalog || allowedDimensions.has(baselineDimension))
+            ? baselineDimension : "总体",
+          primary_dimensions: primaryDimensions,
+          supporting_dimensions: supportingDimensions,
+          rationale: String(rawStrategy.rationale || "").trim(),
+          page_dimension_plan: pageDimensionPlan,
+        },
       };
       if (!normalized.title || !normalized.purpose || !normalized.key_question) {
         throw new Error(`Report Narrative 第 ${index + 1} 章缺少 title、purpose 或 key_question`);
@@ -235,7 +272,6 @@
       confidence: Math.max(0, Math.min(1, Number(payload.confidence) || 0)),
     };
   }
-
   function narrativeTextTokens(value) {
     const text = String(value || "").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
     if (!text) return [];
@@ -405,6 +441,7 @@
         title: chapter.title,
         purpose: chapter.purpose,
         key_question: chapter.key_question,
+        analysis_strategy: chapter.analysis_strategy || {},
       } : null,
       previous_chapter: index > 0 ? String(chapters[index - 1]?.title || "") : "",
       next_chapter: index >= 0 && index + 1 < chapters.length ? String(chapters[index + 1]?.title || "") : "",

@@ -18,6 +18,11 @@ assert.ok(ai, "PptReportAi must be exported.");
 
 const reportContext = {
   source: "survey.xlsx",
+  available_dimensions: [
+    { key: "总体", label: "总体", segments: ["Total"] },
+    { key: "用户类型", label: "用户类型", segments: ["新用户", "老用户"] },
+    { key: "年龄", label: "年龄", segments: ["18-29岁", "30岁以上"] },
+  ],
   data_facts: [
     { fact_id: "F1", question_id: "Q1" },
     { fact_id: "F2", question_id: "Q2" },
@@ -110,7 +115,7 @@ const reportNarrative = ai.validateReportNarrative({
   central_thesis: "年轻用户的购买阻碍主要来自价值感知与决策确定性不足，而非价格本身。",
   storyline_type: "diagnosis",
   chapters: [
-    { chapter_id: "chapter_01", title: "用户画像", purpose: "界定核心用户", key_question: "谁是核心用户？", page_idxs: [3, 1] },
+    { chapter_id: "chapter_01", title: "用户画像", purpose: "界定核心用户", key_question: "谁是核心用户？", page_idxs: [3, 1], analysis_strategy: { baseline_dimension: "总体", primary_dimensions: ["用户类型", "年龄"], supporting_dimensions: ["不存在", "年龄"], rationale: "识别核心用户差异", page_dimension_plan: [{ page_idx: 3, dimensions: ["年龄"] }, { page_idx: 999, dimensions: ["用户类型"] }] } },
     { chapter_id: "chapter_02", title: "消费行为", purpose: "理解购买动机", key_question: "为什么购买？", page_idxs: [2, 4] },
     { chapter_id: "chapter_03", title: "优化机会", purpose: "形成增长动作", key_question: "如何提升转化？", page_idxs: [6, 5] },
   ],
@@ -129,6 +134,12 @@ assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /不得逐项复述图表/);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /可能与…有关/);
 assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /page_idxs/);
 assert.equal(reportNarrative.chapters[0].page_idxs.join(","), "3,1");
+assert.deepEqual(Array.from(reportNarrative.chapters[0].analysis_strategy.primary_dimensions), ["用户类型"]);
+assert.deepEqual(Array.from(reportNarrative.chapters[0].analysis_strategy.supporting_dimensions), ["年龄"]);
+assert.equal(reportNarrative.chapters[0].analysis_strategy.page_dimension_plan.length, 1);
+const reportNarrativeInput = ai.buildReportNarrativeInput(reportContext, "研究目标");
+assert.deepEqual(Array.from(reportNarrativeInput.dimension_catalog, (item) => item.key), ["总体", "用户类型", "年龄"]);
+assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /analysis_strategy/);
 const pagesWithStableIds = reportContext.pages.map((page, index) => ({
   ...page,
   slide_brief: {
@@ -167,6 +178,7 @@ const narrativeBatch = ai.buildPageBatchInput(
 );
 assert.equal(narrativeBatch.central_thesis, reportNarrative.central_thesis);
 assert.equal(narrativeBatch.chapter_context.purpose, "界定核心用户");
+assert.deepEqual(Array.from(narrativeBatch.chapter_context.analysis_strategy.primary_dimensions), ["用户类型"]);
 assert.equal(narrativeBatch.previous_chapter, "");
 assert.equal(narrativeBatch.next_chapter, "消费行为");
 assert.equal(narrativeBatch.pages[0].narrative_context, undefined);

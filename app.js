@@ -13118,6 +13118,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     let pendingReportNarrative = null;
     let lastPptxInsightContext = null;
     let lastPptxSlideBriefStats = null;
+    let dimensionCopySyncTimer = null;
+    const pendingDimensionCopySyncIds = new Set();
+    let dimensionCopySyncRunning = false;
     let currentReportId = "";
     function selectedPptxReportWorkflow() {
       return planningModeInput?.value === "ai" ? "research" : "quick";
@@ -14675,8 +14678,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               <span class="pptx-preview-page-type">${escapeHtml(typeLabel || "自动匹配")}</span>
               ${brief.user_modified ? `<span class="pptx-brief-badge modified">用户已修改</span>` : ""}
               ${isLocked ? `<span class="pptx-brief-badge locked">已锁定</span>` : ""}
+              ${p.copy_state === "stale" || p.dimension_copy_stale ? `<span class="pptx-brief-badge modified">文字待同步</span>` : ""}
             </summary>
             <div class="pptx-preview-page-body">
+              ${p.copy_state === "stale" || p.dimension_copy_stale ? `<div class="pptx-narrative-fallback pptx-preview-field-wide"><strong>分析维度已变化</strong><p>图表证据正在刷新；AI文字同步完成前不会沿用旧维度结论。</p></div>` : ""}
               <div class="pptx-preview-visual">${renderPptxMiniPreview(p)}<small>布局示意会随题目数量和图表类型更新</small></div>
               <label class="pptx-preview-field pptx-preview-field-wide">
                 <span>标题</span>
@@ -14950,78 +14955,83 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const value = decodeURIComponent(encodedValue);
       if (!editedPagePlan?.pages) return;
       const chapterPages = editedPagePlan.pages.filter((page) => (page.chapter || "其他研究") === chapterName);
-      if (!chapterPages.length) return;
+      const editablePages = chapterPages.filter((page) => !page.slide_brief?.locked);
+      if (!editablePages.length) {
+        showToast("本章页面均已锁定，请先解锁后修改分析维度。", "warning");
+        renderPreviewTable(editedPagePlan);
+        return;
+      }
       pushPptxPlanHistory();
-      let selected = Array.isArray(chapterPages[0].selected_dimensions)
-        ? [...chapterPages[0].selected_dimensions]
+      let selected = Array.isArray(editablePages[0].selected_dimensions)
+        ? [...editablePages[0].selected_dimensions]
         : ["总体"];
       if (checked && value === "总体") selected = ["总体"];
       else if (checked) {
         selected = selected.filter((item) => item !== "总体");
         if (!selected.includes(value)) selected.push(value);
       } else selected = selected.filter((item) => item !== value);
-      if (!selected.length) selected = ["总体"];
-      chapterPages.forEach((page) => {
+      selected = normalizePptxDimensions(selected);
+      const changedPages = [];
+      editablePages.forEach((page) => {
+        if (JSON.stringify(page.selected_dimensions || ["总体"]) === JSON.stringify(selected)) return;
         page.selected_dimensions = [...selected];
         page.dimension_mode = selected.length === 1 && selected[0] === "总体" ? "overall" : "compare";
         page.dimension_key = selected.join(",");
+        page.dimension_strategy_source = "user";
+        markPptxDimensionCopyStale(page);
+        changedPages.push(page);
       });
       renderPreviewTable(editedPagePlan);
+      schedulePptxDimensionCopySync(changedPages);
+      const lockedCount = chapterPages.length - editablePages.length;
+      if (lockedCount) showToast(`已跳过 ${lockedCount} 个锁定页面。`, "warning");
     };
+
     // 全局函数：预览表格分维度多选变更
     window._onPreviewDimCheck = function(idx, value, checked) {
       if (!editedPagePlan || !editedPagePlan.pages || !editedPagePlan.pages[idx]) return;
       const page = editedPagePlan.pages[idx];
+      if (page.slide_brief?.locked) {
+        showToast("锁定页面不能修改分析维度，请先解锁。", "warning");
+        renderPreviewTable(editedPagePlan);
+        return;
+      }
       pushPptxPlanHistory();
-      // 初始化 selected_dimensions 数组
       if (!page.selected_dimensions) {
-        if (page.dimension_key) {
-          page.selected_dimensions = page.dimension_key.split(",");
-        } else {
-          page.selected_dimensions = [];
-        }
+        page.selected_dimensions = page.dimension_key ? page.dimension_key.split(",") : [];
       }
       if (checked && value === "总体") {
         page.selected_dimensions = ["总体"];
       } else if (checked) {
-        page.selected_dimensions = page.selected_dimensions.filter(v => v !== "总体");
+        page.selected_dimensions = page.selected_dimensions.filter((item) => item !== "总体");
         if (!page.selected_dimensions.includes(value)) page.selected_dimensions.push(value);
       } else {
-        page.selected_dimensions = page.selected_dimensions.filter(v => v !== value);
+        page.selected_dimensions = page.selected_dimensions.filter((item) => item !== value);
       }
-      if (page.selected_dimensions.length === 0) page.selected_dimensions = ["总体"];
-      // 同步 dimension_mode / dimension_key
-      if (page.selected_dimensions.length === 1 && page.selected_dimensions[0] === "总体") {
-        page.dimension_mode = "overall";
-        page.dimension_key = "总体";
-      } else {
-        page.dimension_mode = "compare";
-        page.dimension_key = page.selected_dimensions.join(",");
-      }
-      const controls = previewTable?.querySelectorAll(`input[data-preview-idx="${idx}"][data-field="dimension_check"]`) || [];
-      controls.forEach((input) => {
-        input.checked = page.selected_dimensions.includes(input.value);
-        const label = input.closest("label");
-        if (!label) return;
-        const active = input.checked;
-        label.classList.toggle("selected", active);
-      });
+      page.selected_dimensions = normalizePptxDimensions(page.selected_dimensions);
+      page.dimension_mode = page.selected_dimensions.length === 1 && page.selected_dimensions[0] === "总体"
+        ? "overall" : "compare";
+      page.dimension_key = page.selected_dimensions.join(",");
+      page.dimension_strategy_source = "user";
+      markPptxDimensionCopyStale(page);
+      renderPreviewTable(editedPagePlan);
+      schedulePptxDimensionCopySync([page]);
     };
+
     // 兼容旧接口（单选模式）
     window._onPreviewDimChange = function(idx, newValue) {
       if (!editedPagePlan || !editedPagePlan.pages || !editedPagePlan.pages[idx]) return;
       const page = editedPagePlan.pages[idx];
+      if (page.slide_brief?.locked) return;
       pushPptxPlanHistory();
-      page.selected_dimensions = [newValue];
-      if (newValue === "总体") {
-        page.dimension_mode = "overall";
-        page.dimension_key = "总体";
-      } else {
-        page.dimension_mode = "compare";
-        page.dimension_key = newValue;
-      }
+      page.selected_dimensions = normalizePptxDimensions([newValue]);
+      page.dimension_mode = page.selected_dimensions[0] === "总体" ? "overall" : "compare";
+      page.dimension_key = page.selected_dimensions.join(",");
+      page.dimension_strategy_source = "user";
+      markPptxDimensionCopyStale(page);
+      renderPreviewTable(editedPagePlan);
+      schedulePptxDimensionCopySync([page]);
     };
-
     window._onPreviewChapterChange = function(idx, chapterName) {
       const page = editedPagePlan?.pages?.[idx];
       if (!page || page.chapter === chapterName) return;
@@ -15457,15 +15467,20 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         narrativePanel.style.display = "";
         return;
       }
-      const chapters = (narrative.chapters || []).map((chapter, index) => `
+      const chapters = (narrative.chapters || []).map((chapter, index) => {
+        const strategy = chapter.analysis_strategy || {};
+        const dimensionLabels = [...(strategy.primary_dimensions || []), ...(strategy.supporting_dimensions || [])];
+        return `
         <article class="pptx-narrative-chapter">
           <span>${String(index + 1).padStart(2, "0")}</span>
           <div>
             <strong>${escapeHtml(chapter.title || "未命名章节")}</strong>
             <p>${escapeHtml(chapter.purpose || "")}</p>
             <small>回答：${escapeHtml(chapter.key_question || "")}</small>
+            <small>分析维度：${escapeHtml(dimensionLabels.length ? dimensionLabels.join(" + ") : (strategy.baseline_dimension || "总体"))}${strategy.rationale ? ` · ${escapeHtml(strategy.rationale)}` : ""}</small>
           </div>
-        </article>`).join("");
+        </article>`;
+      }).join("");
       narrativeContent.innerHTML = `
         <div class="pptx-narrative-thesis">
           <small>报告核心观点 · ${escapeHtml(narrative.storyline_type || "")}</small>
@@ -15679,13 +15694,29 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (!context.pages?.length) throw new Error("没有可用于规划故事线的报告页面。");
         setPptxProgress(30, "证据已准备，正在形成核心观点", "AI 研究");
         aiWriteStatus.textContent = "阶段 2/2：AI 正在形成中心论点与章节逻辑…";
+        const planPagesById = new Map(
+          (editedPagePlan.pages || []).map((page) => [pptxPageStableId(page), page])
+        );
+        const narrativeContext = {
+          ...context,
+          available_dimensions: editedPagePlan.available_dimensions || [],
+          pages: (context.pages || []).map((page) => {
+            const planPage = planPagesById.get(pptxPageStableId(page));
+            return {
+              ...page,
+              dimensions: Array.isArray(planPage?.selected_dimensions)
+                ? [...planPage.selected_dimensions]
+                : (page.dimensions || ["总体"]),
+            };
+          }),
+        };
         const outcome = await aiPlanner.generateReportNarrativeOrFallback(async () => {
           const output = await callAiChatCompletion(settings, [
             { role: "system", content: aiPlanner.REPORT_NARRATIVE_SYSTEM_PROMPT },
             {
               role: "user",
               content: JSON.stringify(aiPlanner.buildReportNarrativeInput(
-                context,
+                narrativeContext,
                 (titleInput.value || "调研分析报告").trim()
               )),
             },
@@ -15697,7 +15728,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             stream: false,
           });
           return aiPlanner.parseJsonObject(output);
-        }, context);
+        }, narrativeContext);
 
         setPptxProgress(65, "核心观点已生成，正在组织章节逻辑", "AI 研究");
         pendingReportNarrative = outcome.report_narrative;
@@ -15726,12 +15757,75 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       }
         }
 
-    async function generatePptxSlideBriefs(reportNarrative) {
+    function normalizePptxDimensions(values) {
+      const available = new Set(["总体", ...(editedPagePlan?.available_dimensions || []).map((item) => String(item?.key || "").trim()).filter(Boolean)]);
+      const selected = Array.from(new Set((values || []).map((value) => String(value || "").trim()).filter((value) => available.has(value))));
+      if (!selected.length) return ["总体"];
+      if (selected.includes("总体") && selected.length > 1) return selected.filter((value) => value !== "总体").slice(0, 2);
+      return selected.slice(0, 2);
+    }
+
+    function pptxEvidenceSignature(page, factIds = []) {
+      return [
+        pptxPageStableId(page),
+        normalizePptxDimensions(page?.selected_dimensions || ["总体"]).sort().join(","),
+        (page?.questions || []).map((question) => String(question?.code || "")).filter(Boolean).sort().join(","),
+        Array.from(new Set((factIds || []).map(String))).sort().join(","),
+      ].join("|");
+    }
+    function markPptxDimensionCopyStale(page) {
+      if (!page) return;
+      lastPptxInsightContext = null;
+      page.copy_state = "stale";
+      page.evidence_signature = "";
+      page.dimension_copy_stale = true;
+      page.slide_brief = page.slide_brief || {};
+      page.slide_brief.copy_state = "stale";
+      page.slide_brief.evidence_signature = "";
+      if (!page.slide_brief.user_modified && !page.slide_brief.locked) {
+        page.insight_override = "";
+        page.insight_bullets = [];
+        page.business_implication = "";
+        page.slide_brief.title = page.title || page.slide_brief.title || "";
+        page.slide_brief.claim = page.title || page.slide_brief.claim || "";
+        page.slide_brief.business_implication = "";
+      }
+    }
+
+    function applyNarrativeDimensionStrategy(reportNarrative) {
+      const pagesByIndex = new Map((editedPagePlan?.pages || []).map((page) => [Number(page.page_idx), page]));
+      let changed = 0;
+      (reportNarrative?.chapters || []).forEach((chapter) => {
+        const strategy = chapter?.analysis_strategy || {};
+        const primary = normalizePptxDimensions(strategy.primary_dimensions || []);
+        const baseline = normalizePptxDimensions([strategy.baseline_dimension || "总体"]);
+        const chapterDefault = (strategy.primary_dimensions || []).length ? primary : baseline;
+        const overrides = new Map((strategy.page_dimension_plan || []).map((item) => [
+          Number(item.page_idx), normalizePptxDimensions(item.dimensions),
+        ]));
+        (chapter.page_idxs || []).forEach((pageIdx) => {
+          const page = pagesByIndex.get(Number(pageIdx));
+          if (!page || page.slide_brief?.locked || page.slide_brief?.user_modified) return;
+          const selected = overrides.get(Number(pageIdx)) || chapterDefault;
+          if (JSON.stringify(page.selected_dimensions || ["总体"]) === JSON.stringify(selected)) return;
+          page.selected_dimensions = [...selected];
+          page.dimension_mode = selected.length === 1 && selected[0] === "总体" ? "overall" : "compare";
+          page.dimension_key = selected.join(",");
+          page.dimension_strategy_source = "narrative";
+          markPptxDimensionCopyStale(page);
+          changed += 1;
+        });
+      });
+      return changed;
+    }
+    async function generatePptxSlideBriefs(reportNarrative, options = {}) {
       if (!reportNarrative) return 0;
       const settings = loadAiSettings();
       const errors = validateAiSettings(settings);
       if (settings.mode === "local" || errors.length) throw new Error(errors.join("；"));
       const aiPlanner = window.PptReportAi;
+      const dimensionChanges = options.applyDimensionPlan === false ? 0 : applyNarrativeDimensionStrategy(reportNarrative);
+      if (dimensionChanges) lastPptxInsightContext = null;
       const context = lastPptxInsightContext || await requestPptxInsightContext();
       lastPptxInsightContext = context;
       ensureStableSlideBriefs();
@@ -15781,7 +15875,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         });
         lastPptxInsightContext = null;
       };
-      const writablePages = aiPlanner.filterWritablePages(contextPages);
+      const targetSlideIds = options.targetSlideIds ? new Set(options.targetSlideIds) : null;
+      const writablePages = aiPlanner.filterWritablePages(contextPages)
+        .filter((page) => !targetSlideIds || targetSlideIds.has(pptxPageStableId(page)));
       const batches = aiPlanner.chunkPagesByChapter(writablePages, aiPlanner.DEFAULT_BATCH_SIZE);
       const concurrency = aiPlanner.SLIDE_BRIEF_CONCURRENCY;
       const startedAt = Date.now();
@@ -15807,6 +15903,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           title: chapter.title,
           purpose: chapter.purpose,
           key_question: chapter.key_question,
+          analysis_strategy: chapter.analysis_strategy || {},
         }));
         editedPagePlan.report_workflow = "research";
         editedPagePlan.ai_enhancement = "narrative";
@@ -15938,6 +16035,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             : "",
         };
         page.slide_brief = aiPlanner.mergeSlideBriefSuggestion(existingBrief, suggestedBrief);
+        const evidenceSignature = pptxEvidenceSignature(page, suggestion.evidence_fact_ids);
+        page.copy_state = "synced";
+        page.dimension_copy_stale = false;
+        page.evidence_signature = evidenceSignature;
+        page.slide_brief.copy_state = "synced";
+        page.slide_brief.evidence_signature = evidenceSignature;
         if (page.insight_override || page.insight_bullets.length) applied += 1;
       });
 
@@ -15949,6 +16052,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         title: chapter.title,
         purpose: chapter.purpose,
         key_question: chapter.key_question,
+        analysis_strategy: chapter.analysis_strategy || {},
       }));
       editedPagePlan.report_workflow = "research";
       editedPagePlan.ai_enhancement = "narrative";
@@ -15970,6 +16074,46 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       };
       console.info("SlideBrief generation stats", lastPptxSlideBriefStats);
       return applied;
+    }
+    function schedulePptxDimensionCopySync(pages) {
+      (pages || []).forEach((page) => {
+        if (!page || page.slide_brief?.locked || page.slide_brief?.user_modified) return;
+        pendingDimensionCopySyncIds.add(pptxPageStableId(page));
+      });
+      if (dimensionCopySyncTimer) clearTimeout(dimensionCopySyncTimer);
+      dimensionCopySyncTimer = setTimeout(runPendingPptxDimensionCopySync, 900);
+    }
+
+    async function runPendingPptxDimensionCopySync() {
+      dimensionCopySyncTimer = null;
+      if (dimensionCopySyncRunning || !pendingDimensionCopySyncIds.size) return;
+      const narrative = pendingReportNarrative || editedPagePlan?.report_narrative;
+      if (editedPagePlan?.report_workflow !== "research" || !narrative) return;
+      const settings = loadAiSettings();
+      if (settings.mode === "local" || validateAiSettings(settings).length) {
+        aiWriteStatus.textContent = "分析维度已变化，旧AI文字已失效；请配置AI后点击“AI重写此页”同步文字。";
+        return;
+      }
+      const targetSlideIds = Array.from(pendingDimensionCopySyncIds);
+      pendingDimensionCopySyncIds.clear();
+      dimensionCopySyncRunning = true;
+      aiWriteStatus.textContent = `分析维度已变化，正在同步 ${targetSlideIds.length} 页AI文字…`;
+      try {
+        const applied = await generatePptxSlideBriefs(narrative, {
+          applyDimensionPlan: false,
+          targetSlideIds,
+        });
+        await persistSlideBriefBlueprint();
+        aiWriteStatus.textContent = `分析维度与证据已刷新，AI文字已同步 ${applied}/${targetSlideIds.length} 页。`;
+      } catch (error) {
+        console.warn("Dimension copy sync fallback:", error);
+        aiWriteStatus.textContent = `维度已应用到图表；AI文字同步未完成：${error.message}`;
+      } finally {
+        dimensionCopySyncRunning = false;
+        if (pendingDimensionCopySyncIds.size) {
+          dimensionCopySyncTimer = setTimeout(runPendingPptxDimensionCopySync, 900);
+        }
+      }
     }
     async function regenerateSinglePptxSlide(pageIndex, control) {
       const page = editedPagePlan?.pages?.[pageIndex];
@@ -16184,6 +16328,16 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         (genStatus || confirmStatus).textContent = "请先上传并完成 PPTX 模板分析。";
         return;
       }
+      const staleDimensionPages = (editedPagePlan?.pages || []).filter((page) =>
+        page.copy_state === "stale" || page.dimension_copy_stale
+      );
+      if (dimensionCopySyncRunning || pendingDimensionCopySyncIds.size) {
+        (genStatus || confirmStatus).textContent = "分析维度对应的AI文字仍在同步，请等待同步完成后再生成PPT。";
+        return;
+      }
+      if (staleDimensionPages.length && !window.confirm(
+        `仍有 ${staleDimensionPages.length} 页文字未与最新分析维度同步。继续生成时，未人工修改页面将使用确定性文案；人工修改页会保留当前文字。是否继续？`
+      )) return;
       if (confirmBtn) confirmBtn.disabled = true;
       if (generateBtn) generateBtn.disabled = true;
       setPptxCancelState(false);

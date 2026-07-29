@@ -39,6 +39,9 @@ class SlideBrief:
     locked: bool = False
     template_id: str = ""
 
+    copy_state: str = "synced"
+    evidence_signature: str = ""
+
     def validate(
         self,
         *,

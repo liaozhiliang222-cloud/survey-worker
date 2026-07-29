@@ -50,11 +50,15 @@ def check_schema() -> None:
         claim="年轻用户购买意愿更高。",
         business_implication="优先经营年轻用户。",
         user_modified=True,
+        copy_state="synced",
+        evidence_signature="slide_01|用户类型|Q1|F1",
     )
     restored = SlideBrief.from_dict(brief.to_dict())
     assert restored.chapter_id == "chapter_01"
     assert restored.user_modified is True
     assert restored.locked is False
+    assert restored.copy_state == "synced"
+    assert restored.evidence_signature == "slide_01|用户类型|Q1|F1"
 
 
 def check_edit_and_lock_rules() -> None:
