@@ -13151,7 +13151,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const isResearch = workflow === "research";
       const hasNarrativeBlueprint = isResearch && plan?.ai_enhancement === "narrative";
       if (previewBtn) {
-        previewBtn.textContent = isResearch ? "AI 规划报告结构" : "预览快速报告结构";
+        previewBtn.textContent = isResearch ? "生成核心观点与报告蓝图" : "预览快速报告结构";
       }
       if (aiWriteBtn) {
         aiWriteBtn.textContent = isResearch
@@ -14018,115 +14018,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       plan.template_structure_reused = true;
       return plan;
     }
-    function parseAiPptxPlanOutput(output) {
-      const text = String(output || "").trim();
-      const jsonText = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] || text.match(/\{[\s\S]*\}/)?.[0] || text;
-      const parsed = JSON.parse(jsonText);
-      if (!parsed || !Array.isArray(parsed.chapters)) throw new Error("AI 未返回有效的章节规划。");
-      return parsed;
-    }
-
-    async function enrichPptxPlanWithAi(plan) {
-      const settings = loadAiSettings();
-      const errors = validateAiSettings(settings);
-      if (settings.mode === "local" || errors.length) {
-        throw new Error(`AI 规划暂不可用：${errors.join("；")}。当前已保留标准规则方案。`);
-      }
-      const availableDimensions = ["总体", ...dimensionGroups.map((item) => item.name)];
-      const catalog = Array.isArray(plan.question_catalog) && plan.question_catalog.length
-        ? plan.question_catalog
-        : (plan.pages || []).flatMap((page) => (page.questions || []).map((question) => ({
-          ...question,
-          chapter: page.chapter || "其他研究",
-        })));
-      const compactCatalog = catalog.map((question) => ({
-        code: question.code,
-        title: String(question.title || "").slice(0, 60),
-        current_chapter: question.chapter || "其他研究",
-        option_count: Array.isArray(question.categories) ? question.categories.length : 0,
-      }));
-      const templateStructure = reuseUploadedTemplateStructure ? getUploadedTemplateStructure() : null;
-      const templateStructureInstruction = templateStructure
-        ? `必须复用上传模板的章节层级、章节名称和顺序，不要另造同义章节。模板结构：${JSON.stringify(templateStructure.sections)}`
-        : "";
-      const messages = [
-        {
-          role: "system",
-          content: [
-            templateStructureInstruction,
-            "你是资深市场研究报告总监。请基于问卷题目目录规划完整的量化调研报告框架。",
-            "请设计章节顺序、每页放置的题目组合，以及章节默认分析维度。相关题目可合并在同一页，每页建议1-3题；选项很多的题目应单独成页。",
-            "必须覆盖用户提供的全部题目代码，每个题目只能出现一次，不得创造不存在的题目代码。",
-            "只返回 JSON 对象，不要输出 Markdown。结构必须为：",
-            '{"chapters":[{"name":"章节名","default_dimensions":["年龄"],"pages":[{"question_codes":["Q1","Q2"],"analysis_focus":"本页分析重点"}]}]}',
-            "default_dimensions 只能从用户提供的可用维度中选择；不得编造数据洞察，本阶段只规划分析结构。",
-          ].join("\n"),
-        },
-        {
-          role: "user",
-          content: `可用维度：${JSON.stringify(availableDimensions)}\n题目目录：${JSON.stringify(compactCatalog)}`,
-        },
-      ];
-      const output = await callAiChatCompletion(settings, messages, {
-        maxTokens: 12000,
-        timeoutMs: 240000,
-        temperature: 0.15,
-        responseFormat: "json_object",
-      });
-      const suggestion = parseAiPptxPlanOutput(output);
-      const validDimensions = new Set(availableDimensions);
-      const catalogByCode = new Map(catalog.map((question) => [String(question.code), question]));
-      const templateByCode = new Map();
-      (plan.pages || []).forEach((page) => (page.questions || []).forEach((question) => {
-        if (question?.code && !templateByCode.has(String(question.code))) templateByCode.set(String(question.code), page);
-      }));
-      const assigned = new Set();
-      const aiPages = [];
-      suggestion.chapters.forEach((chapter) => {
-        const dims = (chapter.default_dimensions || []).filter((name) => validDimensions.has(name));
-        const selectedDimensions = dims.length ? (dims.includes("总体") ? ["总体"] : dims) : ["总体"];
-        (chapter.pages || []).forEach((pageSuggestion) => {
-          const codes = (pageSuggestion.question_codes || [])
-            .map((code) => String(code))
-            .filter((code) => catalogByCode.has(code) && !assigned.has(code))
-            .slice(0, 3);
-          if (!codes.length) return;
-          codes.forEach((code) => assigned.add(code));
-          const template = templateByCode.get(codes[0]) || plan.pages?.[0] || {};
-          aiPages.push({
-            ...template,
-            page_idx: aiPages.length + 1,
-            chapter: String(chapter.name || template.chapter || "其他研究").slice(0, 24),
-            questions: codes.map((code) => catalogByCode.get(code)),
-            selected_dimensions: selectedDimensions,
-            dimension_mode: selectedDimensions[0] === "总体" ? "overall" : "compare",
-            dimension_key: selectedDimensions.join(","),
-            insight_override: "",
-            insight_bullets: [],
-            analysis_focus: String(pageSuggestion.analysis_focus || "").slice(0, 100),
-          });
-        });
-      });
-      // AI 漏掉的题目按原规则页面补回，确保全题覆盖。
-      (plan.pages || []).forEach((page) => {
-        const remaining = (page.questions || []).filter((question) => question?.code && !assigned.has(String(question.code)));
-        if (!remaining.length) return;
-        remaining.forEach((question) => assigned.add(String(question.code)));
-        aiPages.push({
-          ...page,
-          page_idx: aiPages.length + 1,
-          questions: remaining,
-          insight_override: "",
-          insight_bullets: [],
-        });
-      });
-      if (!aiPages.length) throw new Error("AI 未生成可用页面，已保留标准规则方案。");
-      plan.pages = aiPages;
-      plan.total_pages = aiPages.length;
-      plan.planning_mode = "ai";
-      return plan;
-    }
-
     parseBtn.addEventListener("click", async () => {
       if (!selectedFile) return;
       parseBtn.disabled = true;
@@ -14200,17 +14091,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         }
         pagePlan = await resp.json();
         const reportWorkflow = selectedPptxReportWorkflow();
-        if (reportWorkflow === "research") {
-          genStatus.textContent = "本地结构已生成，正在请 AI 建议章节、维度与洞察…";
-          try {
-            pagePlan = await enrichPptxPlanWithAi(pagePlan);
-          } catch (aiError) {
-            pagePlan.planning_mode = "rule";
-            genStatus.textContent = `AI建议未应用：${aiError.message}`;
-          }
-        } else {
-          pagePlan.planning_mode = "rule";
-        }
+        pagePlan.planning_mode = "rule";
+        pagePlan.page_planning_mode = "rule";
         pagePlan = applyUploadedTemplateStructure(pagePlan);
         normalizePptxWorkflow(pagePlan, reportWorkflow);
         editedPagePlan = JSON.parse(JSON.stringify(pagePlan));  // deep copy for editing
@@ -14232,11 +14114,16 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (previewPanel) previewPanel.style.display = "";
         const isResearchWorkflow = pagePlan.report_workflow === "research";
         const projection = getPptxOutputPageProjection(pagePlan);
-        genStatus.textContent = isResearchWorkflow
-          ? `第一步完成：AI 已规划 ${projection.analysisPages} 个分析页；加上 ${projection.sectionPages} 个章节页和 ${projection.fixedSystemPages} 个系统页，最终 PPT 预计 ${projection.totalPages} 页（${pagePlan.renderable_questions} 道可渲染题）。下一步请点击“生成核心观点与章节逻辑”。`
-          : `快速报告结构已准备：${projection.analysisPages} 个分析页；最终 PPT 预计 ${projection.totalPages} 页（含 ${projection.sectionPages} 个章节页、${projection.fixedSystemPages} 个系统页）。可直接生成 PPT，或先让 AI 写作并自动导出。`;
-        // Scroll to preview panel
-        previewPanel && previewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (isResearchWorkflow) {
+          genStatus.textContent = `基础页面已准备（${pagePlan.renderable_questions} 道可渲染题），正在生成核心观点与章节逻辑…`;
+          const narrativeReady = await generatePptxAiReport();
+          genStatus.textContent = narrativeReady
+            ? "核心观点与章节逻辑已生成，请确认后重构报告蓝图。"
+            : "核心观点生成未完成，已保留确定性蓝图；可重试或直接生成 PPT。";
+        } else {
+          genStatus.textContent = `快速报告结构已准备：${projection.analysisPages} 个分析页；最终 PPT 预计 ${projection.totalPages} 页（含 ${projection.sectionPages} 个章节页、${projection.fixedSystemPages} 个系统页）。可直接生成 PPT，或先让 AI 写作并自动导出。`;
+          previewPanel && previewPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
       } catch (err) {
         genStatus.textContent = "预览失败：" + err.message;
       } finally {
@@ -15473,6 +15360,31 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       return evidence;
     }
 
+    function evidenceNumericValues(contextPage) {
+      const values = [];
+      const add = (value, kind = "metric") => {
+        if (value === null || value === undefined || value === "") return;
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) values.push({ value: numeric, kind });
+      };
+      (contextPage?.questions || []).forEach((question) => {
+        Object.values(question.base || {}).forEach((value) => add(value, "base"));
+        (question.rows || []).forEach((row) => {
+          Object.values(row.values || {}).forEach((value) => add(value));
+          Array.from(String(row.option || "").matchAll(/-?\d+(?:\.\d+)?/g))
+            .forEach((match) => add(match[0], "label"));
+        });
+        (question.facts || []).forEach((fact) => {
+          add(fact.value);
+          add(fact.benchmark_value);
+          add(fact.gap_pp);
+          add(fact.rank, "rank");
+          add(fact.base, "base");
+        });
+      });
+      return values;
+    }
+
     function isAiInsightSupported(text, contextPage) {
       const content = String(text || "");
       const hasPsmEvidence = (contextPage?.questions || []).some(
@@ -15482,11 +15394,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         return false;
       }
       const matches = Array.from(content.matchAll(/(\d+(?:\.\d+)?)\s*%/g));
-      if (!matches.length) return true;
       const evidence = evidencePercentageRows(contextPage);
       const allOptions = Array.from(new Set(evidence.map((item) => item.option).filter((item) => item.length >= 2)));
       const allSegments = Array.from(new Set(evidence.map((item) => item.segment).filter((item) => item.length >= 2)));
-      return matches.every((match) => {
+      const percentageSupported = matches.every((match) => {
         const value = Number(match[1]);
         const start = Math.max(0, (match.index || 0) - 36);
         const end = Math.min(content.length, (match.index || 0) + match[0].length + 36);
@@ -15500,6 +15411,21 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           return true;
         });
       });
+      if (!percentageSupported) return false;
+      const numericEvidence = evidenceNumericValues(contextPage);
+      const sampleClaims = Array.from(content.matchAll(/(?:N|n)\s*=\s*(\d+(?:\.\d+)?)/g));
+      const unitClaims = Array.from(content.matchAll(/(-?\d+(?:\.\d+)?)\s*(?:\u5143|\u5206|\u70b9|\u500d)/g));
+      const coefficientClaims = Array.from(content.matchAll(/(?:Better|Worse|\u7cfb\u6570|\u5747\u503c)\s*(?:\u4e3a|\u8fbe\u5230|\u7ea6|[:\uff1a])?\s*(-?\d+(?:\.\d+)?)/gi));
+      const supportsValue = (value, kinds = null, tolerance = 0.11) => numericEvidence.some((item) => {
+        if (kinds && !kinds.has(item.kind)) return false;
+        return Math.abs(item.value - Number(value)) <= tolerance;
+      });
+      if (!sampleClaims.every((match) => supportsValue(match[1], new Set(["base"]), 0.01))) {
+        return false;
+      }
+      if (!unitClaims.every((match) => supportsValue(match[1]))) return false;
+      if (!coefficientClaims.every((match) => supportsValue(match[1]))) return false;
+      return true;
     }
 
     async function requestPptxInsightContext() {
@@ -15568,6 +15494,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       setPptxProgress(5, "正在汇总逐页数据证据", "AI 写作");
       aiWriteStatus.textContent = "AI 写作已开始；完成后将自动生成并下载 PPT。";
       const startedAt = Date.now();
+      const aiPlanner = window.PptReportAi;
+      let failedPageCount = 0;
       try {
         const context = await requestPptxInsightContext();
         lastPptxInsightContext = context;
@@ -15603,48 +15531,56 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                   "标题先给判断，不要堆数字。正文先解释关键关系或差异，再用1组关键数据作证据锚点，最后落到业务含义；证据不足时不要强行归因。",
                   "每页最多引用2个数字，不得逐项复述图表，不要让标题和正文重复同一数字；避免以‘数据显示’‘从数据看’‘其中’开头连续播报占比。",
                   "只返回 JSON：{\"pages\":[{\"slide_id\":\"finding_001\",\"page_idx\":1,\"title\":\"一句话判断\",\"bullets\":[\"解释或关系\",\"关键证据\"],\"business_implication\":\"业务含义\"}]}。",
+                  "每页必须返回 evidence_fact_ids 和 evidence_question_ids，且只能使用该页输入中提供的 ID。",
                 ].join("\n"),
               },
               { role: "user", content: JSON.stringify({ pages }) },
             ];
-            let output = await callAiChatCompletion(settings, messages, {
+            try {
+              let output = await callAiChatCompletion(settings, messages, {
               maxTokens: 6000,
               timeoutMs: 240000,
               temperature: 0.15,
               responseFormat: "json_object",
-              stream: true,
+              stream: false,
             });
             try {
-              batchResults[batchIndex] = parseAiInsightJson(output).pages;
+              batchResults[batchIndex] = aiPlanner.validatePageOutput(
+                parseAiInsightJson(output), pages, { requireSlideId: true, requireEvidenceIds: true }
+              );
+              if (!batchResults[batchIndex].length) throw new Error("当前批次未返回可验证的稳定 slide_id。");
             } catch (_) {
               output = await callAiChatCompletion(settings, [
                 ...messages,
                 { role: "assistant", content: String(output).slice(0, 12000) },
-                { role: "user", content: "上一次输出不是合法 JSON。请仅按指定结构重新输出 JSON，不要解释或添加 Markdown。" },
+                { role: "user", content: "上一次输出未通过 JSON、稳定 slide_id 或证据 ID 校验。请只重写当前批次，原样返回每页 slide_id，并按指定结构输出 JSON。" },
               ], {
                 maxTokens: 6000,
                 timeoutMs: 240000,
                 temperature: 0,
                 responseFormat: "json_object",
-                stream: true,
+                stream: false,
               });
-              batchResults[batchIndex] = parseAiInsightJson(output).pages;
+              batchResults[batchIndex] = aiPlanner.validatePageOutput(
+                parseAiInsightJson(output), pages, { requireSlideId: true, requireEvidenceIds: true }
+              );
             }
+            } catch (error) {
+              console.warn(`Quick report batch ${batchIndex + 1} fallback:`, error);
+              batchResults[batchIndex] = [];
+            }
+            failedPageCount += Math.max(0, pages.length - batchResults[batchIndex].length);
             completed += 1;
             const batchProgress = batches.length ? 15 + (completed / batches.length) * 65 : 80;
             setPptxProgress(batchProgress, `已完成 ${completed}/${batches.length} 批页面`, "AI 写作");
-            aiWriteStatus.textContent = `AI 正在快速写报告：已完成 ${completed}/${batches.length} 批…`;
+            aiWriteStatus.textContent = `AI 正在快速写报告：已完成 ${completed}/${batches.length} 批${failedPageCount ? `，${failedPageCount} 页将使用确定性文案` : ""}…`;
           }
         };
         await Promise.all(Array.from({ length: Math.min(2, Math.max(1, batches.length)) }, () => runWorker()));
 
-        const generatedById = new Map(batchResults.flat().filter(Boolean).map((page) => {
-          const fallbackEvidence = (context.pages || []).find(
-            (item) => Number(item.page_idx) === Number(page.page_idx)
-          );
-          const stableSource = page.slide_id ? page : (fallbackEvidence || page);
-          return [pptxPageStableId(stableSource), page];
-        }));
+        const generatedById = new Map(
+          batchResults.flat().filter(Boolean).map((page) => [String(page.slide_id), page])
+        );
         let applied = 0;
         editedPagePlan.pages.forEach((page) => {
           const pageId = pptxPageStableId(page);
@@ -15680,7 +15616,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           const summaryOutput = await callAiChatCompletion(settings, [
             { role: "system", content: "基于逐页洞察写3句以内的执行摘要：先给总判断，再解释核心矛盾，最后给行动方向；不要按页面罗列发现，不新增数字，全文最多保留2个关键数字。只返回 JSON：{\"summary\":\"...\"}。" },
             { role: "user", content: JSON.stringify(summaryInput) },
-          ], { maxTokens: 1200, timeoutMs: 180000, temperature: 0.15, responseFormat: "json_object", stream: true });
+          ], { maxTokens: 1200, timeoutMs: 180000, temperature: 0.15, responseFormat: "json_object", stream: false });
           const summaryText = String(summaryOutput || "").match(/\{[\s\S]*\}/)?.[0] || "{}";
           editedPagePlan.executive_summary = String(JSON.parse(summaryText).summary || "").trim();
         } catch (_) {
@@ -15700,7 +15636,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         await persistSlideBriefBlueprint();
         updatePptxWorkflowActions(editedPagePlan);
         const elapsed = Math.max(0, (Date.now() - startedAt) / 1000);
-        aiWriteStatus.textContent = `AI 已更新 ${applied}/${editedPagePlan.pages.length} 页（${batches.length} 批/并发 2，耗时 ${elapsed.toFixed(1)} 秒），正在生成并下载 PPT…`;
+        aiWriteStatus.textContent = `AI 已更新 ${applied}/${editedPagePlan.pages.length} 页（${batches.length} 批/并发 2，耗时 ${elapsed.toFixed(1)} 秒${failedPageCount ? `，${failedPageCount} 页使用确定性文案` : ""}），正在生成并下载 PPT…`;
         setPptxProgress(96, "AI 写作完成，正在生成 PPT", "AI 写作");
         await doGeneratePptx();
       } catch (error) {
@@ -15719,17 +15655,17 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         : generatePptxQuickAiReport();
     }
     async function generatePptxAiReport() {
-      if (!selectedFile || !editedPagePlan?.pages?.length) return;
+      if (!selectedFile || !editedPagePlan?.pages?.length) return false;
       const settings = loadAiSettings();
       const errors = validateAiSettings(settings);
       if (settings.mode === "local" || errors.length) {
         aiWriteStatus.textContent = `AI 设置尚未就绪：${errors.join("；")}。您仍可跳过故事线直接生成。`;
-        return;
+        return false;
       }
       const aiPlanner = window.PptReportAi;
       if (!aiPlanner) {
         aiWriteStatus.textContent = "PPT AI 故事线模块未加载，请刷新页面后重试。";
-        return;
+        return false;
       }
       aiWriteBtn.disabled = true;
       if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = true;
@@ -15758,7 +15694,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             timeoutMs: 240000,
             temperature: 0.1,
             responseFormat: "json_object",
-            stream: true,
+            stream: false,
           });
           return aiPlanner.parseJsonObject(output);
         }, context);
@@ -15775,12 +15711,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           aiWriteStatus.textContent = `Report Narrative 生成失败，已启用兼容流程：${outcome.error}`;
         }
         narrativePanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return Boolean(pendingReportNarrative);
       } catch (error) {
         pendingReportNarrative = null;
         editedPagePlan.report_narrative = null;
         renderReportNarrative(null, error.message);
         aiWriteStatus.textContent = `故事线准备失败：${error.message}。仍可按原流程生成报告。`;
         setPptxProgress(0, "AI 研究规划失败", "AI 研究");
+        return false;
       } finally {
         aiWriteBtn.disabled = false;
         if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = false;
@@ -15908,10 +15846,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 timeoutMs: 240000,
                 temperature: repairMode ? 0 : 0.12,
                 responseFormat: "json_object",
-                stream: true,
+                stream: false,
               });
               return aiPlanner.validatePageOutput(
-                aiPlanner.parseJsonObject(output), targetPages
+                aiPlanner.parseJsonObject(output), targetPages, { requireSlideId: true, requireEvidenceIds: true }
               );
             } catch (error) {
               console.warn(`SlideBrief batch ${batchIndex + 1}${repairMode ? " repair" : ""}:`, error);
@@ -15950,9 +15888,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const failedPageIndexes = batchResults.flatMap(
         (result) => result.unresolved_page_idxs || []
       );
-      if (!generated.length && writablePages.length) {
-        throw new Error("所有 SlideBrief 批次均未返回有效页面，已保留确定性蓝图。");
-      }
 
       const generatedById = new Map(generated.map((page) => [pptxPageStableId(page), page]));
       let applied = 0;
@@ -16099,14 +16034,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           timeoutMs: 240000,
           temperature: 0.1,
           responseFormat: "json_object",
-          stream: true,
+          stream: false,
         };
         let output = await callAiChatCompletion(settings, messages, callOptions);
         let suggestions;
         try {
           suggestions = aiPlanner.validatePageOutput(
             aiPlanner.parseJsonObject(output),
-            [evidence]
+            [evidence], { requireSlideId: true, requireEvidenceIds: true }
           );
           if (!suggestions.length) throw new Error("invalid suggestion");
         } catch {
@@ -16120,7 +16055,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           ], { ...callOptions, temperature: 0 });
           suggestions = aiPlanner.validatePageOutput(
             aiPlanner.parseJsonObject(output),
-            [evidence]
+            [evidence], { requireSlideId: true, requireEvidenceIds: true }
           );
           if (!suggestions.length) throw new Error("\u6a21\u578b\u672a\u8fd4\u56de\u53ef\u9a8c\u8bc1\u7684\u5355\u9875 SlideBrief\u3002");
         }

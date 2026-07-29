@@ -316,6 +316,14 @@ h3 {
   color: var(--ink);
 }
 
+a.secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+}
+
 .secondary-btn:hover {
   border-color: #93c5fd;
   background: #f8fbff;

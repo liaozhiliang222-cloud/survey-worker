@@ -532,7 +532,9 @@
     return [bullets[0], bullets[1], bullets.slice(2).join("；")];
   }
 
-  function validatePageOutput(payload, batch) {
+  function validatePageOutput(payload, batch, options = {}) {
+    const requireSlideId = Boolean(options.requireSlideId);
+    const requireEvidenceIds = Boolean(options.requireEvidenceIds);
     const allowedBySlideId = new Map((batch || []).map((page) => [
       String(page.slide_id || page.slide_brief?.slide_id || ""), page,
     ]).filter(([slideId]) => slideId));
@@ -540,12 +542,14 @@
     return (Array.isArray(payload?.pages) ? payload.pages : []).map((suggestion) => {
       const slideId = String(suggestion.slide_id || "").trim();
       const pageIdx = Number(suggestion.page_idx);
-      const page = (slideId && allowedBySlideId.get(slideId)) || allowedByPage.get(pageIdx);
+      const page = (slideId && allowedBySlideId.get(slideId))
+        || (!requireSlideId ? allowedByPage.get(pageIdx) : null);
       if (!page) return null;
       const allowedFacts = new Set(uniqueStrings(page.evidence_fact_ids));
       const allowedQuestions = new Set(pageQuestionIds(page));
       let evidenceFactIds = uniqueStrings(suggestion.evidence_fact_ids).filter((id) => allowedFacts.has(id));
       let evidenceQuestionIds = uniqueStrings(suggestion.evidence_question_ids).filter((id) => allowedQuestions.has(id));
+      if (requireEvidenceIds && (!evidenceFactIds.length || !evidenceQuestionIds.length)) return null;
       if (!evidenceFactIds.length) evidenceFactIds = Array.from(allowedFacts).slice(0, 6);
       if (!evidenceQuestionIds.length) evidenceQuestionIds = Array.from(allowedQuestions);
       return {

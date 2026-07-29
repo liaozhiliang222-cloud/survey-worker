@@ -257,6 +257,25 @@ const stableOutput = ai.validatePageOutput({ pages: [{
 assert.equal(stableOutput.length, 1);
 assert.equal(stableOutput[0].slide_id, "stable_2");
 assert.equal(stableOutput[0].page_idx, 2);
+const strictPageIdOutput = ai.validatePageOutput({ pages: [{
+  page_idx: 1,
+  title: "Page index alone must not bind",
+  evidence_fact_ids: ["F1"],
+}] }, stableBatch, { requireSlideId: true });
+assert.equal(strictPageIdOutput.length, 0);
+const strictStableOutput = ai.validatePageOutput({ pages: [{
+  slide_id: "stable_1",
+  title: "Stable ID binds",
+  evidence_fact_ids: ["F1"],
+  evidence_question_ids: ["Q1"],
+}] }, stableBatch, { requireSlideId: true, requireEvidenceIds: true });
+const invalidEvidenceOutput = ai.validatePageOutput({ pages: [{
+  slide_id: "stable_1",
+  title: "Invalid evidence must not bind",
+  evidence_fact_ids: ["invented"],
+  evidence_question_ids: ["Q999"],
+}] }, stableBatch, { requireSlideId: true, requireEvidenceIds: true });
+assert.equal(strictStableOutput[0].slide_id, "stable_1");
 
 const stableInput = ai.buildPageBatchInput(stableBatch, reportNarrative);
 assert.equal(stableInput.pages[0].slide_id, "stable_1");
