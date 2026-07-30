@@ -15897,11 +15897,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             stream: true,
             onProgress: updateNarrativeStreamProgress,
           });
-          const payload = aiPlanner.parseJsonObject(output);
+          let payload = null;
+          let validationError = null;
           try {
+            payload = aiPlanner.parseJsonObject(output);
             aiPlanner.validateReportNarrative(payload, narrativeContext);
             return payload;
-          } catch (validationError) {
+          } catch (error) {
+            validationError = error;
             const repairedOutput = await callAiChatCompletion(settings, [
               {
                 role: "system",
@@ -15920,7 +15923,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 content: JSON.stringify({
                   validation_error: String(validationError?.message || validationError),
                   original_input: narrativeInput,
-                  invalid_output: payload,
+                  invalid_output: payload || String(output || "").slice(0, 12000),
                 }),
               },
             ], {
@@ -15935,7 +15938,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 aiWriteStatus.textContent = "故事线结构校验中，已接收 " + receivedLength.toLocaleString() + " 字…";
               },
             });
-            return aiPlanner.parseJsonObject(repairedOutput);
+            const repairedPayload = aiPlanner.parseJsonObject(repairedOutput);
+            aiPlanner.validateReportNarrative(repairedPayload, narrativeContext);
+            return repairedPayload;
           }
         }, narrativeContext);
 

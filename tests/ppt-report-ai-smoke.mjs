@@ -221,6 +221,7 @@ const normalizedWrappedNarrative = ai.validateReportNarrative({
 assert.equal(normalizedWrappedNarrative.central_thesis, expectedCentralThesis);
 assert.equal(reportNarrative.confidence, 1);
 assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /中心论点/);
+assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /第一个字符必须是 {/);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /chapter_context/);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /每页最多引用 2 个数字/);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /不得逐项复述图表/);
