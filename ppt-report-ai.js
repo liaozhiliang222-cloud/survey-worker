@@ -204,6 +204,57 @@
     return result;
   }
 
+  function compactNarrativeFact(fact) {
+    const result = compactFact(fact);
+    ["question_id", "source_reference", "confidence"].forEach((key) => {
+      const value = fact?.[key];
+      if (value !== null && value !== undefined && value !== "") result[key] = value;
+    });
+    return result;
+  }
+
+  function selectNarrativeFacts(context, pages, maxFacts = 120) {
+    const facts = Array.isArray(context?.data_facts) ? context.data_facts : [];
+    const factsById = new Map(facts.map((fact) => [String(fact?.fact_id || ""), fact]));
+    const selected = new Map();
+    const addFact = (fact) => {
+      const factId = String(fact?.fact_id || "").trim();
+      if (!factId || selected.has(factId) || selected.size >= maxFacts) return;
+      selected.set(factId, compactNarrativeFact(fact));
+    };
+    const addFactId = (factId) => addFact(factsById.get(String(factId || "")));
+
+    // Preserve facts cited by synthesized findings before sampling page detail.
+    (context?.global_findings || []).forEach((finding) =>
+      uniqueStrings(finding?.evidence_fact_ids).forEach(addFactId)
+    );
+    (pages || []).forEach((page) =>
+      uniqueStrings(page?.evidence_fact_ids).slice(0, 5).forEach(addFactId)
+    );
+
+    const factsByQuestion = new Map();
+    facts.forEach((fact) => {
+      const questionId = String(fact?.question_id || "").trim();
+      if (!questionId) return;
+      if (!factsByQuestion.has(questionId)) factsByQuestion.set(questionId, []);
+      factsByQuestion.get(questionId).push(fact);
+    });
+    const factPriority = (fact) => {
+      const significant = fact?.significant === true ? 1000 : 0;
+      const gap = Math.abs(Number(fact?.gap_pp) || 0) * 10;
+      const rank = Number.isFinite(Number(fact?.rank)) ? Math.max(0, 20 - Number(fact.rank)) : 0;
+      return significant + gap + rank;
+    };
+    (pages || []).forEach((page) => {
+      pageQuestionIds(page).forEach((questionId) => {
+        const candidates = [...(factsByQuestion.get(questionId) || [])]
+          .sort((left, right) => factPriority(right) - factPriority(left));
+        candidates.slice(0, 2).forEach(addFact);
+      });
+    });
+    return Array.from(selected.values());
+  }
+
   function compactQuestion(question, evidenceFactIds = []) {
     const evidenceSet = new Set(uniqueStrings(evidenceFactIds));
     const allFacts = Array.isArray(question?.facts) ? question.facts : [];
@@ -277,6 +328,7 @@
     const priorityPageIndexes = coreResearchModule
       ? coreResearchPageIndexes(context, coreResearchModule)
       : (researchArchetype === "concept_test" ? conceptPriorityPageIndexes(context) : []);
+    const narrativeFacts = selectNarrativeFacts(context, pages);
     return {
       report_title: String(researchObjective || context?.research_objective || context?.source || "调研报告"),
       research_archetype: researchArchetype,
@@ -296,10 +348,22 @@
       dimension_catalog: (context?.available_dimensions || []).map((dimension) => ({
         key: String(dimension?.key || "").trim(),
         label: String(dimension?.label || dimension?.key || "").trim(),
-        segments: uniqueStrings(dimension?.segments),
+        segments: uniqueStrings(dimension?.segments).slice(0, 12),
       })).filter((dimension) => dimension.key),
-      data_facts: (context?.data_facts || []).map((fact) => ({ ...fact })),
-      insights: (context?.global_findings || []).map((finding) => ({ ...finding })),
+      data_facts: narrativeFacts,
+      insights: (context?.global_findings || []).map((finding) => ({
+        title: String(finding?.title || ""),
+        description: String(finding?.description || ""),
+        evidence_fact_ids: uniqueStrings(finding?.evidence_fact_ids),
+        evidence_question_ids: uniqueStrings(finding?.evidence_question_ids),
+        action_implication: String(finding?.action_implication || ""),
+        importance: finding?.importance,
+      })),
+      input_stats: {
+        source_fact_count: Array.isArray(context?.data_facts) ? context.data_facts.length : 0,
+        selected_fact_count: narrativeFacts.length,
+        page_count: pages.length,
+      },
       current_report_structure: chapters,
       page_catalog: pages.map((page) => ({
         page_idx: Number(page.page_idx),
@@ -309,7 +373,7 @@
         current_title: String(page.current_title || page.title || ""),
         question_ids: pageQuestionIds(page),
         current_dimensions: uniqueStrings(page.dimensions),
-        question_titles: uniqueStrings((page.questions || []).map((question) => question.title)),
+        question_titles: uniqueStrings((page.questions || []).map((question) => question.title)).slice(0, 8),
       })),
     };
   }

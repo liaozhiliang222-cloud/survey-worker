@@ -15880,15 +15880,22 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           (titleInput.value || "\u8c03\u7814\u5206\u6790\u62a5\u544a").trim()
         );
         const outcome = await aiPlanner.generateReportNarrativeOrFallback(async () => {
+          const updateNarrativeStreamProgress = ({ contentLength, reasoningLength }) => {
+            const receivedLength = contentLength || reasoningLength || 0;
+            const progressValue = Math.min(58, 34 + Math.floor(receivedLength / 220));
+            setPptxProgress(progressValue, "AI 正在流式组织核心观点与章节逻辑", "AI 研究");
+            aiWriteStatus.textContent = "阶段 2/2：AI 正在流式生成故事线，已接收 " + receivedLength.toLocaleString() + " 字…";
+          };
           const output = await callAiChatCompletion(settings, [
             { role: "system", content: aiPlanner.REPORT_NARRATIVE_SYSTEM_PROMPT },
             { role: "user", content: JSON.stringify(narrativeInput) },
           ], {
-            maxTokens: 5000,
+            maxTokens: 3000,
             timeoutMs: 240000,
             temperature: 0.1,
             responseFormat: "json_object",
-            stream: false,
+            stream: true,
+            onProgress: updateNarrativeStreamProgress,
           });
           const payload = aiPlanner.parseJsonObject(output);
           try {
@@ -15917,11 +15924,16 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 }),
               },
             ], {
-              maxTokens: 5000,
+              maxTokens: 3000,
               timeoutMs: 240000,
               temperature: 0,
               responseFormat: "json_object",
-              stream: false,
+              stream: true,
+              onProgress: ({ contentLength, reasoningLength }) => {
+                const receivedLength = contentLength || reasoningLength || 0;
+                setPptxProgress(60, "正在流式修复故事线结构", "AI 研究");
+                aiWriteStatus.textContent = "故事线结构校验中，已接收 " + receivedLength.toLocaleString() + " 字…";
+              },
             });
             return aiPlanner.parseJsonObject(repairedOutput);
           }
