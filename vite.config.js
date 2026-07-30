@@ -1,6 +1,38 @@
+import { copyFileSync, cpSync, existsSync, mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
+const runtimeFiles = [
+  "app.js",
+  "ppt-report-ai.js",
+  "proposal-deck.js",
+  "data-worker.js",
+  "sw.js",
+  "manifest.webmanifest",
+  "icon.svg",
+  "cloudflare-pages-verification.txt",
+  "88d273ba3d96b5830a3a82b1040dc827.txt.txt",
+];
+
+function copyRuntimeAssets() {
+  return {
+    name: "copy-runtime-assets",
+    closeBundle() {
+      const outputDir = resolve("dist");
+      mkdirSync(outputDir, { recursive: true });
+      runtimeFiles.forEach((file) => {
+        const source = resolve(file);
+        if (existsSync(source)) copyFileSync(source, resolve(outputDir, file));
+      });
+      cpSync(resolve("templates"), resolve(outputDir, "templates"), { recursive: true });
+      mkdirSync(resolve(outputDir, "assets"), { recursive: true });
+      copyFileSync(resolve("icon.svg"), resolve(outputDir, "assets", "icon.svg"));
+    },
+  };
+}
+
 export default defineConfig({
+  plugins: [copyRuntimeAssets()],
   root: ".",
   build: {
     outDir: "dist",
