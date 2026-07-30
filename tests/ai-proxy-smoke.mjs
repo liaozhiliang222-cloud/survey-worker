@@ -8,6 +8,19 @@ let calls = [];
 globalThis.fetch = async (url, options) => {
   const body = JSON.parse(options.body);
   calls.push({ url, options, body });
+  const gatewayCalls = calls.filter((call) => String(call.url).includes("api.surveykit.cc")).length;
+  if (mode === "gateway-quota-once" && String(url).includes("api.surveykit.cc") && gatewayCalls === 1) {
+    return new Response(JSON.stringify({ error: { message: "You exceeded your current quota." } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (mode === "gateway-down" && String(url).includes("api.surveykit.cc")) {
+    return new Response(JSON.stringify({ error: { message: "You exceeded your current quota." } }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (mode === "network" && body.model === "deepseek-v4-pro") throw new TypeError("socket reset");
   if (mode === "quota" && body.model === "deepseek-v4-pro") {
     return new Response(JSON.stringify({ error: { code: "AllocationQuota.FreeTierOnly" } }), {
@@ -71,6 +84,39 @@ if (calls[0].body.model !== "deepseek-v4-flash") throw new Error("SurveyKit gate
 if (calls[0].options.headers.Authorization !== "Bearer gateway-secret") throw new Error("wrong SurveyKit gateway auth");
 if (response.headers.get("X-AI-Source") !== "builtin-surveykit-gateway") throw new Error("wrong SurveyKit gateway source");
 if (response.headers.get("X-AI-Attempts") !== "deepseek-v4-flash") throw new Error("SurveyKit gateway should use one model attempt");
+
+// Gateway quota responses retry the aggregate pool before leaving the provider.
+calls = [];
+mode = "gateway-quota-once";
+response = await mod.onRequest({
+  request: makeRequest(),
+  env: { SURVEYKIT_GATEWAY_API_KEY: "gateway-secret", SENSENOVA_API_KEY: "sense-secret" },
+});
+if (response.status !== 200 || response.headers.get("X-AI-Source") !== "builtin-surveykit-gateway") {
+  throw new Error("SurveyKit gateway retry failed");
+}
+if (calls.length !== 2 || response.headers.get("X-AI-Attempts") !== "deepseek-v4-flash,deepseek-v4-flash") {
+  throw new Error("SurveyKit gateway did not retry the pooled model");
+}
+
+// Exhausted Gateway retries continue to the configured SenseNova provider.
+calls = [];
+mode = "gateway-down";
+response = await mod.onRequest({
+  request: makeRequest(),
+  env: {
+    SURVEYKIT_GATEWAY_API_KEY: "gateway-secret",
+    SENSENOVA_API_KEY: "sense-secret",
+    DASHSCOPE_API_KEY: "server-secret",
+  },
+});
+if (response.status !== 200 || response.headers.get("X-AI-Source") !== "builtin-sensenova") {
+  throw new Error("Cross-provider fallback failed");
+}
+if (calls.length !== 4 || calls[3].url !== "https://token.sensenova.cn/v1/chat/completions") {
+  throw new Error("Gateway retries did not continue to SenseNova");
+}
+mode = "normal";
 
 // SenseNova takes precedence when its production secret is configured.
 calls = [];

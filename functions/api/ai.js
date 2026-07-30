@@ -61,49 +61,62 @@ function validateTarget(provider, rawUrl, allowInsecureBuiltin = false) {
   return url.toString();
 }
 
-function getBuiltinConfig(env) {
+function configuredModels(env, pluralKey, singularKey, defaults) {
+  const configured = String(env?.[pluralKey] || env?.[singularKey] || "")
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+  return configured.length ? configured : defaults;
+}
+
+function getBuiltinConfigs(env) {
+  const configs = [];
   const surveykitGatewayKey = String(env?.SURVEYKIT_GATEWAY_API_KEY || "").trim();
   if (surveykitGatewayKey) {
-    const configuredModels = String(env?.SURVEYKIT_GATEWAY_MODELS || env?.SURVEYKIT_GATEWAY_MODEL || "")
-      .split(",")
-      .map((model) => model.trim())
-      .filter(Boolean);
-    return {
+    configs.push({
       apiKey: surveykitGatewayKey,
-      models: configuredModels.length ? configuredModels : DEFAULT_SURVEYKIT_GATEWAY_MODELS,
+      models: configuredModels(
+        env,
+        "SURVEYKIT_GATEWAY_MODELS",
+        "SURVEYKIT_GATEWAY_MODEL",
+        DEFAULT_SURVEYKIT_GATEWAY_MODELS,
+      ),
       url: String(env?.SURVEYKIT_GATEWAY_API_URL || BUILTIN_SURVEYKIT_GATEWAY_URL).trim(),
       provider: "surveykit_gateway",
       source: "builtin-surveykit-gateway",
       timeoutMs: 90_000,
-    };
+      attemptsPerModel: 3,
+    });
   }
+
   const sensenovaKey = String(env?.SENSENOVA_API_KEY || "").trim();
   if (sensenovaKey) {
-    const configuredModels = String(env?.SENSENOVA_MODELS || env?.SENSENOVA_MODEL || "")
-      .split(",")
-      .map((model) => model.trim())
-      .filter(Boolean);
-    return {
+    configs.push({
       apiKey: sensenovaKey,
-      models: configuredModels.length ? configuredModels : DEFAULT_SENSENOVA_MODELS,
+      models: configuredModels(env, "SENSENOVA_MODELS", "SENSENOVA_MODEL", DEFAULT_SENSENOVA_MODELS),
       url: String(env?.SENSENOVA_API_URL || BUILTIN_SENSENOVA_URL).trim(),
       provider: "sensenova",
       source: "builtin-sensenova",
       timeoutMs: 90_000,
-    };
+      attemptsPerModel: 1,
+    });
   }
-  const configuredModels = String(env?.BAILIAN_MODELS || env?.BAILIAN_MODEL || "")
-    .split(",")
-    .map((model) => model.trim())
-    .filter(Boolean);
-  return {
-    apiKey: String(env?.DASHSCOPE_API_KEY || env?.BAILIAN_API_KEY || env?.AI_API_KEY || "").trim(),
-    models: configuredModels.length ? configuredModels : DEFAULT_BUILTIN_MODELS,
-    url: String(env?.BAILIAN_API_URL || BUILTIN_BAILIAN_URL).trim(),
-    provider: "qwen",
-    source: "builtin-bailian",
-    timeoutMs: 240_000,
-  };
+
+  const bailianKey = String(
+    env?.DASHSCOPE_API_KEY || env?.BAILIAN_API_KEY || env?.AI_API_KEY || "",
+  ).trim();
+  if (bailianKey) {
+    configs.push({
+      apiKey: bailianKey,
+      models: configuredModels(env, "BAILIAN_MODELS", "BAILIAN_MODEL", DEFAULT_BUILTIN_MODELS),
+      url: String(env?.BAILIAN_API_URL || BUILTIN_BAILIAN_URL).trim(),
+      provider: "qwen",
+      source: "builtin-bailian",
+      timeoutMs: 240_000,
+      attemptsPerModel: 1,
+    });
+  }
+  return configs;
 }
 
 function extractAssistantContent(text) {
@@ -117,6 +130,14 @@ function extractAssistantContent(text) {
     ).trim();
   } catch {
     return "";
+  }
+}
+
+function containsUpstreamError(text) {
+  try {
+    return Boolean(JSON.parse(text)?.error);
+  } catch {
+    return false;
   }
 }
 
@@ -192,47 +213,61 @@ export async function onRequest({ request, env }) {
     }
 
     const clientApiKey = String(payload.apiKey || "").trim();
-    const builtin = getBuiltinConfig(env);
     const useBuiltin = !clientApiKey;
-    const apiKey = useBuiltin ? builtin.apiKey : clientApiKey;
-    if (!apiKey) {
-      return json({ error: { message: "平台内置 AI 服务尚未完成配置，请联系管理员。" } }, 503);
+    const builtins = useBuiltin ? getBuiltinConfigs(env) : [];
+    if (useBuiltin && !builtins.length) {
+      return json({ error: { message: "\u5e73\u53f0\u5185\u7f6e AI \u670d\u52a1\u5c1a\u672a\u5b8c\u6210\u914d\u7f6e\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u3002" } }, 503);
     }
 
     if (!useBuiltin) {
       const targetUrl = validateTarget(payload.provider || "custom", payload.url);
-      const { upstream, text } = await callUpstream(targetUrl, apiKey, body, 280_000);
+      const { upstream, text } = await callUpstream(targetUrl, clientApiKey, body, 280_000);
       if (body.stream && upstream.ok) return upstreamResponse("", upstream, body.model, "user-key", [body.model]);
-      if (!text.trim()) return json({ error: { message: "模型返回为空，请检查模型名称、额度或服务状态。" } }, 502);
+      if (!text.trim()) return json({ error: { message: "\u6a21\u578b\u8fd4\u56de\u4e3a\u7a7a\uff0c\u8bf7\u68c0\u67e5\u6a21\u578b\u540d\u79f0\u3001\u989d\u5ea6\u6216\u670d\u52a1\u72b6\u6001\u3002" } }, 502);
       return upstreamResponse(text, upstream, body.model, "user-key", [body.model]);
     }
 
-    const targetUrl = validateTarget(builtin.provider, builtin.url, true);
     const wantsJson = body.response_format?.type === "json_object";
     const attempts = [];
     let lastResult = null;
     let lastError = null;
-    for (const model of builtin.models) {
-      attempts.push(model);
-      const upstreamBody = prepareBuiltinBody(body, model);
-      let result;
-      try {
-        result = await callUpstream(targetUrl, apiKey, upstreamBody, builtin.timeoutMs);
-      } catch (error) {
-        lastError = error;
-        continue;
+    for (const builtin of builtins) {
+      const targetUrl = validateTarget(builtin.provider, builtin.url, true);
+      for (const model of builtin.models) {
+        const attemptCount = Math.max(1, Number(builtin.attemptsPerModel) || 1);
+        for (let attempt = 1; attempt <= attemptCount; attempt += 1) {
+          attempts.push(model);
+          const upstreamBody = prepareBuiltinBody(body, model);
+          let result;
+          try {
+            result = await callUpstream(targetUrl, builtin.apiKey, upstreamBody, builtin.timeoutMs);
+          } catch (error) {
+            lastError = error;
+            continue;
+          }
+          lastResult = { ...result, model, builtin };
+          if (result.stream) {
+            return upstreamResponse("", result.upstream, model, builtin.source, attempts);
+          }
+          if (!result.upstream.ok || !result.text.trim() || containsUpstreamError(result.text)) continue;
+          if (wantsJson && !containsJsonObject(result.text)) continue;
+          return upstreamResponse(result.text, result.upstream, model, builtin.source, attempts);
+        }
       }
-      lastResult = { ...result, model };
-      if (result.stream) return upstreamResponse("", result.upstream, model, builtin.source, attempts);
-      if (!result.upstream.ok || !result.text.trim()) continue;
-      if (wantsJson && !containsJsonObject(result.text)) continue;
-      return upstreamResponse(result.text, result.upstream, model, builtin.source, attempts);
     }
     if (!lastResult?.text?.trim()) {
-      const reason = lastError?.name === "AbortError" ? "模型响应超时" : (lastError?.message || "未返回有效内容");
-      return json({ error: { message: `内置模型均未返回有效内容：${reason}，请稍后重试。` } }, 502);
+      const reason = lastError?.name === "AbortError"
+        ? "\u6a21\u578b\u54cd\u5e94\u8d85\u65f6"
+        : (lastError?.message || "\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9");
+      return json({ error: { message: `\u6240\u6709\u5185\u7f6e AI \u670d\u52a1\u5747\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9\uff1a${reason}\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002` } }, 502);
     }
-    return upstreamResponse(lastResult.text, lastResult.upstream, lastResult.model, builtin.source, attempts);
+    return upstreamResponse(
+      lastResult.text,
+      lastResult.upstream,
+      lastResult.model,
+      lastResult.builtin.source,
+      attempts,
+    );
   } catch (error) {
     return json({ error: { message: error.message || "AI 代理调用失败。" } }, 400);
   }

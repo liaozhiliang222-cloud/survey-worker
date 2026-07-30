@@ -18,6 +18,19 @@ let calls = [];
 const fetchImpl = async (url, options) => {
   const body = JSON.parse(options.body);
   calls.push({ url: String(url), options, body });
+  const gatewayCalls = calls.filter((call) => call.url.includes("api.surveykit.cc")).length;
+  if (mode === "gateway-quota-once" && String(url).includes("api.surveykit.cc") && gatewayCalls === 1) {
+    return new Response(JSON.stringify({ error: { message: "You exceeded your current quota." } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  if (mode === "gateway-down" && String(url).includes("api.surveykit.cc")) {
+    return new Response(JSON.stringify({ error: { message: "You exceeded your current quota." } }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (mode === "network" && body.model === "deepseek-v4-pro") throw new TypeError("socket reset");
   if (body.stream) {
     return new Response('data: {"choices":[{"delta":{"content":"stream-ok"}}]}\n\ndata: [DONE]\n\n', { status: 200, headers: { "Content-Type": "text/event-stream" } });
@@ -71,6 +84,31 @@ try {
   assert.equal(calls[0].options.headers.Authorization, "Bearer gateway-secret");
   assert.equal(response.headers.get("x-ai-source"), "builtin-surveykit-gateway");
   assert.equal(response.headers.get("x-ai-attempts"), "deepseek-v4-flash");
+  mode = "gateway-quota-once";
+  calls = [];
+  response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload()),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-ai-source"), "builtin-surveykit-gateway");
+  assert.equal(calls.length, 2);
+  assert.equal(response.headers.get("x-ai-attempts"), "deepseek-v4-flash,deepseek-v4-flash");
+
+  mode = "gateway-down";
+  calls = [];
+  response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload()),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-ai-source"), "builtin-sensenova");
+  assert.equal(calls.length, 4);
+  assert.equal(calls[3].url, "https://token.sensenova.cn/v1/chat/completions");
+  mode = "normal";
+
   delete env.SURVEYKIT_GATEWAY_API_KEY;
   delete env.SENSENOVA_API_KEY;
 
