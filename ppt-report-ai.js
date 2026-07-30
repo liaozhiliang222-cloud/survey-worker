@@ -17,6 +17,10 @@
   const REPORT_NARRATIVE_SYSTEM_PROMPT = [
     "你是资深市场研究顾问。请根据 DataFact、Insight 列表和研究目标，先设计整份报告的 Report Narrative。",
     "先形成一个中心论点，不要简单罗列发现。central_thesis 必须是一个完整判断，不是主题描述或报告标题。",
+    "必须先读取 research_archetype, core_research_module、priority_instructions 和 priority_page_idxs，并把优先研究问题放在中心论点与第一章。",
+    "core_research_module 是用户确认的最高优先级；存在时必须覆盖 research_archetype 的默认开篇顺序。",
+    "当 research_archetype=concept_test 时，central_thesis 必须先判断概念/产品的整体表现（如购买可能、喜好、吸引力、差异化或转化潜力）；第一章必须包含 priority_page_idxs 中的页面。",
+    "用户画像、需求和障碍只用于解释概念表现与优化方向，不得在 concept_test 项目中取代概念测试结果成为开篇主线。",
     "章节必须形成连续论证，例如用户是谁→为什么购买→为什么流失→如何提升；禁止按满意度、购买因素、会员等指标机械分章。",
     "默认规划 4–6 章，硬性限制 3–8 章。每章都必须包含 chapter_id、title、purpose、key_question、page_idxs、analysis_strategy。",
     "page_idxs 必须把输入 page_catalog 中的全部页面分配到新章节，且每个页面只能出现一次；章节顺序和 page_idxs 顺序就是最终报告顺序。",
@@ -47,6 +51,53 @@
 
   function uniqueStrings(values) {
     return Array.from(new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean)));
+  }
+
+  const CONCEPT_CHAPTER_PATTERN = /\u6982\u5ff5(?:\u6d4b\u8bd5|\u8bc4\u4ef7|\u9a8c\u8bc1)/;
+  const CONCEPT_PRIMARY_OUTCOME_PATTERN = /(?:\u4e86\u89e3.*\u6982\u5ff5.*\u8d2d\u4e70.*\u53ef\u80fd|\u8d2d\u4e70\u53ef\u80fd\u6027|\u6574\u4f53.*\u8d2d\u4e70\u610f\u5411|\u8d2d\u4e70\u610f\u5411.*\u591a\u5927)/;
+  const CONCEPT_OUTCOME_PATTERN = /\u8d2d\u4e70(?:\u610f\u5411|\u53ef\u80fd|\u613f\u610f)|\u559c\u597d|\u559c\u6b22|\u5438\u5f15|\u72ec\u7279|\u5dee\u5f02\u5316|\u63a5\u53d7|\u8f6c\u5316\u6f5c\u529b/;
+
+  function pageResearchText(page) {
+    return [
+      page?.source_chapter, page?.research_role, page?.chapter, page?.current_title, page?.title,
+      ...(page?.questions || []).flatMap((question) => [question?.code, question?.title]),
+    ].filter(Boolean).join(" ");
+  }
+
+  function detectResearchArchetype(context = {}) {
+    const pages = context?.pages || [];
+    const conceptPages = pages.filter((page) => CONCEPT_CHAPTER_PATTERN.test(pageResearchText(page)));
+    return conceptPages.length ? "concept_test" : "general";
+  }
+
+  function conceptPriorityPageIndexes(context = {}) {
+    const conceptPages = (context?.pages || []).filter((page) =>
+      CONCEPT_CHAPTER_PATTERN.test(pageResearchText(page))
+    );
+    const primaryPages = conceptPages.filter((page) =>
+      CONCEPT_PRIMARY_OUTCOME_PATTERN.test(pageResearchText(page))
+    );
+    const outcomePages = conceptPages.filter((page) =>
+      CONCEPT_OUTCOME_PATTERN.test(pageResearchText(page))
+    );
+    const prioritized = primaryPages.length ? primaryPages : (outcomePages.length ? outcomePages : conceptPages);
+    return uniqueStrings(prioritized.map((page) =>
+      String(Number(page.page_idx))
+    )).map(Number).filter(Number.isFinite);
+  }
+
+  function selectedCoreResearchModule(context = {}) {
+    return String(context?.core_research_module || "").trim();
+  }
+
+  function coreResearchPageIndexes(context = {}, moduleName = selectedCoreResearchModule(context)) {
+    const selected = String(moduleName || "").trim();
+    if (!selected) return [];
+    return uniqueStrings((context?.pages || [])
+      .filter((page) => page?.research_role === "core"
+        || String(page?.source_chapter || page?.chapter || "").trim() === selected)
+      .map((page) => String(Number(page.page_idx))))
+      .map(Number).filter(Number.isFinite);
   }
 
   function chapterAnalysisDimensions(strategy = {}) {
@@ -220,8 +271,25 @@
       chapter.question_ids.push(...pageQuestionIds(page));
       chapter.question_ids = uniqueStrings(chapter.question_ids);
     });
+    const researchArchetype = detectResearchArchetype(context);
+    const coreResearchModule = selectedCoreResearchModule(context);
+    const priorityPageIndexes = coreResearchModule
+      ? coreResearchPageIndexes(context, coreResearchModule)
+      : (researchArchetype === "concept_test" ? conceptPriorityPageIndexes(context) : []);
     return {
       report_title: String(researchObjective || context?.research_objective || context?.source || "调研报告"),
+      research_archetype: researchArchetype,
+      core_research_module: coreResearchModule,
+      priority_page_idxs: priorityPageIndexes,
+      priority_instructions: coreResearchModule ? [
+        `用户确认的核心研究模块是“${coreResearchModule}”。`,
+        "中心论点和第一章必须优先回答该模块；其他模块用于解释、补充或形成行动建议。",
+        "第一章必须包含 priority_page_idxs 中的页面。",
+      ] : researchArchetype === "concept_test" ? [
+        "先回答概念/产品整体表现，再解释目标人群、需求、障碍和优化方向。",
+        "中心论点必须包含概念表现的判断，不能只写高意向用户画像。",
+        "第一章必须包含 priority_page_idxs 中的页面。",
+      ] : [],
       research_objective: String(researchObjective || context?.research_objective || ""),
       dimension_catalog: (context?.available_dimensions || []).map((dimension) => ({
         key: String(dimension?.key || "").trim(),
@@ -233,6 +301,8 @@
       current_report_structure: chapters,
       page_catalog: pages.map((page) => ({
         page_idx: Number(page.page_idx),
+        source_chapter: String(page.source_chapter || page.chapter || ""),
+        research_role: String(page.research_role || ""),
         current_chapter: String(page.chapter || "其他研究"),
         current_title: String(page.current_title || page.title || ""),
         question_ids: pageQuestionIds(page),
@@ -344,6 +414,32 @@
       }
       return normalized;
     });
+    const researchArchetype = detectResearchArchetype(context);
+    const coreResearchModule = selectedCoreResearchModule(context);
+    const explicitPriorityPages = new Set(coreResearchPageIndexes(context, coreResearchModule));
+    if (coreResearchModule && explicitPriorityPages.size) {
+      const firstChapterLeadsWithCore = chapters[0]?.page_idxs?.some((pageIdx) =>
+        explicitPriorityPages.has(Number(pageIdx))
+      );
+      if (!firstChapterLeadsWithCore) {
+        throw new Error(`第一章必须先呈现核心研究模块“${coreResearchModule}”`);
+      }
+    }
+    if (researchArchetype === "concept_test" && (!coreResearchModule || coreResearchModule === "概念测试")) {
+      const priorityPages = new Set(coreResearchModule ? [...explicitPriorityPages] : conceptPriorityPageIndexes(context));
+      const firstChapterLeadsWithConcept = chapters[0]?.page_idxs?.some((pageIdx) =>
+        priorityPages.has(Number(pageIdx))
+      );
+      if (priorityPages.size && !firstChapterLeadsWithConcept) {
+        throw new Error("\u7b2c\u4e00\u7ae0\u5fc5\u987b\u5148\u5448\u73b0\u6982\u5ff5\u6d4b\u8bd5\u6838\u5fc3\u7ed3\u679c");
+      }
+      const thesisHasConceptSubject = /(?:\u6982\u5ff5|\u4ea7\u54c1)/.test(centralThesis);
+      const thesisHasResultJudgment = /(?:\u8d2d\u4e70\u610f\u5411|\u8d2d\u4e70\u53ef\u80fd|\u63a5\u53d7|\u5438\u5f15|\u559c\u597d|\u559c\u6b22|\u5dee\u5f02\u5316|\u8f6c\u5316|\u6f5c\u529b)/.test(centralThesis);
+      const thesisHasConceptResult = thesisHasConceptSubject && thesisHasResultJudgment;
+      if (!thesisHasConceptResult) {
+        throw new Error("\u6982\u5ff5\u6d4b\u8bd5\u9879\u76ee\u7684 central_thesis \u5fc5\u987b\u5148\u5224\u65ad\u6982\u5ff5/\u4ea7\u54c1\u7684\u6d4b\u8bd5\u8868\u73b0");
+      }
+    }
     const keyQuestions = uniqueStrings(payload.key_questions);
     return {
       report_title: String(payload.report_title || context?.research_objective || context?.source || "调研报告").trim(),
@@ -722,6 +818,10 @@
     buildPageBatchInput,
     buildPageNarrativeContext,
     chapterAnalysisDimensions,
+    conceptPriorityPageIndexes,
+    coreResearchPageIndexes,
+    selectedCoreResearchModule,
+    detectResearchArchetype,
     buildReportNarrativeInput,
     chunkPages,
     chunkPagesByChapter,

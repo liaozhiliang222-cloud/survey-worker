@@ -16,7 +16,7 @@ import sys
 
 from . import build_jd_report
 from .build_jd_report import parse_crosstab
-from .wizard import run_wizard, build_page_plan
+from .wizard import run_wizard, build_page_plan, build_research_modules
 
 
 def _collect_segments(xlsx: str) -> dict:
@@ -30,6 +30,7 @@ def _collect_segments(xlsx: str) -> dict:
             if value not in segs:
                 segs.append(value)
     result = {"segments": segs, "questions": len(questions)}
+    result.update(build_research_modules(questions))
     # 附带维度分组信息（多级表头时每组对应一个分析维度）
     # 注意：必须通过模块属性访问，parse_crosstab 内部会对该全局变量重新赋值，
     # 直接 `from ... import _cached_dimension_groups` 会拿到导入时的旧空列表。

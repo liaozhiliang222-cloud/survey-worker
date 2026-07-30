@@ -1325,16 +1325,11 @@
                     <small class="field-note">快速报告按标准规则规划页面，并由 AI 批量撰写标题与洞察；AI 研究报告会进一步组织章节、生成故事线与逐页蓝图，适合正式交付。</small>
                   </label>
                   <label class="span-row field">
-                    <span class="field-heading">章节结构模板</span>
-                    <select id="pptxStructureTemplate">
-                      <option value="" selected>自动（根据数据智能分配）</option>
-                      <option value="ua">U&A 使用与态度研究</option>
-                      <option value="brand">品牌追踪研究</option>
-                      <option value="concept">概念测试</option>
-                      <option value="satisfaction">满意度研究</option>
-                      <option value="pricing">价格研究</option>
+                    <span class="field-heading">核心研究模块</span>
+                    <select id="pptxCoreResearchModule" disabled>
+                      <option value="" selected>解析文件后由 AI 推荐</option>
                     </select>
-                    <small class="field-note">选择行业模板后，报告将按预设章节结构组织内容（如“背景→总体→细分→建议”）。</small>
+                    <small class="field-note" id="pptxCoreResearchModuleNote">AI 将根据题组推荐报告最先需要回答的研究模块；您只需在生成核心观点前确认一项。</small>
                   </label>
                   <div class="field">
                     <span class="field-heading">维度分组（按合并单元格拆分，如分品牌 / 分平台）</span>

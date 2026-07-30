@@ -339,6 +339,7 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
     questions: list = []
     cur = None
     cur_segments = None
+    current_part = ""
 
     # 模块缓存：最近一次 parse_crosstab 检测到的维度分组（供 CLI 读取）
     global _cached_dimension_groups
@@ -422,6 +423,8 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
 
         # 章节标记 PART:[...] —— 仅作分隔，不形成题目
         if a.startswith("PART:["):
+            match = re.match(r"PART:\[([^\]]+)\]", a)
+            current_part = _norm(match.group(1) if match else a[6:-1])
             continue
 
         # 题目标记 CAPTION:[VARxx].题面
@@ -437,6 +440,7 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
                 "data": {},
                 "stats": {},
                 "base": {},
+                "part": current_part,
             }
             questions.append(cur)
             cur_segments = None

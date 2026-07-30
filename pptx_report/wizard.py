@@ -211,16 +211,91 @@ _MODULE_RULES = [
                   "原因", "因素", "考虑", "驱动", "改进", "期望", "需求"]),
 ]
 
+_CHAPTER_ORDER = ["概念测试", "用户画像", "消费行为", "品牌与满意度", "专项研究", "其他研究"]
+
 def _categorize_question(q: dict) -> str:
     """根据题面关键词把题目归入模块（对齐 6+1 结构）。"""
     title = _norm(q["title"])
     code = q.get("code", "").upper()
+    part = _norm(q.get("part", ""))
+    if "概念测试" in part or ("概念" in part and "测试" in part):
+        return "概念测试"
     combined = f"{title} {code}"
     for module_name, keywords in _MODULE_RULES:
         if any(kw in combined for kw in keywords):
             return module_name
     return "其他研究"
 
+_RESEARCH_MODULE_LABELS = {
+    "概念测试": "概念测试结果",
+    "用户画像": "目标用户画像",
+    "消费行为": "消费行为与购买决策",
+    "品牌与满意度": "品牌与满意度",
+    "专项研究": "专项研究结果",
+    "其他研究": "其他研究内容",
+}
+
+
+def build_research_modules(questions: list) -> dict:
+    """Return detected report modules and one deterministic recommendation."""
+    counts = {}
+    for question in questions:
+        if not (question.get("segments") and question.get("categories")):
+            continue
+        module = _categorize_question(question)
+        counts[module] = counts.get(module, 0) + 1
+    modules = [
+        {
+            "key": module,
+            "label": _RESEARCH_MODULE_LABELS.get(module, module),
+            "question_count": counts[module],
+        }
+        for module in _CHAPTER_ORDER
+        if counts.get(module)
+    ]
+    modules.extend({
+        "key": module,
+        "label": _RESEARCH_MODULE_LABELS.get(module, module),
+        "question_count": count,
+    } for module, count in counts.items() if module not in _CHAPTER_ORDER)
+    recommendation_order = [
+        "概念测试", "品牌与满意度", "专项研究",
+        "消费行为", "用户画像", "其他研究",
+    ]
+    recommended = next((module for module in recommendation_order if counts.get(module)), "")
+    for module in modules:
+        module["recommended"] = module["key"] == recommended
+    return {"research_modules": modules, "recommended_core_module": recommended}
+
+
+def _paginate_questions_by_chapter(questions: list, max_per_page: int) -> list:
+    """Group questions by research chapter before pagination."""
+    grouped = {}
+    for question in questions:
+        grouped.setdefault(_categorize_question(question), []).append(question)
+    ordered_chapters = [
+        chapter for chapter in _CHAPTER_ORDER if chapter in grouped
+    ] + [chapter for chapter in grouped if chapter not in _CHAPTER_ORDER]
+    return [
+        batch
+        for chapter in ordered_chapters
+        for batch in _paginate_mgb_questions(grouped[chapter], max_per_page)
+    ]
+
+
+def _paginate_fixed_by_chapter(questions: list, page_size: int) -> list:
+    grouped = {}
+    for question in questions:
+        grouped.setdefault(_categorize_question(question), []).append(question)
+    ordered_chapters = [
+        chapter for chapter in _CHAPTER_ORDER if chapter in grouped
+    ] + [chapter for chapter in grouped if chapter not in _CHAPTER_ORDER]
+    return [
+        items[index:index + page_size]
+        for chapter in ordered_chapters
+        for items in [grouped[chapter]]
+        for index in range(0, len(items), page_size)
+    ]
 
 def _match_segment(name: str, segs: list):
     """把用户给定的人群名匹配到实际 segment（容错空白 / 引号 / 子串）。"""
@@ -267,7 +342,7 @@ def _select_segments(segs: list, override=None) -> list:
 
 
 # ───────────────────────── 数据变换助手 ─────────────────────────
-def _sort_question(q: dict):
+def _sort_question(q: dict, force_desc: bool = False):
     """返回排序后的 (categories, data)。
 
     - 有序类目：保持原始顺序（年龄 / 收入 / 量表）；
@@ -300,7 +375,7 @@ def _sort_question(q: dict):
 
     ordered = has_natural_order(cats)
     ref = data.get("Total") or data.get(segs[0]) or []
-    if ordered or not ref:
+    if (ordered and not force_desc) or not ref:
         return cats, {s: list(data.get(s, [])) for s in segs}
 
     order = sorted(
@@ -498,9 +573,11 @@ def _decorate_chart_spec(spec: ChartSpec, question: dict, display_segments: list
     ]
     return spec
 
-def _build_chart_for_question(q: dict, display_segs=None, forced_chart_type=None) -> ChartSpec:
+def _build_chart_for_question(
+    q: dict, display_segs=None, forced_chart_type=None, *, force_sort_desc: bool = False
+) -> ChartSpec:
     """Build an editable native chart with explicit metric semantics."""
-    cats, data = _sort_question(q)
+    cats, data = _sort_question(q, force_desc=force_sort_desc)
     segs = q.get("segments") or []
     if display_segs is None:
         display_segs = _select_segments(segs)
@@ -1236,8 +1313,10 @@ def _paginate_mgb_questions(questions: list, max_per_page: int, max_options: int
     return batches
 
 
-def _build_multi_group_bar_page(group: list, segments: list, source: str,
-                                  idx: int, total: int) -> MultiGroupBarPageContent:
+def _build_multi_group_bar_page(
+    group: list, segments: list, source: str, idx: int, total: int,
+    *, force_sort_desc: bool = False,
+) -> MultiGroupBarPageContent:
     """把一组题目组装成 MultiGroupBarPageContent（表格 + 图表叠加布局）。
 
     每个题作为 groups_data 中的一项（含排序后的 DataFrame），segments 决定列。
@@ -1247,7 +1326,7 @@ def _build_multi_group_bar_page(group: list, segments: list, source: str,
     ranked_insights = []   # [(peak, insight), ...] 用于挑选标题
 
     for q in group:
-        cats, data = _sort_question(q)
+        cats, data = _sort_question(q, force_desc=force_sort_desc)
         title = _norm(q["title"]) or q["code"]
         short_label = _extract_group_label(q.get("title", "")) or title
 
@@ -1376,7 +1455,7 @@ def build_auto_report(
             mgb_qs.append(q)
 
     chart_pages: list = []
-    mgb_batches = _paginate_mgb_questions(mgb_qs, max_per_page)
+    mgb_batches = _paginate_questions_by_chapter(mgb_qs, max_per_page)
     n_mgb_pages = max(1, len(mgb_batches))
 
     # multi_group_bar 分页（同时控制每页题数与选项总行数）
@@ -1388,9 +1467,9 @@ def build_auto_report(
 
     # 雷达题分页（每页 2 题）
     radar_per_page = 2
-    n_radar_pages = max(1, (len(radar_qs) + radar_per_page - 1) // radar_per_page)
-    for gi, i in enumerate(range(0, len(radar_qs), radar_per_page)):
-        batch = radar_qs[i:i + radar_per_page]
+    radar_batches = _paginate_fixed_by_chapter(radar_qs, radar_per_page)
+    n_radar_pages = max(1, len(radar_batches))
+    for gi, batch in enumerate(radar_batches):
         charts = [_build_chart_for_question(q, display_segs) for q in batch]
         r_ds = _page_data_source(batch, source)
         chart_pages.append(
@@ -1429,6 +1508,7 @@ def build_auto_report(
                 continue
 
             requested = cfg.get("chart_type") or "auto"
+            sort_options_desc = bool(cfg.get("sort_options_desc", False))
             insight_override = str(cfg.get("insight_override") or "").strip()
             insight_bullets = [
                 str(text).strip()
@@ -1467,7 +1547,8 @@ def build_auto_report(
                 }.get(requested)
                 charts = _harmonize_page_charts(batch, [
                     _build_chart_for_question(
-                        q, [total_name], forced_chart_type=forced
+                        q, [total_name], forced_chart_type=forced,
+                        force_sort_desc=sort_options_desc,
                     )
                     for q in batch
                 ])
@@ -1513,6 +1594,7 @@ def build_auto_report(
                     source,
                     idx + 1,
                     len(cfg_pages),
+                    force_sort_desc=sort_options_desc,
                 )
                 if insight_override:
                     configured_page.title = insight_override
@@ -1528,6 +1610,7 @@ def build_auto_report(
                     source,
                     idx + 1,
                     len(cfg_pages),
+                    force_sort_desc=sort_options_desc,
                 )
                 if insight_override:
                     configured_page.title = insight_override
@@ -1547,7 +1630,8 @@ def build_auto_report(
             }.get(requested)
             charts = _harmonize_page_charts(page_batch, [
                 _build_chart_for_question(
-                    q, page_segments, forced_chart_type=forced
+                    q, page_segments, forced_chart_type=forced,
+                    force_sort_desc=sort_options_desc,
                 )
                 for q in page_batch
             ])
@@ -1669,7 +1753,7 @@ def build_page_plan(
     pages = []
 
     # multi_group_bar 分页
-    mgb_batches = _paginate_mgb_questions(mgb_qs, max_per_page)
+    mgb_batches = _paginate_questions_by_chapter(mgb_qs, max_per_page)
     n_mgb_pages = max(1, len(mgb_batches))
     for gi, batch in enumerate(mgb_batches):
         chapter = _categorize_question(batch[0]) if batch else "其他研究"
@@ -1693,9 +1777,9 @@ def build_page_plan(
 
     # 雷达题分页
     radar_per_page = 2
-    n_radar_pages = max(1, (len(radar_qs) + radar_per_page - 1) // radar_per_page)
-    for gi, i in enumerate(range(0, len(radar_qs), radar_per_page)):
-        batch = radar_qs[i:i + radar_per_page]
+    radar_batches = _paginate_fixed_by_chapter(radar_qs, radar_per_page)
+    n_radar_pages = max(1, len(radar_batches))
+    for gi, batch in enumerate(radar_batches):
         chapter = _categorize_question(batch[0]) if batch else "其他研究"
         pages.append({
             "page_idx": len(pages) + 1,
@@ -1728,7 +1812,7 @@ def build_page_plan(
         })
 
     # 预览与最终配置按章节连续排列；页面配置中的题号会驱动最终生成顺序。
-    chapter_order = ["用户画像", "消费行为", "品牌与满意度", "专项研究", "其他研究"]
+    chapter_order = _CHAPTER_ORDER
     order_index = {name: idx for idx, name in enumerate(chapter_order)}
     pages.sort(key=lambda page: (order_index.get(page.get("chapter"), 99), page.get("page_idx", 0)))
     for new_idx, page in enumerate(pages, 1):
@@ -1806,6 +1890,7 @@ def build_page_plan(
         "all_segments": all_segs,
         "display_segments": display_segs,
         "available_dimensions": available_dimensions,
+        **build_research_modules(renderable),
         "chapters": chapters,
         "data_facts": fact_payload,
         "slide_briefs": [brief.to_dict() for brief in slide_briefs],
@@ -1953,6 +2038,8 @@ def build_insight_context(
         pages.append({
             "page_idx": cfg.get("page_idx") or idx + 1,
             "chapter": cfg.get("chapter") or "其他研究",
+            "source_chapter": cfg.get("source_chapter") or cfg.get("chapter") or "其他研究",
+            "research_role": cfg.get("research_role") or "",
             "slide_id": str((cfg.get("slide_brief") or {}).get("slide_id") or cfg.get("slide_id") or f"finding_{idx + 1:03d}"),
             "current_title": cfg.get("insight_override") or cfg.get("title") or "",
             "chart_type": cfg.get("chart_type") or "auto",
@@ -1977,6 +2064,9 @@ def build_insight_context(
         "page_count": len(pages),
         "source": source,
         "research_objective": research_objective,
+        "core_research_module": str(page_config.get("core_research_module") or ""),
+        "recommended_core_module": str(page_config.get("recommended_core_module") or ""),
+        "research_modules": list(page_config.get("research_modules") or []),
         "report_narrative": (
             dict(page_config.get("report_narrative"))
             if isinstance(page_config.get("report_narrative"), dict)

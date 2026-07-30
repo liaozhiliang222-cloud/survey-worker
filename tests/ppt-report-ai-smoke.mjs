@@ -358,4 +358,84 @@ assert.equal(ai.evidenceLabelMatchesClause("高购买意向用户几乎每天骑
 assert.equal(ai.evidenceLabelMatchesClause("高购买意向用户几乎每天骑行", "每周3-5天"), false);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /子样本/);
 
+
+const conceptContext = {
+  source: "concept.xlsx",
+  available_dimensions: [{ key: "\u8d2d\u4e70\u610f\u5411", segments: ["\u9ad8\u610f\u5411\u7528\u6237"] }],
+  pages: [
+    {
+      page_idx: 1,
+      chapter: "\u6982\u5ff5\u6d4b\u8bd5",
+      current_title: "\u4ea7\u54c1\u6982\u5ff5\u7684\u8d2d\u4e70\u53ef\u80fd",
+      questions: [{ code: "B1", title: "\u4e86\u89e3\u8fd9\u4e2a\u4ea7\u54c1\u6982\u5ff5\u540e\uff0c\u60a8\u8d2d\u4e70\u5b83\u7684\u53ef\u80fd\u6027\u6709\u591a\u5927" }],
+    },
+    {
+      page_idx: 2,
+      chapter: "\u7528\u6237\u753b\u50cf",
+      current_title: "\u76ee\u6807\u7528\u6237\u7279\u5f81",
+      questions: [{ code: "S1", title: "\u60a8\u7684\u6027\u522b\u662f" }],
+    },
+    {
+      page_idx: 3,
+      chapter: "\u6982\u5ff5\u6d4b\u8bd5",
+      current_title: "\u8d2d\u4e70\u969c\u788d",
+      questions: [{ code: "B3", title: "\u4e3a\u4ec0\u4e48\u4e0d\u8003\u8651\u8d2d\u4e70" }],
+    },
+  ],
+};
+assert.equal(ai.detectResearchArchetype(conceptContext), "concept_test");
+assert.deepEqual(Array.from(ai.conceptPriorityPageIndexes(conceptContext)), [1]);
+const conceptInput = ai.buildReportNarrativeInput(conceptContext, "BC10 Kids");
+assert.equal(conceptInput.research_archetype, "concept_test");
+assert.deepEqual(Array.from(conceptInput.priority_page_idxs), [1]);
+assert.match(conceptInput.priority_instructions.join(" "), /\u6982\u5ff5\u8868\u73b0/);
+const conceptChapters = [
+  {
+    chapter_id: "chapter_01",
+    title: "\u6982\u5ff5\u6574\u4f53\u8868\u73b0",
+    purpose: "\u5224\u65ad\u4ea7\u54c1\u6982\u5ff5\u7684\u8f6c\u5316\u6f5c\u529b",
+    key_question: "\u6982\u5ff5\u662f\u5426\u5177\u5907\u8d2d\u4e70\u6f5c\u529b\uff1f",
+    page_idxs: [1],
+  },
+  {
+    chapter_id: "chapter_02",
+    title: "\u76ee\u6807\u7528\u6237",
+    purpose: "\u89e3\u91ca\u6838\u5fc3\u4eba\u7fa4",
+    key_question: "\u8c01\u6700\u53ef\u80fd\u8d2d\u4e70\uff1f",
+    page_idxs: [2],
+  },
+  {
+    chapter_id: "chapter_03",
+    title: "\u8f6c\u5316\u969c\u788d",
+    purpose: "\u8bc6\u522b\u4f18\u5316\u65b9\u5411",
+    key_question: "\u5982\u4f55\u63d0\u5347\u8f6c\u5316\uff1f",
+    page_idxs: [3],
+  },
+];
+const conceptPayload = {
+  report_title: "BC10 Kids",
+  central_thesis: "\u4ea7\u54c1\u6982\u5ff5\u5177\u5907\u8f6c\u5316\u6f5c\u529b\uff0c\u4f46\u8d2d\u4e70\u610f\u5411\u4ecd\u53d7\u6838\u5fc3\u969c\u788d\u5236\u7ea6\u3002",
+  storyline_type: "diagnosis",
+  chapters: conceptChapters,
+  key_questions: ["\u6982\u5ff5\u8868\u73b0\u5982\u4f55\uff1f"],
+  ending_message: "\u4f18\u5148\u89e3\u51b3\u5173\u952e\u969c\u788d\u4ee5\u91ca\u653e\u8f6c\u5316\u6f5c\u529b\u3002",
+  confidence: 0.9,
+};
+assert.ok(ai.validateReportNarrative(conceptPayload, conceptContext).central_thesis);
+assert.throws(
+  () => ai.validateReportNarrative({
+    ...conceptPayload,
+    chapters: [conceptChapters[1], conceptChapters[0], conceptChapters[2]],
+  }, conceptContext),
+  /\u7b2c\u4e00\u7ae0\u5fc5\u987b\u5148\u5448\u73b0\u6982\u5ff5\u6d4b\u8bd5\u6838\u5fc3\u7ed3\u679c/,
+);
+assert.throws(
+  () => ai.validateReportNarrative({
+    ...conceptPayload,
+    central_thesis: "\u9ad8\u610f\u5411\u7528\u6237\u5728\u5e74\u9f84\u548c\u5bb6\u5ead\u7ed3\u6784\u4e0a\u5177\u6709\u660e\u663e\u7279\u5f81\u3002",
+  }, conceptContext),
+  /central_thesis/,
+);
+assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /research_archetype=concept_test/);
+
 console.log("PPT staged AI narrative smoke passed.");

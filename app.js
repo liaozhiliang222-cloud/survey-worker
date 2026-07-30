@@ -13066,6 +13066,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     const templateAnalysisEl = document.querySelector("#pptxTemplateAnalysis");
     const templateStatusEl = document.querySelector("#pptxTemplateStatus");
     const planningModeInput = document.querySelector("#pptxPlanningMode");
+    const coreResearchModuleInput = document.querySelector("#pptxCoreResearchModule");
+    const coreResearchModuleNote = document.querySelector("#pptxCoreResearchModuleNote");
     const segmentDropdown = document.querySelector("#pptxSegmentDropdown");
     const segmentPanel = document.querySelector("#pptxSegmentPanel");
     const trigger = segmentDropdown ? segmentDropdown.querySelector(".multiselect-trigger") : null;
@@ -13103,6 +13105,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     let selectedFile = null;
     let dimensionGroups = [];   // 解析得到的维度分组
     let currentDimension = "";  // 当前选中的分组名（"" = 全部维度）
+    let detectedResearchModules = [];
+    let recommendedCoreResearchModule = "";
     let pagePlan = null;        // 预览模式返回的页面规划
     let editedPagePlan = null;  // 用户编辑后的页面规划
     let questionEditorPageIndex = -1;
@@ -13122,6 +13126,70 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     const pendingDimensionCopySyncIds = new Set();
     let dimensionCopySyncRunning = false;
     let currentReportId = "";
+    let hasGeneratedPptx = false;
+    let pptxGenerationRunning = false;
+    let pptxGenerationAttempt = 0;
+
+    function currentPptxStatusElement() {
+      const previewVisible = previewPanel && previewPanel.style.display !== "none";
+      return previewVisible ? (confirmStatus || genStatus) : (genStatus || confirmStatus);
+    }
+    function resetCoreResearchModules() {
+      detectedResearchModules = [];
+      recommendedCoreResearchModule = "";
+      if (coreResearchModuleInput) {
+        coreResearchModuleInput.innerHTML = '<option value="">解析文件后由 AI 推荐</option>';
+        coreResearchModuleInput.value = "";
+        coreResearchModuleInput.disabled = true;
+      }
+      if (coreResearchModuleNote) coreResearchModuleNote.textContent = "AI 将根据题组推荐报告最先需要回答的研究模块；您只需在生成核心观点前确认一项。";
+    }
+
+    function populateCoreResearchModules(modules, recommended = "", selected = "") {
+      detectedResearchModules = Array.isArray(modules) ? modules.filter((item) => item?.key) : [];
+      recommendedCoreResearchModule = String(recommended || detectedResearchModules.find((item) => item.recommended)?.key || "");
+      if (!coreResearchModuleInput) return;
+      coreResearchModuleInput.innerHTML = "";
+      detectedResearchModules.forEach((module) => {
+        const option = document.createElement("option");
+        option.value = String(module.key);
+        option.textContent = String(module.label || module.key) + (module.key === recommendedCoreResearchModule ? "（AI推荐）" : "");
+        coreResearchModuleInput.appendChild(option);
+      });
+      const preferred = String(selected || recommendedCoreResearchModule || detectedResearchModules[0]?.key || "");
+      coreResearchModuleInput.value = preferred;
+      coreResearchModuleInput.disabled = detectedResearchModules.length === 0;
+      if (coreResearchModuleNote) {
+        const current = detectedResearchModules.find((item) => item.key === preferred);
+        coreResearchModuleNote.textContent = current
+          ? "报告将首先回答“" + String(current.label || current.key) + "”；其他题组由 AI 自动组织为原因解释、背景信息或附录。"
+          : "未识别到可用的研究模块。";
+      }
+    }
+
+    function selectedCoreResearchModule() {
+      return String(coreResearchModuleInput?.value || recommendedCoreResearchModule || "").trim();
+    }
+
+    function applyCoreResearchModuleToPlan(plan) {
+      if (!plan || typeof plan !== "object") return plan;
+      const coreModule = selectedCoreResearchModule();
+      plan.core_research_module = coreModule;
+      plan.recommended_core_module = recommendedCoreResearchModule;
+      plan.research_modules = detectedResearchModules.map((item) => ({ ...item }));
+      (plan.pages || []).forEach((page) => {
+        page.source_chapter = page.source_chapter || page.chapter || "";
+        page.research_role = coreModule && page.source_chapter === coreModule ? "core" : "supporting";
+      });
+      if (coreModule) {
+        plan.pages = [...(plan.pages || [])].sort((left, right) =>
+          Number(right.research_role === "core") - Number(left.research_role === "core")
+          || Number(left.page_idx || 0) - Number(right.page_idx || 0)
+        ).map((page, index) => ({ ...page, page_idx: index + 1 }));
+      }
+      return plan;
+    }
+
     function selectedPptxReportWorkflow() {
       return planningModeInput?.value === "ai" ? "research" : "quick";
     }
@@ -13166,7 +13234,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (confirmBtn) {
         confirmBtn.textContent = isResearch
           ? (hasNarrativeBlueprint ? "确认蓝图并生成 PPT" : "不使用故事线，直接生成 PPT")
-          : "直接生成 PPT";
+          : (hasGeneratedPptx ? "重新生成 PPT" : "直接生成 PPT");
         confirmBtn.classList.toggle("primary-btn", !isResearch || hasNarrativeBlueprint);
         confirmBtn.classList.toggle("secondary-btn", isResearch && !hasNarrativeBlueprint);
       }
@@ -13444,6 +13512,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       pendingReportNarrative = null;
       lastPptxInsightContext = null;
       currentReportId = "";
+      hasGeneratedPptx = false;
+      pptxGenerationRunning = false;
+      updatePptxWorkflowActions(null);
       continueEditBtn?.classList.add("hidden");
       if (narrativePanel) narrativePanel.style.display = "none";
       if (hadPreview && genStatus) genStatus.textContent = message;
@@ -13733,11 +13804,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (segmentPanel) segmentPanel.innerHTML = '<p class="panel-note" style="padding:10px;color:#95a1ad;font-size:13px;">解析后将在此列出可对比的人群维度。</p>';
       if (textEl) { textEl.textContent = "解析后可选"; textEl.style.color = "#95a1ad"; }
       populateDimensionDropdown([]);
+      resetCoreResearchModules();
       if (generateBtn) generateBtn.disabled = true;
       if (previewBtn) previewBtn.disabled = true;
       if (previewPanel) previewPanel.style.display = "none";
       pagePlan = null;
       editedPagePlan = null;
+      hasGeneratedPptx = false;
+      pptxGenerationRunning = false;
       setPptxCancelState(false);
       if (aiWriteBtn) aiWriteBtn.disabled = true;
     }
@@ -13768,9 +13842,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (previewBtn) previewBtn.disabled = true;
       if (previewPanel) previewPanel.style.display = "none";
       pagePlan = null; editedPagePlan = null;
+      hasGeneratedPptx = false;
+      pptxGenerationRunning = false;
       if (segmentPanel) segmentPanel.innerHTML = '<p class="panel-note" style="padding:10px;color:#95a1ad;font-size:13px;">解析后将在此列出可对比的人群维度。</p>';
       if (textEl) { textEl.textContent = "解析后可选"; textEl.style.color = "#95a1ad"; }
       populateDimensionDropdown([]);
+      resetCoreResearchModules();
       parseStatus.textContent = "";
     });
 
@@ -14040,6 +14117,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         lastAllSegments = segs;
         // 维度分组下拉（有则展示，默认全部维度）
         populateDimensionDropdown(data.dimension_groups || []);
+        populateCoreResearchModules(data.research_modules || [], data.recommended_core_module || "");
         // 人群多选
         renderSegmentOptions(segs);
         updateMultiselectText();
@@ -14096,7 +14174,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const reportWorkflow = selectedPptxReportWorkflow();
         pagePlan.planning_mode = "rule";
         pagePlan.page_planning_mode = "rule";
+        if (Array.isArray(pagePlan.research_modules) && pagePlan.research_modules.length) {
+          populateCoreResearchModules(
+            pagePlan.research_modules,
+            pagePlan.recommended_core_module || recommendedCoreResearchModule,
+            selectedCoreResearchModule(),
+          );
+        }
         pagePlan = applyUploadedTemplateStructure(pagePlan);
+        pagePlan = applyCoreResearchModuleToPlan(pagePlan);
         normalizePptxWorkflow(pagePlan, reportWorkflow);
         editedPagePlan = JSON.parse(JSON.stringify(pagePlan));  // deep copy for editing
         currentReportId = "";
@@ -14177,6 +14263,11 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       normalizePptxWorkflow(editedPagePlan);
       normalizePptxWorkflow(pagePlan);
       if (planningModeInput) planningModeInput.value = editedPagePlan.report_workflow === "research" ? "ai" : "rule";
+      populateCoreResearchModules(
+        editedPagePlan.research_modules || [],
+        editedPagePlan.recommended_core_module || "",
+        editedPagePlan.core_research_module || "",
+      );
       pendingReportNarrative = editedPagePlan.report_narrative || null;
       lastPptxInsightContext = null;
       if (pendingReportNarrative) renderReportNarrative(pendingReportNarrative);
@@ -14722,6 +14813,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                   ).join("")}
                 </select>
               </label>
+              <label class="pptx-preview-field pptx-sort-options-field">
+                <span>选项排序</span>
+                <button type="button" class="ghost-btn pptx-sort-options-btn ${p.sort_options_desc ? "active" : ""}"
+                  data-pptx-action="toggle-sort-desc" data-page-index="${idx}" aria-pressed="${p.sort_options_desc ? "true" : "false"}"
+                  title="开启后，本页所有图表按总体值从高到低排列；其他/拒答类选项仍置底">
+                  ⇩ 选项降序${p.sort_options_desc ? "（已开启）" : ""}
+                </button>
+                <small>按总体值从高到低；仅影响本页</small>
+              </label>
               <label class="pptx-preview-field">
                 <span>所属章节</span>
                 <select data-preview-idx="${idx}" data-field="chapter">
@@ -14897,6 +14997,16 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         editedPagePlan.pages[idx].chart_type_source = newValue === "auto" ? "" : "page";
         renderPreviewTable(editedPagePlan);
       }
+    };
+    window._onPreviewSortOptionsDesc = function(idx) {
+      const page = editedPagePlan?.pages?.[idx];
+      if (!page) return;
+      pushPptxPlanHistory();
+      page.sort_options_desc = !Boolean(page.sort_options_desc);
+      renderPreviewTable(editedPagePlan);
+      showToast(page.sort_options_desc
+        ? `第 ${idx + 1} 页已开启选项降序。`
+        : `第 ${idx + 1} 页已恢复自动排序。`, "success");
     };
     window._onPreviewInsightChange = function(idx, value) {
       applyLocalSlideBriefPatch(idx, { title: value });
@@ -15139,6 +15249,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const pageIndex = Number(control.dataset.pageIndex);
       if (action === "regenerate-slide") {
         regenerateSinglePptxSlide(pageIndex, control);
+      } else if (action === "toggle-sort-desc") {
+        window._onPreviewSortOptionsDesc(pageIndex);
       } else if (action === "render-preview") {
         renderRealPptxPreview(pageIndex, control);
       } else if (action === "close-preview") {
@@ -15205,6 +15317,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         report_workflow: plan.report_workflow || "quick",
         page_planning_mode: plan.page_planning_mode || plan.planning_mode || "rule",
         ai_enhancement: plan.ai_enhancement || "none",
+        core_research_module: String(plan.core_research_module || selectedCoreResearchModule()).trim(),
+        recommended_core_module: String(plan.recommended_core_module || recommendedCoreResearchModule).trim(),
+        research_modules: Array.isArray(plan.research_modules) ? plan.research_modules : [],
         report_narrative: plan.report_narrative && typeof plan.report_narrative === "object"
           ? plan.report_narrative
           : null,
@@ -15218,7 +15333,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           slide_type: page.slide_brief?.slide_type || page.slide_type || "",
           layout_family: page.slide_brief?.layout_family || page.layout_family || "",
           chapter: page.chapter,
+          source_chapter: page.source_chapter || page.chapter || "",
+          research_role: page.research_role || "",
           chart_type: page.chart_type,
+          sort_options_desc: Boolean(page.sort_options_desc),
           insight_override: page.insight_override,
           insight_bullets: Array.isArray(page.insight_bullets) ? page.insight_bullets : [],
           business_implication: String(page.business_implication || "").trim(),
@@ -15748,10 +15866,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const narrativeContext = {
           ...context,
           available_dimensions: editedPagePlan.available_dimensions || [],
+          core_research_module: editedPagePlan.core_research_module || selectedCoreResearchModule(),
+          research_modules: editedPagePlan.research_modules || detectedResearchModules,
           pages: (context.pages || []).map((page) => {
             const planPage = planPagesById.get(pptxPageStableId(page));
             return {
               ...page,
+              source_chapter: planPage?.source_chapter || planPage?.chapter || page.chapter || "",
+              research_role: planPage?.research_role || "",
               dimensions: Array.isArray(planPage?.selected_dimensions)
                 ? [...planPage.selected_dimensions]
                 : (page.dimensions || ["总体"]),
@@ -16507,35 +16629,52 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       }
     }
     async function doGeneratePptx() {
-      if (!selectedFile) return;
-      if (!segmentPanel) return;
+      const actionStatus = currentPptxStatusElement();
+      if (pptxGenerationRunning) {
+        if (actionStatus) actionStatus.textContent = "PPT 正在生成，请等待当前任务完成后再重新生成。";
+        return;
+      }
+      if (!selectedFile) {
+        if (actionStatus) actionStatus.textContent = "源文件已失效，请重新选择文件后再生成。";
+        return;
+      }
+      if (!segmentPanel) {
+        if (actionStatus) actionStatus.textContent = "找不到人群配置，请返回上一步重新解析文件。";
+        return;
+      }
       const checked = Array.from(segmentPanel.querySelectorAll('input[type="checkbox"]:checked:not([data-role])')).map((cb) => cb.value);
       if (checked.length === 0) {
-        (genStatus || confirmStatus).textContent = "请至少选择一个对比人群。";
+        if (actionStatus) actionStatus.textContent = "请至少选择一个对比人群。";
         return;
       }
       const title = (titleInput.value || "调研分析报告").trim();
       const useUploadedTemplate = templateModeInput?.value === "upload";
       if (useUploadedTemplate && !uploadedTemplateId) {
-        (genStatus || confirmStatus).textContent = "请先上传并完成 PPTX 模板分析。";
+        if (actionStatus) actionStatus.textContent = "请先上传并完成 PPTX 模板分析。";
         return;
       }
       const staleDimensionPages = (editedPagePlan?.pages || []).filter((page) =>
         page.copy_state === "stale" || page.dimension_copy_stale
       );
       if (dimensionCopySyncRunning || pendingDimensionCopySyncIds.size) {
-        (genStatus || confirmStatus).textContent = "分析维度对应的AI文字仍在同步，请等待同步完成后再生成PPT。";
+        if (actionStatus) actionStatus.textContent = "分析维度对应的AI文字仍在同步，请等待同步完成后再生成PPT。";
         return;
       }
       if (staleDimensionPages.length && !window.confirm(
         `仍有 ${staleDimensionPages.length} 页文字未与最新分析维度同步。继续生成时，未人工修改页面将使用确定性文案；人工修改页会保留当前文字。是否继续？`
       )) return;
+      const isRegeneration = hasGeneratedPptx;
+      pptxGenerationRunning = true;
+      pptxGenerationAttempt += 1;
       if (confirmBtn) confirmBtn.disabled = true;
       if (generateBtn) generateBtn.disabled = true;
       setPptxCancelState(false);
       progress.classList.remove("hidden");
       startPptxProgress();
-      (genStatus || confirmStatus).textContent = "";
+      if (actionStatus) actionStatus.textContent = isRegeneration ? "正在按当前配置重新生成 PPT…" : "正在生成 PPT…";
+      if (isRegeneration && resultEl) {
+        resultEl.innerHTML = '<div class="empty-state"><strong>正在重新生成</strong><span>将按当前逐页配置生成新的 PPT，完成后会再次下载。</span></div>';
+      }
       try {
         let reportIdForGeneration = "";
         try {
@@ -16556,12 +16695,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           report_workflow: editedPagePlan?.report_workflow || selectedPptxReportWorkflow(),
           page_planning_mode: editedPagePlan?.page_planning_mode || planningModeInput?.value || "rule",
           ai_enhancement: editedPagePlan?.ai_enhancement || "none",
-          structure_template: document.querySelector("#pptxStructureTemplate")?.value || "",
+          core_research_module: editedPagePlan?.core_research_module || selectedCoreResearchModule(),
           template_structure_reused: Boolean(editedPagePlan?.template_structure_reused),
           template_report_structure: editedPagePlan?.template_report_structure || null,
           dimension: currentDimension || null,
           page_config: compactPptxPageConfig(editedPagePlan),
           report_id: reportIdForGeneration || null,
+          force_regenerate: true,
+          generation_nonce: `${Date.now()}-${pptxGenerationAttempt}-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`,
         });
         const createResp = await fetch("/pptx-api/jobs", {
           method: "POST",
@@ -16597,7 +16738,11 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 4000);
         setPptxProgress(100, "生成完成");
-        (genStatus || confirmStatus).textContent = "已生成并开始下载。";
+        hasGeneratedPptx = true;
+        updatePptxWorkflowActions(editedPagePlan);
+        if (actionStatus) actionStatus.textContent = isRegeneration
+          ? "已重新生成并开始下载；如需继续调整，可修改配置后再次点击重新生成。"
+          : "已生成并开始下载；如需调整，可修改配置后点击重新生成。";
         recordWorkspaceReportOutput(`${title}.pptx`, blob.size);
         saveWorkspaceReportPlan(editedPagePlan, selectedFile?.name || title);
         // 记录生成历史
@@ -16648,11 +16793,13 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           : "基础版报告已生成。";
       } catch (err) {
         setPptxCancelState(false);
-        (genStatus || confirmStatus).textContent = "生成失败：" + err.message;
+        if (actionStatus) actionStatus.textContent = "生成失败：" + err.message;
         setPptxProgress(0, "生成失败");
       } finally {
+        pptxGenerationRunning = false;
         setPptxCancelState(false);
         if (confirmBtn) confirmBtn.disabled = false;
+        updatePptxWorkflowActions(editedPagePlan);
         if (generateBtn) generateBtn.disabled = false;
         setTimeout(() => progress.classList.add("hidden"), 1500);
       }
@@ -16710,6 +16857,13 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     continueEditBtn?.addEventListener("click", () => previewPanel?.scrollIntoView({ behavior: "smooth", block: "start" }));
     titleInput?.addEventListener("input", () => invalidatePptxPreview());
     themeInput?.addEventListener("change", () => invalidatePptxPreview("主题色已更新，请重新预览后再生成。"));
+    coreResearchModuleInput?.addEventListener("change", () => {
+      const current = detectedResearchModules.find((item) => item.key === coreResearchModuleInput.value);
+      if (coreResearchModuleNote && current) {
+        coreResearchModuleNote.textContent = "报告将首先回答“" + String(current.label || current.key) + "”；其他题组由 AI 自动组织。";
+      }
+      invalidatePptxPreview("核心研究模块已更新，请重新生成报告结构。");
+    });
     planningModeInput?.addEventListener("change", () => {
       invalidatePptxPreview("规划模式已更新，请重新预览。");
       updatePptxWorkflowActions();
