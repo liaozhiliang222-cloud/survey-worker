@@ -57,6 +57,21 @@ try {
   assert.equal(response.headers.get("x-actual-model"), "deepseek-v4-pro");
   assert.equal(calls[0].options.headers.Authorization, "Bearer server-secret");
 
+  env.SENSENOVA_API_KEY = "sense-secret";
+  calls = [];
+  response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload()),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].url, "https://token.sensenova.cn/v1/chat/completions");
+  assert.equal(calls[0].body.model, "deepseek-v4-flash");
+  assert.equal(calls[0].options.headers.Authorization, "Bearer sense-secret");
+  assert.equal(response.headers.get("x-ai-source"), "builtin-sensenova");
+  assert.equal(response.headers.get("x-ai-attempts"), "deepseek-v4-flash");
+  delete env.SENSENOVA_API_KEY;
+
   calls = [];
   mode = "structured";
   response = await fetch(`http://127.0.0.1:${port}/api/ai`, {

@@ -58,6 +58,20 @@ if (calls[0].body.model !== "deepseek-v4-pro") throw new Error("DeepSeek Pro is 
 if (calls[0].options.headers.Authorization !== "Bearer server-secret") throw new Error("wrong builtin auth");
 if (response.headers.get("X-Actual-Model") !== "deepseek-v4-pro") throw new Error("wrong primary model header");
 
+// SenseNova takes precedence when its production secret is configured.
+calls = [];
+mode = "normal";
+response = await mod.onRequest({
+  request: makeRequest(),
+  env: { SENSENOVA_API_KEY: "sense-secret" },
+});
+if (response.status !== 200) throw new Error("SenseNova status " + response.status);
+if (calls[0].url !== "https://token.sensenova.cn/v1/chat/completions") throw new Error("wrong SenseNova URL");
+if (calls[0].body.model !== "deepseek-v4-flash") throw new Error("SenseNova Flash is not the default model");
+if (calls[0].options.headers.Authorization !== "Bearer sense-secret") throw new Error("wrong SenseNova auth");
+if (response.headers.get("X-AI-Source") !== "builtin-sensenova") throw new Error("wrong SenseNova source");
+if (response.headers.get("X-AI-Attempts") !== "deepseek-v4-flash") throw new Error("SenseNova should use one model attempt");
+
 // DeepSeek 不支持严格结构化输出；输出不合规时自动切到 Qwen。
 calls = [];
 mode = "structured";

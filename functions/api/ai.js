@@ -3,11 +3,14 @@ const PROVIDER_HOSTS = {
   kimi: ["api.moonshot.cn"],
   zhipu: ["open.bigmodel.cn"],
   qwen: ["dashscope.aliyuncs.com"],
+  sensenova: ["token.sensenova.cn", "api.sensenova.cn"],
   openai: ["api.openai.com"],
 };
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const BUILTIN_BAILIAN_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const BUILTIN_SENSENOVA_URL = "https://token.sensenova.cn/v1/chat/completions";
+const DEFAULT_SENSENOVA_MODELS = ["deepseek-v4-flash"];
 const DEFAULT_BUILTIN_MODELS = [
   "deepseek-v4-pro",
   "deepseek-v4-flash",
@@ -53,6 +56,21 @@ function validateTarget(provider, rawUrl) {
 }
 
 function getBuiltinConfig(env) {
+  const sensenovaKey = String(env?.SENSENOVA_API_KEY || "").trim();
+  if (sensenovaKey) {
+    const configuredModels = String(env?.SENSENOVA_MODELS || env?.SENSENOVA_MODEL || "")
+      .split(",")
+      .map((model) => model.trim())
+      .filter(Boolean);
+    return {
+      apiKey: sensenovaKey,
+      models: configuredModels.length ? configuredModels : DEFAULT_SENSENOVA_MODELS,
+      url: String(env?.SENSENOVA_API_URL || BUILTIN_SENSENOVA_URL).trim(),
+      provider: "sensenova",
+      source: "builtin-sensenova",
+      timeoutMs: 90_000,
+    };
+  }
   const configuredModels = String(env?.BAILIAN_MODELS || env?.BAILIAN_MODEL || "")
     .split(",")
     .map((model) => model.trim())
@@ -61,6 +79,9 @@ function getBuiltinConfig(env) {
     apiKey: String(env?.DASHSCOPE_API_KEY || env?.BAILIAN_API_KEY || env?.AI_API_KEY || "").trim(),
     models: configuredModels.length ? configuredModels : DEFAULT_BUILTIN_MODELS,
     url: String(env?.BAILIAN_API_URL || BUILTIN_BAILIAN_URL).trim(),
+    provider: "qwen",
+    source: "builtin-bailian",
+    timeoutMs: 240_000,
   };
 }
 
@@ -154,7 +175,7 @@ export async function onRequest({ request, env }) {
     const useBuiltin = !clientApiKey;
     const apiKey = useBuiltin ? builtin.apiKey : clientApiKey;
     if (!apiKey) {
-      return json({ error: { message: "平台内置百炼服务尚未完成配置，请联系管理员。" } }, 503);
+      return json({ error: { message: "平台内置 AI 服务尚未完成配置，请联系管理员。" } }, 503);
     }
 
     if (!useBuiltin) {
@@ -165,7 +186,7 @@ export async function onRequest({ request, env }) {
       return upstreamResponse(text, upstream, body.model, "user-key", [body.model]);
     }
 
-    const targetUrl = validateTarget("qwen", builtin.url);
+    const targetUrl = validateTarget(builtin.provider, builtin.url);
     const wantsJson = body.response_format?.type === "json_object";
     const attempts = [];
     let lastResult = null;
@@ -175,22 +196,22 @@ export async function onRequest({ request, env }) {
       const upstreamBody = prepareBuiltinBody(body, model);
       let result;
       try {
-        result = await callUpstream(targetUrl, apiKey, upstreamBody);
+        result = await callUpstream(targetUrl, apiKey, upstreamBody, builtin.timeoutMs);
       } catch (error) {
         lastError = error;
         continue;
       }
       lastResult = { ...result, model };
-      if (result.stream) return upstreamResponse("", result.upstream, model, "builtin-bailian", attempts);
+      if (result.stream) return upstreamResponse("", result.upstream, model, builtin.source, attempts);
       if (!result.upstream.ok || !result.text.trim()) continue;
       if (wantsJson && !containsJsonObject(result.text)) continue;
-      return upstreamResponse(result.text, result.upstream, model, "builtin-bailian", attempts);
+      return upstreamResponse(result.text, result.upstream, model, builtin.source, attempts);
     }
     if (!lastResult?.text?.trim()) {
       const reason = lastError?.name === "AbortError" ? "模型响应超时" : (lastError?.message || "未返回有效内容");
       return json({ error: { message: `内置模型均未返回有效内容：${reason}，请稍后重试。` } }, 502);
     }
-    return upstreamResponse(lastResult.text, lastResult.upstream, lastResult.model, "builtin-bailian", attempts);
+    return upstreamResponse(lastResult.text, lastResult.upstream, lastResult.model, builtin.source, attempts);
   } catch (error) {
     return json({ error: { message: error.message || "AI 代理调用失败。" } }, 400);
   }
