@@ -4,13 +4,16 @@ const PROVIDER_HOSTS = {
   zhipu: ["open.bigmodel.cn"],
   qwen: ["dashscope.aliyuncs.com"],
   sensenova: ["token.sensenova.cn", "api.sensenova.cn"],
+  surveykit_gateway: ["api.surveykit.cc"],
   openai: ["api.openai.com"],
 };
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const BUILTIN_BAILIAN_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 const BUILTIN_SENSENOVA_URL = "https://token.sensenova.cn/v1/chat/completions";
+const BUILTIN_SURVEYKIT_GATEWAY_URL = "http://api.surveykit.cc/v1/chat/completions";
 const DEFAULT_SENSENOVA_MODELS = ["deepseek-v4-flash"];
+const DEFAULT_SURVEYKIT_GATEWAY_MODELS = ["deepseek-v4-flash"];
 const DEFAULT_BUILTIN_MODELS = [
   "deepseek-v4-pro",
   "deepseek-v4-flash",
@@ -38,10 +41,13 @@ function json(payload, status = 200) {
   });
 }
 
-function validateTarget(provider, rawUrl) {
+function validateTarget(provider, rawUrl, allowInsecureBuiltin = false) {
   if (!rawUrl) throw new Error("缺少模型接口地址。");
   const url = new URL(rawUrl);
-  if (url.protocol !== "https:") throw new Error("模型接口必须使用 HTTPS。");
+  const isSurveykitGateway = allowInsecureBuiltin && provider === "surveykit_gateway"
+    && url.protocol === "http:"
+    && url.hostname.toLowerCase() === "api.surveykit.cc";
+  if (url.protocol !== "https:" && !isSurveykitGateway) throw new Error("模型接口必须使用 HTTPS。");
   if (!/\/chat\/completions\/?$/i.test(url.pathname)) {
     throw new Error("仅支持 OpenAI 兼容的 /chat/completions 接口。");
   }
@@ -56,6 +62,21 @@ function validateTarget(provider, rawUrl) {
 }
 
 function getBuiltinConfig(env) {
+  const surveykitGatewayKey = String(env?.SURVEYKIT_GATEWAY_API_KEY || "").trim();
+  if (surveykitGatewayKey) {
+    const configuredModels = String(env?.SURVEYKIT_GATEWAY_MODELS || env?.SURVEYKIT_GATEWAY_MODEL || "")
+      .split(",")
+      .map((model) => model.trim())
+      .filter(Boolean);
+    return {
+      apiKey: surveykitGatewayKey,
+      models: configuredModels.length ? configuredModels : DEFAULT_SURVEYKIT_GATEWAY_MODELS,
+      url: String(env?.SURVEYKIT_GATEWAY_API_URL || BUILTIN_SURVEYKIT_GATEWAY_URL).trim(),
+      provider: "surveykit_gateway",
+      source: "builtin-surveykit-gateway",
+      timeoutMs: 90_000,
+    };
+  }
   const sensenovaKey = String(env?.SENSENOVA_API_KEY || "").trim();
   if (sensenovaKey) {
     const configuredModels = String(env?.SENSENOVA_MODELS || env?.SENSENOVA_MODEL || "")
@@ -186,7 +207,7 @@ export async function onRequest({ request, env }) {
       return upstreamResponse(text, upstream, body.model, "user-key", [body.model]);
     }
 
-    const targetUrl = validateTarget(builtin.provider, builtin.url);
+    const targetUrl = validateTarget(builtin.provider, builtin.url, true);
     const wantsJson = body.response_format?.type === "json_object";
     const attempts = [];
     let lastResult = null;

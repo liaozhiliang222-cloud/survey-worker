@@ -57,6 +57,23 @@ try {
   assert.equal(response.headers.get("x-actual-model"), "deepseek-v4-pro");
   assert.equal(calls[0].options.headers.Authorization, "Bearer server-secret");
 
+  env.SURVEYKIT_GATEWAY_API_KEY = "gateway-secret";
+  env.SENSENOVA_API_KEY = "sense-secret";
+  calls = [];
+  response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload()),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].url, "http://api.surveykit.cc/v1/chat/completions");
+  assert.equal(calls[0].body.model, "deepseek-v4-flash");
+  assert.equal(calls[0].options.headers.Authorization, "Bearer gateway-secret");
+  assert.equal(response.headers.get("x-ai-source"), "builtin-surveykit-gateway");
+  assert.equal(response.headers.get("x-ai-attempts"), "deepseek-v4-flash");
+  delete env.SURVEYKIT_GATEWAY_API_KEY;
+  delete env.SENSENOVA_API_KEY;
+
   env.SENSENOVA_API_KEY = "sense-secret";
   calls = [];
   response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
@@ -121,6 +138,18 @@ try {
   assert.equal(response.status, 200);
   assert.equal(calls[0].url, "https://api.deepseek.com/v1/chat/completions");
   assert.equal(calls[0].options.headers.Authorization, "Bearer user-secret");
+
+  const insecureUserGateway = payload();
+  insecureUserGateway.apiKey = "user-secret";
+  insecureUserGateway.provider = "surveykit_gateway";
+  insecureUserGateway.url = "http://api.surveykit.cc/v1/chat/completions";
+  response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(insecureUserGateway),
+  });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error.message, /HTTPS/);
 
   const mismatched = payload();
   mismatched.apiKey = "user-secret";

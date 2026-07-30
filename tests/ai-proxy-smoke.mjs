@@ -58,6 +58,20 @@ if (calls[0].body.model !== "deepseek-v4-pro") throw new Error("DeepSeek Pro is 
 if (calls[0].options.headers.Authorization !== "Bearer server-secret") throw new Error("wrong builtin auth");
 if (response.headers.get("X-Actual-Model") !== "deepseek-v4-pro") throw new Error("wrong primary model header");
 
+// The SurveyKit New API gateway takes precedence and keeps Flash as the only default attempt.
+calls = [];
+mode = "normal";
+response = await mod.onRequest({
+  request: makeRequest(),
+  env: { SURVEYKIT_GATEWAY_API_KEY: "gateway-secret", SENSENOVA_API_KEY: "sense-secret" },
+});
+if (response.status !== 200) throw new Error("SurveyKit gateway status " + response.status);
+if (calls[0].url !== "http://api.surveykit.cc/v1/chat/completions") throw new Error("wrong SurveyKit gateway URL");
+if (calls[0].body.model !== "deepseek-v4-flash") throw new Error("SurveyKit gateway Flash is not the default model");
+if (calls[0].options.headers.Authorization !== "Bearer gateway-secret") throw new Error("wrong SurveyKit gateway auth");
+if (response.headers.get("X-AI-Source") !== "builtin-surveykit-gateway") throw new Error("wrong SurveyKit gateway source");
+if (response.headers.get("X-AI-Attempts") !== "deepseek-v4-flash") throw new Error("SurveyKit gateway should use one model attempt");
+
 // SenseNova takes precedence when its production secret is configured.
 calls = [];
 mode = "normal";
