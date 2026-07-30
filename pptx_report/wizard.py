@@ -427,8 +427,49 @@ def _chart_title_text(q: dict) -> str:
     return raw
 
 
+_PRICE_PATTERN = re.compile(r"价格|价位|定价|多少钱|支付|便宜|昂贵|太贵|可接受|元(?:以下|以上)?")
+_JOURNEY_PATTERN = re.compile(r"认知|考虑|试用|购买|复购|推荐|转化|漏斗|旅程|阶段")
+_FEATURE_PATTERN = re.compile(r"功能|卖点|需求|痛点|障碍|原因|因素|渠道|场景|用途|动机|偏好")
+
+
+def question_semantic_type(q: dict, cats: list | None = None) -> str:
+    """先识别业务题型，再由图表规则选择视觉表达。"""
+    categories = list(cats if cats is not None else (q.get("categories") or []))
+    title = _norm(q.get("title", ""))
+    currency_categories = sum(
+        bool(re.search(r"(?:^|\D)\d+(?:\.\d+)?\s*(?:元|块|¥|￥)", str(category)))
+        for category in categories
+    )
+    if _PRICE_PATTERN.search(title) or currency_categories >= 2:
+        return "price"
+    journey_stage_hits = sum(
+        any(term in str(category) for term in ("认知", "了解", "考虑", "试用", "购买", "复购", "推荐"))
+        for category in categories
+    )
+    if _JOURNEY_PATTERN.search(title) and (
+        has_natural_order(categories) or journey_stage_hits >= 2
+    ):
+        return "journey"
+    if any(term in title for term in ("满意", "重要性", "认同", "评分", "评价", "量表")):
+        return "scale"
+    if _FEATURE_PATTERN.search(title):
+        return "ranked_attribute"
+    return "distribution"
+
+
+def _supports_opportunity_matrix(question: dict) -> bool:
+    """矩阵仅用于可独立比较的无序属性，不用于价格点、旅程或等级序列。"""
+    categories = list(question.get("categories") or [])
+    semantic_type = question_semantic_type(question, categories)
+    return (
+        len(categories) >= 4
+        and semantic_type not in {"price", "journey"}
+        and not has_natural_order(categories)
+    )
+
+
 def auto_chart_type(q: dict, cats: list, segs: list) -> ChartType:
-    """按数据特征自动选图表类型（对齐调研公司选图规范）。"""
+    """先按题型语义路由，再结合数据形态选择受支持的图表。"""
     cats, filtered_data = _sort_question(q)
     n_cat = len(cats)
     n_seg = len(segs)
@@ -439,6 +480,16 @@ def auto_chart_type(q: dict, cats: list, segs: list) -> ChartType:
     is_composition = bool(values) and 0.95 <= value_sum <= 1.05
     is_trend = any(k in title for k in ("趋势", "变化", "月份", "季度", "年度", "逐年", "时间"))
     short_labels = all(len(str(cat)) <= 10 for cat in cats)
+    semantic_type = question_semantic_type(q, cats)
+
+    # 连续价格点和旅程阶段强调顺序，不得转成机会矩阵或按占比重排。
+    if semantic_type == "price":
+        return ChartType.LINE if 3 <= n_cat <= 12 else ChartType.BAR
+    if semantic_type == "journey":
+        return ChartType.LINE if 3 <= n_cat <= 10 else ChartType.COLUMN
+    # 功能、痛点、渠道和场景题首先服务于排序与比较，使用横向条形图。
+    if semantic_type == "ranked_attribute":
+        return ChartType.BAR
 
     # 仅当总体 + 分群超过四列且选项较多时，进入多列条形对比页。
     # 选项较少的构成题仍可使用堆积图，避免规则过于僵硬。
@@ -820,7 +871,7 @@ def _build_executive_findings(questions: list, facts: list) -> list[ExecutiveFin
             action_implication="围绕该人群与指标安排后续诊断，并将改善动作纳入优先级评估。",
             importance="high" if len(findings) < 2 else "medium",
         ))
-    return findings
+    return findings[:3]
 
 def _build_narrative_findings(page_config: dict | None, facts: list,
                               fallback: list[ExecutiveFinding]) -> list[ExecutiveFinding]:
@@ -839,6 +890,8 @@ def _build_narrative_findings(page_config: dict | None, facts: list,
         if not headline or not fact_ids:
             continue
         implication = str(brief.get("business_implication") or page.get("business_implication") or "").strip()
+        if not implication:
+            continue
         supporting = [
             str(value).strip() for value in (page.get("insight_bullets") or [])
             if str(value).strip() and str(value).strip() != headline
@@ -858,7 +911,7 @@ def _build_narrative_findings(page_config: dict | None, facts: list,
             action_implication=action_implication,
             importance="high" if len(findings) < 2 else "medium",
         ))
-        if len(findings) >= 5:
+        if len(findings) >= 3:
             break
     return findings or fallback
 
@@ -1127,9 +1180,15 @@ def _enhance_report_pages(
             previous_chapter = page.chapter
         result.append(page)
 
+    conclusion_visual = str((page_config or {}).get("conclusion_visual") or "action_plan").strip().lower()
+    # A matrix is a deliberate analytical choice, not a generic conclusion page.
+    # The old default converted any question with four segment gaps into invented
+    # "importance x performance" axes, which was especially misleading for price points.
+    build_opportunity_matrix = conclusion_visual == "opportunity_matrix"
     opportunity_facts = [
         fact for fact in facts
-        if fact.fact_type == "segment_gap"
+        if build_opportunity_matrix
+        and fact.fact_type == "segment_gap"
         and fact.value is not None
         and fact.gap_pp is not None
         and str(fact.segment or "").strip().lower() not in {"", "total", "总体"}
@@ -1149,6 +1208,9 @@ def _enhance_report_pages(
     comparable_groups = [
         group for group in opportunity_groups.values()
         if len(group) >= 4
+        and _supports_opportunity_matrix(
+            question_by_id.get(str(group[0].question_id or ""), {})
+        )
     ]
     selected_opportunity_facts = max(
         comparable_groups,
@@ -1449,10 +1511,10 @@ def build_auto_report(
         segs = q.get("segments") or []
         ds = [s for s in display_segs if s in segs] or list(segs)
         ctype = auto_chart_type(q, cats, ds)
-        if ctype == ChartType.RADAR:
-            radar_qs.append(q)
-        else:
+        if ctype == ChartType.BAR:
             mgb_qs.append(q)
+        else:
+            radar_qs.append(q)
 
     chart_pages: list = []
     mgb_batches = _paginate_questions_by_chapter(mgb_qs, max_per_page)
@@ -1465,10 +1527,8 @@ def build_auto_report(
                 batch, display_segs, source, gi + 1, n_mgb_pages)
         )
 
-    # 雷达题分页（每页 2 题）
-    radar_per_page = 2
-    radar_batches = _paginate_fixed_by_chapter(radar_qs, radar_per_page)
-    n_radar_pages = max(1, len(radar_batches))
+    # 需要保留顺序或专用图形的题目单独成页，避免不同语义混在同一图表页。
+    radar_batches = [[question] for question in radar_qs]
     for gi, batch in enumerate(radar_batches):
         charts = [_build_chart_for_question(q, display_segs) for q in batch]
         r_ds = _page_data_source(batch, source)
@@ -1745,10 +1805,10 @@ def build_page_plan(
         segs = q.get("segments") or []
         ds = [s for s in display_segs if s in segs] or list(segs)
         ctype = auto_chart_type(q, cats, ds)
-        if ctype == ChartType.RADAR:
-            radar_qs.append(q)
-        else:
+        if ctype == ChartType.BAR:
             mgb_qs.append(q)
+        else:
+            radar_qs.append(q)
 
     pages = []
 
@@ -1775,10 +1835,8 @@ def build_page_plan(
             "chapter": chapter,
         })
 
-    # 雷达题分页
-    radar_per_page = 2
-    radar_batches = _paginate_fixed_by_chapter(radar_qs, radar_per_page)
-    n_radar_pages = max(1, len(radar_batches))
+    # 特殊图表题单独成页，预览中的 chart_type 与最终渲染保持一致。
+    radar_batches = [[question] for question in radar_qs]
     for gi, batch in enumerate(radar_batches):
         chapter = _categorize_question(batch[0]) if batch else "其他研究"
         pages.append({
@@ -1794,7 +1852,7 @@ def build_page_plan(
                 for q in batch
             ],
             "segments": list(display_segs),
-            "chart_type": "radar",
+            "chart_type": auto_chart_type(batch[0], batch[0].get("categories") or [], display_segs).value,
             "dimension_mode": "compare",
             "chapter": chapter,
         })
