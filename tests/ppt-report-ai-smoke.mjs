@@ -8,7 +8,7 @@ assert.ok(html.indexOf("ppt-report-ai.js") < html.indexOf("app.js"), "PPT AI mod
 assert.match(html, /id="pptxNarrativePanel"/);
 assert.match(html, /id="pptxNarrativeConfirmBtn"[^>]*>确认分析维度并生成蓝图</);
 assert.match(html, /确认核心观点、章节与分析维度/);
-assert.match(html, /先勾选确认，再一次性重组页面并生成蓝图文字/);
+assert.match(html, /对比图会自动包含总体基准，总体不占维度名额/);
 assert.doesNotMatch(html, /不改变当前页数和顺序|不重排/);
 assert.match(html, /id="pptxContinueEditBtn"/);
 assert.match(html, /id="pptxNarrativeRegenerateBtn"[^>]*>重新生成故事线</);

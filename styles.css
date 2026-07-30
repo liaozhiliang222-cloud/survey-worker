@@ -5579,6 +5579,13 @@ tbody tr.warn td {
   color: #334155;
 }
 
+.pptx-narrative-dimension-help {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
 .pptx-narrative-dimension-options {
   display: flex;
   flex-wrap: wrap;

@@ -15466,7 +15466,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     function availableNarrativeDimensions() {
       const seen = new Set();
       return [
-        { key: "总体", label: "总体" },
+        { key: "总体", label: "仅看总体" },
         ...(editedPagePlan?.available_dimensions || []).map((dimension) => ({
           key: String(dimension?.key || "").trim(),
           label: String(dimension?.label || dimension?.key || "").trim(),
@@ -15540,8 +15540,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             <p>${escapeHtml(chapter.purpose || "")}</p>
             <small>回答：${escapeHtml(chapter.key_question || "")}</small>
             <div class="pptx-narrative-dimension-picker">
-              <small>AI 推荐分析维度（可调整，最多选择 2 个）</small>
+              <small>AI 推荐分析维度（最多 2 个细分维度）</small>
               <div class="pptx-narrative-dimension-options">${dimensions}</div>
+              <small class="pptx-narrative-dimension-help">选择细分维度时，图表会自动带上总体基准；总体不占维度名额。选择“仅看总体”表示不做分群对比。</small>
               ${strategy.rationale ? `<p>${escapeHtml(strategy.rationale)}</p>` : ""}
             </div>
           </div>
@@ -15552,7 +15553,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           <small>报告核心观点 · ${escapeHtml(narrative.storyline_type || "")}</small>
           <strong>${escapeHtml(narrative.central_thesis || "")}</strong>
         </div>
-        <div class="pptx-narrative-confirm-note">请先确认各章节分析维度；确认后系统才会一次性生成页面蓝图与对应文字。</div>
+        <div class="pptx-narrative-confirm-note">请先确认各章节分析维度；每章最多 2 个细分维度，以避免单页系列过多影响阅读。对比图会自动包含总体基准。</div>
         <div class="pptx-narrative-chapters">${chapters}</div>
         <div class="pptx-narrative-thesis">
           <small>结尾信息</small>
@@ -16572,7 +16573,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const comparisonInputs = inputs.filter((item) => item.checked && item.value !== "总体");
       if (comparisonInputs.length > 2) {
         input.checked = false;
-        showToast("每个章节最多选择 2 个分析维度。", "warning");
+        showToast("每个章节最多选择 2 个细分维度；总体基准会自动包含。", "warning");
       }
       let selectedInputs = inputs.filter((item) => item.checked);
       if (!selectedInputs.length) {
