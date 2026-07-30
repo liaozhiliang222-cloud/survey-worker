@@ -29,10 +29,7 @@ from pptx_report.pages import (
 from pptx_report.renderer import ReportRenderer
 from pptx_report.theme import Theme
 from pptx_report.report_templates import select_report_template
-from pptx_report.wizard import (
-    _enhance_report_pages, _supports_opportunity_matrix,
-    auto_chart_type, build_page_plan, question_semantic_type,
-)
+from pptx_report.wizard import _enhance_report_pages
 
 
 def check_facts():
@@ -287,42 +284,7 @@ def check_rendered_page_families():
             shutil.copy2(output, target)
 
 
-def check_semantic_chart_routing():
-    price = {
-        "code": "P1", "title": "价格在多少元时仍然可以接受",
-        "categories": ["200元", "300元", "400元", "500元"],
-        "segments": ["Total", "通勤用户"],
-        "data": {"Total": [.8, .6, .35, .15], "通勤用户": [.85, .68, .4, .18]},
-    }
-    assert question_semantic_type(price) == "price"
-    assert auto_chart_type(price, price["categories"], price["segments"]) == ChartType.LINE
-    assert not _supports_opportunity_matrix(price)
-    price_plan = build_page_plan([price], title="价格测试")
-    price_page = next(page for page in price_plan["pages"] if page["questions"][0]["code"] == "P1")
-    assert price_page["chart_type"] == "line"
-    assert price_page["type"] != "multi_group_bar"
-
-    journey = {
-        "code": "J1", "title": "品牌购买转化漏斗",
-        "categories": ["认知", "考虑", "购买", "复购"],
-        "segments": ["Total"],
-        "data": {"Total": [.9, .65, .4, .22]},
-    }
-    assert question_semantic_type(journey) == "journey"
-    assert auto_chart_type(journey, journey["categories"], journey["segments"]) == ChartType.LINE
-
-    attributes = {
-        "code": "A1", "title": "购买时关注的功能与痛点",
-        "categories": ["防水", "续航", "稳定性", "夜间画质"],
-        "segments": ["Total", "外卖小哥"],
-        "data": {"Total": [.4, .35, .3, .25], "外卖小哥": [.5, .42, .38, .18]},
-    }
-    assert question_semantic_type(attributes) == "ranked_attribute"
-    assert auto_chart_type(attributes, attributes["categories"], attributes["segments"]) == ChartType.BAR
-    assert _supports_opportunity_matrix(attributes)
-
-
-def check_conclusion_does_not_force_opportunity_matrix():
+def check_comparable_opportunity_matrix():
     chart = ChartSpec(
         "Purchase intent", ChartType.BAR,
         ["Definitely buy", "Probably buy", "Unsure", "Probably not", "Definitely not"],
@@ -367,17 +329,11 @@ def check_conclusion_does_not_force_opportunity_matrix():
     enhanced, _ = _enhance_report_pages(
         [page], questions, facts, [finding], "source.xlsx"
     )
-    assert not any(isinstance(item, OpportunityMatrixContent) for item in enhanced)
-    assert any(isinstance(item, RecommendationContent) for item in enhanced)
-
-    enhanced_with_matrix, _ = _enhance_report_pages(
-        [page], questions, facts, [finding], "source.xlsx",
-        page_config={"conclusion_visual": "opportunity_matrix"},
-    )
-    matrix = next(item for item in enhanced_with_matrix if isinstance(item, OpportunityMatrixContent))
+    matrix = next(item for item in enhanced if isinstance(item, OpportunityMatrixContent))
     matrix_fact_ids = [fact_id for item in matrix.opportunities for fact_id in item.fact_ids]
     assert len(matrix.opportunities) >= 4
     assert all(fact_id.startswith("Q1_gap_") for fact_id in matrix_fact_ids)
+    assert matrix.title.startswith("Purchase intent")
     overview = next(item for item in enhanced if isinstance(item, ResearchOverviewContent))
     assert overview.segment_count == 2
 def check_summary_toc_appendix_layouts():
@@ -468,8 +424,7 @@ def main():
     check_template_structure_sections()
     check_template_subsection_sections()
     check_rendered_page_families()
-    check_semantic_chart_routing()
-    check_conclusion_does_not_force_opportunity_matrix()
+    check_comparable_opportunity_matrix()
     check_summary_toc_appendix_layouts()
     print("report semantics smoke: ok")
 

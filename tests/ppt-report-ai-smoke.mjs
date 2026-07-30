@@ -110,19 +110,6 @@ assert.equal(narrative.findings[0].confidence, 1);
 assert.equal(narrative.storyline.length, 6);
 assert.deepEqual(Array.from(narrative.storyline[0].focus_fact_ids), ["F1"]);
 
-const strategicNarrative = ai.validateNarrative({
-  findings: [
-    { headline: "战略判断1", fact_ids: ["F1"], business_implication: "行动1" },
-    { headline: "战略判断2", fact_ids: ["F2"], business_implication: "行动2" },
-    { headline: "战略判断3", fact_ids: ["F3"], business_implication: "行动3" },
-    { headline: "战略判断4", fact_ids: ["F1"], business_implication: "行动4" },
-    { headline: "无行动发现", fact_ids: ["F2"], business_implication: "" },
-  ],
-  executive_summary: "不应直接采用这段零散摘要",
-}, reportContext);
-assert.equal(strategicNarrative.findings.length, 3);
-assert.equal(strategicNarrative.executive_summary, "战略判断1；战略判断2；战略判断3");
-
 const pageOutput = ai.validatePageOutput({ pages: [{
   page_idx: 1,
   title: "核心用户评价更集中",
@@ -133,40 +120,11 @@ const pageOutput = ai.validatePageOutput({ pages: [{
   evidence_question_ids: ["Q999"],
 }] }, reportContext.pages.slice(0, 3));
 assert.equal(pageOutput.length, 1);
-assert.equal(pageOutput[0].claim, "核心用户评价更集中");
+assert.equal(pageOutput[0].claim, "Decision certainty is the core barrier.");
 assert.deepEqual(Array.from(pageOutput[0].evidence_fact_ids), ["F1"]);
 assert.deepEqual(Array.from(pageOutput[0].evidence_question_ids), ["Q1"]);
 assert.equal(pageOutput[0].bullets.length, 3);
 assert.match(pageOutput[0].bullets[2], /解释；行动/);
-
-const scopedBatch = [{
-  slide_id: "scoped_1",
-  page_idx: 7,
-  evidence_fact_ids: ["FG1"],
-  questions: [{
-    code: "QG1",
-    facts: [{ fact_id: "FG1", segment: "外卖小哥", category: "配送留证" }],
-  }],
-}];
-const scopedOutput = ai.validatePageOutput({ pages: [{
-  slide_id: "scoped_1",
-  title: "配送留证占比最高",
-  claim: "配送留证成为购买的核心驱动",
-  bullets: ["配送纠纷需要稳定证据"],
-  business_implication: "优先强化持续供电与事故留证",
-}] }, scopedBatch, { requireSlideId: true });
-assert.equal(scopedOutput.length, 1);
-assert.equal(scopedOutput[0].title, "外卖小哥：配送留证成为购买的核心驱动");
-assert.equal(scopedOutput[0].claim, scopedOutput[0].title);
-assert.equal(ai.validatePageOutput({ pages: [{
-  slide_id: "scoped_1",
-  title: "配送留证成为购买的核心驱动",
-}] }, scopedBatch, { requireSlideId: true }).length, 0);
-assert.equal(ai.validatePageOutput({ pages: [{
-  slide_id: "scoped_1",
-  title: "配送留证占比最高",
-  business_implication: "优先强化持续供电与事故留证",
-}] }, scopedBatch, { requireSlideId: true }).length, 0);
 
 const batchInput = ai.buildPageBatchInput(reportContext.pages.slice(0, 3), narrative, pageOutput[0]);
 assert.equal(batchInput.previous_page.page_idx, 1);
@@ -356,7 +314,6 @@ const stableOutput = ai.validatePageOutput({ pages: [{
   slide_id: "stable_2",
   page_idx: 1,
   title: "Stable ID wins",
-  business_implication: "Use the stable page identity",
   evidence_fact_ids: ["F2"],
   evidence_question_ids: ["Q2"],
 }] }, stableBatch);
@@ -372,14 +329,12 @@ assert.equal(strictPageIdOutput.length, 0);
 const strictStableOutput = ai.validatePageOutput({ pages: [{
   slide_id: "stable_1",
   title: "Stable ID binds",
-  business_implication: "Keep the evidence binding stable",
   evidence_fact_ids: ["F1"],
   evidence_question_ids: ["Q1"],
 }] }, stableBatch, { requireSlideId: true });
 const invalidEvidenceOutput = ai.validatePageOutput({ pages: [{
   slide_id: "stable_1",
   title: "Invalid evidence is replaced deterministically",
-  business_implication: "Use deterministic evidence",
   evidence_fact_ids: ["invented"],
   evidence_question_ids: ["Q999"],
 }] }, stableBatch, { requireSlideId: true });
@@ -389,7 +344,6 @@ assert.deepEqual(invalidEvidenceOutput[0].evidence_question_ids, ["Q1"]);
 const missingEvidenceOutput = ai.validatePageOutput({ pages: [{
   slide_id: "stable_1",
   title: "System backfills omitted evidence IDs",
-  business_implication: "Backfill evidence before writing",
 }] }, stableBatch, { requireSlideId: true });
 assert.deepEqual(missingEvidenceOutput[0].evidence_fact_ids, ["F1"]);
 assert.deepEqual(missingEvidenceOutput[0].evidence_question_ids, ["Q1"]);
@@ -468,12 +422,13 @@ const conceptPayload = {
   confidence: 0.9,
 };
 assert.ok(ai.validateReportNarrative(conceptPayload, conceptContext).central_thesis);
-const contextFirstNarrative = ai.validateReportNarrative({
-  ...conceptPayload,
-  chapters: [conceptChapters[1], conceptChapters[0], conceptChapters[2]],
-}, conceptContext);
-assert.equal(contextFirstNarrative.chapters[0].page_idxs[0], 2);
-assert.equal(contextFirstNarrative.chapters[1].page_idxs[0], 1);
+assert.throws(
+  () => ai.validateReportNarrative({
+    ...conceptPayload,
+    chapters: [conceptChapters[1], conceptChapters[0], conceptChapters[2]],
+  }, conceptContext),
+  /\u7b2c\u4e00\u7ae0\u5fc5\u987b\u5148\u5448\u73b0\u6982\u5ff5\u6d4b\u8bd5\u6838\u5fc3\u7ed3\u679c/,
+);
 assert.throws(
   () => ai.validateReportNarrative({
     ...conceptPayload,

@@ -17,10 +17,10 @@
   const REPORT_NARRATIVE_SYSTEM_PROMPT = [
     "你是资深市场研究顾问。请根据 DataFact、Insight 列表和研究目标，先设计整份报告的 Report Narrative。",
     "先形成一个中心论点，不要简单罗列发现。central_thesis 必须是一个完整判断，不是主题描述或报告标题。",
-    "必须先读取 research_archetype、core_research_module、priority_instructions 和 priority_page_idxs。核心研究模块必须在中心论点、关键问题和正文中得到充分回答，但不要求固定放在第一章。",
-    "章节顺序优先服从完整论证：可以先交代必要的市场背景、用户与场景，再进入核心结果；也可以先给核心判断，再用后续章节解释。选择顺序时应说明前后章节的因果、递进或验证关系。",
-    "core_research_module 是用户确认的最高回答优先级，不是固定的章节位置。只有当该模块能直接给出研究目标的首要判断、且不依赖前置背景时，才建议放在第一章。",
-    "当 research_archetype=concept_test 时，central_thesis 必须判断概念/产品的整体表现（如购买可能、喜好、吸引力、差异化或转化潜力）；用户画像、需求和障碍可以作为必要前提或解释模块，但不能取代概念测试结果。",
+    "必须先读取 research_archetype, core_research_module、priority_instructions 和 priority_page_idxs，并把优先研究问题放在中心论点与第一章。",
+    "core_research_module 是用户确认的最高优先级；存在时必须覆盖 research_archetype 的默认开篇顺序。",
+    "当 research_archetype=concept_test 时，central_thesis 必须先判断概念/产品的整体表现（如购买可能、喜好、吸引力、差异化或转化潜力）；第一章必须包含 priority_page_idxs 中的页面。",
+    "用户画像、需求和障碍只用于解释概念表现与优化方向，不得在 concept_test 项目中取代概念测试结果成为开篇主线。",
     "章节必须形成连续论证，例如用户是谁→为什么购买→为什么流失→如何提升；禁止按满意度、购买因素、会员等指标机械分章。",
     "默认规划 4–6 章，硬性限制 3–8 章。每章都必须包含 chapter_id、title、purpose、key_question、page_idxs、analysis_strategy。",
     "page_idxs 必须把输入 page_catalog 中的全部页面分配到新章节，且每个页面只能出现一次；章节顺序和 page_idxs 顺序就是最终报告顺序。",
@@ -40,9 +40,8 @@
     "如果 data_quality_warnings 非空，不得引用被修复前的值；所有数字、选项和人群必须能在同一行证据中对应，不能只校验数字是否在本页出现。",
     "凡正文引用百分比，必须同时原样写出对应选项和人群标签；无法建立一一对应时删去该数字，不得截断小数或省略前导数字。",
     "必须原样返回每页 slide_id；slide_id 是写回蓝图的唯一主键，page_idx 只用于展示顺序。",
-    "标题和 claim 必须是同一个业务判断；禁止直接使用问卷题面或只写‘某项占比最高’。除非数字本身构成关键反差，否则不要把百分比堆进标题。",
-    "每页只保留一个主结论，使用‘目标人群/适用范围 + 关键发现 + 决策意义’组织；其他数据只作为证据，不得再写第二个并列主结论。",
-    "每页正文 2–3 条：先解释关键关系、差异或障碍，再用 1 组最有解释力的数据作证据锚点，最后给出业务含义；business_implication 必填，且必须能回扣本页 evidence_fact_ids。证据不足时不要强行补原因。",
+    "标题和 claim 必须先给判断；除非数字本身构成关键反差，否则不要把百分比堆进标题。",
+    "每页正文 2–3 条：先解释关键关系、差异或障碍，再用 1 组最有解释力的数据作证据锚点，最后给出业务含义；证据不足时不要强行补原因。",
     "页面包含多道题时，标题必须概括这些题之间的共同关系，不能只用其中一张图的选项替代整页主题；若无法综合，使用中性的组合标题。",
     "子样本题、特定车型或特定用户题必须在标题或正文中保留适用范围；不得把自行车、摩托车、已安装用户等子样本结论泛化为全部两轮车用户。",
     "每页最多引用 2 个数字，不得逐项复述图表；同一数字不要在标题、claim 和 bullets 中重复。",
@@ -284,13 +283,12 @@
       priority_page_idxs: priorityPageIndexes,
       priority_instructions: coreResearchModule ? [
         `用户确认的核心研究模块是“${coreResearchModule}”。`,
-        "中心论点和报告正文必须充分回答该模块，并在关键问题中体现其决策价值。",
-        "priority_page_idxs 中的页面必须被纳入主线，但章节位置由论证顺序决定；如需先呈现背景、画像、行为或场景来建立解释基础，可以将核心模块安排在后续章节。",
-        "不要因为用户选择了核心模块就机械重排页面；应比较‘结论先行’与‘背景铺垫后验证’两种叙事，选择更连贯的一种。",
+        "中心论点和第一章必须优先回答该模块；其他模块用于解释、补充或形成行动建议。",
+        "第一章必须包含 priority_page_idxs 中的页面。",
       ] : researchArchetype === "concept_test" ? [
-        "报告必须回答概念/产品整体表现，再解释目标人群、需求、障碍和优化方向；可根据理解成本决定是否先用一章交代必要背景。",
+        "先回答概念/产品整体表现，再解释目标人群、需求、障碍和优化方向。",
         "中心论点必须包含概念表现的判断，不能只写高意向用户画像。",
-        "priority_page_idxs 中的页面必须进入主线，但不强制位于第一章。",
+        "第一章必须包含 priority_page_idxs 中的页面。",
       ] : [],
       research_objective: String(researchObjective || context?.research_objective || ""),
       dimension_catalog: (context?.available_dimensions || []).map((dimension) => ({
@@ -418,14 +416,23 @@
     });
     const researchArchetype = detectResearchArchetype(context);
     const coreResearchModule = selectedCoreResearchModule(context);
-    const requiredCorePages = coreResearchModule
-      ? coreResearchPageIndexes(context, coreResearchModule)
-      : (researchArchetype === "concept_test" ? conceptPriorityPageIndexes(context) : []);
-    const missingCorePages = requiredCorePages.filter((pageIdx) => !assignedPageIndexes.has(Number(pageIdx)));
-    if (missingCorePages.length) {
-      throw new Error(`核心研究模块页面必须纳入报告主线：${missingCorePages.join("、")}`);
+    const explicitPriorityPages = new Set(coreResearchPageIndexes(context, coreResearchModule));
+    if (coreResearchModule && explicitPriorityPages.size) {
+      const firstChapterLeadsWithCore = chapters[0]?.page_idxs?.some((pageIdx) =>
+        explicitPriorityPages.has(Number(pageIdx))
+      );
+      if (!firstChapterLeadsWithCore) {
+        throw new Error(`第一章必须先呈现核心研究模块“${coreResearchModule}”`);
+      }
     }
     if (researchArchetype === "concept_test" && (!coreResearchModule || coreResearchModule === "概念测试")) {
+      const priorityPages = new Set(coreResearchModule ? [...explicitPriorityPages] : conceptPriorityPageIndexes(context));
+      const firstChapterLeadsWithConcept = chapters[0]?.page_idxs?.some((pageIdx) =>
+        priorityPages.has(Number(pageIdx))
+      );
+      if (priorityPages.size && !firstChapterLeadsWithConcept) {
+        throw new Error("\u7b2c\u4e00\u7ae0\u5fc5\u987b\u5148\u5448\u73b0\u6982\u5ff5\u6d4b\u8bd5\u6838\u5fc3\u7ed3\u679c");
+      }
       const thesisHasConceptSubject = /(?:\u6982\u5ff5|\u4ea7\u54c1)/.test(centralThesis);
       const thesisHasResultJudgment = /(?:\u8d2d\u4e70\u610f\u5411|\u8d2d\u4e70\u53ef\u80fd|\u63a5\u53d7|\u5438\u5f15|\u559c\u597d|\u559c\u6b22|\u5dee\u5f02\u5316|\u8f6c\u5316|\u6f5c\u529b)/.test(centralThesis);
       const thesisHasConceptResult = thesisHasConceptSubject && thesisHasResultJudgment;
@@ -629,7 +636,7 @@
       question_ids: uniqueStrings(finding.evidence_question_ids),
       business_implication: String(finding.action_implication || ""),
       confidence: 1,
-    })).filter((finding) => finding.fact_ids.length && finding.business_implication).slice(0, 3);
+    }));
     const storyline = (context?.pages || []).map((page, index, pages) => ({
       page_idx: Number(page.page_idx),
       role: String(page.slide_brief?.question_answered || page.chapter || "数据证据"),
@@ -660,9 +667,7 @@
       question_ids: uniqueStrings(finding.question_ids).filter((id) => allowedQuestions.has(id)),
       business_implication: String(finding.business_implication || "").trim(),
       confidence: Math.max(0, Math.min(1, Number(finding.confidence) || 0)),
-    })).filter((finding) =>
-      finding.headline && finding.fact_ids.length && finding.business_implication
-    ).slice(0, 3);
+    })).filter((finding) => finding.headline && finding.fact_ids.length);
     const proposedStoryline = new Map(
       (Array.isArray(payload.storyline) ? payload.storyline : [])
         .map((item) => [Number(item.page_idx), item])
@@ -685,10 +690,7 @@
     return {
       findings: findings.length ? findings : fallback.findings,
       storyline,
-      executive_summary: (findings.length ? findings : fallback.findings)
-        .slice(0, 3)
-        .map((finding) => finding.headline)
-        .join("；"),
+      executive_summary: String(payload.executive_summary || fallback.executive_summary).trim(),
       source: findings.length ? "ai_validated" : fallback.source,
     };
   }
@@ -746,39 +748,6 @@
     return [bullets[0], bullets[1], bullets.slice(2).join("；")];
   }
 
-  const BUSINESS_JUDGMENT_PATTERN = /(?:但|而|更|偏|集中|分化|驱动|制约|支撑|机会|风险|优先|需要|应当|应|可以|可将|核心|主要|关键|决定|提升|下降|领先|落后|警惕|敏感|接受|依赖|倾向|不足|高于|低于|强于|弱于)/;
-  const RAW_TITLE_PATTERN = /(?:^|[：:])\s*(?:请问|您认为|您会|您是否|以下|哪些|多少|如何评价)|[？?]$/;
-  const RANK_ONLY_TITLE_PATTERN = /(?:占比|比例|选择率|提及率)(?:最高|最低)|(?:最高|最低)(?:占比|比例)/;
-
-  function isBusinessJudgmentTitle(value) {
-    const title = String(value || "").trim();
-    if (!title || title.length < 4 || RAW_TITLE_PATTERN.test(title)) return false;
-    if (/^(?:Q|S|C|B|A|FZ)\d+[\.、：:\s]/i.test(title)) return false;
-    if (RANK_ONLY_TITLE_PATTERN.test(title) && !BUSINESS_JUDGMENT_PATTERN.test(title)) return false;
-    return true;
-  }
-
-  function pageEvidenceSegments(page) {
-    const allowedFacts = new Set(uniqueStrings(page?.evidence_fact_ids));
-    const segments = (page?.questions || []).flatMap((question) =>
-      (question?.facts || [])
-        .filter((fact) => !allowedFacts.size || allowedFacts.has(String(fact?.fact_id || "")))
-        .map((fact) => String(fact?.segment || "").trim())
-    );
-    return uniqueStrings(segments).filter((segment) =>
-      !["total", "总体", "整体", "全体"].includes(segment.toLowerCase())
-    );
-  }
-
-  function addAudienceScope(title, page, supportingText = "") {
-    if (!String(title || "").trim()) return "";
-    const segments = pageEvidenceSegments(page);
-    if (segments.length !== 1) return title;
-    const segment = segments[0];
-    const combined = `${title} ${supportingText}`;
-    return combined.includes(segment) ? title : `${segment}：${title}`;
-  }
-
   function normalizeEvidenceLabel(value) {
     return String(value || "")
       .toLowerCase()
@@ -822,38 +791,17 @@
       // model echoing IDs that the system already owns deterministically.
       if (!evidenceFactIds.length) evidenceFactIds = Array.from(allowedFacts).slice(0, 6);
       if (!evidenceQuestionIds.length) evidenceQuestionIds = Array.from(allowedQuestions);
-      const decisionTitle = [
-        suggestion.title,
-        suggestion.claim,
-        page?.slide_brief?.claim,
-        page?.current_title,
-      ].map((value) => String(value || "").trim()).find(isBusinessJudgmentTitle) || "";
-      const businessImplication = String(suggestion.business_implication || "").trim();
-      const scopedTitle = addAudienceScope(
-        decisionTitle,
-        page,
-        [...(suggestion.bullets || []), businessImplication].join(" ")
-      );
-      const titleSignature = normalizeEvidenceLabel(scopedTitle);
-      const bullets = fitBullets(suggestion.bullets).filter((bullet) =>
-        normalizeEvidenceLabel(bullet) !== titleSignature
-      );
       return {
         slide_id: String(page.slide_id || page.slide_brief?.slide_id || slideId),
         page_idx: Number(page.page_idx),
-        title: scopedTitle,
-        claim: scopedTitle,
-        bullets,
-        business_implication: businessImplication,
+        title: String(suggestion.title || "").trim(),
+        claim: String(suggestion.claim || suggestion.title || "").trim(),
+        bullets: fitBullets(suggestion.bullets),
+        business_implication: String(suggestion.business_implication || "").trim(),
         evidence_fact_ids: evidenceFactIds,
         evidence_question_ids: evidenceQuestionIds,
       };
-    }).filter((page) =>
-      page
-      && isBusinessJudgmentTitle(page.title)
-      && page.business_implication
-      && page.evidence_fact_ids.length
-    );
+    }).filter((page) => page && page.title && page.evidence_fact_ids.length);
   }
 
   root.PptReportAi = {

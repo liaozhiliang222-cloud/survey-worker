@@ -13162,7 +13162,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (coreResearchModuleNote) {
         const current = detectedResearchModules.find((item) => item.key === preferred);
         coreResearchModuleNote.textContent = current
-          ? "报告将重点回答“" + String(current.label || current.key) + "”；AI 会根据论证顺序安排章节位置，并组织其他题组作为背景、解释、验证或附录。"
+          ? "报告将首先回答“" + String(current.label || current.key) + "”；其他题组由 AI 自动组织为原因解释、背景信息或附录。"
           : "未识别到可用的研究模块。";
       }
     }
@@ -13181,7 +13181,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         page.source_chapter = page.source_chapter || page.chapter || "";
         page.research_role = coreModule && page.source_chapter === coreModule ? "core" : "supporting";
       });
-
+      if (coreModule) {
+        plan.pages = [...(plan.pages || [])].sort((left, right) =>
+          Number(right.research_role === "core") - Number(left.research_role === "core")
+          || Number(left.page_idx || 0) - Number(right.page_idx || 0)
+        ).map((page, index) => ({ ...page, page_idx: index + 1 }));
+      }
       return plan;
     }
 
@@ -16855,7 +16860,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     coreResearchModuleInput?.addEventListener("change", () => {
       const current = detectedResearchModules.find((item) => item.key === coreResearchModuleInput.value);
       if (coreResearchModuleNote && current) {
-        coreResearchModuleNote.textContent = "报告将重点回答“" + String(current.label || current.key) + "”；AI 会结合故事线决定其章节位置。";
+        coreResearchModuleNote.textContent = "报告将首先回答“" + String(current.label || current.key) + "”；其他题组由 AI 自动组织。";
       }
       invalidatePptxPreview("核心研究模块已更新，请重新生成报告结构。");
     });

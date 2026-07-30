@@ -10,8 +10,6 @@ assert.doesNotMatch(html, /id="pptxStructureTemplate"/);
 assert.match(appSource, /function populateCoreResearchModules\(/);
 assert.match(appSource, /core_research_module:/);
 assert.match(appSource, /applyCoreResearchModuleToPlan\(pagePlan\)/);
-assert.doesNotMatch(appSource, /Number\(right\.research_role === "core"\)/);
-assert.match(html, /章节位置会结合报告故事线自动安排/);
 
 const context = vm.createContext({ globalThis: {}, Set, Map, Array, String, Number, JSON, Math, Promise, setTimeout });
 vm.runInContext(aiSource, context);
@@ -37,32 +35,21 @@ const result = ai.validateReportNarrative({
   central_thesis: "\u6838\u5fc3\u76ee\u6807\u7528\u6237\u662f\u5e74\u8f7b\u6709\u5b69\u5bb6\u5ead\uff0c\u5176\u9700\u6c42\u51b3\u5b9a\u540e\u7eed\u4ea7\u54c1\u4f18\u5316\u65b9\u5411\u3002",
   storyline_type: "diagnosis",
   chapters: [
-    { title: concept, purpose: "Assess concept", key_question: "How", page_idxs: [1] },
     { title: profile, purpose: "Define audience", key_question: "Who", page_idxs: [2] },
+    { title: concept, purpose: "Assess concept", key_question: "How", page_idxs: [1] },
     { title: "Action", purpose: "Recommend", key_question: "What next", page_idxs: [3] },
   ],
 }, reportContext);
-assert.equal(result.chapters[0].page_idxs[0], 1);
-const coreFirstResult = ai.validateReportNarrative({
-  report_title: "Concept report",
-  central_thesis: "\u6838\u5fc3\u76ee\u6807\u7528\u6237\u662f\u5e74\u8f7b\u6709\u5b69\u5bb6\u5ead\u3002",
-  storyline_type: "diagnosis",
-  chapters: [
-    { title: profile, purpose: "Define", key_question: "Who", page_idxs: [2] },
-    { title: concept, purpose: "Assess", key_question: "How", page_idxs: [1] },
-    { title: "Action", purpose: "Recommend", key_question: "What next", page_idxs: [3] },
-  ],
-}, reportContext);
-assert.equal(coreFirstResult.chapters[0].page_idxs[0], 2);
+assert.equal(result.chapters[0].page_idxs[0], 2);
 assert.throws(() => ai.validateReportNarrative({
   report_title: "Concept report",
   central_thesis: "\u6838\u5fc3\u76ee\u6807\u7528\u6237\u662f\u5e74\u8f7b\u6709\u5b69\u5bb6\u5ead\u3002",
   storyline_type: "diagnosis",
   chapters: [
     { title: concept, purpose: "Assess", key_question: "How", page_idxs: [1] },
-    { title: "Behavior", purpose: "Explain", key_question: "Why", page_idxs: [3] },
-    { title: "Action", purpose: "Recommend", key_question: "What next", page_idxs: [] },
+    { title: profile, purpose: "Define", key_question: "Who", page_idxs: [2] },
+    { title: "Action", purpose: "Recommend", key_question: "What next", page_idxs: [3] },
   ],
-}, reportContext), /\u6838\u5fc3\u7814\u7a76\u6a21\u5757\u9875\u9762\u5fc5\u987b\u7eb3\u5165\u62a5\u544a\u4e3b\u7ebf/);
+}, reportContext), /\u6838\u5fc3\u7814\u7a76\u6a21\u5757/);
 
 console.log("Core research module smoke passed.");
