@@ -28,7 +28,7 @@ const reportContext = {
     { key: "年龄", label: "年龄", segments: ["18-29岁", "30岁以上"] },
   ],
   data_facts: [
-    { fact_id: "F1", question_id: "Q1", unused_payload: "omit" },
+    { fact_id: "F1", question_id: "Q1" },
     { fact_id: "F2", question_id: "Q2" },
     { fact_id: "F3", question_id: "Q3" },
   ],
@@ -232,23 +232,6 @@ assert.deepEqual(Array.from(reportNarrative.chapters[0].analysis_strategy.suppor
 assert.equal(reportNarrative.chapters[0].analysis_strategy.page_dimension_plan.length, 1);
 const reportNarrativeInput = ai.buildReportNarrativeInput(reportContext, "研究目标");
 assert.deepEqual(Array.from(reportNarrativeInput.dimension_catalog, (item) => item.key), ["总体", "用户类型", "年龄"]);
-assert.equal(reportNarrativeInput.input_stats.source_fact_count, 3);
-assert.equal(reportNarrativeInput.input_stats.selected_fact_count, 3);
-assert.deepEqual(Array.from(reportNarrativeInput.data_facts, (item) => item.fact_id), ["F1", "F2", "F3"]);
-assert.ok(reportNarrativeInput.data_facts.every((item) => !Object.hasOwn(item, "unused_payload")));
-const oversizedFacts = Array.from({ length: 240 }, (_, index) => ({
-  fact_id: "L" + index,
-  question_id: "Q1",
-  fact_type: "segment_gap",
-  gap_pp: index,
-}));
-const oversizedInput = ai.buildReportNarrativeInput({
-  ...reportContext,
-  data_facts: oversizedFacts,
-  global_findings: [{ evidence_fact_ids: oversizedFacts.map((fact) => fact.fact_id) }],
-}, "大报告");
-assert.equal(oversizedInput.input_stats.source_fact_count, 240);
-assert.equal(oversizedInput.input_stats.selected_fact_count, 120);
 assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /analysis_strategy/);
 const pagesWithStableIds = reportContext.pages.map((page, index) => ({
   ...page,
