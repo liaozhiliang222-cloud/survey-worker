@@ -98,6 +98,8 @@ const previewFlow = app.slice(previewFlowStart, previewFlowEnd);
 assert.match(previewFlow, /pagePlan\.page_planning_mode = "rule"/);
 assert.match(previewFlow, /await generatePptxAiReport\(\)/);
 assert.match(app, /function normalizePptxWorkflow\(plan, preferredWorkflow = ""\)/);
+assert.match(app, /You repair Report Narrative JSON/);
+assert.match(app, /validation_error:[\s\S]*original_input:[\s\S]*invalid_output:/);
 assert.match(app, /report_workflow: editedPagePlan\?\.report_workflow/);
 assert.match(app, /page_planning_mode: editedPagePlan\?\.page_planning_mode/);
 assert.match(app, /ai_enhancement: editedPagePlan\?\.ai_enhancement/);

@@ -169,6 +169,14 @@ const reportNarrative = ai.validateReportNarrative({
 assert.equal(reportNarrative.chapters.length, 3);
 assert.equal(reportNarrative.storyline_type, "diagnosis");
 assert.ok(reportNarrative.central_thesis);
+const { central_thesis: expectedCentralThesis, ...camelCaseNarrative } = reportNarrative;
+const normalizedWrappedNarrative = ai.validateReportNarrative({
+  reportNarrative: {
+    ...camelCaseNarrative,
+    centralThesis: expectedCentralThesis,
+  },
+}, reportContext);
+assert.equal(normalizedWrappedNarrative.central_thesis, expectedCentralThesis);
 assert.equal(reportNarrative.confidence, 1);
 assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /中心论点/);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /chapter_context/);

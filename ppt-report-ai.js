@@ -241,7 +241,50 @@
       })),
     };
   }
+  function normalizeReportNarrativePayload(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+    const wrapperKeys = ["report_narrative", "reportNarrative", "narrative", "result", "data"];
+    const wrapped = wrapperKeys
+      .map((key) => payload[key])
+      .find((value) => value && typeof value === "object" && !Array.isArray(value));
+    const source = wrapped || payload;
+    return {
+      ...source,
+      report_title: source.report_title
+        || source.reportTitle
+        || source.title
+        || payload.report_title
+        || payload.reportTitle,
+      central_thesis: source.central_thesis
+        || source.centralThesis
+        || source.thesis
+        || source.core_thesis
+        || source.core_viewpoint
+        || source.central_argument
+        || payload.central_thesis
+        || payload.centralThesis,
+      storyline_type: source.storyline_type
+        || source.storylineType
+        || source.story_type
+        || payload.storyline_type
+        || payload.storylineType,
+      chapters: source.chapters
+        || source.sections
+        || source.chapter_plan
+        || payload.chapters,
+      key_questions: source.key_questions
+        || source.keyQuestions
+        || source.research_questions
+        || payload.key_questions,
+      ending_message: source.ending_message
+        || source.endingMessage
+        || source.final_message
+        || payload.ending_message,
+      confidence: source.confidence ?? payload.confidence,
+    };
+  }
   function validateReportNarrative(payload, context = {}) {
+    payload = normalizeReportNarrativePayload(payload);
     if (!payload || typeof payload !== "object") throw new Error("Report Narrative 必须是 JSON 对象");
     const centralThesis = String(payload.central_thesis || "").trim();
     if (!centralThesis) throw new Error("Report Narrative 缺少 central_thesis");
@@ -694,5 +737,6 @@
     validateNarrative,
     validatePageOutput,
     validateReportNarrative,
+    normalizeReportNarrativePayload,
   };
 })(typeof window !== "undefined" ? window : globalThis);

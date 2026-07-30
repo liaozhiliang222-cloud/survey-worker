@@ -15758,16 +15758,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             };
           }),
         };
+        const narrativeInput = aiPlanner.buildReportNarrativeInput(
+          narrativeContext,
+          (titleInput.value || "\u8c03\u7814\u5206\u6790\u62a5\u544a").trim()
+        );
         const outcome = await aiPlanner.generateReportNarrativeOrFallback(async () => {
           const output = await callAiChatCompletion(settings, [
             { role: "system", content: aiPlanner.REPORT_NARRATIVE_SYSTEM_PROMPT },
-            {
-              role: "user",
-              content: JSON.stringify(aiPlanner.buildReportNarrativeInput(
-                narrativeContext,
-                (titleInput.value || "调研分析报告").trim()
-              )),
-            },
+            { role: "user", content: JSON.stringify(narrativeInput) },
           ], {
             maxTokens: 5000,
             timeoutMs: 240000,
@@ -15775,7 +15773,41 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             responseFormat: "json_object",
             stream: false,
           });
-          return aiPlanner.parseJsonObject(output);
+          const payload = aiPlanner.parseJsonObject(output);
+          try {
+            aiPlanner.validateReportNarrative(payload, narrativeContext);
+            return payload;
+          } catch (validationError) {
+            const repairedOutput = await callAiChatCompletion(settings, [
+              {
+                role: "system",
+                content: [
+                  "You repair Report Narrative JSON.",
+                  "Return exactly one JSON object without markdown or a wrapper.",
+                  "Preserve valid content and fill every required field.",
+                  "Required fields: report_title, central_thesis, storyline_type, chapters, key_questions, ending_message, confidence.",
+                  "Each chapter requires chapter_id, title, purpose, key_question, page_idxs and analysis_strategy.",
+                  "storyline_type must be problem_solution, user_journey, funnel, diagnosis or opportunity.",
+                  "Use only evidence and page indexes present in the supplied input.",
+                ].join("\n"),
+              },
+              {
+                role: "user",
+                content: JSON.stringify({
+                  validation_error: String(validationError?.message || validationError),
+                  original_input: narrativeInput,
+                  invalid_output: payload,
+                }),
+              },
+            ], {
+              maxTokens: 5000,
+              timeoutMs: 240000,
+              temperature: 0,
+              responseFormat: "json_object",
+              stream: false,
+            });
+            return aiPlanner.parseJsonObject(repairedOutput);
+          }
         }, narrativeContext);
 
         setPptxProgress(65, "核心观点已生成，正在组织章节逻辑", "AI 研究");
