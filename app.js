@@ -14687,10 +14687,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 <span>标题</span>
                 <textarea rows="2" data-preview-idx="${idx}" data-field="insight_override" ${isLocked ? "disabled" : ""}>${escapeHtml(p.insight_override || brief.title || p.title || "")}</textarea>
               </label>
-              <label class="pptx-preview-field pptx-preview-field-wide">
-                <span>核心结论</span>
-                <textarea rows="3" data-preview-idx="${idx}" data-field="slide_claim" ${isLocked ? "disabled" : ""}>${escapeHtml(brief.claim || p.insight_override || p.title || "")}</textarea>
-              </label>
               <label class="pptx-preview-field">
                 <span>页面类型</span>
                 <select data-preview-idx="${idx}" data-field="slide_type" ${isLocked ? "disabled" : ""}>
@@ -14710,10 +14706,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               <label class="pptx-brief-lock pptx-preview-field-wide">
                 <input type="checkbox" data-preview-idx="${idx}" data-field="slide_locked" ${isLocked ? "checked" : ""}>
                 <span>锁定页面（AI 重新生成时保留标题、结论、页面类型和布局）</span>
-              </label>
-              <label class="pptx-preview-field pptx-preview-field-wide">
-                <span>正文洞察（每行一条，最多4条）</span>
-                <textarea rows="3" data-preview-idx="${idx}" data-field="insight_bullets">${escapeHtml((p.insight_bullets || []).join("\n"))}</textarea>
               </label>
               <div class="pptx-preview-field">
                 <span>题目（${(p.questions || []).length}）</span>
@@ -14907,9 +14899,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     window._onPreviewInsightChange = function(idx, value) {
       applyLocalSlideBriefPatch(idx, { title: value });
     };
-    window._onPreviewClaimChange = function(idx, value) {
-      applyLocalSlideBriefPatch(idx, { claim: value });
-    };
     window._onPreviewSlideTypeChange = function(idx, value) {
       applyLocalSlideBriefPatch(idx, { slide_type: value }, { rerender: true });
     };
@@ -14918,17 +14907,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     };
     window._onPreviewLockedChange = function(idx, checked) {
       applyLocalSlideBriefPatch(idx, { locked: checked }, { rerender: true });
-    };
-    window._onPreviewBulletsChange = function(idx, value) {
-      const page = editedPagePlan?.pages?.[idx];
-      if (!page) return;
-      pushPptxPlanHistory();
-      page.insight_bullets = String(value || "")
-        .split(/\r?\n/)
-        .map((text) => text.trim())
-        .filter(Boolean)
-        .slice(0, 4);
-      page.slide_brief.user_modified = true;
     };
     window._onPreviewChapterChartChange = function(encodedChapterName, chartType, overwriteManual) {
       const chapterName = decodeURIComponent(encodedChapterName);
@@ -15206,11 +15184,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         window._onPreviewChapterChartChange(event.target.dataset.chapter, event.target.value, overwrite);
       }
       else if (field === "insight_override") window._onPreviewInsightChange(pageIndex, event.target.value);
-      else if (field === "slide_claim") window._onPreviewClaimChange(pageIndex, event.target.value);
       else if (field === "slide_type") window._onPreviewSlideTypeChange(pageIndex, event.target.value);
       else if (field === "layout_family") window._onPreviewLayoutFamilyChange(pageIndex, event.target.value);
       else if (field === "slide_locked") window._onPreviewLockedChange(pageIndex, event.target.checked);
-      else if (field === "insight_bullets") window._onPreviewBulletsChange(pageIndex, event.target.value);
     });
 
     // ── 返回修改配置 ──

@@ -9,9 +9,11 @@ const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const backend = fs.readFileSync(path.join(root, "deploy", "aliyun_api.py"), "utf8");
 
-for (const field of ["slide_claim", "slide_type", "layout_family", "slide_locked"]) {
+for (const field of ["slide_type", "layout_family", "slide_locked"]) {
   assert.match(app, new RegExp(`data-field="${field}"`));
 }
+assert.doesNotMatch(app, /data-field="slide_claim"/);
+assert.doesNotMatch(app, /data-field="insight_bullets"/);
 assert.match(html, /id="pptxContinueEditBtn"/);
 assert.match(app, /user_modified/);
 assert.match(app, /mergeSlideBriefSuggestion/);
