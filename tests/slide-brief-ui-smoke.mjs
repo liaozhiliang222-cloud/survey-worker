@@ -14,6 +14,14 @@ for (const field of ["slide_type", "layout_family", "slide_locked"]) {
 }
 assert.doesNotMatch(app, /data-field="slide_claim"/);
 assert.doesNotMatch(app, /data-field="insight_bullets"/);
+for (const mapping of [
+  '["segment_comparison", "人群对比"]',
+  '["key_finding", "核心发现"]',
+  '["key_finding_with_evidence", "核心发现＋证据"]',
+  '["comparison_40_60", "左右对比（40/60）"]',
+]) {
+  assert.ok(app.includes(mapping), `Missing localized option: ${mapping}`);
+}
 assert.match(html, /id="pptxContinueEditBtn"/);
 assert.match(app, /user_modified/);
 assert.match(app, /mergeSlideBriefSuggestion/);

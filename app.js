@@ -13257,20 +13257,20 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     }
 
     const SLIDE_TYPE_OPTIONS = [
-      ["key_finding", "KEY_FINDING"],
-      ["segment_comparison", "SEGMENT_COMPARISON"],
-      ["funnel_analysis", "FUNNEL_ANALYSIS"],
-      ["recommendation", "RECOMMENDATION"],
-      ["opportunity_matrix", "OPPORTUNITY_MATRIX"],
-      ["driver_analysis", "DRIVER_ANALYSIS"],
+      ["key_finding", "核心发现"],
+      ["segment_comparison", "人群对比"],
+      ["funnel_analysis", "漏斗分析"],
+      ["recommendation", "行动建议"],
+      ["opportunity_matrix", "机会矩阵"],
+      ["driver_analysis", "驱动因素分析"],
     ];
     const LAYOUT_FAMILY_OPTIONS = [
-      ["hero_chart", "HERO_CHART"],
-      ["chart_with_insight", "CHART_WITH_INSIGHT"],
-      ["comparison_40_60", "COMPARISON"],
-      ["matrix_with_priority", "MATRIX"],
-      ["key_finding_with_evidence", "KEY_FINDING_WITH_EVIDENCE"],
-      ["segment_profile", "SEGMENT_PROFILE"],
+      ["hero_chart", "核心图表"],
+      ["chart_with_insight", "图表＋洞察"],
+      ["comparison_40_60", "左右对比（40/60）"],
+      ["matrix_with_priority", "优先级矩阵"],
+      ["key_finding_with_evidence", "核心发现＋证据"],
+      ["segment_profile", "人群画像"],
     ];
 
     function ensureCurrentReportId() {
