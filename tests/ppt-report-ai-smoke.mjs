@@ -6,7 +6,9 @@ const source = readFileSync(new URL("../ppt-report-ai.js", import.meta.url), "ut
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 assert.ok(html.indexOf("ppt-report-ai.js") < html.indexOf("app.js"), "PPT AI module must load before app.js.");
 assert.match(html, /id="pptxNarrativePanel"/);
-assert.match(html, /id="pptxNarrativeConfirmBtn"[^>]*>按故事线重构蓝图</);
+assert.match(html, /id="pptxNarrativeConfirmBtn"[^>]*>确认分析维度并生成蓝图</);
+assert.match(html, /确认核心观点、章节与分析维度/);
+assert.match(html, /先勾选确认，再一次性重组页面并生成蓝图文字/);
 assert.doesNotMatch(html, /不改变当前页数和顺序|不重排/);
 assert.match(html, /id="pptxContinueEditBtn"/);
 assert.match(html, /id="pptxNarrativeRegenerateBtn"[^>]*>重新生成故事线</);
@@ -15,6 +17,8 @@ const context = vm.createContext({ globalThis: {}, Set, Map, Array, String, Numb
 vm.runInContext(source, context);
 const ai = context.globalThis.PptReportAi;
 assert.ok(ai, "PptReportAi must be exported.");
+assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /最终由用户确认/);
+assert.doesNotMatch(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /page_dimension_plan/);
 
 const reportContext = {
   source: "survey.xlsx",

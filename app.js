@@ -13158,7 +13158,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       }
       if (aiWriteBtn) {
         aiWriteBtn.textContent = isResearch
-          ? (hasNarrativeBlueprint ? "重新生成故事线" : "生成核心观点与章节逻辑")
+          ? (hasNarrativeBlueprint ? "重新生成故事线" : "生成核心观点、章节与推荐维度")
           : (plan?.ai_enhancement === "copy" ? "重新 AI 写作并生成 PPT" : "AI 写作并生成 PPT");
         aiWriteBtn.classList.toggle("primary-btn", isResearch && !hasNarrativeBlueprint);
         aiWriteBtn.classList.toggle("secondary-btn", !isResearch || hasNarrativeBlueprint);
@@ -14118,10 +14118,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const isResearchWorkflow = pagePlan.report_workflow === "research";
         const projection = getPptxOutputPageProjection(pagePlan);
         if (isResearchWorkflow) {
-          genStatus.textContent = `基础页面已准备（${pagePlan.renderable_questions} 道可渲染题），正在生成核心观点与章节逻辑…`;
+          genStatus.textContent = `基础页面已准备（${pagePlan.renderable_questions} 道可渲染题），正在生成核心观点、章节与推荐维度…`;
           const narrativeReady = await generatePptxAiReport();
           genStatus.textContent = narrativeReady
-            ? "核心观点与章节逻辑已生成，请确认后重构报告蓝图。"
+            ? "核心观点、章节逻辑与推荐维度已生成，请确认后生成报告蓝图。"
             : "核心观点生成未完成，已保留确定性蓝图；可重试或直接生成 PPT。";
         } else {
           genStatus.textContent = `快速报告结构已准备：${projection.analysisPages} 个分析页；最终 PPT 预计 ${projection.totalPages} 页（含 ${projection.sectionPages} 个章节页、${projection.fixedSystemPages} 个系统页）。可直接生成 PPT，或先让 AI 写作并自动导出。`;
@@ -15463,6 +15463,58 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       return context;
     }
 
+    function availableNarrativeDimensions() {
+      const seen = new Set();
+      return [
+        { key: "总体", label: "总体" },
+        ...(editedPagePlan?.available_dimensions || []).map((dimension) => ({
+          key: String(dimension?.key || "").trim(),
+          label: String(dimension?.label || dimension?.key || "").trim(),
+        })),
+      ].filter((dimension) => dimension.key && !seen.has(dimension.key) && seen.add(dimension.key));
+    }
+
+    function narrativeSelectedDimensions(chapter) {
+      const strategy = chapter?.analysis_strategy || {};
+      const selected = [
+        ...(strategy.primary_dimensions || []),
+        ...(strategy.supporting_dimensions || []),
+      ];
+      return normalizePptxDimensions(selected.length
+        ? selected
+        : [strategy.baseline_dimension || "总体"]);
+    }
+
+    function updateNarrativeChapterDimensions(chapterIndex, selectedValues) {
+      const chapter = pendingReportNarrative?.chapters?.[chapterIndex];
+      if (!chapter) return;
+      const selected = normalizePptxDimensions(selectedValues);
+      const comparisonDimensions = selected.filter((dimension) => dimension !== "总体");
+      const strategy = chapter.analysis_strategy && typeof chapter.analysis_strategy === "object"
+        ? chapter.analysis_strategy
+        : {};
+      chapter.analysis_strategy = {
+        ...strategy,
+        baseline_dimension: "总体",
+        primary_dimensions: comparisonDimensions.slice(0, 1),
+        supporting_dimensions: comparisonDimensions.slice(1, 2),
+        page_dimension_plan: [],
+        dimension_selection_confirmed: true,
+      };
+      editedPagePlan.report_narrative = pendingReportNarrative;
+    }
+
+    function confirmNarrativeDimensionSelections() {
+      if (!pendingReportNarrative) return false;
+      (pendingReportNarrative.chapters || []).forEach((chapter, chapterIndex) => {
+        const selector = `[data-narrative-chapter="${chapterIndex}"] input[data-narrative-dimension]:checked`;
+        const selected = Array.from(narrativeContent?.querySelectorAll(selector) || [])
+          .map((input) => input.value);
+        updateNarrativeChapterDimensions(chapterIndex, selected.length ? selected : ["总体"]);
+      });
+      return true;
+    }
+
     function renderReportNarrative(narrative, fallbackMessage = "") {
       if (!narrativeContent || !narrativePanel) return;
       if (!narrative) {
@@ -15470,17 +15522,28 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         narrativePanel.style.display = "";
         return;
       }
+      const dimensionOptions = availableNarrativeDimensions();
       const chapters = (narrative.chapters || []).map((chapter, index) => {
         const strategy = chapter.analysis_strategy || {};
-        const dimensionLabels = [...(strategy.primary_dimensions || []), ...(strategy.supporting_dimensions || [])];
+        const selectedDimensions = new Set(narrativeSelectedDimensions(chapter));
+        const dimensions = dimensionOptions.map((dimension) => `
+          <label class="pptx-narrative-dimension${selectedDimensions.has(dimension.key) ? " selected" : ""}">
+            <input type="checkbox" value="${escapeHtml(dimension.key)}" data-narrative-dimension
+              ${selectedDimensions.has(dimension.key) ? "checked" : ""}>
+            <span>${escapeHtml(dimension.label)}</span>
+          </label>`).join("");
         return `
-        <article class="pptx-narrative-chapter">
+        <article class="pptx-narrative-chapter" data-narrative-chapter="${index}">
           <span>${String(index + 1).padStart(2, "0")}</span>
           <div>
             <strong>${escapeHtml(chapter.title || "未命名章节")}</strong>
             <p>${escapeHtml(chapter.purpose || "")}</p>
             <small>回答：${escapeHtml(chapter.key_question || "")}</small>
-            <small>分析维度：${escapeHtml(dimensionLabels.length ? dimensionLabels.join(" + ") : (strategy.baseline_dimension || "总体"))}${strategy.rationale ? ` · ${escapeHtml(strategy.rationale)}` : ""}</small>
+            <div class="pptx-narrative-dimension-picker">
+              <small>AI 推荐分析维度（可调整，最多选择 2 个）</small>
+              <div class="pptx-narrative-dimension-options">${dimensions}</div>
+              ${strategy.rationale ? `<p>${escapeHtml(strategy.rationale)}</p>` : ""}
+            </div>
           </div>
         </article>`;
       }).join("");
@@ -15489,6 +15552,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           <small>报告核心观点 · ${escapeHtml(narrative.storyline_type || "")}</small>
           <strong>${escapeHtml(narrative.central_thesis || "")}</strong>
         </div>
+        <div class="pptx-narrative-confirm-note">请先确认各章节分析维度；确认后系统才会一次性生成页面蓝图与对应文字。</div>
         <div class="pptx-narrative-chapters">${chapters}</div>
         <div class="pptx-narrative-thesis">
           <small>结尾信息</small>
@@ -15741,8 +15805,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         renderReportNarrative(pendingReportNarrative, outcome.error);
         if (pendingReportNarrative) {
           aiWriteBtn.textContent = "重新生成故事线";
-          aiWriteStatus.textContent = "核心观点与章节逻辑已生成。确认后将按新故事线重组章节并调整页面顺序。";
-          setPptxProgress(100, "核心观点与章节逻辑已生成", "AI 研究");
+          aiWriteStatus.textContent = "核心观点、章节逻辑与推荐维度已生成。请调整并确认各章维度后，再生成页面蓝图与对应文字。";
+          setPptxProgress(100, "核心观点、章节逻辑与推荐维度已生成", "AI 研究");
         } else {
           aiWriteStatus.textContent = `Report Narrative 生成失败，已启用兼容流程：${outcome.error}`;
         }
@@ -16279,6 +16343,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       try {
         let applied = 0;
         if (pendingReportNarrative) {
+          confirmNarrativeDimensionSelections();
           applied = await generatePptxSlideBriefs(pendingReportNarrative);
         } else {
           ensureStableSlideBriefs();
@@ -16312,7 +16377,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (continueEditBtn) continueEditBtn.classList.remove("hidden");
         if (narrativeConfirmBtn) {
           narrativeConfirmBtn.disabled = false;
-          narrativeConfirmBtn.textContent = "重新按故事线重构";
+          narrativeConfirmBtn.textContent = "重新确认维度并生成蓝图";
         }
         if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = false;
         setTimeout(() => progress.classList.add("hidden"), 1200);
@@ -16491,6 +16556,34 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     confirmBtn && confirmBtn.addEventListener("click", () => doGeneratePptx());
     aiWriteBtn && aiWriteBtn.addEventListener("click", () => runSelectedPptxAiWorkflow());
     narrativeRegenerateBtn?.addEventListener("click", () => generatePptxAiReport());
+    narrativeContent?.addEventListener("change", (event) => {
+      const input = event.target?.closest?.("input[data-narrative-dimension]");
+      if (!input) return;
+      const chapterCard = input.closest("[data-narrative-chapter]");
+      const chapterIndex = Number(chapterCard?.dataset.narrativeChapter);
+      if (!Number.isInteger(chapterIndex)) return;
+      const inputs = Array.from(chapterCard.querySelectorAll("input[data-narrative-dimension]"));
+      if (input.checked && input.value === "总体") {
+        inputs.forEach((item) => { if (item !== input) item.checked = false; });
+      } else if (input.checked) {
+        const overall = inputs.find((item) => item.value === "总体");
+        if (overall) overall.checked = false;
+      }
+      const comparisonInputs = inputs.filter((item) => item.checked && item.value !== "总体");
+      if (comparisonInputs.length > 2) {
+        input.checked = false;
+        showToast("每个章节最多选择 2 个分析维度。", "warning");
+      }
+      let selectedInputs = inputs.filter((item) => item.checked);
+      if (!selectedInputs.length) {
+        const overall = inputs.find((item) => item.value === "总体");
+        if (overall) overall.checked = true;
+        selectedInputs = overall ? [overall] : [];
+      }
+      inputs.forEach((item) => item.closest("label")?.classList.toggle("selected", item.checked));
+      updateNarrativeChapterDimensions(chapterIndex, selectedInputs.map((item) => item.value));
+      if (aiWriteStatus) aiWriteStatus.textContent = "分析维度已更新；确认后将按当前选择一次性生成蓝图与逐页文字。";
+    });
     narrativeConfirmBtn?.addEventListener("click", () => confirmReportNarrativeAndGenerate());
     continueEditBtn?.addEventListener("click", () => previewPanel?.scrollIntoView({ behavior: "smooth", block: "start" }));
     titleInput?.addEventListener("input", () => invalidatePptxPreview());

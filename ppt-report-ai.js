@@ -17,11 +17,11 @@
     "章节必须形成连续论证，例如用户是谁→为什么购买→为什么流失→如何提升；禁止按满意度、购买因素、会员等指标机械分章。",
     "默认规划 4–6 章，硬性限制 3–8 章。每章都必须包含 chapter_id、title、purpose、key_question、page_idxs、analysis_strategy。",
     "page_idxs 必须把输入 page_catalog 中的全部页面分配到新章节，且每个页面只能出现一次；章节顺序和 page_idxs 顺序就是最终报告顺序。",
-    "必须先读取 dimension_catalog，再为每章确定分析维度。analysis_strategy 包含 baseline_dimension、primary_dimensions、supporting_dimensions、rationale、page_dimension_plan；只能使用 dimension_catalog 中存在的维度。",
-    "总体是默认基准；每章最多 1 个主维度和 1 个辅助维度。不要为了使用维度而强行分群，页面不适合对比时使用总体。page_dimension_plan 用 page_idx 精确覆盖页面。",
+    "必须先读取 dimension_catalog，再为每章推荐分析维度。analysis_strategy 只包含 baseline_dimension、primary_dimensions、supporting_dimensions、rationale；只能使用 dimension_catalog 中存在的维度，最终由用户确认。",
+    "总体是默认基准；每章最多 1 个主维度和 1 个辅助维度。不要为了使用维度而强行分群，章节不适合对比时使用总体；不要输出逐页维度计划。",
     "storyline_type 只能是 problem_solution、user_journey、funnel、diagnosis、opportunity 之一。",
     "不得编造 DataFact 中不存在的数字或结论；confidence 必须在 0 到 1 之间。",
-    "只返回 JSON：{\"report_title\":\"\",\"central_thesis\":\"\",\"storyline_type\":\"diagnosis\",\"chapters\":[{\"chapter_id\":\"chapter_01\",\"title\":\"\",\"purpose\":\"\",\"key_question\":\"\",\"page_idxs\":[1,2],\"analysis_strategy\":{\"baseline_dimension\":\"总体\",\"primary_dimensions\":[\"用户类型\"],\"supporting_dimensions\":[],\"rationale\":\"\",\"page_dimension_plan\":[{\"page_idx\":1,\"dimensions\":[\"用户类型\"]}]}}],\"key_questions\":[],\"ending_message\":\"\",\"confidence\":0.9}。",
+    "只返回 JSON：{\"report_title\":\"\",\"central_thesis\":\"\",\"storyline_type\":\"diagnosis\",\"chapters\":[{\"chapter_id\":\"chapter_01\",\"title\":\"\",\"purpose\":\"\",\"key_question\":\"\",\"page_idxs\":[1,2],\"analysis_strategy\":{\"baseline_dimension\":\"总体\",\"primary_dimensions\":[\"用户类型\"],\"supporting_dimensions\":[],\"rationale\":\"\"}}],\"key_questions\":[],\"ending_message\":\"\",\"confidence\":0.9}。",
   ].join("\n");
 
   const SLIDE_BRIEF_SYSTEM_PROMPT = [
