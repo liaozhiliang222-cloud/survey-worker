@@ -1088,8 +1088,6 @@ def _enhance_report_pages(
         segment_count=displayed_segment_count or max(0, segment_count - 1),
         source_references=[source] if source else [],
     ))
-    if findings:
-        result.append(FindingsOverviewContent(findings=findings))
     previous_chapter = str(intro_section.get("title")) if intro_section else None
     previous_parent = previous_chapter
     for page in pages:
@@ -1182,7 +1180,8 @@ def _enhance_report_pages(
         if str(opportunity_question.get("title") or "").strip()
         else "同一指标内的差异机会与优势分布"
     )
-    if conclusion_section and (opportunities or findings) and previous_chapter != str(conclusion_section.get("title")):
+    include_opportunity_matrix = bool((page_config or {}).get("include_opportunity_matrix"))
+    if conclusion_section and findings and previous_chapter != str(conclusion_section.get("title")):
         result.append(SectionDividerContent(
             title=str(conclusion_section.get("title") or "结论与建议"),
             chapter=str(conclusion_section.get("number") or "03"),
@@ -1190,12 +1189,19 @@ def _enhance_report_pages(
             slide_id="section_template_conclusion",
         ))
         previous_chapter = str(conclusion_section.get("title"))
-    if opportunities:
+    if include_opportunity_matrix and opportunities:
         result.append(OpportunityMatrixContent(
             title=opportunity_title,
             opportunities=opportunities,
             data_source=source,
             slide_id="opportunity_matrix",
+        ))
+    if findings:
+        result.append(FindingsOverviewContent(
+            title="核心结论",
+            findings=findings,
+            slide_id="conclusion_overview",
+            chapter="结论与建议",
         ))
     recommendations = [
         RecommendationItem(
@@ -1376,30 +1382,41 @@ def _build_multi_group_bar_page(
     )
 
 
-def _build_toc(renderable: list, source: str) -> TocContent:
-    """构建精简目录（对齐 skill 规范：项目概述 / 主要研究发现 / 结论与建议）。
-
-    主要研究发现下按题目关键词自动归入子模块（用户画像 / 消费行为 /
-    品牌与满意度 / 专项研究），每个子模块标注题目数量。
-    """
-    modules: dict = {}
-    for q in renderable:
-        m = _categorize_question(q)
-        modules.setdefault(m, []).append(q)
+def _build_toc(report_pages: list, source: str) -> TocContent:
+    """Build the TOC from the final report page order for every workflow."""
+    modules: dict[str, list[str]] = {}
+    for page in report_pages:
+        if isinstance(page, (
+            ResearchOverviewContent,
+            SectionDividerContent,
+            FindingsOverviewContent,
+            OpportunityMatrixContent,
+            RecommendationContent,
+        )):
+            continue
+        chapter = str(getattr(page, "chapter", "") or "其他研究").strip()
+        if not chapter or any(
+            term in chapter
+            for term in ("项目概述", "主要研究发现", "结论与建议", "附录")
+        ):
+            continue
+        modules.setdefault(chapter, [])
+        modules[chapter].extend(_page_question_ids(page))
 
     sections = [
         "一、项目概述",
         "二、主要研究发现",
     ]
-    # 子模块按题目数降序排列（信息量大的放前面）
-    for mod_name, mod_qs in sorted(modules.items(), key=lambda x: -len(x[1])):
-        label = f"  {mod_name}（{len(mod_qs)}题）"
+    for module_name, question_ids in modules.items():
+        question_count = len(list(dict.fromkeys(question_ids)))
+        label = (
+            f"  {module_name}（{question_count}题）"
+            if question_count
+            else f"  {module_name}"
+        )
         sections.append(label)
     sections.append("三、结论与建议")
-    if any(_is_appendix(q) for q in renderable):  # 实际由 appendix_qs 判定
-        pass  # 附录不在 TOC 中单独列出（skill 规范）
     return TocContent(sections=sections)
-
 
 def build_auto_report(
     questions: list,
@@ -1669,7 +1686,7 @@ def build_auto_report(
     appendix = _build_appendix(appendix_qs, source)
 
     # 精简目录：项目概述 / 主要研究发现（含子模块）/ 结论与建议
-    toc = _build_toc(renderable, source)
+    toc = _build_toc(chart_pages, source)
 
     return ReportSpec(
         cover=CoverContent(title=title, client=client, date=date, subtitle=subtitle),

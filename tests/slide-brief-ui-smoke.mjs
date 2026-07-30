@@ -124,9 +124,10 @@ const projectionContext = vm.createContext({ result: null, plan: {
 vm.runInContext(app.slice(projectionStart, projectionEnd) + "; result = getPptxOutputPageProjection(plan);", projectionContext);
 assert.equal(projectionContext.result.analysisPages, 3);
 assert.equal(projectionContext.result.sectionPages, 3);
-assert.equal(projectionContext.result.fixedSystemPages, 8);
-assert.equal(projectionContext.result.totalPages, 14);
-assert.deepEqual(Array.from(projectionContext.result.contentSlideNumbers), [7, 9, 11]);
+assert.equal(projectionContext.result.fixedSystemPages, 7);
+assert.equal(projectionContext.result.totalPages, 13);
+assert.deepEqual(Array.from(projectionContext.result.contentSlideNumbers), [6, 8, 10]);
+assert.deepEqual(Array.from(projectionContext.result.systemPageLabels), ["封面", "目录", "执行摘要", "研究概览", "核心结论", "行动建议", "附录"]);
 
 const quickStart = app.indexOf("async function generatePptxQuickAiReport()");
 const workflowDispatchStart = app.indexOf("function runSelectedPptxAiWorkflow()", quickStart);

@@ -13245,14 +13245,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const hasFindings = Array.isArray(plan?.global_findings)
         ? plan.global_findings.length > 0
         : pages.length > 0;
-      const hasOpportunity = Array.isArray(plan?.data_facts) && plan.data_facts.some((fact) =>
-        ["segment_gap", "benchmark_gap", "bottom_rank"].includes(fact?.fact_type)
-        && fact?.value !== null
-        && fact?.value !== undefined
-      );
       const hasRecommendations = hasFindings;
       const hasAppendix = Number(plan?.appendix?.count || 0) > 0;
-      const preContentPages = 4 + (hasFindings ? 1 : 0);
+      const preContentPages = 4;
       const templateSections = plan?.template_structure_reused
         ? (plan?.template_report_structure?.sections || [])
         : [];
@@ -13289,12 +13284,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         }
         return preContentPages + sectionPages + index + 1;
       });
-      if (conclusionSection && (hasOpportunity || hasRecommendations)
+      if (conclusionSection && hasRecommendations
           && previousChapter !== String(conclusionSection.title || "")) {
         sectionPages += 1;
       }
       const fixedSystemPages = preContentPages
-        + (hasOpportunity ? 1 : 0)
+        + (hasFindings ? 1 : 0)
         + (hasRecommendations ? 1 : 0)
         + (hasAppendix ? 1 : 0);
       const systemPageLabels = [
@@ -13302,8 +13297,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         "目录",
         "执行摘要",
         "研究概览",
-        ...(hasFindings ? ["核心发现总览"] : []),
-        ...(hasOpportunity ? ["优先机会"] : []),
+        ...(hasFindings ? ["核心结论"] : []),
         ...(hasRecommendations ? ["行动建议"] : []),
         ...(hasAppendix ? ["附录"] : []),
       ];

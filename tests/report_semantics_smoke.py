@@ -29,7 +29,7 @@ from pptx_report.pages import (
 from pptx_report.renderer import ReportRenderer
 from pptx_report.theme import Theme
 from pptx_report.report_templates import select_report_template
-from pptx_report.wizard import _enhance_report_pages
+from pptx_report.wizard import _build_toc, _enhance_report_pages
 
 
 def check_facts():
@@ -284,7 +284,7 @@ def check_rendered_page_families():
             shutil.copy2(output, target)
 
 
-def check_comparable_opportunity_matrix():
+def check_optional_opportunity_matrix_and_conclusion():
     chart = ChartSpec(
         "Purchase intent", ChartType.BAR,
         ["Definitely buy", "Probably buy", "Unsure", "Probably not", "Definitely not"],
@@ -309,7 +309,9 @@ def check_comparable_opportunity_matrix():
         },
     ]
     facts = []
-    for index, (category, value, gap) in enumerate(zip(chart.categories, [40, 32, 16, 8, 4], [20, 2, -9, -7, -6])):
+    for index, (category, value, gap) in enumerate(zip(
+        chart.categories, [40, 32, 16, 8, 4], [20, 2, -9, -7, -6]
+    )):
         facts.append(DataFact(
             fact_id=f"Q1_gap_{index}", fact_type="segment_gap", question_id="Q1",
             metric_name="percentage", category=category, segment="Target",
@@ -329,13 +331,42 @@ def check_comparable_opportunity_matrix():
     enhanced, _ = _enhance_report_pages(
         [page], questions, facts, [finding], "source.xlsx"
     )
-    matrix = next(item for item in enhanced if isinstance(item, OpportunityMatrixContent))
+    assert not any(isinstance(item, OpportunityMatrixContent) for item in enhanced)
+    conclusion = next(item for item in enhanced if isinstance(item, FindingsOverviewContent))
+    assert conclusion.title == "核心结论"
+    assert sum(isinstance(item, FindingsOverviewContent) for item in enhanced) == 1
+
+    with_matrix, _ = _enhance_report_pages(
+        [page], questions, facts, [finding], "source.xlsx",
+        page_config={"include_opportunity_matrix": True},
+    )
+    matrix = next(item for item in with_matrix if isinstance(item, OpportunityMatrixContent))
     matrix_fact_ids = [fact_id for item in matrix.opportunities for fact_id in item.fact_ids]
     assert len(matrix.opportunities) >= 4
     assert all(fact_id.startswith("Q1_gap_") for fact_id in matrix_fact_ids)
     assert matrix.title.startswith("Purchase intent")
     overview = next(item for item in enhanced if isinstance(item, ResearchOverviewContent))
     assert overview.segment_count == 2
+
+
+def check_toc_follows_final_page_order():
+    first = ChartPageContent("Concept result", charts=[ChartSpec(
+        "Concept", ChartType.BAR, ["A", "B"], [Series("Total", [60, 40])],
+        evidence_question_ids=["C1", "C2"],
+    )], chapter="概念测试")
+    second = ChartPageContent("Audience", charts=[ChartSpec(
+        "Audience", ChartType.BAR, ["A", "B"], [Series("Total", [55, 45])],
+        evidence_question_ids=["D1"],
+    )], chapter="用户画像")
+    toc = _build_toc([second, first], "source.xlsx")
+    assert toc.sections == [
+        "一、项目概述",
+        "二、主要研究发现",
+        "  用户画像（1题）",
+        "  概念测试（2题）",
+        "三、结论与建议",
+    ]
+
 def check_summary_toc_appendix_layouts():
     prs = Presentation()
     prs.slide_width = Inches(13.333)
@@ -424,7 +455,8 @@ def main():
     check_template_structure_sections()
     check_template_subsection_sections()
     check_rendered_page_families()
-    check_comparable_opportunity_matrix()
+    check_optional_opportunity_matrix_and_conclusion()
+    check_toc_follows_final_page_order()
     check_summary_toc_appendix_layouts()
     print("report semantics smoke: ok")
 
