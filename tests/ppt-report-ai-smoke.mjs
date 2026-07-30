@@ -56,6 +56,18 @@ assert.equal(ai.REPAIR_BATCH_SIZE, 2);
 assert.equal(ai.SLIDE_BRIEF_CONCURRENCY, 3);
 assert.equal(ai.SLIDE_BRIEF_TIMEOUT_MS, 150000);
 assert.equal(ai.SLIDE_BRIEF_REPAIR_TIMEOUT_MS, 90000);
+assert.deepEqual(
+  Array.from(ai.chapterAnalysisDimensions({
+    baseline_dimension: "总体",
+    primary_dimensions: ["购买意向"],
+    supporting_dimensions: ["孩子年龄"],
+  })),
+  ["购买意向", "孩子年龄"],
+);
+assert.deepEqual(
+  Array.from(ai.chapterAnalysisDimensions({ baseline_dimension: "总体" })),
+  ["总体"],
+);
 const chapterBatches = ai.chunkPagesByChapter(reportContext.pages, 6);
 assert.deepEqual(Array.from(chapterBatches, (batch) => batch.length), [1, 1, 2, 2]);
 assert.ok(Array.from(chapterBatches).every((batch) => new Set(Array.from(batch, (page) => page.chapter)).size === 1));

@@ -15867,9 +15867,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       let changed = 0;
       (reportNarrative?.chapters || []).forEach((chapter) => {
         const strategy = chapter?.analysis_strategy || {};
-        const primary = normalizePptxDimensions(strategy.primary_dimensions || []);
-        const baseline = normalizePptxDimensions([strategy.baseline_dimension || "总体"]);
-        const chapterDefault = (strategy.primary_dimensions || []).length ? primary : baseline;
+        const chapterDefault = normalizePptxDimensions(
+          window.PptReportAi.chapterAnalysisDimensions(strategy)
+        );
         const overrides = new Map((strategy.page_dimension_plan || []).map((item) => [
           Number(item.page_idx), normalizePptxDimensions(item.dimensions),
         ]));
@@ -15911,6 +15911,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         return {
           ...page,
           chapter: currentPage?.chapter || page.chapter,
+          selected_dimensions: currentPage?.selected_dimensions || page.selected_dimensions,
+          dimension_mode: currentPage?.dimension_mode || page.dimension_mode,
+          dimension_key: currentPage?.dimension_key || page.dimension_key,
+          dimension_strategy_source: currentPage?.dimension_strategy_source || page.dimension_strategy_source,
           slide_brief: currentPage?.slide_brief || page.slide_brief || {},
         };
       });

@@ -49,6 +49,16 @@
     return Array.from(new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean)));
   }
 
+  function chapterAnalysisDimensions(strategy = {}) {
+    const comparisonDimensions = uniqueStrings([
+      ...(strategy.primary_dimensions || []),
+      ...(strategy.supporting_dimensions || []),
+    ]).filter((dimension) => dimension !== "总体").slice(0, 2);
+    return comparisonDimensions.length
+      ? comparisonDimensions
+      : uniqueStrings([strategy.baseline_dimension || "总体"]).slice(0, 1);
+  }
+
   function parseJsonObject(output) {
     const text = String(output || "").trim();
     const jsonText = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]
@@ -668,6 +678,7 @@
     buildNarrativeInput,
     buildPageBatchInput,
     buildPageNarrativeContext,
+    chapterAnalysisDimensions,
     buildReportNarrativeInput,
     chunkPages,
     chunkPagesByChapter,
