@@ -14675,10 +14675,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               <span class="pptx-preview-page-number">分析页 ${p.page_idx}</span>
               <span class="pptx-preview-output-number">PPT 第 ${outputProjection.contentSlideNumbers[idx]} 页</span>
               <span class="pptx-preview-page-title">${escapeHtml(p.insight_override || brief.title || p.title || "未命名页面")}</span>
-              <span class="pptx-preview-page-type">${escapeHtml(typeLabel || "自动匹配")}</span>
-              ${brief.user_modified ? `<span class="pptx-brief-badge modified">用户已修改</span>` : ""}
-              ${isLocked ? `<span class="pptx-brief-badge locked">已锁定</span>` : ""}
-              ${p.copy_state === "stale" || p.dimension_copy_stale ? `<span class="pptx-brief-badge modified">文字待同步</span>` : ""}
+              <span class="pptx-preview-page-meta">
+                <span class="pptx-preview-page-type">${escapeHtml(typeLabel || "自动匹配")}</span>
+                ${brief.user_modified ? `<span class="pptx-brief-badge modified">用户已修改</span>` : ""}
+                ${isLocked ? `<span class="pptx-brief-badge locked">已锁定</span>` : ""}
+                ${p.copy_state === "stale" || p.dimension_copy_stale ? `<span class="pptx-brief-badge modified">文字待同步</span>` : ""}
+              </span>
             </summary>
             <div class="pptx-preview-page-body">
               ${p.copy_state === "stale" || p.dimension_copy_stale ? `<div class="pptx-narrative-fallback pptx-preview-field-wide"><strong>分析维度已变化</strong><p>图表证据正在刷新；AI文字同步完成前不会沿用旧维度结论。</p></div>` : ""}

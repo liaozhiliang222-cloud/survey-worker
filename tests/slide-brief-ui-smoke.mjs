@@ -14,6 +14,10 @@ for (const field of ["slide_type", "layout_family", "slide_locked"]) {
 }
 assert.doesNotMatch(app, /data-field="slide_claim"/);
 assert.doesNotMatch(app, /data-field="insight_bullets"/);
+assert.match(app, /class="pptx-preview-page-meta"/);
+const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+assert.match(styles, /grid-template-areas: "toggle drag page output title meta"/);
+assert.match(styles, /"toggle drag page output"[\s\S]*"\. \. title title"[\s\S]*"\. \. meta meta"/);
 for (const mapping of [
   '["segment_comparison", "人群对比"]',
   '["key_finding", "核心发现"]',

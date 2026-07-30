@@ -2550,7 +2550,8 @@ tr:last-child td {
 
 .pptx-preview-page > summary {
   display: grid;
-  grid-template-columns: auto auto auto minmax(0, 1fr) auto;
+  grid-template-columns: auto 22px auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "toggle drag page output title meta";
   align-items: center;
   gap: 9px;
   padding: 10px 12px;
@@ -2560,6 +2561,9 @@ tr:last-child td {
   background: #f8fafc;
 }
 
+.pptx-preview-page > summary::before { grid-area: toggle; }
+.pptx-page-drag-handle { grid-area: drag; }
+
 .pptx-preview-page-number,
 .pptx-preview-output-number {
   flex: 0 0 auto;
@@ -2567,12 +2571,14 @@ tr:last-child td {
 }
 
 .pptx-preview-page-number {
+  grid-area: page;
   color: #64748b;
   font-size: 12px;
   font-weight: 700;
 }
 
 .pptx-preview-output-number {
+  grid-area: output;
   padding: 2px 7px;
   border-radius: 999px;
   background: #dbeafe;
@@ -2582,12 +2588,36 @@ tr:last-child td {
 }
 
 .pptx-preview-page-title {
+  grid-area: title;
+  min-width: 0;
   overflow: hidden;
   color: #1e293b;
   font-size: 13px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pptx-preview-page-meta {
+  grid-area: meta;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+@media (max-width: 760px) {
+  .pptx-preview-page > summary {
+    grid-template-columns: auto 22px auto minmax(0, 1fr);
+    grid-template-areas:
+      "toggle drag page output"
+      ". . title title"
+      ". . meta meta";
+    gap: 6px 8px;
+  }
+  .pptx-preview-page-meta { justify-content: flex-start; }
 }
 
 .pptx-preview-page-body {
