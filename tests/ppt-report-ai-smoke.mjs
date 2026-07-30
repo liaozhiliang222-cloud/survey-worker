@@ -51,8 +51,11 @@ const reportContext = {
 
 assert.deepEqual(Array.from(ai.chunkPages(reportContext.pages, 2), (batch) => batch.length), [3, 3]);
 assert.deepEqual(Array.from(ai.chunkPages(reportContext.pages, 9), (batch) => batch.length), [6]);
-assert.equal(ai.DEFAULT_BATCH_SIZE, 6);
-assert.equal(ai.SLIDE_BRIEF_CONCURRENCY, 2);
+assert.equal(ai.DEFAULT_BATCH_SIZE, 4);
+assert.equal(ai.REPAIR_BATCH_SIZE, 2);
+assert.equal(ai.SLIDE_BRIEF_CONCURRENCY, 3);
+assert.equal(ai.SLIDE_BRIEF_TIMEOUT_MS, 150000);
+assert.equal(ai.SLIDE_BRIEF_REPAIR_TIMEOUT_MS, 90000);
 const chapterBatches = ai.chunkPagesByChapter(reportContext.pages, 6);
 assert.deepEqual(Array.from(chapterBatches, (batch) => batch.length), [1, 1, 2, 2]);
 assert.ok(Array.from(chapterBatches).every((batch) => new Set(Array.from(batch, (page) => page.chapter)).size === 1));
@@ -66,8 +69,12 @@ const largePlan = Array.from({ length: 84 }, (_, index) => ({
   chapter: `章节${Math.floor(index / 21) + 1}`,
 }));
 const largePlanBatches = ai.chunkPagesByChapter(largePlan, 6);
-assert.equal(largePlanBatches.length, 16);
-assert.ok(Array.from(largePlanBatches).every((batch) => batch.length <= 6));
+assert.equal(largePlanBatches.length, 24);
+assert.ok(Array.from(largePlanBatches).every((batch) => batch.length <= 4));
+assert.deepEqual(
+  Array.from(ai.chunkRepairPages(largePlan.slice(0, 5), 9), (batch) => batch.length),
+  [2, 2, 1]
+);
 
 const narrative = ai.validateNarrative({
   findings: [{
@@ -114,6 +121,26 @@ assert.equal(batchInput.pages[0].questions[0].facts[0].value, 42.5);
 assert.equal(batchInput.pages[0].questions[0].rows[0].values["总体"], 42.5);
 assert.equal(batchInput.pages[0].questions[0].facts[0].source_reference, undefined);
 assert.doesNotMatch(JSON.stringify(batchInput), /"slide_brief":|"page_contexts":|"narrative_context":|"report_narrative":/);
+const compactBatchInput = ai.buildPageBatchInput([{
+  page_idx: 7,
+  chapter: "测试章节",
+  evidence_fact_ids: ["F_KEEP"],
+  questions: [{
+    code: "Q7",
+    title: "测试题",
+    rows: [
+      { option: "保留选项", values: { 总体: 61 } },
+      { option: "无关选项", values: { 总体: 39 } },
+    ],
+    facts: [
+      { fact_id: "F_KEEP", category: "保留选项", value: 61, source_reference: "Q7.保留选项" },
+      { fact_id: "F_DROP", category: "无关选项", value: 39, source_reference: "Q7.无关选项" },
+    ],
+  }],
+}], narrative);
+assert.deepEqual(Array.from(compactBatchInput.pages[0].questions[0].facts, (fact) => fact.fact_id), ["F_KEEP"]);
+assert.deepEqual(Array.from(compactBatchInput.pages[0].questions[0].rows, (row) => row.option), ["保留选项"]);
+assert.equal(compactBatchInput.pages[0].questions[0].facts[0].source_reference, undefined);
 const reportNarrative = ai.validateReportNarrative({
   report_title: "年轻用户手机购买体验研究",
   central_thesis: "年轻用户的购买阻碍主要来自价值感知与决策确定性不足，而非价格本身。",

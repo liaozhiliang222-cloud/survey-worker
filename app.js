@@ -15893,10 +15893,13 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const settings = loadAiSettings();
       const errors = validateAiSettings(settings);
       if (settings.mode === "local" || errors.length) throw new Error(errors.join("；"));
+      const workflowStartedAt = Date.now();
       const aiPlanner = window.PptReportAi;
       const dimensionChanges = options.applyDimensionPlan === false ? 0 : applyNarrativeDimensionStrategy(reportNarrative);
       if (dimensionChanges) lastPptxInsightContext = null;
+      const contextStartedAt = Date.now();
       const context = lastPptxInsightContext || await requestPptxInsightContext();
+      const contextSeconds = Math.max(0, (Date.now() - contextStartedAt) / 1000);
       lastPptxInsightContext = context;
       ensureStableSlideBriefs();
 
@@ -15946,24 +15949,43 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         lastPptxInsightContext = null;
       };
       const targetSlideIds = options.targetSlideIds ? new Set(options.targetSlideIds) : null;
-      const writablePages = aiPlanner.filterWritablePages(contextPages)
+      const candidatePages = aiPlanner.filterWritablePages(contextPages)
         .filter((page) => !targetSlideIds || targetSlideIds.has(pptxPageStableId(page)));
+      const noEvidencePages = candidatePages.filter(
+        (page) => !(page.evidence_fact_ids || []).length
+      );
+      const writablePages = candidatePages.filter(
+        (page) => (page.evidence_fact_ids || []).length
+      );
       const batches = aiPlanner.chunkPagesByChapter(writablePages, aiPlanner.DEFAULT_BATCH_SIZE);
       const concurrency = aiPlanner.SLIDE_BRIEF_CONCURRENCY;
-      const startedAt = Date.now();
+      const aiStartedAt = Date.now();
       let inputCharacters = 0;
       let retriedPages = 0;
+      let initialSeconds = 0;
+      let repairSeconds = 0;
+      let repairBatchCount = 0;
+      let failureReasonCounts = {};
 
       if (!batches.length) {
         lastPptxSlideBriefStats = {
           elapsed_seconds: 0,
+          workflow_seconds: Math.max(0, (Date.now() - workflowStartedAt) / 1000),
+          context_seconds: contextSeconds,
+          initial_seconds: 0,
+          repair_seconds: 0,
           total_pages: contextPages.length,
+          candidate_pages: candidatePages.length,
           writable_pages: 0,
-          skipped_pages: contextPages.length,
+          skipped_pages: contextPages.length - candidatePages.length,
+          no_evidence_pages: noEvidencePages.length,
           batch_count: 0,
+          repair_batch_count: 0,
+          request_count: 0,
           concurrency,
           retried_pages: 0,
           failed_pages: 0,
+          failure_reason_counts: {},
           input_characters: 0,
         };
         editedPagePlan.report_narrative = reportNarrative;
@@ -15984,78 +16006,139 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         return 0;
       }
 
-      aiWriteStatus.textContent = `正在并发生成 0/${batches.length} 批 SlideBrief（每批最多 ${aiPlanner.DEFAULT_BATCH_SIZE} 页，并发 ${concurrency}）…`;
+      const classifyFailure = (error) => {
+        const message = String(error?.message || error || "").toLowerCase();
+        if (/超时|timeout|abort/.test(message)) return "timeout";
+        if (/balance|余额|quota|insufficient/.test(message)) return "insufficient_balance";
+        if (/json|unexpected token|parse/.test(message)) return "invalid_json";
+        if (/slide_id|证据|evidence|title/.test(message)) return "invalid_output";
+        return "api_error";
+      };
 
-      const batchResults = await aiPlanner.mapWithConcurrency(
+      const requestPages = async (targetPages, phase, requestIndex) => {
+        const repairMode = phase === "repair";
+        const firstPageIndex = contextPages.findIndex(
+          (page) => pptxPageStableId(page) === pptxPageStableId(targetPages[0])
+        );
+        const previousPage = firstPageIndex > 0 ? contextPages[firstPageIndex - 1] : null;
+        const batchInput = aiPlanner.buildPageBatchInput(
+          targetPages, reportNarrative, previousPage, contextPages
+        );
+        if (repairMode) {
+          batchInput.repair_instruction = "仅补齐这些缺失页面；逐页原样返回 slide_id；只返回 pages JSON。";
+        }
+        const userContent = JSON.stringify(batchInput);
+        inputCharacters += userContent.length;
+        try {
+          const output = await callAiChatCompletion(settings, [
+            { role: "system", content: aiPlanner.SLIDE_BRIEF_SYSTEM_PROMPT },
+            { role: "user", content: userContent },
+          ], {
+            maxTokens: 5000,
+            timeoutMs: repairMode
+              ? aiPlanner.SLIDE_BRIEF_REPAIR_TIMEOUT_MS
+              : aiPlanner.SLIDE_BRIEF_TIMEOUT_MS,
+            temperature: repairMode ? 0 : 0.12,
+            responseFormat: "json_object",
+            stream: false,
+          });
+          return {
+            pages: aiPlanner.validatePageOutput(
+              aiPlanner.parseJsonObject(output), targetPages, { requireSlideId: true }
+            ),
+            error_type: "",
+            error_message: "",
+            target_pages: targetPages,
+          };
+        } catch (error) {
+          const errorType = classifyFailure(error);
+          console.warn(`SlideBrief ${phase} ${requestIndex + 1}:`, error);
+          return {
+            pages: [],
+            error_type: errorType,
+            error_message: String(error?.message || error || "AI 请求失败"),
+            target_pages: targetPages,
+          };
+        }
+      };
+
+      aiWriteStatus.textContent = `正在生成 0/${batches.length} 批 SlideBrief（每批最多 ${aiPlanner.DEFAULT_BATCH_SIZE} 页，并发 ${concurrency}）…`;
+      const initialStartedAt = Date.now();
+      const initialResults = await aiPlanner.mapWithConcurrency(
         batches,
         concurrency,
-        async (batch, batchIndex) => {
-          const firstPageIndex = contextPages.findIndex(
-            (page) => pptxPageStableId(page) === pptxPageStableId(batch[0])
-          );
-          const previousPage = firstPageIndex > 0 ? contextPages[firstPageIndex - 1] : null;
-
-          const requestPages = async (targetPages, repairMode = false) => {
-            const batchInput = aiPlanner.buildPageBatchInput(
-              targetPages, reportNarrative, previousPage, contextPages
-            );
-            if (repairMode) {
-              batchInput.repair_instruction = "仅补齐这些缺失页面；严格返回 pages JSON，不要重复其他页面。";
-            }
-            const userContent = JSON.stringify(batchInput);
-            inputCharacters += userContent.length;
-            try {
-              const output = await callAiChatCompletion(settings, [
-                { role: "system", content: aiPlanner.SLIDE_BRIEF_SYSTEM_PROMPT },
-                { role: "user", content: userContent },
-              ], {
-                maxTokens: 5000,
-                timeoutMs: 240000,
-                temperature: repairMode ? 0 : 0.12,
-                responseFormat: "json_object",
-                stream: false,
-              });
-              return aiPlanner.validatePageOutput(
-                aiPlanner.parseJsonObject(output), targetPages, { requireSlideId: true }
-              );
-            } catch (error) {
-              console.warn(`SlideBrief batch ${batchIndex + 1}${repairMode ? " repair" : ""}:`, error);
-              return [];
-            }
-          };
-
-          const initialPages = await requestPages(batch);
-          const generatedById = new Map(
-            initialPages.map((page) => [pptxPageStableId(page), page])
-          );
-          const missingPages = batch.filter(
-            (page) => !generatedById.has(pptxPageStableId(page))
-          );
-          if (missingPages.length) {
-            retriedPages += missingPages.length;
-            const repairedPages = await requestPages(missingPages, true);
-            repairedPages.forEach((page) => generatedById.set(pptxPageStableId(page), page));
-          }
-          const unresolvedPages = batch.filter(
-            (page) => !generatedById.has(pptxPageStableId(page))
-          );
-          return {
-            pages: Array.from(generatedById.values()),
-            unresolved_page_idxs: unresolvedPages.map((page) => Number(page.page_idx)),
-          };
-        },
+        (batch, batchIndex) => requestPages(batch, "initial", batchIndex),
         (completed, total) => {
-          const briefProgress = 10 + (completed / Math.max(1, total)) * 80;
-          setPptxProgress(briefProgress, `正在按故事线重构蓝图：${completed}/${total} 批`, "AI 蓝图");
-          aiWriteStatus.textContent = `正在按新章节生成并重排蓝图 ${completed}/${total} 批（每批最多 ${aiPlanner.DEFAULT_BATCH_SIZE} 页，并发 ${concurrency}）…`;
+          const briefProgress = 10 + (completed / Math.max(1, total)) * 52;
+          setPptxProgress(briefProgress, `正在生成页面蓝图：${completed}/${total} 批`, "AI 蓝图");
+          aiWriteStatus.textContent = `正在生成页面蓝图 ${completed}/${total} 批（每批最多 ${aiPlanner.DEFAULT_BATCH_SIZE} 页，并发 ${concurrency}）…`;
         }
       );
+      initialSeconds = Math.max(0, (Date.now() - initialStartedAt) / 1000);
 
-      const generated = batchResults.flatMap((result) => result.pages || []);
-      const failedPageIndexes = batchResults.flatMap(
-        (result) => result.unresolved_page_idxs || []
+      const generatedByStableId = new Map();
+      const initialFailureById = new Map();
+      const initialMissingPages = [];
+      initialResults.forEach((result) => {
+        (result.pages || []).forEach((page) => {
+          generatedByStableId.set(pptxPageStableId(page), page);
+        });
+        (result.target_pages || []).forEach((page) => {
+          const pageId = pptxPageStableId(page);
+          if (generatedByStableId.has(pageId)) return;
+          initialMissingPages.push(page);
+          initialFailureById.set(pageId, result.error_type || "invalid_output");
+        });
+      });
+
+      retriedPages = initialMissingPages.length;
+      const repairBatches = aiPlanner.chunkRepairPages(
+        initialMissingPages, aiPlanner.REPAIR_BATCH_SIZE
       );
+      repairBatchCount = repairBatches.length;
+      const repairFailureById = new Map();
+      if (repairBatches.length) {
+        aiWriteStatus.textContent = `初写完成，正在小批补写 0/${repairBatches.length} 批（每批最多 ${aiPlanner.REPAIR_BATCH_SIZE} 页）…`;
+        const repairStartedAt = Date.now();
+        const repairResults = await aiPlanner.mapWithConcurrency(
+          repairBatches,
+          concurrency,
+          (batch, batchIndex) => requestPages(batch, "repair", batchIndex),
+          (completed, total) => {
+            const repairProgress = 64 + (completed / Math.max(1, total)) * 24;
+            setPptxProgress(repairProgress, `正在补写缺失页面：${completed}/${total} 批`, "AI 蓝图");
+            aiWriteStatus.textContent = `正在小批补写 ${completed}/${total} 批（每批最多 ${aiPlanner.REPAIR_BATCH_SIZE} 页，并发 ${concurrency}）…`;
+          }
+        );
+        repairSeconds = Math.max(0, (Date.now() - repairStartedAt) / 1000);
+        repairResults.forEach((result) => {
+          (result.pages || []).forEach((page) => {
+            generatedByStableId.set(pptxPageStableId(page), page);
+          });
+          (result.target_pages || []).forEach((page) => {
+            const pageId = pptxPageStableId(page);
+            if (!generatedByStableId.has(pageId)) {
+              repairFailureById.set(
+                pageId,
+                result.error_type || initialFailureById.get(pageId) || "invalid_output"
+              );
+            }
+          });
+        });
+      }
 
+      const failedPages = initialMissingPages.filter(
+        (page) => !generatedByStableId.has(pptxPageStableId(page))
+      );
+      failedPages.forEach((page) => {
+        const pageId = pptxPageStableId(page);
+        const reason = repairFailureById.get(pageId)
+          || initialFailureById.get(pageId)
+          || "invalid_output";
+        failureReasonCounts[reason] = (failureReasonCounts[reason] || 0) + 1;
+      });
+      const generated = Array.from(generatedByStableId.values());
+      const failedPageIndexes = failedPages.map((page) => Number(page.page_idx));
       const generatedById = new Map(generated.map((page) => [pptxPageStableId(page), page]));
       let applied = 0;
       editedPagePlan.pages.forEach((page) => {
@@ -16132,14 +16215,25 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       renderPreviewTable(editedPagePlan);
 
       lastPptxSlideBriefStats = {
-        elapsed_seconds: Math.max(0, (Date.now() - startedAt) / 1000),
+        elapsed_seconds: Math.max(0, (Date.now() - aiStartedAt) / 1000),
+        workflow_seconds: Math.max(0, (Date.now() - workflowStartedAt) / 1000),
+        context_seconds: contextSeconds,
+        initial_seconds: initialSeconds,
+        repair_seconds: repairSeconds,
         total_pages: contextPages.length,
+        candidate_pages: candidatePages.length,
         writable_pages: writablePages.length,
-        skipped_pages: contextPages.length - writablePages.length,
+        skipped_pages: contextPages.length - candidatePages.length,
+        no_evidence_pages: noEvidencePages.length,
+        generated_pages: generated.length,
+        applied_pages: applied,
         batch_count: batches.length,
+        repair_batch_count: repairBatchCount,
+        request_count: batches.length + repairBatchCount,
         concurrency,
         retried_pages: retriedPages,
         failed_pages: failedPageIndexes.length,
+        failure_reason_counts: failureReasonCounts,
         input_characters: inputCharacters,
       };
       console.info("SlideBrief generation stats", lastPptxSlideBriefStats);
@@ -16353,8 +16447,21 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         setPptxProgress(94, "章节与页面顺序已重组，正在保存", "AI 蓝图");
         await persistSlideBriefBlueprint();
         const stats = lastPptxSlideBriefStats;
+        const reasonLabels = {
+          timeout: "请求超时",
+          insufficient_balance: "余额或额度不足",
+          invalid_json: "JSON 格式异常",
+          invalid_output: "缺页或页面 ID 无效",
+          api_error: "API 请求异常",
+        };
+        const failureBreakdown = stats?.failure_reason_counts
+          ? Object.entries(stats.failure_reason_counts)
+            .filter(([, count]) => Number(count) > 0)
+            .map(([reason, count]) => `${reasonLabels[reason] || reason} ${count} 页`)
+            .join("、")
+          : "";
         const performanceText = stats
-          ? `；耗时 ${stats.elapsed_seconds.toFixed(1)} 秒，${stats.batch_count} 批/并发 ${stats.concurrency}${stats.retried_pages ? `，补写 ${stats.retried_pages} 页` : ""}${stats.failed_pages ? `，${stats.failed_pages} 页降级` : ""}`
+          ? `；总耗时 ${(stats.workflow_seconds ?? stats.elapsed_seconds).toFixed(1)} 秒（证据 ${(stats.context_seconds || 0).toFixed(1)} 秒、初写 ${(stats.initial_seconds || 0).toFixed(1)} 秒、补写 ${(stats.repair_seconds || 0).toFixed(1)} 秒），初写 ${stats.batch_count} 批 + 补写 ${stats.repair_batch_count || 0} 批/并发 ${stats.concurrency}${stats.no_evidence_pages ? `，${stats.no_evidence_pages} 页无事实证据直接使用确定性文案` : ""}${stats.failed_pages ? `，${stats.failed_pages} 页降级${failureBreakdown ? `（${failureBreakdown}）` : ""}` : ""}`
           : "";
         const narrativeProjection = getPptxOutputPageProjection(editedPagePlan);
         const message = pendingReportNarrative

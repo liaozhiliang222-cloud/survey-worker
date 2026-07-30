@@ -1,8 +1,11 @@
 (function initPptReportAi(root) {
   "use strict";
 
-  const DEFAULT_BATCH_SIZE = 6;
-  const SLIDE_BRIEF_CONCURRENCY = 2;
+  const DEFAULT_BATCH_SIZE = 4;
+  const REPAIR_BATCH_SIZE = 2;
+  const SLIDE_BRIEF_CONCURRENCY = 3;
+  const SLIDE_BRIEF_TIMEOUT_MS = 150000;
+  const SLIDE_BRIEF_REPAIR_TIMEOUT_MS = 90000;
   const REPORT_STORYLINE_TYPES = [
     "problem_solution",
     "user_journey",
@@ -64,7 +67,7 @@
   }
 
   function chunkPagesByChapter(pages, requestedSize = DEFAULT_BATCH_SIZE) {
-    const size = Math.max(3, Math.min(6, Number(requestedSize) || DEFAULT_BATCH_SIZE));
+    const size = Math.max(2, Math.min(4, Number(requestedSize) || DEFAULT_BATCH_SIZE));
     const result = [];
     let current = [];
     let chapter = "";
@@ -81,6 +84,14 @@
     return result;
   }
 
+  function chunkRepairPages(pages, requestedSize = REPAIR_BATCH_SIZE) {
+    const size = Math.max(1, Math.min(2, Number(requestedSize) || REPAIR_BATCH_SIZE));
+    const result = [];
+    for (let index = 0; index < (pages || []).length; index += size) {
+      result.push(pages.slice(index, index + size));
+    }
+    return result;
+  }
   function filterWritablePages(pages) {
     return (pages || []).filter((page) => {
       const brief = page?.slide_brief || {};
@@ -131,7 +142,22 @@
     return result;
   }
 
-  function compactQuestion(question) {
+  function compactQuestion(question, evidenceFactIds = []) {
+    const evidenceSet = new Set(uniqueStrings(evidenceFactIds));
+    const allFacts = Array.isArray(question?.facts) ? question.facts : [];
+    const matchedFacts = evidenceSet.size
+      ? allFacts.filter((fact) => evidenceSet.has(String(fact?.fact_id || "")))
+      : [];
+    const selectedFacts = (matchedFacts.length ? matchedFacts : allFacts.slice(0, 10));
+    const evidenceLabels = new Set(selectedFacts.flatMap((fact) => [
+      String(fact?.category || "").trim(),
+      String(fact?.metric_name || "").trim(),
+    ]).filter(Boolean));
+    const allRows = Array.isArray(question?.rows) ? question.rows : [];
+    const matchedRows = evidenceLabels.size
+      ? allRows.filter((row) => evidenceLabels.has(String(row?.option || "").trim()))
+      : [];
+    const selectedRows = (matchedRows.length ? matchedRows : allRows).slice(0, 12);
     return {
       code: String(question?.code || ""),
       title: String(question?.title || ""),
@@ -139,13 +165,14 @@
       model_semantics: question?.model_semantics || {},
       data_quality_warnings: question?.data_quality_warnings || [],
       base: question?.base || {},
-      rows: (question?.rows || []).map((row) => ({
+      rows: selectedRows.map((row) => ({
         option: String(row?.option || ""),
         values: row?.values || {},
       })),
-      facts: (question?.facts || []).map(compactFact),
+      facts: selectedFacts.map(compactFact),
     };
   }
+
   function buildNarrativeInput(context) {
     return {
       source: String(context?.source || ""),
@@ -545,7 +572,7 @@
         dimensions: uniqueStrings(page.dimensions),
         evidence_fact_ids: uniqueStrings(page.evidence_fact_ids),
         evidence_question_ids: pageQuestionIds(page),
-        questions: (page.questions || []).map(compactQuestion),
+        questions: (page.questions || []).map((question) => compactQuestion(question, page.evidence_fact_ids)),
       })),
     };
   }
@@ -630,7 +657,10 @@
 
   root.PptReportAi = {
     DEFAULT_BATCH_SIZE,
+    REPAIR_BATCH_SIZE,
     SLIDE_BRIEF_CONCURRENCY,
+    SLIDE_BRIEF_TIMEOUT_MS,
+    SLIDE_BRIEF_REPAIR_TIMEOUT_MS,
     REPORT_NARRATIVE_SYSTEM_PROMPT,
     REPORT_STORYLINE_TYPES,
     SLIDE_BRIEF_SYSTEM_PROMPT,
@@ -641,6 +671,7 @@
     buildReportNarrativeInput,
     chunkPages,
     chunkPagesByChapter,
+    chunkRepairPages,
     filterWritablePages,
     evidenceLabelMatchesClause,
     fallbackNarrative,
