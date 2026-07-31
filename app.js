@@ -13022,7 +13022,7 @@ function isPptxChapterChartEligible(page) {
 function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual = false) {
   const allowed = new Set([
     "auto", "bar", "column", "line", "stacked_bar",
-    "stacked_column", "radar", "doughnut", "pie",
+    "stacked_column", "radar", "doughnut", "pie", "grouped_bar",
   ]);
   const normalizedType = allowed.has(chartType) ? chartType : "auto";
   const result = { eligible: 0, updated: 0, preserved: 0, skipped: 0 };
@@ -14618,6 +14618,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const chartTypeOptions = [
         { value: "auto", label: "自动匹配（默认）" },
         { value: "bar", label: "条形图" },
+        { value: "grouped_bar", label: "多列条形图" },
         { value: "column", label: "柱状图" },
         { value: "line", label: "折线图" },
         { value: "stacked_bar", label: "堆积条形图" },
