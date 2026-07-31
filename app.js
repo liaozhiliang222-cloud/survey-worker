@@ -16305,9 +16305,13 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       dimensionCopySyncTimer = null;
       if (dimensionCopySyncRunning || !pendingDimensionCopySyncIds.size) return;
       const narrative = pendingReportNarrative || editedPagePlan?.report_narrative;
-      if (editedPagePlan?.report_workflow !== "research" || !narrative) return;
+      if (editedPagePlan?.report_workflow !== "research" || !narrative) {
+        pendingDimensionCopySyncIds.clear();
+        return;
+      }
       const settings = loadAiSettings();
       if (settings.mode === "local" || validateAiSettings(settings).length) {
+        pendingDimensionCopySyncIds.clear();
         aiWriteStatus.textContent = "分析维度已变化，旧AI文字已失效；请配置AI后点击“AI重写此页”同步文字。";
         return;
       }
@@ -16573,7 +16577,16 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const staleDimensionPages = (editedPagePlan?.pages || []).filter((page) =>
         page.copy_state === "stale" || page.dimension_copy_stale
       );
-      if (dimensionCopySyncRunning || pendingDimensionCopySyncIds.size) {
+      if (dimensionCopySyncRunning) {
+        if (actionStatus) actionStatus.textContent = "分析维度对应的AI文字仍在同步，请等待同步完成后再生成PPT。";
+        return;
+      }
+      // 快速报告模式下 runPendingPptxDimensionCopySync 会提前返回，残留的 pendingDimensionCopySyncIds 属于无效队列，直接清理避免阻塞生成
+      if (pendingDimensionCopySyncIds.size && editedPagePlan?.report_workflow !== "research") {
+        pendingDimensionCopySyncIds.clear();
+        if (dimensionCopySyncTimer) { clearTimeout(dimensionCopySyncTimer); dimensionCopySyncTimer = null; }
+      }
+      if (pendingDimensionCopySyncIds.size) {
         if (actionStatus) actionStatus.textContent = "分析维度对应的AI文字仍在同步，请等待同步完成后再生成PPT。";
         return;
       }
