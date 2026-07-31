@@ -16590,7 +16590,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (actionStatus) actionStatus.textContent = "分析维度对应的AI文字仍在同步，请等待同步完成后再生成PPT。";
         return;
       }
-      if (staleDimensionPages.length && !window.confirm(
+      // 快速报告模式下 stale 是预期状态（AI 文字同步不会触发），仅在研究报告模式下提示用户确认
+      if (staleDimensionPages.length && editedPagePlan?.report_workflow === "research" && !window.confirm(
         `仍有 ${staleDimensionPages.length} 页文字未与最新分析维度同步。继续生成时，未人工修改页面将使用确定性文案；人工修改页会保留当前文字。是否继续？`
       )) return;
       const isRegeneration = hasGeneratedPptx;
