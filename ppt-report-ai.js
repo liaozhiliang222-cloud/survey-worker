@@ -17,10 +17,10 @@
   const REPORT_NARRATIVE_SYSTEM_PROMPT = [
     "你是资深市场研究顾问。请根据 DataFact、Insight 列表和研究目标，先设计整份报告的 Report Narrative。",
     "先形成一个中心论点，不要简单罗列发现。central_thesis 必须是一个完整判断，不是主题描述或报告标题。",
-    "必须先读取 research_archetype, core_research_module、priority_instructions 和 priority_page_idxs，并把优先研究问题放在中心论点与第一章。",
-    "core_research_module 是用户确认的最高优先级；存在时必须覆盖 research_archetype 的默认开篇顺序。",
-    "当 research_archetype=concept_test 时，central_thesis 必须先判断概念/产品的整体表现（如购买可能、喜好、吸引力、差异化或转化潜力）；第一章必须包含 priority_page_idxs 中的页面。",
-    "用户画像、需求和障碍只用于解释概念表现与优化方向，不得在 concept_test 项目中取代概念测试结果成为开篇主线。",
+    "必须先读取 research_archetype、core_research_module、priority_instructions 和 priority_page_idxs，并确保优先研究问题进入中心论点且在正文中得到充分回答。",
+    "core_research_module 是用户确认的最高优先级，但不等于第一章；章节位置必须服从整份报告的连续故事线。",
+    "当 research_archetype=concept_test 时，central_thesis 必须判断概念/产品的整体表现（如购买可能、喜好、吸引力、差异化或转化潜力），并在最合适的章节纳入 priority_page_idxs 中的页面。",
+    "用户画像、需求和障碍用于解释概念表现与优化方向；可按论证需要前置，但不得取代概念测试结果成为中心结论。",
     "章节必须形成连续论证，例如用户是谁→为什么购买→为什么流失→如何提升；禁止按满意度、购买因素、会员等指标机械分章。",
     "默认规划 4–6 章，硬性限制 3–8 章。每章都必须包含 chapter_id、title、purpose、key_question、page_idxs、analysis_strategy。",
     "page_idxs 必须把输入 page_catalog 中的全部页面分配到新章节，且每个页面只能出现一次；章节顺序和 page_idxs 顺序就是最终报告顺序。",
@@ -283,12 +283,12 @@
       priority_page_idxs: priorityPageIndexes,
       priority_instructions: coreResearchModule ? [
         `用户确认的核心研究模块是“${coreResearchModule}”。`,
-        "中心论点和第一章必须优先回答该模块；其他模块用于解释、补充或形成行动建议。",
-        "第一章必须包含 priority_page_idxs 中的页面。",
+        "中心论点必须回答该模块，正文必须完整覆盖 priority_page_idxs 中的页面。",
+        "不要因核心模块而强制调整到第一章；章节位置与先后顺序应服从完整故事线。",
       ] : researchArchetype === "concept_test" ? [
         "先回答概念/产品整体表现，再解释目标人群、需求、障碍和优化方向。",
         "中心论点必须包含概念表现的判断，不能只写高意向用户画像。",
-        "第一章必须包含 priority_page_idxs 中的页面。",
+        "正文必须覆盖 priority_page_idxs 中的页面，但不强制放在第一章。",
       ] : [],
       research_objective: String(researchObjective || context?.research_objective || ""),
       dimension_catalog: (context?.available_dimensions || []).map((dimension) => ({
@@ -416,23 +416,7 @@
     });
     const researchArchetype = detectResearchArchetype(context);
     const coreResearchModule = selectedCoreResearchModule(context);
-    const explicitPriorityPages = new Set(coreResearchPageIndexes(context, coreResearchModule));
-    if (coreResearchModule && explicitPriorityPages.size) {
-      const firstChapterLeadsWithCore = chapters[0]?.page_idxs?.some((pageIdx) =>
-        explicitPriorityPages.has(Number(pageIdx))
-      );
-      if (!firstChapterLeadsWithCore) {
-        throw new Error(`第一章必须先呈现核心研究模块“${coreResearchModule}”`);
-      }
-    }
     if (researchArchetype === "concept_test" && (!coreResearchModule || coreResearchModule === "概念测试")) {
-      const priorityPages = new Set(coreResearchModule ? [...explicitPriorityPages] : conceptPriorityPageIndexes(context));
-      const firstChapterLeadsWithConcept = chapters[0]?.page_idxs?.some((pageIdx) =>
-        priorityPages.has(Number(pageIdx))
-      );
-      if (priorityPages.size && !firstChapterLeadsWithConcept) {
-        throw new Error("\u7b2c\u4e00\u7ae0\u5fc5\u987b\u5148\u5448\u73b0\u6982\u5ff5\u6d4b\u8bd5\u6838\u5fc3\u7ed3\u679c");
-      }
       const thesisHasConceptSubject = /(?:\u6982\u5ff5|\u4ea7\u54c1)/.test(centralThesis);
       const thesisHasResultJudgment = /(?:\u8d2d\u4e70\u610f\u5411|\u8d2d\u4e70\u53ef\u80fd|\u63a5\u53d7|\u5438\u5f15|\u559c\u597d|\u559c\u6b22|\u5dee\u5f02\u5316|\u8f6c\u5316|\u6f5c\u529b)/.test(centralThesis);
       const thesisHasConceptResult = thesisHasConceptSubject && thesisHasResultJudgment;

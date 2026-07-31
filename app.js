@@ -13142,7 +13142,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         coreResearchModuleInput.value = "";
         coreResearchModuleInput.disabled = true;
       }
-      if (coreResearchModuleNote) coreResearchModuleNote.textContent = "AI 将根据题组推荐报告最先需要回答的研究模块；您只需在生成核心观点前确认一项。";
+      if (coreResearchModuleNote) coreResearchModuleNote.textContent = "AI 将根据题组推荐报告需要重点回答的研究模块；您只需在生成核心观点前确认一项。";
     }
 
     function populateCoreResearchModules(modules, recommended = "", selected = "") {
@@ -13162,7 +13162,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (coreResearchModuleNote) {
         const current = detectedResearchModules.find((item) => item.key === preferred);
         coreResearchModuleNote.textContent = current
-          ? "报告将首先回答“" + String(current.label || current.key) + "”；其他题组由 AI 自动组织为原因解释、背景信息或附录。"
+          ? "报告将重点回答“" + String(current.label || current.key) + "”；具体章节位置由 AI 根据完整故事线安排。"
           : "未识别到可用的研究模块。";
       }
     }
@@ -13181,12 +13181,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         page.source_chapter = page.source_chapter || page.chapter || "";
         page.research_role = coreModule && page.source_chapter === coreModule ? "core" : "supporting";
       });
-      if (coreModule) {
-        plan.pages = [...(plan.pages || [])].sort((left, right) =>
-          Number(right.research_role === "core") - Number(left.research_role === "core")
-          || Number(left.page_idx || 0) - Number(right.page_idx || 0)
-        ).map((page, index) => ({ ...page, page_idx: index + 1 }));
-      }
       return plan;
     }
 
@@ -14612,9 +14606,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
 
     function renderPreviewTable(plan) {
       if (!previewTable) return;
-      previewTable.querySelectorAll("[data-pptx-preview-url]").forEach((panel) => {
-        if (panel.dataset.pptxPreviewUrl) URL.revokeObjectURL(panel.dataset.pptxPreviewUrl);
-      });
       const pages = plan.pages || [];
       if (pages.length === 0) {
         previewTable.innerHTML = '<div class="empty-state"><strong>无页面</strong><span>没有可渲染的题目。</span></div>';
@@ -14836,22 +14827,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               </div>
               <div class="pptx-page-actions pptx-preview-field-wide">
                 <button type="button" class="secondary-btn" data-pptx-action="regenerate-slide" data-page-index="${idx}" ${isLocked ? "disabled" : ""}>AI &#37325;&#20889;&#27492;&#39029;</button>
-                <button type="button" class="secondary-btn" data-pptx-action="render-preview" data-page-index="${idx}">真实预览</button>
                 <button type="button" class="ghost-btn" data-pptx-action="duplicate-page" data-page-index="${idx}">复制</button>
                 <button type="button" class="ghost-btn" data-pptx-action="split-page" data-page-index="${idx}" ${(p.questions || []).length < 2 ? "disabled" : ""}>拆分</button>
                 <button type="button" class="ghost-btn" data-pptx-action="merge-page" data-page-index="${idx}" data-direction="-1" ${idx === 0 ? "disabled" : ""}>与上页合并</button>
                 <button type="button" class="ghost-btn" data-pptx-action="move-page" data-page-index="${idx}" data-direction="-1" ${idx === 0 ? "disabled" : ""}>上移</button>
                 <button type="button" class="ghost-btn" data-pptx-action="move-page" data-page-index="${idx}" data-direction="1" ${idx === pages.length - 1 ? "disabled" : ""}>下移</button>
                 <button type="button" class="ghost-btn danger" data-pptx-action="delete-page" data-page-index="${idx}">删除页面</button>
-              </div>
-              <div class="pptx-real-preview pptx-preview-field-wide" data-real-preview="${idx}" hidden>
-                <div class="pptx-real-preview-head">
-                  <strong>最终页面预览</strong>
-                  <span>基于当前标题、图表、维度与模板实时渲染</span>
-                  <a class="ghost-btn" data-preview-open target="_blank" rel="noopener noreferrer">新窗口查看</a>
-                  <button type="button" class="ghost-btn" data-pptx-action="close-preview" data-page-index="${idx}">关闭</button>
-                </div>
-                <iframe title="第 ${p.page_idx} 页最终预览" loading="lazy"></iframe>
               </div>
             </div>
           </details>`;
@@ -15187,53 +15168,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       persistSlideBriefBlueprint().catch((error) => showToast(error.message, "warning"));
     };
 
-    async function renderRealPptxPreview(pageIndex, control) {
-      if (!selectedFile || !editedPagePlan?.pages?.[pageIndex]) return;
-      const checked = Array.from(segmentPanel.querySelectorAll('input[type="checkbox"]:checked:not([data-role])')).map((cb) => cb.value);
-      const useUploadedTemplate = templateModeInput?.value === "upload";
-      control.disabled = true;
-      const originalText = control.textContent;
-      control.textContent = "渲染中…";
-      try {
-        const buf = await selectedFile.arrayBuffer();
-        const payload = packPptxGenerateRequest(buf, {
-          segments: checked,
-          title: (titleInput.value || "调研分析报告").trim(),
-          theme: themeInput?.value || "blue",
-          template_id: useUploadedTemplate ? uploadedTemplateId : null,
-          dimension: currentDimension || null,
-          pages: [pageIndex + 1],
-          page_config: compactPptxPageConfig(editedPagePlan),
-        });
-        const response = await fetch("/pptx-api/preview-render", {
-          method: "POST",
-          headers: { "Content-Type": "application/vnd.surveykit.pptx-request" },
-          body: payload,
-        });
-        if (!response.ok) throw new Error(await readPptxApiError(response, "真实预览生成失败"));
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const card = control.closest(".pptx-preview-page");
-        const panel = card?.querySelector(`[data-real-preview="${pageIndex}"]`);
-        const frame = panel?.querySelector("iframe");
-        const openLink = panel?.querySelector("[data-preview-open]");
-        if (!panel || !frame || !openLink) {
-          URL.revokeObjectURL(url);
-          throw new Error("找不到当前页面的真实预览容器");
-        }
-        if (panel.dataset.pptxPreviewUrl) URL.revokeObjectURL(panel.dataset.pptxPreviewUrl);
-        panel.dataset.pptxPreviewUrl = url;
-        frame.src = `${url}#toolbar=0&navpanes=0&view=FitH`;
-        openLink.href = url;
-        panel.hidden = false;
-        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      } catch (error) {
-        showToast(error.message || "真实预览生成失败", "warning");
-      } finally {
-        control.disabled = false;
-        control.textContent = originalText;
-      }
-    }
     function handlePptxEditorAction(event) {
       const control = event.target.closest("[data-pptx-action]");
       if (!control || !previewTable.contains(control)) return;
@@ -15245,17 +15179,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         regenerateSinglePptxSlide(pageIndex, control);
       } else if (action === "toggle-sort-desc") {
         window._onPreviewSortOptionsDesc(pageIndex);
-      } else if (action === "render-preview") {
-        renderRealPptxPreview(pageIndex, control);
-      } else if (action === "close-preview") {
-        const panel = control.closest("[data-real-preview]");
-        if (panel?.dataset.pptxPreviewUrl) URL.revokeObjectURL(panel.dataset.pptxPreviewUrl);
-        if (panel) {
-          panel.querySelector("iframe")?.removeAttribute("src");
-          panel.querySelector("[data-preview-open]")?.removeAttribute("href");
-          delete panel.dataset.pptxPreviewUrl;
-          panel.hidden = true;
-        }
       } else if (action === "scroll-chapter") {
         previewTable.querySelector(`[data-editor-chapter="${control.dataset.targetChapter}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
       } else if (action === "add-page") {
@@ -16854,7 +16777,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     coreResearchModuleInput?.addEventListener("change", () => {
       const current = detectedResearchModules.find((item) => item.key === coreResearchModuleInput.value);
       if (coreResearchModuleNote && current) {
-        coreResearchModuleNote.textContent = "报告将首先回答“" + String(current.label || current.key) + "”；其他题组由 AI 自动组织。";
+        coreResearchModuleNote.textContent = "报告将重点回答“" + String(current.label || current.key) + "”；具体章节位置由 AI 根据完整故事线安排。";
       }
       invalidatePptxPreview("核心研究模块已更新，请重新生成报告结构。");
     });

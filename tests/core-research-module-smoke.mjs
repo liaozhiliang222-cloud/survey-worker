@@ -30,6 +30,7 @@ const input = ai.buildReportNarrativeInput(reportContext, "Concept report");
 assert.equal(input.core_research_module, profile);
 assert.deepEqual(Array.from(input.priority_page_idxs), [2]);
 assert.match(input.priority_instructions.join(" "), /\u7528\u6237\u753b\u50cf/);
+assert.doesNotMatch(input.priority_instructions.join(" "), /\u7b2c\u4e00\u7ae0\u5fc5\u987b/);
 const result = ai.validateReportNarrative({
   report_title: "Concept report",
   central_thesis: "\u6838\u5fc3\u76ee\u6807\u7528\u6237\u662f\u5e74\u8f7b\u6709\u5b69\u5bb6\u5ead\uff0c\u5176\u9700\u6c42\u51b3\u5b9a\u540e\u7eed\u4ea7\u54c1\u4f18\u5316\u65b9\u5411\u3002",
@@ -41,7 +42,7 @@ const result = ai.validateReportNarrative({
   ],
 }, reportContext);
 assert.equal(result.chapters[0].page_idxs[0], 2);
-assert.throws(() => ai.validateReportNarrative({
+const storylineFirst = ai.validateReportNarrative({
   report_title: "Concept report",
   central_thesis: "\u6838\u5fc3\u76ee\u6807\u7528\u6237\u662f\u5e74\u8f7b\u6709\u5b69\u5bb6\u5ead\u3002",
   storyline_type: "diagnosis",
@@ -50,6 +51,9 @@ assert.throws(() => ai.validateReportNarrative({
     { title: profile, purpose: "Define", key_question: "Who", page_idxs: [2] },
     { title: "Action", purpose: "Recommend", key_question: "What next", page_idxs: [3] },
   ],
-}, reportContext), /\u6838\u5fc3\u7814\u7a76\u6a21\u5757/);
+}, reportContext);
+assert.equal(storylineFirst.chapters[0].page_idxs[0], 1);
+assert.equal(storylineFirst.chapters[1].page_idxs[0], 2);
+assert.doesNotMatch(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /\u4e2d\u5fc3\u8bba\u70b9\u4e0e\u7b2c\u4e00\u7ae0|\u7b2c\u4e00\u7ae0\u5fc5\u987b/);
 
 console.log("Core research module smoke passed.");

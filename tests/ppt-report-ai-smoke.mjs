@@ -422,13 +422,12 @@ const conceptPayload = {
   confidence: 0.9,
 };
 assert.ok(ai.validateReportNarrative(conceptPayload, conceptContext).central_thesis);
-assert.throws(
-  () => ai.validateReportNarrative({
-    ...conceptPayload,
-    chapters: [conceptChapters[1], conceptChapters[0], conceptChapters[2]],
-  }, conceptContext),
-  /\u7b2c\u4e00\u7ae0\u5fc5\u987b\u5148\u5448\u73b0\u6982\u5ff5\u6d4b\u8bd5\u6838\u5fc3\u7ed3\u679c/,
-);
+const storylineLedConcept = ai.validateReportNarrative({
+  ...conceptPayload,
+  chapters: [conceptChapters[1], conceptChapters[0], conceptChapters[2]],
+}, conceptContext);
+assert.equal(storylineLedConcept.chapters[0].page_idxs[0], 2);
+assert.equal(storylineLedConcept.chapters[1].page_idxs[0], 1);
 assert.throws(
   () => ai.validateReportNarrative({
     ...conceptPayload,
