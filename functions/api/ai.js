@@ -255,10 +255,16 @@ export async function onRequest({ request, env }) {
         }
       }
     }
-    if (!lastResult?.text?.trim()) {
-      const reason = lastError?.name === "AbortError"
-        ? "\u6a21\u578b\u54cd\u5e94\u8d85\u65f6"
-        : (lastError?.message || "\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9");
+    const jsonInvalid = wantsJson
+      && lastResult?.upstream?.ok
+      && !lastResult?.stream
+      && !containsJsonObject(lastResult.text || "");
+    if (jsonInvalid || !lastResult?.text?.trim()) {
+      const reason = jsonInvalid
+        ? "\u6240\u6709\u5185\u7f6e\u6a21\u578b\u5747\u672a\u8fd4\u56de\u6709\u6548\u7684 JSON"
+        : (lastError?.name === "AbortError"
+          ? "\u6a21\u578b\u54cd\u5e94\u8d85\u65f6"
+          : (lastError?.message || "\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9"));
       return json({ error: { message: `\u6240\u6709\u5185\u7f6e AI \u670d\u52a1\u5747\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9\uff1a${reason}\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002` } }, 502);
     }
     return upstreamResponse(

@@ -288,14 +288,22 @@ function runInWorker(type, payload) {
   return new Promise((resolve, reject) => {
     const worker = getDataWorker();
     if (!worker) return reject(new Error("Worker unavailable"));
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const onWorkerError = () => {
+      worker.removeEventListener("message", handler);
+      worker.removeEventListener("error", onWorkerError);
+      reject(new Error("数据计算 Worker 执行失败"));
+    };
     const handler = (e) => {
-      if (e.data.type === `${type}_done`) {
+      if (e.data.type === `${type}_done` && e.data.requestId === requestId) {
         worker.removeEventListener("message", handler);
+        worker.removeEventListener("error", onWorkerError);
         resolve(e.data.result);
       }
     };
     worker.addEventListener("message", handler);
-    worker.postMessage({ type, payload });
+    worker.addEventListener("error", onWorkerError);
+    worker.postMessage({ type, payload, requestId });
   });
 }
 

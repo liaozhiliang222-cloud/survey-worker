@@ -629,7 +629,7 @@ async def preview_render(request: Request):
             {"error": {"message": "服务器未安装 LibreOffice，暂时无法生成真实页面预览。"}},
             status_code=503,
         )
-    response = _generate_core(
+    response, _ = _generate_core(
         data, request.query_params, metadata, preview_page_numbers=pages
     )
     if response.status_code >= 400:

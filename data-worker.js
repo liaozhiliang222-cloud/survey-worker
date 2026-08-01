@@ -3,16 +3,16 @@
  * 当数据集 > 5000 行时，将计算移到后台线程避免 UI 卡顿。
  */
 self.onmessage = function (e) {
-  const { type, payload } = e.data;
+  const { type, payload, requestId } = e.data;
 
   if (type === "clean") {
     const { rows, rules } = payload;
     const result = applyCleaningRules(rows, rules);
-    self.postMessage({ type: "clean_done", result });
+    self.postMessage({ type: "clean_done", requestId, result });
   } else if (type === "weight") {
     const { rows, targets } = payload;
     const result = computeRimWeights(rows, targets);
-    self.postMessage({ type: "weight_done", result });
+    self.postMessage({ type: "weight_done", requestId, result });
   }
 };
 

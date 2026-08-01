@@ -53,7 +53,14 @@ http
       handleAiProxy(req, res);
       return;
     }
-    const urlPath = decodeURIComponent(new URL(req.url, `http://${req.headers.host}`).pathname);
+    let urlPath;
+    try {
+      urlPath = decodeURIComponent(new URL(req.url, `http://${req.headers.host || "localhost"}`).pathname);
+    } catch {
+      res.writeHead(400);
+      res.end("Bad Request");
+      return;
+    }
     const requestedPath = urlPath === "/" ? "/index.html" : urlPath;
     const filePath = path.resolve(root, `.${requestedPath}`);
 

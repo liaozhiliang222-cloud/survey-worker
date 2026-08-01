@@ -718,12 +718,16 @@ def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
     sort_col = 'Total' if 'Total' in segments else (segments[0] if segments else None)
 
     # v10: "其他"类选项关键词——始终置底，不参与降序排序
-    _OTHER_PATTERNS = ["其他", "其它", "请说明", "other", "T2B", "B2B",
-                       "无", "不适用", "跳过", "拒答"]
+    # 注意："无"不能做子字符串匹配，否则"无需""无后续"等正常选项会被误判
+    _OTHER_SUBSTR = ["其他", "其它", "请说明", "other", "t2b", "b2b",
+                     "不适用", "跳过", "拒答"]
+    _OTHER_EXACT = {"无", "以上均无", "以上都没有", "都没有", "都不适用"}
 
     def _is_other_option(opt: str) -> bool:
         opt_s = str(opt).strip().lower()
-        return any(p.lower() in opt_s for p in _OTHER_PATTERNS)
+        if opt_s in _OTHER_EXACT:
+            return True
+        return any(p in opt_s for p in _OTHER_SUBSTR)
 
     for g in groups_data:
         g_title = g.get("title", "")       # 完整题干（不再用短标签）
@@ -824,8 +828,11 @@ def build_multi_group_bar_page(slide, page: MultiGroupBarPageContent,
     all_options = list(dict.fromkeys(r["选项"] for r in merged_rows))  # 去重保序
     n_options = len(all_options)
     USE_STACKED_THRESHOLD = 7   # 选项数阈值：≤此值用堆积图
+    # 用户显式选了 grouped_bar/bar 时，强制簇状条形图，不回退堆积图
+    use_stacked = (n_options <= USE_STACKED_THRESHOLD
+                   and not getattr(page, "force_clustered", False))
 
-    if n_options <= USE_STACKED_THRESHOLD:
+    if use_stacked:
         # ── 100% 堆积图：控制在页面中部，不再铺满整页 ──
         available_h = bottom_limit - table_y
         stack_w = min(table_w, 10.2)

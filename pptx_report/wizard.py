@@ -483,11 +483,14 @@ def _auto_insight(q: dict, cats: list, data: dict, segs: list) -> str:
     if not ref_values:
         return ""
     # v10: 跳过"其他"/内部代码类选项，不作为洞察主体
-    _SKIP_INSIGHT_KW = ["其他", "其它", "请说明", "t2b", "b2b", "无",
+    # 注意："无"不能做子字符串匹配，否则"无需""无后续"等正常选项会被误判
+    _SKIP_INSIGHT_SUBSTR = ["其他", "其它", "请说明", "t2b", "b2b",
                          "不适用", "跳过", "拒答", "none"]
+    _SKIP_INSIGHT_EXACT = {"无", "以上均无", "以上都没有", "都没有", "都不适用"}
     valid_indices = [
         i for i in range(len(cats))
-        if not any(k in str(cats[i]).strip().lower() for k in _SKIP_INSIGHT_KW)
+        if not (str(cats[i]).strip().lower() in _SKIP_INSIGHT_EXACT
+                or any(k in str(cats[i]).strip().lower() for k in _SKIP_INSIGHT_SUBSTR))
     ]
     if not valid_indices:
         return ""
@@ -1321,7 +1324,7 @@ def _paginate_mgb_questions(questions: list, max_per_page: int, max_options: int
 
 def _build_multi_group_bar_page(
     group: list, segments: list, source: str, idx: int, total: int,
-    *, force_sort_desc: bool = False,
+    *, force_sort_desc: bool = False, force_clustered: bool = False,
 ) -> MultiGroupBarPageContent:
     """把一组题目组装成 MultiGroupBarPageContent（表格 + 图表叠加布局）。
 
@@ -1379,6 +1382,7 @@ def _build_multi_group_bar_page(
         data_source=ds,
         chapter=_categorize_question(group[0]) if group else "其他研究",
         slide_id=f"finding_{idx:03d}",
+        force_clustered=force_clustered,
     )
 
 
@@ -1498,7 +1502,6 @@ def build_auto_report(
             )
         )
 
-    # ââ åºç¨åç«¯ç¼è¾ç page_config è¦çï¼v2ï¼å¾è¡¨ç±»å + åç»´åº¦æ¨¡å¼ï¼ ââ    if page_config and page_config.get("pages"):        cfg_pages = page_config["pages"]        new_pages = []        for idx, page in enumerate(chart_pages):            cfg = cfg_pages[idx] if idx < len(cfg_pages) else None            dim_mode = cfg.get("dimension_mode", "compare") if cfg else "compare"            requested = cfg.get("chart_type") if cfg else None            # ååºè¯¥é¡µé¢ç®            batch = [q for q in renderable if q.get("code") in {                pq.get("code") for pq in (cfg.get("questions") or [])            }]            is_chartpage = isinstance(page, ChartPageContent)            # ââ æ»ä½æ¨¡å¼ï¼æ¯é¢ç¬ç«ç®åå¾è¡¨ï¼æ è¡¨æ ¼ ââ            if dim_mode == "overall":                if not batch:                    new_pages.append(page)                    continue                overall_charts = []                for q in batch:                    if requested == "doughnut":                        overall_charts.append(_build_chart_for_question(q, ["Total"], forced_chart_type=ChartType.DOUGHNUT))                    elif requested == "pie":                        overall_charts.append(_build_chart_for_question(q, ["Total"], forced_chart_type=ChartType.PIE))                    elif requested == "stacked_bar":                        overall_charts.append(_build_chart_for_question(q, ["Total"], forced_chart_type=ChartType.BAR))                    else:                        overall_charts.append(_build_chart_for_question(q, ["Total"], forced_chart_type=ChartType.BAR))                r_refs = [f'{q.get("code","")}.{_norm(q.get("title",""))[:20]}' for q in batch]                r_ds = f"{' | '.join(r_refs)} | {source}" if r_refs else source                new_pages.append(ChartPageContent(                    title=_group_title(batch, idx + 1, len(cfg_pages)),                    layout=LayoutType.DASHBOARD, charts=overall_charts, data_source=r_ds,                ))                continue            # ââ å¯¹æ¯æ¨¡å¼ï¼é»è®¤ï¼ ââ            if not requested:                new_pages.append(page)                continue            if requested in ("bar", "grouped_bar"):                if is_chartpage and batch:                    new_pages.append(_build_multi_group_bar_page(                        batch, display_segs, source, idx + 1, len(cfg_pages)))                else:                    new_pages.append(page)                continue            if not batch:                new_pages.append(page)                continue            if requested == "radar":                charts = [_build_chart_for_question(q, display_segs) for q in batch]            elif requested == "doughnut":                charts = [_build_chart_for_question(q, display_segs, forced_chart_type=ChartType.DOUGHNUT) for q in batch]            elif requested == "pie":                charts = [_build_chart_for_question(q, display_segs, forced_chart_type=ChartType.PIE) for q in batch]            elif requested == "stacked_bar":                charts = [_build_chart_for_question(q, display_segs, forced_chart_type=ChartType.STACKED_BAR) for q in batch]            else:                new_pages.append(page)                continue            r_refs = [f'{q.get("code","")}.{_norm(q.get("title",""))[:20]}' for q in batch]            r_ds = f"{' | '.join(r_refs)} | {source}" if r_refs else source            new_pages.append(ChartPageContent(                title=_group_title(batch, idx + 1, len(cfg_pages)),                layout=LayoutType.DASHBOARD, charts=charts, data_source=r_ds,            ))        chart_pages = new_pages
     # 应用前端逐页配置。旧版本的这段逻辑曾被错误压成单行注释，
     # 导致预览页的图表类型与维度选择在最终 PPT 中全部失效。
     if page_config and page_config.get("pages"):
@@ -1565,6 +1568,7 @@ def build_auto_report(
                         idx + 1,
                         len(cfg_pages),
                         force_sort_desc=sort_options_desc,
+                        force_clustered=True,
                     )
                     if insight_override:
                         configured_page.title = insight_override
@@ -1647,6 +1651,7 @@ def build_auto_report(
                     idx + 1,
                     len(cfg_pages),
                     force_sort_desc=sort_options_desc,
+                    force_clustered=True,
                 )
                 if insight_override:
                     configured_page.title = insight_override

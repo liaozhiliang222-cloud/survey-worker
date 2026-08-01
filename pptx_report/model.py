@@ -516,6 +516,7 @@ class MultiGroupBarPageContent:
     template_id: str = ""
     layout_family: str = "matrix_with_priority"
     density: str = "high"
+    force_clustered: bool = False
 
 
 @dataclass
