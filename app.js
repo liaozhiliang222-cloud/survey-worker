@@ -16140,8 +16140,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         return false;
       }
       const aiPlanner = window.PptReportAi;
-      if (!aiPlanner) {
-        aiWriteStatus.textContent = "PPT AI 故事线模块未加载，请刷新页面后重试。";
+      if (!aiPlanner || typeof aiPlanner.buildReportFrameworkInput !== "function") {
+        aiWriteStatus.textContent = "PPT AI 故事线模块未加载或版本过旧，请按 Ctrl+F5 强制刷新页面后重试。";
         return false;
       }
       aiWriteBtn.disabled = true;
