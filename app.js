@@ -16293,7 +16293,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         let output;
         try {
           output = await callAiChatCompletion(settings, messages, {
-            maxTokens: 2600,
+            maxTokens: 4000,
             timeoutMs: 180000,
             temperature: 0,
             responseFormat: "json_object",
@@ -16303,12 +16303,26 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         } catch (error) {
           if (!/(?:524|502|503|504|timeout|超时)/i.test(String(error?.message || error))) throw error;
           output = await callAiChatCompletion(settings, messages, {
-            maxTokens: 2600,
+            maxTokens: 4000,
             timeoutMs: 180000,
             temperature: 0,
             responseFormat: "json_object",
             taskTier: "fast",
             stream: true,
+          });
+        }
+        // 流式响应偶发被 maxTokens 截断导致 JSON 不完整；非流式重试一次拿完整结果
+        try {
+          aiPlanner.parseJsonObject(output);
+        } catch (parseError) {
+          if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = "首次返回 JSON 不完整，正在非流式重试…";
+          output = await callAiChatCompletion(settings, messages, {
+            maxTokens: 4000,
+            timeoutMs: 180000,
+            temperature: 0,
+            responseFormat: "json_object",
+            taskTier: "structured",
+            stream: false,
           });
         }
         const revisedPayload = aiPlanner.parseJsonObject(output);

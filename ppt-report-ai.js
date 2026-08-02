@@ -201,6 +201,7 @@
       let depth = 0;
       let inString = false;
       let escaped = false;
+      let endIdx = -1;
       for (let index = start; index < text.length; index += 1) {
         const char = text[index];
         if (inString) {
@@ -214,17 +215,90 @@
         else if (char === "}") {
           depth -= 1;
           if (depth === 0) {
-            const candidate = text.slice(start, index + 1);
-            try {
-              return JSON.parse(candidate);
-            } catch {
-              break;
-            }
+            endIdx = index;
+            break;
+          }
+        }
+      }
+      // 完整闭合的 JSON：直接解析
+      if (endIdx >= 0) {
+        const candidate = text.slice(start, endIdx + 1);
+        try {
+          return JSON.parse(candidate);
+        } catch {
+          continue; // 解析失败时尝试下一个 { 起点（之前是 break，会漏掉后续有效 JSON）
+        }
+      }
+      // 截断的 JSON（depth > 0 且未找到闭合）：尝试补全未闭合的括号与字符串
+      if (depth > 0) {
+        const truncated = text.slice(start);
+        const repaired = repairTruncatedJson(truncated);
+        if (repaired) {
+          try {
+            return JSON.parse(repaired);
+          } catch {
+            // 修复失败则继续找下一个 { 起点
           }
         }
       }
     }
     throw new Error("模型未返回可解析的 JSON 对象");
+  }
+
+  // 修复被 maxTokens 截断的 JSON：补全未闭合的字符串和括号
+  function repairTruncatedJson(text) {
+    if (!text || text[0] !== "{") return null;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let lastValidPos = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') { inString = true; continue; }
+      if (char === "{") depth += 1;
+      else if (char === "}") depth -= 1;
+      // 记录最后一个完整键值对后的逗号或括号位置
+      if (char === "," || char === "{" || char === "}") lastValidPos = i;
+    }
+    // 字符串未闭合：补上闭合引号
+    let repaired = text;
+    if (inString) repaired += '"';
+    // 从 lastValidPos 之后截断未完成的键值对，再补全括号
+    if (lastValidPos > 0 && lastValidPos < repaired.length - 1) {
+      // 如果最后一个有效字符是逗号，保留到逗号前
+      if (repaired[lastValidPos] === ",") {
+        repaired = repaired.slice(0, lastValidPos);
+      }
+    }
+    // 移除末尾可能的孤立冒号或不完整的键
+    repaired = repaired.replace(/,[\s\n]*$/, "").replace(/:\s*$/, "");
+    // 补全未闭合的 }
+    let openBraces = 0;
+    let inStr = false;
+    let esc = false;
+    for (let i = 0; i < repaired.length; i += 1) {
+      const c = repaired[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === "\\") esc = true;
+        else if (c === '"') inStr = false;
+        continue;
+      }
+      if (c === '"') inStr = true;
+      else if (c === "{") openBraces += 1;
+      else if (c === "}") openBraces -= 1;
+    }
+    while (openBraces > 0) {
+      repaired += "}";
+      openBraces -= 1;
+    }
+    return repaired;
   }
 
   function chunkPages(pages, requestedSize = DEFAULT_BATCH_SIZE) {
