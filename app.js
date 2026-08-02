@@ -223,6 +223,7 @@ let lastCrosstabAnalysis = null;
 let lastQuestionPivot = null;
 let lastCrosstabHeaderPlan = null;
 let lastAiActualModel = "";
+let lastAiActualSource = "";
 let lastAiReport = "";
 let lastAiReportMode = "markdown";
 let crosstabImportMode = "data";
@@ -4434,7 +4435,7 @@ async function aiAssistCleaningRules() {
   try {
     let aiRules = [];
     if (settings.mode !== "local" && !validateAiSettings(settings).length) {
-      const output = await callAiChatCompletion(settings, buildAiCleaningRulesPrompt(parsed), { maxTokens: 3000, temperature: 0.2 });
+      const output = await callAiChatCompletion(settings, buildAiCleaningRulesPrompt(parsed), { maxTokens: 3000, temperature: 0.2, taskTier: "fast" });
       aiRules = parseAiCleaningRulesOutput(output);
     } else {
       aiRules = buildLocalAiAssistedCleaningRules(parsed);
@@ -6624,6 +6625,8 @@ async function exportResearchModelPptx(modelType, data, filename, button) {
     const response = await fetch("/pptx-api/model-chart", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
       body: JSON.stringify({ model_type: modelType, data }),
     });
     if (!response.ok) {
@@ -9077,7 +9080,7 @@ async function generateAiPlan() {
       try {
         renderAiProgress(result, steps, 2, "正在让大模型把需求改写为完整调研方案。", "正在生成调研方案");
         const maxTokens = config.templateMode === "hybrid" && config.mode === "detailed" ? 16000 : config.mode === "detailed" ? 12000 : 5000;
-        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config), { maxTokens });
+        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config), { maxTokens, taskTier: "quality" });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output = `${localPlan}\n\n---\n\n> 大模型调用失败，已回退为本地方案框架。错误信息：${error.message}`;
@@ -9152,7 +9155,7 @@ async function reviseAiPlan() {
     if (!errors.length) {
       try {
         renderAiProgress(result, steps, 2, "正在按你的要求重写方案，通常需要几十秒。", "正在修改调研方案");
-        output = await callAiChatCompletion(settings, buildAiPlanRevisionPrompt(instruction, lastAiPlan), { maxTokens: 12000 });
+        output = await callAiChatCompletion(settings, buildAiPlanRevisionPrompt(instruction, lastAiPlan), { maxTokens: 12000, taskTier: "quality" });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output += `\n\n> 大模型修改失败：${error.message}`;
@@ -9760,7 +9763,7 @@ function applyAiProviderPreset() {
   renderAiSettingsStatus(readAiSettingsFromForm());
 }
 
-async function readAiChatCompletionStream(response, onProgress) {
+async function readAiChatCompletionStream(response, onProgress, onActivity) {
   const reader = response.body?.getReader();
   if (!reader) throw new Error("当前浏览器无法读取 AI 流式响应，请升级浏览器后重试。");
   const decoder = new TextDecoder("utf-8");
@@ -9795,6 +9798,7 @@ async function readAiChatCompletionStream(response, onProgress) {
 
   while (true) {
     const { value, done } = await reader.read();
+    if (value?.length && typeof onActivity === "function") onActivity();
     buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
     const frames = buffer.split(/\r?\n\r?\n/);
     buffer = frames.pop() || "";
@@ -9805,6 +9809,28 @@ async function readAiChatCompletionStream(response, onProgress) {
   const output = (content || reasoning).trim();
   if (!output) throw new Error("模型流式响应结束，但没有生成有效内容。");
   return output;
+}
+function getAiProxyUrl() {
+  try {
+    if (typeof window !== "undefined" && window.location?.origin && window.location.origin !== "null") {
+      return new URL("/api/ai", window.location.origin).toString();
+    }
+  } catch (_) {}
+  return "/api/ai";
+}
+
+async function fetchAiProxyWithRetry(url, init, attempts = 2) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      lastError = error;
+      if (error?.name === "AbortError" || attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+    }
+  }
+  throw lastError || new Error("AI proxy request failed");
 }
 async function callAiChatCompletion(settings, messages, options = {}) {
   if (window.location.protocol === "file:") {
@@ -9820,18 +9846,26 @@ async function callAiChatCompletion(settings, messages, options = {}) {
     requestBody.response_format = { type: "json_object" };
   }
   if (options.stream) requestBody.stream = true;
-  // 设置6分钟超时（比后端5分钟略长），防止大报告生成时524超时
+  // 流式请求按“无数据时长”计时；持续返回内容时允许总耗时超过 timeoutMs。
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 360000;
   const timeoutSeconds = Math.max(1, Math.round(timeoutMs / 1000));
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const response = await fetch("./api/ai", {
+  let timeout;
+  const armTimeout = () => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => controller.abort(), timeoutMs);
+  };
+  armTimeout();
+  const response = await fetchAiProxyWithRetry(getAiProxyUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
     body: JSON.stringify({
       provider: settings.provider,
       url: settings.url,
       apiKey: settings.apiKey,
+      taskTier: options.taskTier || "balanced",
       body: requestBody
     }),
     signal: controller.signal
@@ -9844,8 +9878,14 @@ async function callAiChatCompletion(settings, messages, options = {}) {
   });
   if (response.ok && options.stream && response.body) {
     lastAiActualModel = response.headers.get("X-Actual-Model") || "";
+    lastAiActualSource = response.headers.get("X-AI-Source") || "";
     try {
-      return await readAiChatCompletionStream(response, options.onProgress);
+      return await readAiChatCompletionStream(response, options.onProgress, armTimeout);
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error("AI 连续 " + timeoutSeconds + " 秒未返回数据，已为当前生成阶段启用安全降级。");
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
@@ -9856,6 +9896,7 @@ async function callAiChatCompletion(settings, messages, options = {}) {
   }
   // 记录后端实际使用的模型名
   lastAiActualModel = response.headers.get("X-Actual-Model") || "";
+  lastAiActualSource = response.headers.get("X-AI-Source") || "";
   const payload = await response.json().catch(() => ({}));
   if (payload?.error) {
     const message = payload.error.message || payload.error.code || JSON.stringify(payload.error);
@@ -10067,6 +10108,7 @@ async function renderAiBrief() {
         renderAiProgress(result, steps, 2, design.config.lengthMode === "long" ? "专业长卷通常需要 2–6 分钟，正在持续生成，请勿关闭页面。" : "大模型正在生成精简短卷，页面没有卡住。");
         output = await callAiChatCompletion(settings, buildAiQuestionnairePrompt(), {
           maxTokens: 32000,
+          taskTier: "fast",
           timeoutMs: design.config.lengthMode === "long" ? 600000 : 360000,
           stream: true,
           onProgress: ({ contentLength, reasoningLength }) => renderAiProgress(
@@ -11116,7 +11158,7 @@ async function generateAiWorkbench() {
     const errors = validateAiSettings(settings);
     if (!errors.length) {
       try {
-        output = await callAiChatCompletion(settings, buildAiWorkbenchPrompt(task, text), { maxTokens: 3500 });
+        output = await callAiChatCompletion(settings, buildAiWorkbenchPrompt(task, text), { maxTokens: 3500, taskTier: "fast" });
         source = aiProviderPresets[settings.provider]?.name || "大模型";
       } catch (error) {
         output += `\n\n---\n\n> 大模型调用失败，已回退为本地建议。错误信息：${error.message}`;
@@ -11651,7 +11693,8 @@ function buildAiReportPrompt(context, summary, dataContext) {
         "阶段5 整合审查：确保执行摘要的结论在正文都有展开、建议都对应前面具体发现、无突然出现的数据。统一百分比精度（1位小数）和基数标注格式。",
         "",
         "【核心写作原则】",
-        "- 数据必须准确，但只作为证据锚点：每个核心发现最多引用1–2组最有解释力的数字，保留1位小数并在必要时标注基数；其余篇幅用于判断、解释和业务含义。",
+        "- 数据必须准确，但只作为证据锚点：每个核心发现最多引用1组最有解释力的数据、最多2个数字，保留1位小数并在必要时标注基数；其余篇幅用于判断、解释和业务含义。",
+        "- 每个发现的第一段必须先写一个不含百分比的判断或机制解释；数据证据单独压缩为一句。建议和业务含义不得重复百分比。若正文删掉数字后没有剩余观点，说明它仍是数据白描，必须重写。",
         "- 洞察标题使用『四字标签+一句话解读』格式，例如『认知断层：品牌知名度未能有效转化为购买意愿』；除非数字本身构成关键反差，标题不堆百分比。",
         "- 反常点不单独成章，作为核心发现中的「反常发现」自然融入，格式：「发现X：与预期相反，[数据现象]，[可能解释]」。",
         "- 样本质量信息只在执行摘要或开篇「研究说明」中1段带过，不单独成章。",
@@ -11853,6 +11896,7 @@ async function generateAiReport() {
           const prompt = buildAiReportPrompt(context, summary, lastCrosstabDataContext);
           output = await callAiChatCompletion(settings, prompt, {
             maxTokens: 8000,
+            taskTier: "quality",
             timeoutMs: 180000
           });
           source = aiProviderPresets[settings.provider]?.name || "大模型";
@@ -12043,7 +12087,7 @@ async function reviseAiQuestionnaire() {
     if (!errors.length) {
       try {
         renderAiProgress(result, steps, 2, "正在按你的要求重写问卷，通常需要几十秒。");
-        output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 32000, timeoutMs: 600000, stream: true });
+        output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 32000, timeoutMs: 600000, stream: true, taskTier: "fast" });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output += `\n\n> 大模型修改失败：${error.message}`;
@@ -12118,7 +12162,7 @@ async function testAiSettings() {
     await callAiChatCompletion(settings, [
       { role: "system", content: "你是接口连通性测试助手。" },
       { role: "user", content: "请只回复：连接成功" }
-    ], { maxTokens: 20, temperature: 0 });
+    ], { maxTokens: 20, temperature: 0, taskTier: "fast" });
     localStorage.setItem("surveyAiSettings", JSON.stringify(settings));
     renderAiSettingsStatus(settings);
     if (preview) {
@@ -13108,6 +13152,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     const narrativeConfirmBtn = document.querySelector("#pptxNarrativeConfirmBtn");
     const narrativeRegenerateBtn = document.querySelector("#pptxNarrativeRegenerateBtn");
     const continueEditBtn = document.querySelector("#pptxContinueEditBtn");
+    const narrativeFeedbackInput = document.querySelector("#pptxNarrativeFeedbackInput");
+    const narrativeFeedbackBtn = document.querySelector("#pptxNarrativeFeedbackBtn");
+    const narrativeFeedbackStatus = document.querySelector("#pptxNarrativeFeedbackStatus");
     if (!dropzone) return;
 
     let selectedFile = null;
@@ -13375,6 +13422,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           || `chapter_${String(page.chapter || "other").replace(/\s+/g, "_")}`
         );
         page.slide_brief.chapter = String(page.chapter || "其他研究");
+        page.slide_brief.research_theme = String(page.research_theme || page.slide_brief.research_theme || "");
+        page.slide_brief.decision_area = String(page.decision_area || page.slide_brief.decision_area || "");
+        page.slide_brief.chapter_reason = String(page.chapter_reason || page.slide_brief.chapter_reason || "");
         page.slide_brief.title = String(
           page.slide_brief.title || page.insight_override || page.title || ""
         );
@@ -13419,6 +13469,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const response = await fetch(`/pptx-api/report/${encodeURIComponent(reportId)}/slide-briefs`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
         body: JSON.stringify({
           narrative: editedPagePlan.report_narrative || null,
           slides: slideBlueprintPayload(editedPagePlan),
@@ -13438,6 +13490,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
           body: JSON.stringify(patch),
         }
       );
@@ -13453,6 +13507,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
           body: JSON.stringify({ order }),
         }
       );
@@ -13621,6 +13677,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const response = await fetch(`/pptx-api/templates/${encodeURIComponent(uploadedTemplateId)}/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
         body: JSON.stringify({
           ...(importedProfile || {}),
           name: importedProfile?.name || uploadedTemplateAnalysis?.file_name || "company-template.pptx",
@@ -15246,6 +15304,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         core_research_module: String(plan.core_research_module || selectedCoreResearchModule()).trim(),
         recommended_core_module: String(plan.recommended_core_module || recommendedCoreResearchModule).trim(),
         research_modules: Array.isArray(plan.research_modules) ? plan.research_modules : [],
+        research_theme_classification: plan.research_theme_classification && typeof plan.research_theme_classification === "object"
+          ? plan.research_theme_classification
+          : null,
+        research_theme_warnings: Array.isArray(plan.research_theme_warnings) ? plan.research_theme_warnings : [],
         report_narrative: plan.report_narrative && typeof plan.report_narrative === "object"
           ? plan.report_narrative
           : null,
@@ -15261,6 +15323,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           chapter: page.chapter,
           source_chapter: page.source_chapter || page.chapter || "",
           research_role: page.research_role || "",
+          research_theme: page.research_theme || page.slide_brief?.research_theme || "",
+          decision_area: page.decision_area || page.slide_brief?.decision_area || "",
+          chapter_reason: page.chapter_reason || page.slide_brief?.chapter_reason || "",
           chart_type: page.chart_type,
           sort_options_desc: Boolean(page.sort_options_desc),
           insight_override: page.insight_override,
@@ -15554,6 +15619,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               ${selectedDimensions.has(dimension.key) ? "checked" : ""}>
             <span>${escapeHtml(dimension.label)}</span>
           </label>`).join("");
+        const plannedPages = (narrative.page_blueprint || [])
+          .filter((page) => page.chapter_id === chapter.chapter_id);
+        const pagePlan = plannedPages.length ? `
+          <div class="pptx-narrative-page-plan">
+            <small>AI 计划页面与题目组合</small>
+            <ol>${plannedPages.map((page) => `
+              <li><strong>${escapeHtml(page.title || "分析页")}</strong><span>${escapeHtml((page.question_titles || page.question_ids || []).join(" · "))}</span></li>`).join("")}</ol>
+          </div>` : "";
         return `
         <article class="pptx-narrative-chapter" data-narrative-chapter="${index}">
           <span>${String(index + 1).padStart(2, "0")}</span>
@@ -15561,6 +15634,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             <strong>${escapeHtml(chapter.title || "未命名章节")}</strong>
             <p>${escapeHtml(chapter.purpose || "")}</p>
             <small>回答：${escapeHtml(chapter.key_question || "")}</small>
+            ${pagePlan}
             <div class="pptx-narrative-dimension-picker">
               <small>AI 推荐分析维度（最多 2 个细分维度）</small>
               <div class="pptx-narrative-dimension-options">${dimensions}</div>
@@ -15575,7 +15649,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           <small>报告核心观点 · ${escapeHtml(narrative.storyline_type || "")}</small>
           <strong>${escapeHtml(narrative.central_thesis || "")}</strong>
         </div>
-        <div class="pptx-narrative-confirm-note">请先确认各章节分析维度；每章最多 2 个细分维度，以避免单页系列过多影响阅读。对比图会自动包含总体基准。</div>
+        <div class="pptx-narrative-confirm-note">AI 已按故事线重新规划每页题目组合。请核对页面编排并确认各章节分析维度；对比图会自动包含总体基准。</div>
         <div class="pptx-narrative-chapters">${chapters}</div>
         <div class="pptx-narrative-thesis">
           <small>结尾信息</small>
@@ -15630,13 +15704,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 role: "system",
                 content: [
                   "你是资深市场研究报告顾问。请根据逐页结构化数据，为每页写一句话洞察标题、2-3条正文洞察和1条业务含义。",
-                  "只能使用输入中出现的百分比和样本量，不得改写或编造数字；允许用‘反映’‘提示’‘可能与…有关’做谨慎解释。",
+                  "输入数据用于理解证据，不得改写或编造数字；具体百分比只由图表与数据标签呈现，正文允许用‘反映’‘提示’‘可能与…有关’做谨慎解释。",
                   "必须遵守每道题的 model_semantics；PSM 单条累计曲线不得写成接受率、峰值、最优价或价格上下限。",
                   "必须原样返回每页 slide_id；数字、人群和选项必须来自同一行证据，不能仅因某个数字在本页出现就视为匹配。",
-                  "凡正文引用百分比，必须同时原样写出对应选项与人群标签；无法建立一一对应时删除该数字。",
-                  "标题先给判断，不要堆数字。正文先解释关键关系或差异，再用1组关键数据作证据锚点，最后落到业务含义；证据不足时不要强行归因。",
+                  "标题、claim、所有 bullets 和 business_implication 均不得出现百分比；不要把图表数值改写成正文。",
+                  "标题先给判断，不要堆数字。正文解释关键关系、差异、适用范围与业务含义；具体证据由同页图表承担，证据不足时不要强行归因。",
                   "页面包含多道题时，标题必须概括这些题的共同关系；子样本题和特定车型题必须保留适用范围，不得泛化到全部用户。",
-                  "每页最多引用2个数字，不得逐项复述图表，不要让标题和正文重复同一数字；避免以‘数据显示’‘从数据看’‘其中’开头连续播报占比。",
+                  "正文不得出现百分比：bullets[0] 写关系、机制、障碍或模式判断；bullets[1] 写新增解释、适用范围或关键差异；bullets[2] 仅在确有新增分析价值时使用。",
+                  "business_implication 只写决策含义、优先级或下一步行动，不得出现百分比。禁止把‘A为x%、B为y%’‘A占比最高、B其次’当作洞察；避免以‘数据显示’‘从数据看’‘其中’开头连续播报占比。",
                   "只返回 JSON：{\"pages\":[{\"slide_id\":\"finding_001\",\"page_idx\":1,\"title\":\"一句话判断\",\"bullets\":[\"解释或关系\",\"关键证据\"],\"business_implication\":\"业务含义\"}]}。",
                   "证据 ID 由系统根据稳定 slide_id 确定性回填，AI 不需要返回 evidence_fact_ids 或 evidence_question_ids。",
                 ].join("\n"),
@@ -15649,23 +15724,29 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               timeoutMs: 240000,
               temperature: 0.15,
               responseFormat: "json_object",
+              taskTier: "fast",
               stream: false,
             });
             try {
-              batchResults[batchIndex] = aiPlanner.validatePageOutput(
-                parseAiInsightJson(output), pages, { requireSlideId: true }
+              const parsedOutput = parseAiInsightJson(output);
+              const validatedOutput = aiPlanner.validatePageOutput(
+                parsedOutput, pages, { requireSlideId: true }
               );
+              const narrationIssues = aiPlanner.findDataNarrationIssues(validatedOutput);
+              if (narrationIssues.length) throw new Error(narrationIssues.join("; "));
+              batchResults[batchIndex] = validatedOutput;
               if (!batchResults[batchIndex].length) throw new Error("当前批次未返回可验证的稳定 slide_id。");
             } catch (_) {
               output = await callAiChatCompletion(settings, [
                 ...messages,
                 { role: "assistant", content: String(output).slice(0, 12000) },
-                { role: "user", content: "上一次输出未通过 JSON、稳定 slide_id 或证据 ID 校验。请只重写当前批次，原样返回每页 slide_id，并按指定结构输出 JSON。" },
+                { role: "user", content: "上一次输出未通过结构或证据校验。请只重写当前批次并原样返回每页 slide_id。标题、claim、所有 bullets 和 business_implication 均不得包含百分比；具体比例只保留在图表中。只输出指定 JSON。" },
               ], {
                 maxTokens: 6000,
                 timeoutMs: 240000,
                 temperature: 0,
                 responseFormat: "json_object",
+                taskTier: "fast",
                 stream: false,
               });
               batchResults[batchIndex] = aiPlanner.validatePageOutput(
@@ -15723,7 +15804,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           const summaryOutput = await callAiChatCompletion(settings, [
             { role: "system", content: "基于逐页洞察写3句以内的执行摘要：先给总判断，再解释核心矛盾，最后给行动方向；不要按页面罗列发现，不新增数字，全文最多保留2个关键数字。只返回 JSON：{\"summary\":\"...\"}。" },
             { role: "user", content: JSON.stringify(summaryInput) },
-          ], { maxTokens: 1200, timeoutMs: 180000, temperature: 0.15, responseFormat: "json_object", stream: false });
+          ], { maxTokens: 1200, timeoutMs: 180000, temperature: 0.15, responseFormat: "json_object", stream: false, taskTier: "quality" });
           const summaryText = String(summaryOutput || "").match(/\{[\s\S]*\}/)?.[0] || "{}";
           editedPagePlan.executive_summary = String(JSON.parse(summaryText).summary || "").trim();
         } catch (_) {
@@ -15751,6 +15832,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         setPptxProgress(0, "AI 写作失败", "AI 写作");
         setTimeout(() => progress.classList.add("hidden"), 1500);
       } finally {
+        clearInterval(narrativeWaitTimer);
         aiWriteBtn.disabled = false;
         if (confirmBtn) confirmBtn.disabled = false;
       }
@@ -15760,6 +15842,294 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       return editedPagePlan?.report_workflow === "research"
         ? generatePptxAiReport()
         : generatePptxQuickAiReport();
+    }
+    function buildPptxNarrativeContext(context = {}) {
+      const aiPlanner = window.PptReportAi;
+      const planPagesById = new Map(
+        (editedPagePlan?.pages || []).map((page) => [pptxPageStableId(page), page])
+      );
+      const narrativeContext = {
+        ...context,
+        require_page_blueprint: false,
+        available_dimensions: editedPagePlan.available_dimensions || [],
+        core_research_module: editedPagePlan.core_research_module || selectedCoreResearchModule(),
+        research_modules: editedPagePlan.research_modules || detectedResearchModules,
+        pages: (context.pages || []).map((page) => {
+          const planPage = planPagesById.get(pptxPageStableId(page));
+          return {
+            ...page,
+            source_chapter: planPage?.source_chapter || planPage?.chapter || page.chapter || "",
+            research_role: planPage?.research_role || "",
+            dimensions: Array.isArray(planPage?.selected_dimensions)
+              ? [...planPage.selected_dimensions]
+              : (page.dimensions || ["总体"]),
+          };
+        }),
+      };
+      const themeClassifier = window.ResearchThemeClassifier;
+      if (themeClassifier && aiPlanner) {
+        narrativeContext.research_intent_hints = themeClassifier.buildResearchIntentHints({
+          ...narrativeContext,
+          research_archetype: aiPlanner.detectResearchArchetype(narrativeContext),
+          research_objective: (titleInput.value || "调研分析报告").trim(),
+        });
+      }
+      return narrativeContext;
+    }
+    async function generateStagedReportNarrative(aiPlanner, settings, frameworkInput, coreContext) {
+      const compactPages = (frameworkInput.page_catalog || []).map((page) => ({
+        page_idx: Number(page.page_idx),
+        source_chapter: String(page.source_chapter || "").slice(0, 80),
+        research_role: String(page.research_role || "").slice(0, 80),
+        current_title: String(page.current_title || "").slice(0, 100),
+        question_ids: Array.from(page.question_ids || []),
+      }));
+      const dimensionKeys = (frameworkInput.dimension_catalog || [])
+        .map((dimension) => String(dimension?.key || dimension?.label || "").trim())
+        .filter(Boolean);
+      const baselineDimension = dimensionKeys.includes("总体") ? "总体" : (dimensionKeys[0] || "总体");
+      const sourceModuleMap = new Map();
+      compactPages.forEach((page) => {
+        const name = page.source_chapter || "unclassified";
+        const current = sourceModuleMap.get(name) || {
+          name,
+          page_count: 0,
+          research_role: "supporting",
+          representative_titles: [],
+        };
+        current.page_count += 1;
+        if (page.research_role === "core") current.research_role = "core";
+        if (page.current_title && current.representative_titles.length < 3) {
+          current.representative_titles.push(page.current_title);
+        }
+        sourceModuleMap.set(name, current);
+      });
+      const sourceModules = Array.from(sourceModuleMap.values()).map((module) =>
+        `${module.name} (${module.page_count} pages, ${module.research_role}): ${module.representative_titles.join(" / ")}`.slice(0, 220)
+      );
+      const researchIntentSummary = JSON.stringify(frameworkInput.research_intent_hints || {}).slice(0, 500);
+      const frameworkPrompt = [
+        "Return JSON only. You are a market research director.",
+        "Based on the research objective and source modules, design one concise Chinese report storyline.",
+        "Do not copy source module names mechanically and do not assign pages.",
+        "Output: {\"central_thesis\":\"\",\"chapters\":[{\"chapter_id\":\"chapter_01\",\"title\":\"\",\"purpose\":\"\",\"key_question\":\"\"}]}",
+        "Use 3-6 chapters. Keep the entire answer concise.",
+      ].join("\n");      let frameworkPayload;
+      try {
+        frameworkPayload = aiPlanner.parseJsonObject(await callAiChatCompletion(settings, [
+          { role: "system", content: frameworkPrompt },
+          {
+            role: "user",
+            content: JSON.stringify({
+              objective: frameworkInput.research_objective,
+              archetype: frameworkInput.research_archetype,
+              core_module: frameworkInput.core_research_module,
+              priority_instruction: (frameworkInput.priority_instructions || [])[0] || "",
+              research_intent_summary: researchIntentSummary,
+              source_modules: sourceModules,
+            }),
+          },
+        ], {
+          maxTokens: 800,
+          timeoutMs: 65000,
+          temperature: 0,
+          responseFormat: "json_object",
+          taskTier: "storyline",
+          stream: false,
+        }));
+      } catch (error) {
+        throw new Error(`章节框架阶段失败：${error?.message || error}`);
+      }
+      const rawChapters = Array.isArray(frameworkPayload.chapters) ? frameworkPayload.chapters : [];
+      if (rawChapters.length < 3 || rawChapters.length > 8) throw new Error("AI 未返回 3-8 个有效章节框架。");
+      const normalizeId = (value, fallback) => {
+        const normalized = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_").replace(/[^a-z0-9_]/g, "");
+        return /^[a-z][a-z0-9_]{1,63}$/.test(normalized) ? normalized : fallback;
+      };
+      const chapterIds = new Set();
+      const chapters = rawChapters.map((chapter, index) => {
+        let chapterId = normalizeId(chapter.chapter_id, `chapter_${String(index + 1).padStart(2, "0")}`);
+        if (chapterIds.has(chapterId)) chapterId = `chapter_${String(index + 1).padStart(2, "0")}`;
+        chapterIds.add(chapterId);
+        return {
+          chapter_id: chapterId,
+          title: String(chapter.title || `章节 ${index + 1}`).trim(),
+          purpose: String(chapter.purpose || "").trim(),
+          key_question: String(chapter.key_question || "").trim(),
+          decision_area: String(chapter.decision_area || chapter.key_question || chapter.purpose || "").trim(),
+          allowed_themes: [],
+          page_idxs: [],
+          analysis_strategy: {
+            baseline_dimension: baselineDimension,
+            primary_dimensions: [],
+            supporting_dimensions: [],
+            rationale: String(chapter.purpose || chapter.key_question || "").trim(),
+          },
+        };
+      });
+      const researchThemes = chapters.map((chapter, index) => ({
+        theme_id: `theme_${String(index + 1).padStart(2, "0")}`,
+        name: chapter.title,
+        description: chapter.purpose || chapter.key_question,
+        decision_area: chapter.decision_area,
+        allowed_chapters: [chapter.title],
+        keywords: [],
+        priority: index + 1,
+      }));
+      chapters.forEach((chapter, index) => {
+        chapter.allowed_themes = [researchThemes[index].theme_id];
+      });
+      const assignmentPrompt = [
+        "Return JSON only. Assign every page to one chapter by the research question it serves, not by surface keywords or source module.",
+        "Use exactly one supplied chapter id and its theme for every page.",
+        "You MUST return one assignment object for every page id in the input, with no duplicates and no omissions.",
+        "Copy chapter_id and theme_id verbatim from the input; do not invent or rename ids.",
+        "Output: {\"assignments\":[{\"page_idx\":1,\"chapter_id\":\"chapter_01\",\"theme_id\":\"theme_01\",\"chapter_reason\":\"\"}]}",
+      ].join("\n");
+      const assignmentBatches = [];
+      for (let index = 0; index < compactPages.length; index += 4) assignmentBatches.push(compactPages.slice(index, index + 4));
+      async function requestAssignmentBatch(pages, batchIndex, allowSplit = true) {
+        try {
+          return aiPlanner.parseJsonObject(await callAiChatCompletion(settings, [
+            { role: "system", content: assignmentPrompt },
+            {
+              role: "user",
+              content: JSON.stringify({
+                objective: frameworkInput.research_objective,
+                thesis: frameworkPayload.central_thesis,
+                chapters: chapters.map((chapter) => ({
+                  id: chapter.chapter_id,
+                  title: chapter.title,
+                  question: chapter.key_question,
+                  theme: chapter.allowed_themes[0],
+                })),
+                pages: pages.map((page) => ({
+                  id: page.page_idx,
+                  title: page.current_title,
+                  source: page.source_chapter,
+                  role: page.research_role,
+                })),
+              }),
+            },
+          ], {
+            maxTokens: 650,
+            timeoutMs: 65000,
+            temperature: 0,
+            responseFormat: "json_object",
+            taskTier: "storyline",
+            stream: false,
+          }));
+        } catch (error) {
+          if (allowSplit && pages.length > 1) {
+            const midpoint = Math.ceil(pages.length / 2);
+            const first = await requestAssignmentBatch(pages.slice(0, midpoint), batchIndex, false);
+            const second = await requestAssignmentBatch(pages.slice(midpoint), batchIndex, false);
+            return { assignments: [...(first.assignments || []), ...(second.assignments || [])] };
+          }
+          throw new Error(`页面归属第 ${batchIndex + 1} 批失败：${error?.message || error}`);
+        }
+      }
+      const assignmentPayloads = [];
+      for (let waveStart = 0; waveStart < assignmentBatches.length; waveStart += 2) {
+        const wave = assignmentBatches.slice(waveStart, waveStart + 2);
+        const results = await Promise.all(wave.map((pages, waveOffset) =>
+          requestAssignmentBatch(pages, waveStart + waveOffset)
+        ));
+        assignmentPayloads.push(...results);
+      }      const chapterById = new Map(chapters.map((chapter) => [chapter.chapter_id, chapter]));
+      // 容错索引：把 chapter_id 与 title 都做小写归一化，AI 拼错大小写/连字符时也能命中
+      const normalizeKey = (value) => String(value || "").trim().toLowerCase().replace(/[\s\-]+/g, "_").replace(/[^a-z0-9_\u4e00-\u9fa5]/g, "");
+      const chapterByNormalizedId = new Map();
+      const chapterByNormalizedTitle = new Map();
+      chapters.forEach((chapter) => {
+        chapterByNormalizedId.set(normalizeKey(chapter.chapter_id), chapter);
+        chapterByNormalizedTitle.set(normalizeKey(chapter.title), chapter);
+      });
+      const pageByIndex = new Map(compactPages.map((page) => [Number(page.page_idx), page]));
+      const assignedPages = new Set();
+      const assignments = assignmentPayloads.flatMap((payload) => payload.assignments || []).map((assignment) => {
+        const pageIdx = Number(assignment.page_idx);
+        if (!pageByIndex.has(pageIdx) || assignedPages.has(pageIdx)) return null;
+        // 1) 精确 chapter_id 命中 2) 归一化 id 命中（容错大小写/连字符）3) 归一化 title 命中
+        const rawChapterId = String(assignment.chapter_id || "");
+        const chapter = chapterById.get(rawChapterId)
+          || chapterByNormalizedId.get(normalizeKey(rawChapterId))
+          || chapterByNormalizedTitle.get(normalizeKey(rawChapterId));
+        if (!chapter) return null;
+        assignedPages.add(pageIdx);
+        const requestedTheme = normalizeId(assignment.theme_id, "");
+        const themeId = chapter.allowed_themes.includes(requestedTheme) ? requestedTheme : chapter.allowed_themes[0];
+        chapter.page_idxs.push(pageIdx);
+        return {
+          classification_id: `page:${pageIdx}`,
+          page_idx: pageIdx,
+          question_ids: pageByIndex.get(pageIdx).question_ids,
+          theme_id: themeId,
+          research_theme: themeId,
+          chapter_reason: String(assignment.chapter_reason || "该页面服务于本章研究问题。").trim(),
+          confidence: 0.85,
+        };
+      }).filter(Boolean);
+      // 本地兜底：AI 偶尔会漏返/拼错个别页面，直接抛"AI 页面归属不完整（n/m），请重试"会让用户被迫重试整个故事线生成。
+      // 把未归属页面按 source_chapter → 章节 title 关键词匹配；命中失败再分配到当前页数最少的章节，
+      // 保证每页都有归属，让报告生成能继续推进。
+      if (assignedPages.size !== compactPages.length) {
+        const unassignedPages = compactPages
+          .filter((page) => !assignedPages.has(Number(page.page_idx)))
+          .map((page) => Number(page.page_idx));
+        console.warn(`AI 页面归属不完整（${assignedPages.size}/${compactPages.length}），启用本地兜底补全剩余 ${unassignedPages.length} 页。`);
+        unassignedPages.forEach((pageIdx) => {
+          const page = pageByIndex.get(pageIdx);
+          if (!page) return;
+          // 1) source_chapter 关键词命中章节 title
+          let fallbackChapter = chapters.find((chapter) => {
+            const src = normalizeKey(page.source_chapter);
+            const ttl = normalizeKey(chapter.title);
+            return src && ttl && (src.includes(ttl) || ttl.includes(src));
+          });
+          // 2) 标题文本相似命中
+          if (!fallbackChapter) {
+            const pageTitle = normalizeKey(page.current_title);
+            fallbackChapter = chapters.find((chapter) => {
+              const ttl = normalizeKey(chapter.title);
+              return ttl && pageTitle && (pageTitle.includes(ttl) || ttl.includes(pageTitle));
+            });
+          }
+          // 3) 页数最少的章节，均衡分布
+          if (!fallbackChapter) {
+            fallbackChapter = chapters.reduce((min, chapter) =>
+              (chapter.page_idxs.length < min.page_idxs.length ? chapter : min), chapters[0]);
+          }
+          assignedPages.add(pageIdx);
+          fallbackChapter.page_idxs.push(pageIdx);
+          assignments.push({
+            classification_id: `page:${pageIdx}`,
+            page_idx: pageIdx,
+            question_ids: page.question_ids,
+            theme_id: fallbackChapter.allowed_themes[0],
+            research_theme: fallbackChapter.allowed_themes[0],
+            chapter_reason: "AI 归属缺失，已按源模块与章节语义本地补全。",
+            confidence: 0.5,
+          });
+        });
+      }
+      chapters.forEach((chapter) => {
+        chapter.page_idxs.sort((a, b) => compactPages.findIndex((page) => page.page_idx === a)
+          - compactPages.findIndex((page) => page.page_idx === b));
+      });
+      const narrative = {
+        report_title: String(frameworkPayload.report_title || frameworkInput.report_title || "调研分析报告"),
+        central_thesis: String(frameworkPayload.central_thesis || "").trim(),
+        storyline_type: frameworkPayload.storyline_type || "diagnosis",
+        research_themes: researchThemes,
+        chapter_rules: chapters.map((chapter) => ({ chapter: chapter.title, allowed_themes: chapter.allowed_themes })),
+        research_theme_assignments: assignments,
+        chapters,
+        key_questions: chapters.map((chapter) => chapter.key_question).filter(Boolean),
+        ending_message: String(frameworkPayload.ending_message || frameworkPayload.central_thesis || "").trim(),
+        confidence: Math.max(0, Math.min(1, Number(frameworkPayload.confidence) || 0.85)),
+      };
+      return aiPlanner.validateReportNarrative(narrative, coreContext);
     }
     async function generatePptxAiReport() {
       if (!selectedFile || !editedPagePlan?.pages?.length) return false;
@@ -15780,94 +16150,70 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       progress.classList.remove("hidden");
       setPptxProgress(8, "正在汇总 DataFact 与 Insight", "AI 研究");
       aiWriteStatus.textContent = "阶段 1/2：正在汇总 DataFact 与 Insight…";
+      let narrativeWaitTimer = null;
+      lastAiActualModel = "";
+      lastAiActualSource = "";
       try {
         const context = await requestPptxInsightContext();
         lastPptxInsightContext = context;
         if (!context.pages?.length) throw new Error("没有可用于规划故事线的报告页面。");
-        setPptxProgress(30, "证据已准备，正在形成核心观点", "AI 研究");
-        aiWriteStatus.textContent = "阶段 2/2：AI 正在形成中心论点与章节逻辑…";
-        const planPagesById = new Map(
-          (editedPagePlan.pages || []).map((page) => [pptxPageStableId(page), page])
-        );
-        const narrativeContext = {
-          ...context,
-          available_dimensions: editedPagePlan.available_dimensions || [],
-          core_research_module: editedPagePlan.core_research_module || selectedCoreResearchModule(),
-          research_modules: editedPagePlan.research_modules || detectedResearchModules,
-          pages: (context.pages || []).map((page) => {
-            const planPage = planPagesById.get(pptxPageStableId(page));
-            return {
-              ...page,
-              source_chapter: planPage?.source_chapter || planPage?.chapter || page.chapter || "",
-              research_role: planPage?.research_role || "",
-              dimensions: Array.isArray(planPage?.selected_dimensions)
-                ? [...planPage.selected_dimensions]
-                : (page.dimensions || ["总体"]),
-            };
-          }),
-        };
+        setPptxProgress(30, "证据已准备，正在检测 AI 通道", "AI 研究");
+        aiWriteStatus.textContent = "故事线阶段：后台正在检测并选择响应更快的 AI 通道…";
+        const narrativeWaitStartedAt = Date.now();
+        narrativeWaitTimer = setInterval(() => {
+          const elapsedSeconds = Math.max(0, Math.floor((Date.now() - narrativeWaitStartedAt) / 1000));
+          const waitingProgress = Math.min(58, 30 + Math.floor(elapsedSeconds / 4));
+          if (elapsedSeconds < 10) {
+            setPptxProgress(waitingProgress, "正在检测并选择较快 AI 通道", "AI 研究");
+            aiWriteStatus.textContent = "故事线阶段：后台正在检测并选择响应更快的 AI 通道…";
+          } else if (elapsedSeconds < 35) {
+            setPptxProgress(waitingProgress, "通道已选择，正在生成结构化故事线", "AI 研究");
+            aiWriteStatus.textContent = "故事线阶段：模型正在形成中心论点与章节框架…";
+          } else {
+            setPptxProgress(waitingProgress, "当前通道响应较慢，仍在等待有效结果", "AI 研究");
+            aiWriteStatus.textContent = "故事线阶段：当前通道响应较慢；请求失败时后台会自动切换可用通道。";
+          }
+        }, 2000);
+        const narrativeContext = buildPptxNarrativeContext(context);
         const narrativeInput = aiPlanner.buildReportNarrativeInput(
           narrativeContext,
           (titleInput.value || "\u8c03\u7814\u5206\u6790\u62a5\u544a").trim()
         );
-        const outcome = await aiPlanner.generateReportNarrativeOrFallback(async () => {
-          const output = await callAiChatCompletion(settings, [
-            { role: "system", content: aiPlanner.REPORT_NARRATIVE_SYSTEM_PROMPT },
-            { role: "user", content: JSON.stringify(narrativeInput) },
-          ], {
-            maxTokens: 5000,
-            timeoutMs: 240000,
-            temperature: 0.1,
-            responseFormat: "json_object",
-            stream: false,
-          });
-          const payload = aiPlanner.parseJsonObject(output);
-          try {
-            aiPlanner.validateReportNarrative(payload, narrativeContext);
-            return payload;
-          } catch (validationError) {
-            const repairedOutput = await callAiChatCompletion(settings, [
-              {
-                role: "system",
-                content: [
-                  "You repair Report Narrative JSON.",
-                  "Return exactly one JSON object without markdown or a wrapper.",
-                  "Preserve valid content and fill every required field.",
-                  "Required fields: report_title, central_thesis, storyline_type, chapters, key_questions, ending_message, confidence.",
-                  "Each chapter requires chapter_id, title, purpose, key_question, page_idxs and analysis_strategy.",
-                  "storyline_type must be problem_solution, user_journey, funnel, diagnosis or opportunity.",
-                  "Use only evidence and page indexes present in the supplied input.",
-                ].join("\n"),
-              },
-              {
-                role: "user",
-                content: JSON.stringify({
-                  validation_error: String(validationError?.message || validationError),
-                  original_input: narrativeInput,
-                  invalid_output: payload,
-                }),
-              },
-            ], {
-              maxTokens: 5000,
-              timeoutMs: 240000,
-              temperature: 0,
-              responseFormat: "json_object",
-              stream: false,
-            });
-            return aiPlanner.parseJsonObject(repairedOutput);
-          }
-        }, narrativeContext);
-
+        const coreContext = { ...narrativeContext, require_page_blueprint: false };
+        const frameworkInput = aiPlanner.buildReportFrameworkInput(narrativeInput);
+        const outcome = await aiPlanner.generateReportNarrativeOrFallback(
+          () => generateStagedReportNarrative(aiPlanner, settings, frameworkInput, coreContext),
+          coreContext,
+        );
+        clearInterval(narrativeWaitTimer);
+        narrativeWaitTimer = null;
         setPptxProgress(65, "核心观点已生成，正在组织章节逻辑", "AI 研究");
         pendingReportNarrative = outcome.report_narrative;
         editedPagePlan.report_narrative = pendingReportNarrative;
+        editedPagePlan.research_theme_classification = pendingReportNarrative?.research_theme_classification || null;
+        editedPagePlan.research_theme_warnings = pendingReportNarrative?.research_theme_warnings || [];
         renderReportNarrative(pendingReportNarrative, outcome.error);
         if (pendingReportNarrative) {
           aiWriteBtn.textContent = "重新生成故事线";
-          aiWriteStatus.textContent = "核心观点、章节逻辑与推荐维度已生成。请调整并确认各章维度后，再生成页面蓝图与对应文字。";
+          const narrativeStatus = "AI 故事线已返回，当前页面展示的是模型生成并经结构校验后的结果。请先检查，不满意时可在下方提交反馈修改。";
+          const themeCount = pendingReportNarrative?.research_theme_classification?.themes?.length || 0;
+          const correctedThemePages = (pendingReportNarrative?.research_theme_warnings || [])
+            .filter((warning) => warning.corrected).length;
+          const themeStatus = themeCount
+            ? " 已建立 " + themeCount + " 个项目研究主题"
+              + (correctedThemePages ? "，并按研究目的自动调整 " + correctedThemePages + " 页章节归属" : "")
+              + "。"
+            : " 本次未启用主题约束，沿用兼容流程。";
+          const routeLabel = ({
+            "builtin-surveykit-gateway": "SurveyKit",
+            "builtin-sensenova": "SenseNova",
+            "builtin-bailian": "百炼",
+            "user-key": "用户配置",
+          })[lastAiActualSource] || lastAiActualSource;
+          aiWriteStatus.textContent = narrativeStatus + themeStatus + (routeLabel ? " 本次通道：" + routeLabel + "。" : "");
           setPptxProgress(100, "核心观点、章节逻辑与推荐维度已生成", "AI 研究");
         } else {
-          aiWriteStatus.textContent = `Report Narrative 生成失败，已启用兼容流程：${outcome.error}`;
+          aiWriteStatus.textContent = `Report Narrative 生成失败，未使用本地故事线重组：${outcome.error}`;
         }
         narrativePanel?.scrollIntoView({ behavior: "smooth", block: "start" });
         return Boolean(pendingReportNarrative);
@@ -15879,12 +16225,124 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         setPptxProgress(0, "AI 研究规划失败", "AI 研究");
         return false;
       } finally {
+        clearInterval(narrativeWaitTimer);
         aiWriteBtn.disabled = false;
         if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = false;
         setTimeout(() => progress.classList.add("hidden"), 1200);
       }
         }
 
+    async function reviseReportNarrativeWithFeedback() {
+      const feedback = String(narrativeFeedbackInput?.value || "").trim();
+      if (!feedback) {
+        showToast("请先写下希望修改的故事线内容。", "warning");
+        narrativeFeedbackInput?.focus();
+        return false;
+      }
+      if (!pendingReportNarrative || !editedPagePlan?.pages?.length) {
+        showToast("请先生成一版 AI 故事线。", "warning");
+        return false;
+      }
+      const settings = loadAiSettings();
+      const errors = validateAiSettings(settings);
+      if (settings.mode === "local" || errors.length) {
+        if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = `AI 设置尚未就绪：${errors.join("；")}`;
+        return false;
+      }
+      const aiPlanner = window.PptReportAi;
+      if (!aiPlanner?.buildReportNarrativeRevisionInput) {
+        if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = "AI 故事线修改模块未加载，请刷新页面后重试。";
+        return false;
+      }
+      const previousNarrative = pendingReportNarrative;
+      const previousFeedback = narrativeFeedbackInput.value;
+      if (narrativeFeedbackBtn) narrativeFeedbackBtn.disabled = true;
+      if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = true;
+      if (narrativeConfirmBtn) narrativeConfirmBtn.disabled = true;
+      if (aiWriteBtn) aiWriteBtn.disabled = true;
+      if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = "AI 正在基于当前故事线修改…";
+      aiWriteStatus.textContent = "正在根据反馈修改当前故事线，原故事线会保留到新结果校验完成。";
+      progress.classList.remove("hidden");
+      setPptxProgress(34, "正在读取当前故事线与反馈", "AI 故事线修改");
+      try {
+        const context = lastPptxInsightContext || await requestPptxInsightContext();
+        lastPptxInsightContext = context;
+        const narrativeContext = buildPptxNarrativeContext(context);
+        const revisionInput = aiPlanner.buildReportNarrativeRevisionInput(
+          previousNarrative,
+          narrativeContext,
+          feedback,
+          (titleInput.value || "调研分析报告").trim(),
+        );
+        const messages = [
+          {
+            role: "system",
+            content: [
+              aiPlanner.REPORT_NARRATIVE_SYSTEM_PROMPT,
+              "你正在修改一份已经生成的 Report Narrative，不是重新规划一个本地模板。",
+              "必须完整返回修改后的 JSON；优先只调整用户反馈涉及的内容，未被反馈涉及的章节、题目归属、主题和分析维度保持稳定。",
+              "不要因为当前故事线与初版结构相似而自行重组，也不要调用或模拟本地兜底逻辑。",
+              "用户反馈可能包含章节标题、章节顺序、研究目的、题目归属和中心观点，请按研究目的理解后修改。",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: JSON.stringify(revisionInput),
+          },
+        ];
+        let output;
+        try {
+          output = await callAiChatCompletion(settings, messages, {
+            maxTokens: 2600,
+            timeoutMs: 180000,
+            temperature: 0,
+            responseFormat: "json_object",
+            taskTier: "structured",
+            stream: true,
+          });
+        } catch (error) {
+          if (!/(?:524|502|503|504|timeout|超时)/i.test(String(error?.message || error))) throw error;
+          output = await callAiChatCompletion(settings, messages, {
+            maxTokens: 2600,
+            timeoutMs: 180000,
+            temperature: 0,
+            responseFormat: "json_object",
+            taskTier: "fast",
+            stream: true,
+          });
+        }
+        const revisedPayload = aiPlanner.parseJsonObject(output);
+        const revisedNarrative = aiPlanner.validateReportNarrative(
+          revisedPayload,
+          { ...narrativeContext, require_page_blueprint: false },
+        );
+        pendingReportNarrative = revisedNarrative;
+        editedPagePlan.report_narrative = revisedNarrative;
+        editedPagePlan.research_theme_classification = revisedNarrative.research_theme_classification || null;
+        editedPagePlan.research_theme_warnings = revisedNarrative.research_theme_warnings || [];
+        editedPagePlan.narrative_question_blueprint_signature = "";
+        renderReportNarrative(revisedNarrative);
+        narrativeFeedbackInput.value = "";
+        if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = "已按反馈更新故事线，请继续检查或提交下一条反馈。";
+        aiWriteStatus.textContent = "AI 已根据反馈修改当前故事线；未执行本地重组。";
+        setPptxProgress(100, "故事线反馈修改完成", "AI 故事线修改");
+        return true;
+      } catch (error) {
+        narrativeFeedbackInput.value = previousFeedback;
+        pendingReportNarrative = previousNarrative;
+        editedPagePlan.report_narrative = previousNarrative;
+        if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = `修改失败，已保留原故事线：${error.message}`;
+        aiWriteStatus.textContent = `AI 故事线修改失败，已保留原结果：${error.message}`;
+        setPptxProgress(0, "故事线反馈修改失败", "AI 故事线修改");
+        return false;
+      } finally {
+        if (narrativeFeedbackBtn) narrativeFeedbackBtn.disabled = false;
+        if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = false;
+        if (narrativeConfirmBtn) narrativeConfirmBtn.disabled = false;
+        if (aiWriteBtn) aiWriteBtn.disabled = false;
+        setTimeout(() => progress.classList.add("hidden"), 1200);
+      }
+    }
     function normalizePptxDimensions(values) {
       const available = new Set(["总体", ...(editedPagePlan?.available_dimensions || []).map((item) => String(item?.key || "").trim()).filter(Boolean)]);
       const selected = Array.from(new Set((values || []).map((value) => String(value || "").trim()).filter((value) => available.has(value))));
@@ -15920,6 +16378,50 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       }
     }
 
+    function narrativeQuestionBlueprintSignature(reportNarrative) {
+      return JSON.stringify((reportNarrative?.page_blueprint || []).map((page) => ({
+        page_id: page.page_id,
+        chapter_id: page.chapter_id,
+        title: page.title,
+        purpose: page.purpose,
+        question_ids: page.question_ids || [],
+      })));
+    }
+
+    function applyNarrativeQuestionBlueprint(reportNarrative) {
+      const blueprint = reportNarrative?.page_blueprint || [];
+      if (!editedPagePlan?.pages?.length || !blueprint.length) return 0;
+      const signature = narrativeQuestionBlueprintSignature(reportNarrative);
+      if (editedPagePlan.narrative_question_blueprint_signature === signature) return 0;
+      ensureStableSlideBriefs();
+      const previousSlideIds = new Set((editedPagePlan.pages || [])
+        .map((page) => String(page.slide_brief?.slide_id || page.slide_id || ""))
+        .filter(Boolean));
+      const recomposed = window.PptReportAi.recomposePagesByNarrative(
+        editedPagePlan.pages, reportNarrative, { renumber: true }
+      );
+      editedPagePlan.pages = recomposed;
+      editedPagePlan.narrative_question_blueprint_signature = signature;
+      renumberPptxPages();
+      const currentSlideIds = new Set((editedPagePlan.pages || [])
+        .map((page) => String(page.slide_brief?.slide_id || page.slide_id || ""))
+        .filter(Boolean));
+      editedPagePlan.deleted_slide_ids = Array.from(new Set([
+        ...(editedPagePlan.deleted_slide_ids || []),
+        ...Array.from(previousSlideIds).filter((slideId) => !currentSlideIds.has(slideId)),
+      ]));
+      (reportNarrative.chapters || []).forEach((chapter) => {
+        chapter.page_idxs = editedPagePlan.pages
+          .filter((page) => page.chapter_id === chapter.chapter_id)
+          .map((page) => Number(page.page_idx));
+      });
+      editedPagePlan.total_pages = editedPagePlan.pages.length;
+      editedPagePlan.template_structure_reused = false;
+      editedPagePlan.template_structure_overridden_by_narrative = true;
+      lastPptxInsightContext = null;
+      return recomposed.length;
+    }
+
     function applyNarrativeDimensionStrategy(reportNarrative) {
       const pagesByIndex = new Map((editedPagePlan?.pages || []).map((page) => [Number(page.page_idx), page]));
       let changed = 0;
@@ -15953,8 +16455,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (settings.mode === "local" || errors.length) throw new Error(errors.join("；"));
       const workflowStartedAt = Date.now();
       const aiPlanner = window.PptReportAi;
+      const questionPlanChanges = applyNarrativeQuestionBlueprint(reportNarrative);
       const dimensionChanges = options.applyDimensionPlan === false ? 0 : applyNarrativeDimensionStrategy(reportNarrative);
-      if (dimensionChanges) lastPptxInsightContext = null;
+      if (questionPlanChanges || dimensionChanges) lastPptxInsightContext = null;
       const contextStartedAt = Date.now();
       const context = lastPptxInsightContext || await requestPptxInsightContext();
       const contextSeconds = Math.max(0, (Date.now() - contextStartedAt) / 1000);
@@ -15969,6 +16472,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         return {
           ...page,
           chapter: currentPage?.chapter || page.chapter,
+          research_theme: currentPage?.research_theme || currentPage?.slide_brief?.research_theme || page.research_theme || "",
+          decision_area: currentPage?.decision_area || currentPage?.slide_brief?.decision_area || page.decision_area || "",
+          chapter_reason: currentPage?.chapter_reason || currentPage?.slide_brief?.chapter_reason || page.chapter_reason || "",
           selected_dimensions: currentPage?.selected_dimensions || page.selected_dimensions,
           dimension_mode: currentPage?.dimension_mode || page.dimension_mode,
           dimension_key: currentPage?.dimension_key || page.dimension_key,
@@ -15990,9 +16496,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           page.page_idx = index + 1;
           page.chapter = contextPage.chapter;
           page.chapter_id = contextPage.chapter_id;
+          page.research_theme = contextPage.research_theme || "";
+          page.decision_area = contextPage.decision_area || "";
+          page.chapter_reason = contextPage.chapter_reason || "";
           page.slide_brief = page.slide_brief || {};
           page.slide_brief.chapter_id = contextPage.chapter_id;
           page.slide_brief.chapter = contextPage.chapter;
+          page.slide_brief.research_theme = contextPage.research_theme || "";
+          page.slide_brief.decision_area = contextPage.decision_area || "";
+          page.slide_brief.chapter_reason = contextPage.chapter_reason || "";
           page.slide_brief.chapter_context = contextPage.slide_brief?.chapter_context || "";
           if (!page.slide_brief.locked && !page.slide_brief.user_modified) {
             page.slide_brief.question_answered = contextPage.slide_brief?.question_answered
@@ -16102,6 +16614,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               : aiPlanner.SLIDE_BRIEF_TIMEOUT_MS,
             temperature: repairMode ? 0 : 0.12,
             responseFormat: "json_object",
+            taskTier: "fast",
             stream: false,
           });
           return {
@@ -16298,6 +16811,23 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         failure_reason_counts: failureReasonCounts,
         input_characters: inputCharacters,
       };
+      const themeWarnings = window.ResearchThemeClassifier?.findBlueprintThemeWarnings?.(
+        editedPagePlan.pages,
+        reportNarrative
+      ) || [];
+      editedPagePlan.research_theme_warnings = themeWarnings;
+      reportNarrative.research_theme_warnings = themeWarnings;
+      (editedPagePlan.pages || []).forEach((page) => {
+        page.research_theme_warning = null;
+      });
+      themeWarnings.forEach((warning) => {
+        const page = (editedPagePlan.pages || []).find((item) =>
+          (warning.slide_id && pptxPageStableId(item) === warning.slide_id)
+          || Number(item.page_idx) === Number(warning.page_idx)
+        );
+        if (page) page.research_theme_warning = warning;
+      });
+      lastPptxSlideBriefStats.theme_warning_count = themeWarnings.length;
       console.info("SlideBrief generation stats", lastPptxSlideBriefStats);
       return applied;
     }
@@ -16408,6 +16938,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           timeoutMs: 240000,
           temperature: 0.1,
           responseFormat: "json_object",
+          taskTier: "fast",
           stream: false,
         };
         let output = await callAiChatCompletion(settings, messages, callOptions);
@@ -16450,6 +16981,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
             body: JSON.stringify({
               force_user_modified: forceUserModified,
               suggestion: {
@@ -16493,6 +17026,47 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       }
     }
 
+    async function generateNarrativePageBlueprint(reportNarrative) {
+      if (!reportNarrative) throw new Error("缺少可用于生成页面蓝图的故事线框架。");
+      if (Array.isArray(reportNarrative.page_blueprint) && reportNarrative.page_blueprint.length) {
+        return {
+          narrative: reportNarrative,
+          localOptimized: Boolean(reportNarrative.page_blueprint_local_optimized),
+        };
+      }
+      const aiPlanner = window.PptReportAi;
+      const sourceContext = lastPptxInsightContext || await requestPptxInsightContext();
+      lastPptxInsightContext = sourceContext;
+      const planPagesById = new Map(
+        (editedPagePlan.pages || []).map((page) => [pptxPageStableId(page), page])
+      );
+      const blueprintContext = {
+        ...sourceContext,
+        require_page_blueprint: true,
+        available_dimensions: editedPagePlan.available_dimensions || [],
+        core_research_module: editedPagePlan.core_research_module || selectedCoreResearchModule(),
+        research_modules: editedPagePlan.research_modules || detectedResearchModules,
+        pages: (sourceContext.pages || []).map((page) => {
+          const planPage = planPagesById.get(pptxPageStableId(page));
+          return {
+            ...page,
+            source_chapter: planPage?.source_chapter || planPage?.chapter || page.chapter || "",
+            research_role: planPage?.research_role || "",
+            dimensions: Array.isArray(planPage?.selected_dimensions)
+              ? [...planPage.selected_dimensions]
+              : (page.dimensions || ["总体"]),
+          };
+        }),
+      };
+      const combined = aiPlanner.validateReportNarrative({
+        ...reportNarrative,
+        page_blueprint: aiPlanner.buildFallbackPageBlueprint(blueprintContext, reportNarrative),
+      }, blueprintContext);
+      combined.page_blueprint_local_optimized = true;
+      pendingReportNarrative = combined;
+      editedPagePlan.report_narrative = combined;
+      return { narrative: combined, localOptimized: true };
+    }
     async function confirmReportNarrativeAndGenerate() {
       if (!selectedFile || !editedPagePlan?.pages?.length) return;
       if (narrativeConfirmBtn) narrativeConfirmBtn.disabled = true;
@@ -16503,8 +17077,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       setPptxProgress(5, "准备按故事线重组章节与页面顺序", "AI 蓝图");
       try {
         let applied = 0;
+        let blueprintLocalOptimized = false;
         if (pendingReportNarrative) {
           confirmNarrativeDimensionSelections();
+          setPptxProgress(12, "正在按已确认的故事线生成页面题目蓝图", "AI 蓝图");
+          const blueprintResult = await generateNarrativePageBlueprint(pendingReportNarrative);
+          pendingReportNarrative = blueprintResult.narrative;
+          blueprintLocalOptimized = blueprintResult.localOptimized;
+          setPptxProgress(24, blueprintLocalOptimized ? "本地逻辑蓝图已完成题目合并与拆分" : "页面题目蓝图已生成", "AI 蓝图");
           applied = await generatePptxSlideBriefs(pendingReportNarrative);
         } else {
           ensureStableSlideBriefs();
@@ -16529,9 +17109,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const performanceText = stats
           ? `；总耗时 ${(stats.workflow_seconds ?? stats.elapsed_seconds).toFixed(1)} 秒（证据 ${(stats.context_seconds || 0).toFixed(1)} 秒、初写 ${(stats.initial_seconds || 0).toFixed(1)} 秒、补写 ${(stats.repair_seconds || 0).toFixed(1)} 秒），初写 ${stats.batch_count} 批 + 补写 ${stats.repair_batch_count || 0} 批/并发 ${stats.concurrency}${stats.no_evidence_pages ? `，${stats.no_evidence_pages} 页无事实证据直接使用确定性文案` : ""}${stats.failed_pages ? `，${stats.failed_pages} 页降级${failureBreakdown ? `（${failureBreakdown}）` : ""}` : ""}`
           : "";
+        const themeWarningText = stats?.theme_warning_count
+          ? "；发现 " + stats.theme_warning_count + " 页主题与章节仍可能不匹配，已标记供人工调整"
+          : "";
         const narrativeProjection = getPptxOutputPageProjection(editedPagePlan);
         const message = pendingReportNarrative
-          ? `已按故事线重组 ${narrativeProjection.analysisPages} 个分析页，形成 ${narrativeProjection.sectionPages} 个连续章节；最终 PPT 预计 ${narrativeProjection.totalPages} 页。AI 更新 ${applied} 页，题目证据与稳定页面 ID 已保留，人工修改或锁定内容未被覆盖${performanceText}。`
+          ? `已按故事线重组 ${narrativeProjection.analysisPages} 个分析页，形成 ${narrativeProjection.sectionPages} 个连续章节；最终 PPT 预计 ${narrativeProjection.totalPages} 页。${blueprintLocalOptimized ? "页面题目组合采用本地逻辑优化蓝图；" : ""}AI 更新 ${applied} 页，题目证据与稳定页面 ID 已保留，人工修改或锁定内容未被覆盖${performanceText}${themeWarningText}。`
           : "Report Narrative 不可用，已保留当前确定性蓝图，可继续编辑或生成 PPT。";
         aiWriteStatus.textContent = message;
         if (confirmStatus) confirmStatus.textContent = message;
@@ -16765,6 +17348,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     confirmBtn && confirmBtn.addEventListener("click", () => doGeneratePptx());
     aiWriteBtn && aiWriteBtn.addEventListener("click", () => runSelectedPptxAiWorkflow());
     narrativeRegenerateBtn?.addEventListener("click", () => generatePptxAiReport());
+    narrativeFeedbackBtn?.addEventListener("click", () => reviseReportNarrativeWithFeedback());
+    narrativeFeedbackInput?.addEventListener("keydown", (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") reviseReportNarrativeWithFeedback();
+    });
     narrativeContent?.addEventListener("change", (event) => {
       const input = event.target?.closest?.("input[data-narrative-dimension]");
       if (!input) return;
@@ -17910,14 +18497,14 @@ function renderNetGroupPanel() {
   const panel = document.querySelector("#netGroupPanel");
   const select = document.querySelector("#netGroupQuestionSelect");
   if (!panel || !select) return;
-  
+
   // Only show if we have parsed data with multi-choice questions
   const parsed = parseDelimitedTable(document.querySelector("#crosstabData").value);
   if (!parsed || !parsed.headers.length) {
     panel.style.display = "none";
     return;
   }
-  
+
   const groups = groupQuestionHeaders(parsed.headers, parsed.rows);
   const multiQuestions = groups.filter((g) => {
     if (g.headers.length === 1) {
@@ -17927,20 +18514,20 @@ function renderNetGroupPanel() {
     const type = inferMultiColumnType(g, parsed.rows);
     return type === "multi_columns" || g.multiResponse;
   });
-  
+
   if (multiQuestions.length === 0) {
     panel.style.display = "none";
     return;
   }
-  
+
   panel.style.display = "";
-  
+
   // Build select options
   select.innerHTML = multiQuestions.map((q, i) => {
     const key = q.headers.length > 1 ? q.key : q.headers[0];
     return `<option value="${escapeHtml(key)}"${i === 0 ? " selected" : ""}>${escapeHtml(q.title || key)}</option>`;
   }).join("");
-  
+
   select.onchange = () => buildNetGroupEditor();
   buildNetGroupEditor();
 }
@@ -17949,13 +18536,13 @@ function buildNetGroupEditor() {
   const select = document.querySelector("#netGroupQuestionSelect");
   const editor = document.querySelector("#netGroupEditor");
   if (!select || !editor) return;
-  
+
   const questionKey = select.value;
   const parsed = parseDelimitedTable(document.querySelector("#crosstabData").value);
   const groups = groupQuestionHeaders(parsed.headers, parsed.rows);
   const question = groups.find((g) => (g.headers.length > 1 ? g.key : g.headers[0]) === questionKey);
   if (!question) return;
-  
+
   // Get options for this question
   let options = [];
   if (question.headers.length > 1) {
@@ -17969,9 +18556,9 @@ function buildNetGroupEditor() {
     values.forEach((v) => splitMultiValues(v).forEach((item) => mentions.set(item, (mentions.get(item) || 0) + 1)));
     options = [...mentions.keys()].map((k) => ({ label: k, header: k }));
   }
-  
+
   const netGroups = getNetGroupsForQuestion(questionKey);
-  
+
   editor.innerHTML = netGroups.map((group, index) => {
     return `
       <div class="net-group-item" data-index="${index}">
@@ -17988,7 +18575,7 @@ function buildNetGroupEditor() {
       </div>
     `;
   }).join("");
-  
+
   // Attach change listeners to checkboxes
   editor.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
     cb.onchange = () => {
@@ -17997,7 +18584,7 @@ function buildNetGroupEditor() {
       else label.classList.remove('selected');
     };
   });
-  
+
   // Attach input listeners to name fields
   editor.querySelectorAll('input[data-field="name"]').forEach((inp) => {
     inp.oninput = () => {
@@ -18032,12 +18619,12 @@ function applyNetGroups() {
   const select = document.querySelector("#netGroupQuestionSelect");
   if (!select) return;
   const questionKey = select.value;
-  
+
   // Collect current editor state
   const editor = document.querySelector("#netGroupEditor");
   const items = editor.querySelectorAll(".net-group-item");
   const groups = [];
-  
+
   items.forEach((item) => {
     const name = item.querySelector('input[data-field="name"]')?.value || "";
     const selectedOpts = [...item.querySelectorAll('input[type="checkbox"]:checked')].map((cb) => cb.dataset.opt);
@@ -18045,12 +18632,12 @@ function applyNetGroups() {
       groups.push({ name: name.trim(), optionLabels: selectedOpts, optionHeaders: selectedOpts });
     }
   });
-  
+
   setNetGroupsForQuestion(questionKey, groups);
-  
+
   // Re-run the question pivot to apply changes
   if (typeof renderQuestionPivot === "function") renderQuestionPivot();
-  
+
   showButtonSaved(document.querySelector("#applyNetGroups"), "已应用");
 }
 
@@ -18069,11 +18656,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const applyBtn = document.querySelector("#applyNetGroups");
   const clearBtn = document.querySelector("#clearNetGroups");
   const toggleBtn = document.querySelector("#toggleNetGroupPanel");
-  
+
   if (addBtn) addBtn.addEventListener("click", addNetGroup);
   if (applyBtn) applyBtn.addEventListener("click", applyNetGroups);
   if (clearBtn) clearBtn.addEventListener("click", clearNetGroups);
-  
+
   if (toggleBtn) {
     toggleBtn.addEventListener("click", () => {
       const content = document.querySelector("#netGroupConfigContent");
