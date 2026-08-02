@@ -13152,9 +13152,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     const narrativeConfirmBtn = document.querySelector("#pptxNarrativeConfirmBtn");
     const narrativeRegenerateBtn = document.querySelector("#pptxNarrativeRegenerateBtn");
     const continueEditBtn = document.querySelector("#pptxContinueEditBtn");
-    const narrativeFeedbackInput = document.querySelector("#pptxNarrativeFeedbackInput");
-    const narrativeFeedbackBtn = document.querySelector("#pptxNarrativeFeedbackBtn");
-    const narrativeFeedbackStatus = document.querySelector("#pptxNarrativeFeedbackStatus");
+    // 修订故事线功能已移除（AI 局部修订成功率不稳定，统一改用"重新生成故事线"）
     if (!dropzone) return;
 
     let selectedFile = null;
@@ -16247,145 +16245,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       }
         }
 
-    async function reviseReportNarrativeWithFeedback() {
-      const feedback = String(narrativeFeedbackInput?.value || "").trim();
-      if (!feedback) {
-        showToast("请先写下希望修改的故事线内容。", "warning");
-        narrativeFeedbackInput?.focus();
-        return false;
-      }
-      if (!pendingReportNarrative || !editedPagePlan?.pages?.length) {
-        showToast("请先生成一版 AI 故事线。", "warning");
-        return false;
-      }
-      const settings = loadAiSettings();
-      const errors = validateAiSettings(settings);
-      if (settings.mode === "local" || errors.length) {
-        if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = `AI 设置尚未就绪：${errors.join("；")}`;
-        return false;
-      }
-      const aiPlanner = window.PptReportAi;
-      if (!aiPlanner?.buildReportNarrativeRevisionInput) {
-        if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = "AI 故事线修改模块未加载，请刷新页面后重试。";
-        return false;
-      }
-      const previousNarrative = pendingReportNarrative;
-      const previousFeedback = narrativeFeedbackInput.value;
-      if (narrativeFeedbackBtn) narrativeFeedbackBtn.disabled = true;
-      if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = true;
-      if (narrativeConfirmBtn) narrativeConfirmBtn.disabled = true;
-      if (aiWriteBtn) aiWriteBtn.disabled = true;
-      if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = "AI 正在基于当前故事线修改…";
-      aiWriteStatus.textContent = "正在根据反馈修改当前故事线，原故事线会保留到新结果校验完成。";
-      progress.classList.remove("hidden");
-      setPptxProgress(34, "正在读取当前故事线与反馈", "AI 故事线修改");
-      try {
-        const context = lastPptxInsightContext || await requestPptxInsightContext();
-        lastPptxInsightContext = context;
-        const narrativeContext = buildPptxNarrativeContext(context);
-        const revisionInput = aiPlanner.buildReportNarrativeRevisionInput(
-          previousNarrative,
-          narrativeContext,
-          feedback,
-          (titleInput.value || "调研分析报告").trim(),
-        );
-        const messages = [
-          {
-            role: "system",
-            content: [
-              aiPlanner.REPORT_NARRATIVE_SYSTEM_PROMPT,
-              "你正在修改一份已经生成的 Report Narrative，不是重新规划一个本地模板。",
-              "必须完整返回修改后的 JSON；优先只调整用户反馈涉及的内容，未被反馈涉及的章节、题目归属、主题和分析维度保持稳定。",
-              "不要因为当前故事线与初版结构相似而自行重组，也不要调用或模拟本地兜底逻辑。",
-              "用户反馈可能包含章节标题、章节顺序、研究目的、题目归属和中心观点，请按研究目的理解后修改。",
-            ].join("\n"),
-          },
-          {
-            role: "user",
-            content: JSON.stringify(revisionInput),
-          },
-        ];
-        let output;
-        try {
-          output = await callAiChatCompletion(settings, messages, {
-            maxTokens: 4000,
-            timeoutMs: 180000,
-            temperature: 0,
-            responseFormat: "json_object",
-            taskTier: "structured",
-            stream: true,
-          });
-        } catch (error) {
-          if (!/(?:524|502|503|504|timeout|超时)/i.test(String(error?.message || error))) throw error;
-          output = await callAiChatCompletion(settings, messages, {
-            maxTokens: 4000,
-            timeoutMs: 180000,
-            temperature: 0,
-            responseFormat: "json_object",
-            taskTier: "fast",
-            stream: true,
-          });
-        }
-        // 流式响应偶发被 maxTokens 截断导致 JSON 不完整；非流式重试一次拿完整结果
-        try {
-          aiPlanner.parseJsonObject(output);
-        } catch (parseError) {
-          if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = "首次返回 JSON 不完整，正在非流式重试…";
-          output = await callAiChatCompletion(settings, messages, {
-            maxTokens: 4000,
-            timeoutMs: 180000,
-            temperature: 0,
-            responseFormat: "json_object",
-            taskTier: "structured",
-            stream: false,
-          });
-        }
-        const revisedPayload = aiPlanner.parseJsonObject(output);
-        // AI 修订时可能省略未被反馈涉及的字段（如 central_thesis），从原故事线继承以保持稳定
-        const thesisKeys = ["central_thesis", "centralThesis", "thesis", "core_thesis", "core_viewpoint", "central_argument"];
-        if (!thesisKeys.some((key) => String(revisedPayload[key] || "").trim()) && previousNarrative?.central_thesis) {
-          revisedPayload.central_thesis = previousNarrative.central_thesis;
-        }
-        if (!String(revisedPayload.report_title || revisedPayload.reportTitle || "").trim() && previousNarrative?.report_title) {
-          revisedPayload.report_title = previousNarrative.report_title;
-        }
-        if (!String(revisedPayload.ending_message || revisedPayload.endingMessage || "").trim() && previousNarrative?.ending_message) {
-          revisedPayload.ending_message = previousNarrative.ending_message;
-        }
-        if (!Array.isArray(revisedPayload.chapters) || !revisedPayload.chapters.length) {
-          revisedPayload.chapters = previousNarrative?.chapters || [];
-        }
-        const revisedNarrative = aiPlanner.validateReportNarrative(
-          revisedPayload,
-          { ...narrativeContext, require_page_blueprint: false },
-        );
-        pendingReportNarrative = revisedNarrative;
-        editedPagePlan.report_narrative = revisedNarrative;
-        editedPagePlan.research_theme_classification = revisedNarrative.research_theme_classification || null;
-        editedPagePlan.research_theme_warnings = revisedNarrative.research_theme_warnings || [];
-        editedPagePlan.narrative_question_blueprint_signature = "";
-        renderReportNarrative(revisedNarrative);
-        narrativeFeedbackInput.value = "";
-        if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = "已按反馈更新故事线，请继续检查或提交下一条反馈。";
-        aiWriteStatus.textContent = "AI 已根据反馈修改当前故事线；未执行本地重组。";
-        setPptxProgress(100, "故事线反馈修改完成", "AI 故事线修改");
-        return true;
-      } catch (error) {
-        narrativeFeedbackInput.value = previousFeedback;
-        pendingReportNarrative = previousNarrative;
-        editedPagePlan.report_narrative = previousNarrative;
-        if (narrativeFeedbackStatus) narrativeFeedbackStatus.textContent = `修改失败，已保留原故事线：${error.message}`;
-        aiWriteStatus.textContent = `AI 故事线修改失败，已保留原结果：${error.message}`;
-        setPptxProgress(0, "故事线反馈修改失败", "AI 故事线修改");
-        return false;
-      } finally {
-        if (narrativeFeedbackBtn) narrativeFeedbackBtn.disabled = false;
-        if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = false;
-        if (narrativeConfirmBtn) narrativeConfirmBtn.disabled = false;
-        if (aiWriteBtn) aiWriteBtn.disabled = false;
-        setTimeout(() => progress.classList.add("hidden"), 1200);
-      }
-    }
+    // 修订故事线功能已移除：AI 局部修订成功率不稳定，统一改用"重新生成故事线"按钮
     function normalizePptxDimensions(values) {
       const available = new Set(["总体", ...(editedPagePlan?.available_dimensions || []).map((item) => String(item?.key || "").trim()).filter(Boolean)]);
       const selected = Array.from(new Set((values || []).map((value) => String(value || "").trim()).filter((value) => available.has(value))));
@@ -17391,10 +17251,6 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     confirmBtn && confirmBtn.addEventListener("click", () => doGeneratePptx());
     aiWriteBtn && aiWriteBtn.addEventListener("click", () => runSelectedPptxAiWorkflow());
     narrativeRegenerateBtn?.addEventListener("click", () => generatePptxAiReport());
-    narrativeFeedbackBtn?.addEventListener("click", () => reviseReportNarrativeWithFeedback());
-    narrativeFeedbackInput?.addEventListener("keydown", (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") reviseReportNarrativeWithFeedback();
-    });
     narrativeContent?.addEventListener("change", (event) => {
       const input = event.target?.closest?.("input[data-narrative-dimension]");
       if (!input) return;
