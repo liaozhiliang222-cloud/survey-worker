@@ -15989,45 +15989,60 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const assignmentBatches = [];
       for (let index = 0; index < compactPages.length; index += 4) assignmentBatches.push(compactPages.slice(index, index + 4));
       async function requestAssignmentBatch(pages, batchIndex, allowSplit = true) {
-        try {
-          return aiPlanner.parseJsonObject(await callAiChatCompletion(settings, [
-            { role: "system", content: assignmentPrompt },
-            {
-              role: "user",
-              content: JSON.stringify({
-                objective: frameworkInput.research_objective,
-                thesis: frameworkPayload.central_thesis,
-                chapters: chapters.map((chapter) => ({
-                  id: chapter.chapter_id,
-                  title: chapter.title,
-                  question: chapter.key_question,
-                  theme: chapter.allowed_themes[0],
-                })),
-                pages: pages.map((page) => ({
-                  id: page.page_idx,
-                  title: page.current_title,
-                  source: page.source_chapter,
-                  role: page.research_role,
-                })),
-              }),
-            },
-          ], {
-            maxTokens: 650,
-            timeoutMs: 65000,
-            temperature: 0,
-            responseFormat: "json_object",
-            taskTier: "storyline",
-            stream: false,
-          }));
-        } catch (error) {
-          if (allowSplit && pages.length > 1) {
-            const midpoint = Math.ceil(pages.length / 2);
-            const first = await requestAssignmentBatch(pages.slice(0, midpoint), batchIndex, false);
-            const second = await requestAssignmentBatch(pages.slice(midpoint), batchIndex, false);
-            return { assignments: [...(first.assignments || []), ...(second.assignments || [])] };
+        const buildMessages = () => [
+          { role: "system", content: assignmentPrompt },
+          {
+            role: "user",
+            content: JSON.stringify({
+              objective: frameworkInput.research_objective,
+              thesis: frameworkPayload.central_thesis,
+              chapters: chapters.map((chapter) => ({
+                id: chapter.chapter_id,
+                title: chapter.title,
+                question: chapter.key_question,
+                theme: chapter.allowed_themes[0],
+              })),
+              pages: pages.map((page) => ({
+                id: page.page_idx,
+                title: page.current_title,
+                source: page.source_chapter,
+                role: page.research_role,
+              })),
+            }),
+          },
+        ];
+        // 针对 502/503/504/524/timeout 等瞬态错误的指数退避重试，
+        // 最后一次重试切换到 fast 通道以提高可用性。
+        const transientPattern = /(?:524|502|503|504|timeout|超时|ETIMEDOUT|ECONNRESET|socket hang up)/i;
+        const maxAttempts = 3;
+        let lastError;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          try {
+            const isFinalFallback = attempt === maxAttempts;
+            return aiPlanner.parseJsonObject(await callAiChatCompletion(settings, buildMessages(), {
+              maxTokens: 650,
+              timeoutMs: 65000,
+              temperature: 0,
+              responseFormat: "json_object",
+              taskTier: isFinalFallback ? "fast" : "storyline",
+              stream: false,
+            }));
+          } catch (error) {
+            lastError = error;
+            const message = String(error?.message || error);
+            if (attempt >= maxAttempts || !transientPattern.test(message)) break;
+            // 指数退避：1s、2s
+            await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
           }
-          throw new Error(`页面归属第 ${batchIndex + 1} 批失败：${error?.message || error}`);
         }
+        const error = lastError;
+        if (allowSplit && pages.length > 1) {
+          const midpoint = Math.ceil(pages.length / 2);
+          const first = await requestAssignmentBatch(pages.slice(0, midpoint), batchIndex, false);
+          const second = await requestAssignmentBatch(pages.slice(midpoint), batchIndex, false);
+          return { assignments: [...(first.assignments || []), ...(second.assignments || [])] };
+        }
+        throw new Error(`页面归属第 ${batchIndex + 1} 批失败：${error?.message || error}`);
       }
       const assignmentPayloads = [];
       for (let waveStart = 0; waveStart < assignmentBatches.length; waveStart += 2) {
