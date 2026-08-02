@@ -16341,6 +16341,20 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           });
         }
         const revisedPayload = aiPlanner.parseJsonObject(output);
+        // AI 修订时可能省略未被反馈涉及的字段（如 central_thesis），从原故事线继承以保持稳定
+        const thesisKeys = ["central_thesis", "centralThesis", "thesis", "core_thesis", "core_viewpoint", "central_argument"];
+        if (!thesisKeys.some((key) => String(revisedPayload[key] || "").trim()) && previousNarrative?.central_thesis) {
+          revisedPayload.central_thesis = previousNarrative.central_thesis;
+        }
+        if (!String(revisedPayload.report_title || revisedPayload.reportTitle || "").trim() && previousNarrative?.report_title) {
+          revisedPayload.report_title = previousNarrative.report_title;
+        }
+        if (!String(revisedPayload.ending_message || revisedPayload.endingMessage || "").trim() && previousNarrative?.ending_message) {
+          revisedPayload.ending_message = previousNarrative.ending_message;
+        }
+        if (!Array.isArray(revisedPayload.chapters) || !revisedPayload.chapters.length) {
+          revisedPayload.chapters = previousNarrative?.chapters || [];
+        }
         const revisedNarrative = aiPlanner.validateReportNarrative(
           revisedPayload,
           { ...narrativeContext, require_page_blueprint: false },
