@@ -19,9 +19,13 @@ from pptx.enum.chart import (
     XL_DATA_LABEL_POSITION,
     XL_LEGEND_POSITION,
     XL_MARKER_STYLE,
+    XL_TICK_LABEL_POSITION,
+    XL_TICK_MARK,
 )
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.oxml.ns import qn
+from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
 
 
@@ -125,11 +129,74 @@ def _add_badge(slide, text: str, x: float, y: float, w: float, color: str) -> No
     _add_text(slide, text, x + 0.03, y + 0.01, w - 0.06, 0.24, size=8.5, bold=True, color=COLORS["white"], align=PP_ALIGN.CENTER)
 
 
-def _add_matrix_line(slide, x: float, y: float, w: float, h: float) -> None:
-    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
-    shape.fill.solid()
-    shape.fill.fore_color.rgb = _rgb("8FA3B8")
-    shape.line.fill.background()
+def _set_plot_area_border(chart, color: str, width: float = 0.75) -> None:
+    plot_area = chart._chartSpace.chart.plotArea
+    existing = plot_area.find(qn("c:spPr"))
+    if existing is not None:
+        plot_area.remove(existing)
+    sp_pr = OxmlElement("c:spPr")
+    sp_pr.append(OxmlElement("a:noFill"))
+    line = OxmlElement("a:ln")
+    line.set("w", str(int(Pt(width))))
+    solid_fill = OxmlElement("a:solidFill")
+    rgb = OxmlElement("a:srgbClr")
+    rgb.set("val", color)
+    solid_fill.append(rgb)
+    line.append(solid_fill)
+    sp_pr.append(line)
+    plot_area.append(sp_pr)
+
+
+def _set_scatter_series_name_label(series, *, font_size: float, color: str) -> None:
+    """Show the series-name workbook cell as a native label on its single point."""
+    ser = series._ser
+    existing = ser.find(qn("c:dLbls"))
+    if existing is not None:
+        ser.remove(existing)
+
+    labels = OxmlElement("c:dLbls")
+    for tag, value in (
+        ("c:dLblPos", "r"),
+        ("c:showLegendKey", "0"),
+        ("c:showVal", "0"),
+        ("c:showCatName", "0"),
+        ("c:showSerName", "1"),
+        ("c:showPercent", "0"),
+        ("c:showBubbleSize", "0"),
+        ("c:showLeaderLines", "1"),
+    ):
+        element = OxmlElement(tag)
+        element.set("val", value)
+        labels.append(element)
+
+    text_properties = OxmlElement("c:txPr")
+    text_properties.append(OxmlElement("a:bodyPr"))
+    text_properties.append(OxmlElement("a:lstStyle"))
+    paragraph = OxmlElement("a:p")
+    paragraph_properties = OxmlElement("a:pPr")
+    run_properties = OxmlElement("a:defRPr")
+    run_properties.set("sz", str(int(font_size * 100)))
+    run_properties.set("b", "1")
+    solid_fill = OxmlElement("a:solidFill")
+    rgb = OxmlElement("a:srgbClr")
+    rgb.set("val", color)
+    solid_fill.append(rgb)
+    run_properties.append(solid_fill)
+    for tag in ("a:latin", "a:ea", "a:cs"):
+        typeface = OxmlElement(tag)
+        typeface.set("typeface", FONT)
+        run_properties.append(typeface)
+    paragraph_properties.append(run_properties)
+    paragraph.append(paragraph_properties)
+    paragraph.append(OxmlElement("a:endParaRPr"))
+    text_properties.append(paragraph)
+    labels.append(text_properties)
+
+    x_values = ser.find(qn("c:xVal"))
+    if x_values is not None:
+        x_values.addprevious(labels)
+    else:
+        ser.append(labels)
 
 
 def _short_label(value: Any, limit: int = 16) -> str:
@@ -291,49 +358,56 @@ def _render_kano(slide, payload: Any) -> None:
         ("必备属性", COLORS["amber"]),
         ("无差异属性", COLORS["muted"]),
     ]
+    classification_colors = dict(classifications)
+    compact_labels = len(valid) > 20
     data = XyChartData()
     active = []
-    for classification, color in classifications:
-        items = [row for row in valid if str(row.get("classification") or "") == classification]
-        if not items:
-            continue
-        series = data.add_series(classification)
-        for row in items:
-            series.add_data_point(abs(float(row["worse"])), float(row["better"]))
-        active.append((classification, color))
-    if not active:
-        series = data.add_series("属性")
-        for row in valid:
-            series.add_data_point(abs(float(row["worse"])), float(row["better"]))
-        active.append(("属性", COLORS["blue"]))
+    for row in valid:
+        classification = str(row.get("classification") or "")
+        color = classification_colors.get(classification, COLORS["blue"])
+        label = row["_code"] if compact_labels else _short_label(row["name"])
+        series = data.add_series(label)
+        series.add_data_point(abs(float(row["worse"])), float(row["better"]))
+        active.append((row, color))
 
     chart = slide.shapes.add_chart(
         XL_CHART_TYPE.XY_SCATTER,
         Inches(0.88), Inches(1.62), Inches(8.72), Inches(4.88), data,
     ).chart
-    _style_chart(chart, legend=True)
+    _style_chart(chart, legend=False)
+    mean_worse = sum(abs(float(row["worse"])) for row in valid) / len(valid)
+    mean_better = sum(float(row["better"]) for row in valid) / len(valid)
     for axis in (chart.category_axis, chart.value_axis):
         axis.minimum_scale = 0.0
         axis.maximum_scale = 1.0
         axis.major_unit = 0.25
         axis.number_format = "0.00"
         axis.number_format_is_linked = False
-        axis.has_major_gridlines = True
-        axis.major_gridlines.format.line.color.rgb = _rgb(COLORS["grid"])
+        axis.has_major_gridlines = False
+        axis.has_minor_gridlines = False
+        axis.major_tick_mark = XL_TICK_MARK.NONE
+        axis.minor_tick_mark = XL_TICK_MARK.NONE
+        axis.tick_label_position = XL_TICK_LABEL_POSITION.LOW
+        axis.format.line.color.rgb = _rgb("8FA3B8")
+        axis.format.line.width = Pt(0.75)
+    chart.category_axis.crosses_at = mean_worse
+    chart.value_axis.crosses_at = mean_better
+    _set_plot_area_border(chart, COLORS["grid"])
     for series, (_, color) in zip(chart.series, active):
         series.marker.style = XL_MARKER_STYLE.CIRCLE
         series.marker.size = 8
         series.format.fill.solid()
         series.format.fill.fore_color.rgb = _rgb(color)
         series.format.line.fill.background()
+        _set_scatter_series_name_label(
+            series,
+            font_size=5.8 if compact_labels else 8.2,
+            color=COLORS["ink"],
+        )
 
-    mean_worse = sum(abs(float(row["worse"])) for row in valid) / len(valid)
-    mean_better = sum(float(row["better"]) for row in valid) / len(valid)
     plot_left, plot_top, plot_width, plot_height = 1.46, 1.91, 7.70, 3.92
     line_x = plot_left + mean_worse * plot_width
     line_y = plot_top + (1.0 - mean_better) * plot_height
-    _add_matrix_line(slide, line_x, plot_top, 0.018, plot_height)
-    _add_matrix_line(slide, plot_left, line_y, plot_width, 0.018)
     _add_text(slide, f"Worse 均值 {mean_worse:.2f}", line_x + 0.05, plot_top + plot_height - 0.22, 1.18, 0.18, size=7, bold=True, color=COLORS["muted"])
     _add_text(slide, f"Better 均值 {mean_better:.2f}", plot_left + 0.05, line_y - 0.22, 1.18, 0.18, size=7, bold=True, color=COLORS["muted"])
     _add_badge(slide, "魅力属性", plot_left + 0.05, plot_top + 0.05, 0.92, COLORS["green"])
@@ -341,40 +415,6 @@ def _render_kano(slide, payload: Any) -> None:
     _add_badge(slide, "无差异属性", plot_left + 0.05, plot_top + plot_height - 0.33, 1.05, COLORS["muted"])
     _add_badge(slide, "必备属性", plot_left + plot_width - 0.97, plot_top + plot_height - 0.33, 0.92, COLORS["amber"])
 
-    compact_labels = len(valid) > 20
-    occupied: list[tuple[float, float, float, float]] = []
-
-    def overlaps(box: tuple[float, float, float, float]) -> bool:
-        x1, y1, w1, h1 = box
-        return any(not (x1 + w1 <= x2 or x2 + w2 <= x1 or y1 + h1 <= y2 or y2 + h2 <= y1) for x2, y2, w2, h2 in occupied)
-
-    for row in valid:
-        px = plot_left + abs(float(row["worse"])) * plot_width
-        py = plot_top + (1.0 - float(row["better"])) * plot_height
-        label = row["_code"] if compact_labels else _short_label(row["name"])
-        label_w, label_h = (0.34, 0.14) if compact_labels else (1.10, 0.18)
-        candidates = []
-        for radius in ((0.10, 0.18, 0.28, 0.40, 0.56, 0.74, 0.94, 1.16) if compact_labels else (0.10,)):
-            for angle in (0, 45, 90, 135, 180, 225, 270, 315):
-                radians = math.radians(angle)
-                candidates.append((px + math.cos(radians) * radius, py + math.sin(radians) * radius))
-        chosen = None
-        for candidate_x, candidate_y in candidates:
-            box = (
-                max(plot_left, min(plot_left + plot_width - label_w, candidate_x)),
-                max(plot_top, min(plot_top + plot_height - label_h, candidate_y)),
-                label_w,
-                label_h,
-            )
-            if not overlaps(box):
-                chosen = box
-                break
-        chosen = chosen or (max(plot_left, min(plot_left + plot_width - label_w, px + 0.08)), py, label_w, label_h)
-        occupied.append(chosen)
-        _add_text(
-            slide, label, *chosen, size=5.8 if compact_labels else 8.2,
-            bold=True, color=COLORS["ink"], align=PP_ALIGN.CENTER if compact_labels else PP_ALIGN.LEFT,
-        )
     ranked = sorted(valid, key=lambda row: abs(float(row["worse"])) + float(row["better"]), reverse=True)
     entries = [
         (

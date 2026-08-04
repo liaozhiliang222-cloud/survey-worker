@@ -7,6 +7,7 @@ import sys
 from pptx import Presentation
 from pptx.enum.dml import MSO_FILL_TYPE
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.oxml.ns import qn
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -66,14 +67,38 @@ def main() -> None:
         assert "可编辑" in text
         assert charts[0].chart.part.chart_workbook.xlsx_part is not None
         if model_type == "kano":
+            chart = charts[0].chart
+            assert chart.has_legend is False
+            assert len(chart.series) == len(SAMPLES["kano"])
             assert all(
                 series.format.line.fill.type == MSO_FILL_TYPE.BACKGROUND
-                for series in charts[0].chart.series
+                for series in chart.series
             )
+            for series in chart.series:
+                data_labels = series._ser.find(qn("c:dLbls"))
+                assert data_labels is not None
+                assert data_labels.find(qn("c:showSerName")).get("val") == "1"
+                assert data_labels.find(qn("c:showVal")).get("val") == "0"
+                assert data_labels.find(qn("c:dLblPos")).get("val") == "r"
+
+            assert chart.category_axis.has_major_gridlines is False
+            assert chart.value_axis.has_major_gridlines is False
+            assert chart.category_axis.has_minor_gridlines is False
+            assert chart.value_axis.has_minor_gridlines is False
+            assert abs(chart.category_axis.crosses_at - 0.6025) < 1e-6
+            assert abs(chart.value_axis.crosses_at - 0.5425) < 1e-6
+            plot_area = chart._chartSpace.chart.plotArea
+            plot_border = plot_area.find(qn("c:spPr"))
+            assert plot_border is not None
+            assert plot_border.find(qn("a:ln")) is not None
             for label in ("魅力属性", "期望属性", "必备属性", "无差异属性", "Worse 均值", "Better 均值"):
                 assert label in text
-            for item in ("配送速度", "包装设计", "包装质感", "售后保障"):
-                assert item in text
+            assert [series.name for series in chart.series] == [
+                "配送速度", "包装设计", "包装质感", "售后保障"
+            ]
+
+    export_source = (ROOT / "pptx_report" / "model_chart_export.py").read_text(encoding="utf-8")
+    assert "_add_matrix_line" not in export_source
 
     api_source = (ROOT / "deploy" / "aliyun_api.py").read_text(encoding="utf-8")
     assert '/api/pptx-report/model-chart' in api_source
