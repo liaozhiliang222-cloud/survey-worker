@@ -3,6 +3,7 @@
 from io import BytesIO
 from pathlib import Path
 import sys
+from zipfile import ZipFile
 
 from pptx import Presentation
 from pptx.enum.dml import MSO_FILL_TYPE
@@ -69,17 +70,36 @@ def main() -> None:
         if model_type == "kano":
             chart = charts[0].chart
             assert chart.has_legend is False
-            assert len(chart.series) == len(SAMPLES["kano"])
-            assert all(
-                series.format.line.fill.type == MSO_FILL_TYPE.BACKGROUND
-                for series in chart.series
-            )
-            for series in chart.series:
-                data_labels = series._ser.find(qn("c:dLbls"))
-                assert data_labels is not None
-                assert data_labels.find(qn("c:showSerName")).get("val") == "1"
-                assert data_labels.find(qn("c:showVal")).get("val") == "0"
-                assert data_labels.find(qn("c:dLblPos")).get("val") == "r"
+            assert len(chart.series) == 1
+            series = chart.series[0]
+            assert series.name == "better"
+            assert len(series.points) == len(SAMPLES["kano"])
+            assert series.format.line.fill.type == MSO_FILL_TYPE.BACKGROUND
+
+            data_labels = series._ser.find(qn("c:dLbls"))
+            assert data_labels is not None
+            assert len(data_labels.findall(qn("c:dLbl"))) == len(SAMPLES["kano"])
+            assert data_labels.find(qn("c:showSerName")).get("val") == "0"
+            assert data_labels.find(qn("c:showVal")).get("val") == "0"
+            assert data_labels.find(qn("c:dLblPos")).get("val") == "r"
+            c15_ns = "http://schemas.microsoft.com/office/drawing/2012/chart"
+            data_range = series._ser.find(f".//{{{c15_ns}}}datalabelsRange")
+            assert data_range is not None
+            formula = data_range.find(f"{{{c15_ns}}}f")
+            assert formula.text == "Sheet1!$C$2:$C$5"
+
+            xlsx_part = chart.part.chart_workbook.xlsx_part
+            with ZipFile(BytesIO(xlsx_part.blob), "r") as workbook:
+                sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+                strings_xml = workbook.read("xl/sharedStrings.xml").decode("utf-8")
+            assert 'ref="A1:C5"' in sheet_xml
+            for cell in ("A1", "C1", "C2", "C3", "C4", "C5"):
+                assert f'r="{cell}"' in sheet_xml
+            assert "worse" in strings_xml
+            assert "better" in strings_xml
+            assert "KANO\u5c5e\u6027\u6807\u7b7e" in strings_xml
+            for row in SAMPLES["kano"]:
+                assert row["name"] in strings_xml
 
             assert chart.category_axis.has_major_gridlines is False
             assert chart.value_axis.has_major_gridlines is False
@@ -93,9 +113,6 @@ def main() -> None:
             assert plot_border.find(qn("a:ln")) is not None
             for label in ("魅力属性", "期望属性", "必备属性", "无差异属性", "Worse 均值", "Better 均值"):
                 assert label in text
-            assert [series.name for series in chart.series] == [
-                "配送速度", "包装设计", "包装质感", "售后保障"
-            ]
 
     export_source = (ROOT / "pptx_report" / "model_chart_export.py").read_text(encoding="utf-8")
     assert "_add_matrix_line" not in export_source

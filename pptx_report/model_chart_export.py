@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from io import BytesIO
 import math
+from uuid import uuid4
+from zipfile import ZIP_DEFLATED, ZipFile
 from typing import Any, Iterable
 
+from lxml import etree
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData, XyChartData
 from pptx.dml.color import RGBColor
@@ -147,27 +150,69 @@ def _set_plot_area_border(chart, color: str, width: float = 0.75) -> None:
     plot_area.append(sp_pr)
 
 
-def _set_scatter_series_name_label(series, *, font_size: float, color: str) -> None:
-    """Show the series-name workbook cell as a native label on its single point."""
+def _set_scatter_cell_range_labels(
+    series,
+    label_values: list[str],
+    *,
+    range_formula: str,
+    font_size: float,
+    color: str,
+) -> None:
+    """Bind native scatter labels to cells in the embedded workbook."""
     ser = series._ser
     existing = ser.find(qn("c:dLbls"))
     if existing is not None:
         ser.remove(existing)
 
-    labels = OxmlElement("c:dLbls")
+    data_labels = OxmlElement("c:dLbls")
+    c15_ns = "http://schemas.microsoft.com/office/drawing/2012/chart"
+    for index in range(len(label_values)):
+        data_label = OxmlElement("c:dLbl")
+        idx = OxmlElement("c:idx")
+        idx.set("val", str(index))
+        data_label.append(idx)
+
+        tx = OxmlElement("c:tx")
+        rich = OxmlElement("c:rich")
+        rich.append(OxmlElement("a:bodyPr"))
+        rich.append(OxmlElement("a:lstStyle"))
+        paragraph = OxmlElement("a:p")
+        field = OxmlElement("a:fld")
+        field.set("id", "{" + str(uuid4()).upper() + "}")
+        field.set("type", "CELLRANGE")
+        field.append(OxmlElement("a:rPr"))
+        field_text = OxmlElement("a:t")
+        field_text.text = "[CELLRANGE]"
+        field.append(field_text)
+        paragraph.append(field)
+        paragraph.append(OxmlElement("a:endParaRPr"))
+        rich.append(paragraph)
+        tx.append(rich)
+        data_label.append(tx)
+
+        label_ext_list = OxmlElement("c:extLst")
+        label_ext = OxmlElement("c:ext")
+        label_ext.set("uri", "{CE6537A1-D6FC-4F65-9D91-7224C49458BB}")
+        etree.SubElement(label_ext, "{http://schemas.microsoft.com/office/drawing/2012/chart}dlblFieldTable")
+        show_range = etree.SubElement(label_ext, "{http://schemas.microsoft.com/office/drawing/2012/chart}showDataLabelsRange")
+        show_range.set("val", "1")
+        label_ext_list.append(label_ext)
+        data_label.append(label_ext_list)
+        data_labels.append(data_label)
+
     for tag, value in (
         ("c:dLblPos", "r"),
         ("c:showLegendKey", "0"),
         ("c:showVal", "0"),
         ("c:showCatName", "0"),
-        ("c:showSerName", "1"),
+        ("c:showSerName", "0"),
         ("c:showPercent", "0"),
         ("c:showBubbleSize", "0"),
         ("c:showLeaderLines", "1"),
     ):
         element = OxmlElement(tag)
         element.set("val", value)
-        labels.append(element)
+        data_labels.append(element)
 
     text_properties = OxmlElement("c:txPr")
     text_properties.append(OxmlElement("a:bodyPr"))
@@ -190,13 +235,106 @@ def _set_scatter_series_name_label(series, *, font_size: float, color: str) -> N
     paragraph.append(paragraph_properties)
     paragraph.append(OxmlElement("a:endParaRPr"))
     text_properties.append(paragraph)
-    labels.append(text_properties)
+    data_labels.append(text_properties)
+
+    labels_ext_list = OxmlElement("c:extLst")
+    labels_ext = OxmlElement("c:ext")
+    labels_ext.set("uri", "{CE6537A1-D6FC-4F65-9D91-7224C49458BB}")
+    show_range = etree.SubElement(labels_ext, "{http://schemas.microsoft.com/office/drawing/2012/chart}showDataLabelsRange")
+    show_range.set("val", "1")
+    labels_ext_list.append(labels_ext)
+    data_labels.append(labels_ext_list)
 
     x_values = ser.find(qn("c:xVal"))
     if x_values is not None:
-        x_values.addprevious(labels)
+        x_values.addprevious(data_labels)
     else:
-        ser.append(labels)
+        ser.append(data_labels)
+
+    series_ext_list = ser.find(qn("c:extLst"))
+    if series_ext_list is None:
+        series_ext_list = OxmlElement("c:extLst")
+        ser.append(series_ext_list)
+    data_range_ext = OxmlElement("c:ext")
+    data_range_ext.set("uri", "{02D57815-91ED-43CB-92C2-25804820EDAC}")
+    data_range = etree.SubElement(data_range_ext, "{http://schemas.microsoft.com/office/drawing/2012/chart}datalabelsRange")
+    formula = etree.SubElement(data_range, "{http://schemas.microsoft.com/office/drawing/2012/chart}f")
+    formula.text = range_formula
+    cache = etree.SubElement(data_range, "{http://schemas.microsoft.com/office/drawing/2012/chart}dlblRangeCache")
+    point_count = OxmlElement("c:ptCount")
+    point_count.set("val", str(len(label_values)))
+    cache.append(point_count)
+    for index, label in enumerate(label_values):
+        point = OxmlElement("c:pt")
+        point.set("idx", str(index))
+        value = OxmlElement("c:v")
+        value.text = label
+        point.append(value)
+        cache.append(point)
+    series_ext_list.append(data_range_ext)
+
+
+def _set_chart_workbook_label_column(chart, label_values: list[str]) -> None:
+    """Add worse, better, and KANO label columns to the embedded workbook."""
+    xlsx_part = chart.part.chart_workbook.xlsx_part
+    source = BytesIO(xlsx_part.blob)
+    output = BytesIO()
+    spreadsheet_ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    ns = {"s": spreadsheet_ns}
+
+    with ZipFile(source, "r") as archive:
+        shared_root = etree.fromstring(archive.read("xl/sharedStrings.xml"))
+        strings = ["".join(item.itertext()) for item in shared_root.findall("s:si", ns)]
+
+        def shared_index(value: str) -> int:
+            if value in strings:
+                return strings.index(value)
+            strings.append(value)
+            item = etree.SubElement(shared_root, f"{{{spreadsheet_ns}}}si")
+            item_text = etree.SubElement(item, f"{{{spreadsheet_ns}}}t")
+            item_text.text = value
+            return len(strings) - 1
+
+        worse_index = shared_index("worse")
+        header_index = shared_index("KANO\u5c5e\u6027\u6807\u7b7e")
+        label_indexes = [shared_index(label) for label in label_values]
+        shared_root.set("count", str(len(label_values) + 3))
+        shared_root.set("uniqueCount", str(len(strings)))
+
+        sheet_root = etree.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+        dimension = sheet_root.find("s:dimension", ns)
+        dimension.set("ref", f"A1:C{len(label_values) + 1}")
+        sheet_data = sheet_root.find("s:sheetData", ns)
+        rows = sheet_data.findall("s:row", ns)
+        for row in rows:
+            row.set("spans", "1:3")
+
+        first_row = rows[0]
+        first_cell = etree.Element(f"{{{spreadsheet_ns}}}c", r="A1", t="s")
+        etree.SubElement(first_cell, f"{{{spreadsheet_ns}}}v").text = str(worse_index)
+        first_row.insert(0, first_cell)
+        header_cell = etree.SubElement(first_row, f"{{{spreadsheet_ns}}}c", r="C1", t="s")
+        etree.SubElement(header_cell, f"{{{spreadsheet_ns}}}v").text = str(header_index)
+
+        for row_number, (row, label_index) in enumerate(zip(rows[1:], label_indexes), start=2):
+            label_cell = etree.SubElement(row, f"{{{spreadsheet_ns}}}c", r=f"C{row_number}", t="s")
+            etree.SubElement(label_cell, f"{{{spreadsheet_ns}}}v").text = str(label_index)
+
+        replacements = {
+            "xl/sharedStrings.xml": etree.tostring(
+                shared_root, xml_declaration=True, encoding="UTF-8", standalone=True
+            ),
+            "xl/worksheets/sheet1.xml": etree.tostring(
+                sheet_root, xml_declaration=True, encoding="UTF-8", standalone=True
+            ),
+        }
+        with ZipFile(output, "w", ZIP_DEFLATED) as rewritten:
+            for item in archive.infolist():
+                rewritten.writestr(
+                    item,
+                    replacements.get(item.filename, archive.read(item.filename)),
+                )
+    xlsx_part._blob = output.getvalue()
 
 
 def _short_label(value: Any, limit: int = 16) -> str:
@@ -360,15 +498,21 @@ def _render_kano(slide, payload: Any) -> None:
     ]
     classification_colors = dict(classifications)
     compact_labels = len(valid) > 20
+    label_values = [
+        row["_code"] if compact_labels else _short_label(row["name"])
+        for row in valid
+    ]
+    point_colors = [
+        classification_colors.get(
+            str(row.get("classification") or ""),
+            COLORS["blue"],
+        )
+        for row in valid
+    ]
     data = XyChartData()
-    active = []
+    data_series = data.add_series("better")
     for row in valid:
-        classification = str(row.get("classification") or "")
-        color = classification_colors.get(classification, COLORS["blue"])
-        label = row["_code"] if compact_labels else _short_label(row["name"])
-        series = data.add_series(label)
-        series.add_data_point(abs(float(row["worse"])), float(row["better"]))
-        active.append((row, color))
+        data_series.add_data_point(abs(float(row["worse"])), float(row["better"]))
 
     chart = slide.shapes.add_chart(
         XL_CHART_TYPE.XY_SCATTER,
@@ -393,17 +537,24 @@ def _render_kano(slide, payload: Any) -> None:
     chart.category_axis.crosses_at = mean_worse
     chart.value_axis.crosses_at = mean_better
     _set_plot_area_border(chart, COLORS["grid"])
-    for series, (_, color) in zip(chart.series, active):
-        series.marker.style = XL_MARKER_STYLE.CIRCLE
-        series.marker.size = 8
-        series.format.fill.solid()
-        series.format.fill.fore_color.rgb = _rgb(color)
-        series.format.line.fill.background()
-        _set_scatter_series_name_label(
-            series,
-            font_size=5.8 if compact_labels else 8.2,
-            color=COLORS["ink"],
-        )
+    series = chart.series[0]
+    series.marker.style = XL_MARKER_STYLE.CIRCLE
+    series.marker.size = 8
+    series.format.fill.solid()
+    series.format.fill.fore_color.rgb = _rgb(COLORS["blue"])
+    series.format.line.fill.background()
+    for point, color in zip(series.points, point_colors):
+        point.format.fill.solid()
+        point.format.fill.fore_color.rgb = _rgb(color)
+        point.format.line.fill.background()
+    _set_chart_workbook_label_column(chart, label_values)
+    _set_scatter_cell_range_labels(
+        series,
+        label_values,
+        range_formula="Sheet1!$C$2:$C$" + str(len(label_values) + 1),
+        font_size=5.8 if compact_labels else 8.2,
+        color=COLORS["ink"],
+    )
 
     plot_left, plot_top, plot_width, plot_height = 1.46, 1.91, 7.70, 3.92
     line_x = plot_left + mean_worse * plot_width
