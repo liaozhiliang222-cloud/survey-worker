@@ -1,0 +1,16 @@
+HTTP/1.1 200 OK
+Date: Tue, 04 Aug 2026 05:44:56 GMT
+Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation
+Content-Length: 36699
+Connection: keep-alive
+x-surveykit-editable-chart: true
+Report-To: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=6Bkprnf%2BAPbJICBD8voUQLj%2BjNxW4PUTBLWk6HxCaTboRE9B9QccNSrn7S5aCP19YTgGoJeszEhc4aAaLBBCsyxG81sN32kvzUgixMjzMOU1A0iYnW8gbpNDEGQHtdg%3D"}]}
+Nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+cf-cache-status: DYNAMIC
+Access-Control-Allow-Origin: *
+Cache-Control: no-store
+Content-Disposition: attachment; filename="model-chart.pptx"; filename*=UTF-8''KANO_Better-Worse%E5%88%86%E6%9E%90.pptx
+Server: cloudflare
+CF-RAY: a25b40c48ec2dfcf-IAD
+alt-svc: h3=":443"; ma=86400
+
