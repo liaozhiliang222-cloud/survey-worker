@@ -12,12 +12,13 @@ assert.ok(start >= 0 && end > start, "KANO workbook helpers must exist");
 const context = vm.createContext({ console });
 vm.runInContext(`${app.slice(start, end)}\nthis.classifyKanoPair = classifyKanoPair; this.kanoSummaryFromRawWorkbook = kanoSummaryFromRawWorkbook;`, context);
 
-assert.equal(context.classifyKanoPair(5, 1), "O");
-assert.equal(context.classifyKanoPair(5, 2), "A");
-assert.equal(context.classifyKanoPair(4, 1), "M");
+assert.equal(context.classifyKanoPair(1, 5), "O");
+assert.equal(context.classifyKanoPair(1, 4), "A");
+assert.equal(context.classifyKanoPair(2, 5), "M");
 assert.equal(context.classifyKanoPair(3, 3), "I");
-assert.equal(context.classifyKanoPair(1, 5), "R");
-assert.equal(context.classifyKanoPair(5, 5), "Q");
+assert.equal(context.classifyKanoPair(5, 1), "R");
+assert.equal(context.classifyKanoPair(1, 1), "Q");
+assert.equal(context.classifyKanoPair(5, 1, true), "O");
 assert.equal(context.classifyKanoPair("", 1), null);
 
 const sheets = [
@@ -33,10 +34,32 @@ const sheets = [
 const summary = context.kanoSummaryFromRawWorkbook(sheets);
 assert.equal(summary.length, 2);
 assert.deepEqual(JSON.parse(JSON.stringify(summary[0])), {
-  id: "1", name: "功能一", A: 1, O: 1, M: 1, I: 1, R: 1, Q: 1
+  id: "A1", name: "功能一", A: 1, O: 1, M: 1, I: 1, R: 1, Q: 1
 });
 assert.equal(summary[1].O, 1);
 assert.equal(summary[1].A + summary[1].M + summary[1].I + summary[1].R + summary[1].Q, 0);
+const surveyExport = [
+  { name: "data", rows: [
+    ["rid", "Q76_1_1", "Q76_1__2", "Q76_2__1", "Q76_2__2"],
+    ["R001", 1, 5, 2, 5],
+    ["R002", 1, 4, 3, 5]
+  ]},
+  { name: "features", rows: [
+    ["feature_id", "feature_name"],
+    ["Q76_1", "池底、池壁、水线清洁"],
+    ["Q76_2", "晒台清洁"]
+  ]}
+];
+const surveySummary = context.kanoSummaryFromRawWorkbook(surveyExport);
+assert.equal(surveySummary.length, 2);
+assert.equal(surveySummary[0].id, "Q76_1");
+assert.equal(surveySummary[0].name, "池底、池壁、水线清洁");
+assert.equal(surveySummary[1].name, "晒台清洁");
+assert.equal(surveySummary[0].O, 1);
+assert.equal(surveySummary[0].A, 1);
+assert.equal(surveySummary[0].R, 0);
+assert.equal(surveySummary[1].M, 2);
+assert.equal(surveySummary[0].A + surveySummary[0].O + surveySummary[0].M + surveySummary[0].I + surveySummary[0].R + surveySummary[0].Q, 2);
 
 for (const name of ["psm", "kano", "maxdiff", "driver", "turf", "conjoint"]) {
   const file = path.join(root, "templates", "research-models", `${name}-template.xlsx`);

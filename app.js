@@ -17453,15 +17453,16 @@ function rowsToCsvText(rows) {
     .join("\n");
 }
 
-function kanoResponseIndex(value) {
+function kanoResponseIndex(value, reverseScale = false) {
   const match = String(value ?? "").trim().match(/^[1-5]/);
   if (!match) return -1;
-  return 5 - Number(match[0]);
+  const response = Number(match[0]);
+  return reverseScale ? 5 - response : response - 1;
 }
 
-function classifyKanoPair(functional, dysfunctional) {
-  const f = kanoResponseIndex(functional);
-  const d = kanoResponseIndex(dysfunctional);
+function classifyKanoPair(functional, dysfunctional, reverseScale = false) {
+  const f = kanoResponseIndex(functional, reverseScale);
+  const d = kanoResponseIndex(dysfunctional, reverseScale);
   if (f < 0 || d < 0) return null;
   const matrix = [
     ["Q", "A", "A", "A", "O"],
@@ -17473,12 +17474,16 @@ function classifyKanoPair(functional, dysfunctional) {
   return matrix[f][d];
 }
 
+function normalizeKanoFeatureId(value) {
+  return String(value ?? "").trim().replace(/\s+/g, "").toUpperCase();
+}
+
 function kanoFeatureNames(sheets) {
   const names = {};
   const metadata = worksheetByName(sheets, /feature|属性|题目/i);
   if (metadata?.rows?.length > 1) {
     metadata.rows.slice(1).forEach((row) => {
-      const id = String(row[0] || "").match(/A?(\d+)/i)?.[1];
+      const id = normalizeKanoFeatureId(row[0]);
       if (id && row[1]) names[id] = String(row[1]).trim();
     });
   }
@@ -17486,7 +17491,7 @@ function kanoFeatureNames(sheets) {
   code?.rows?.forEach((row) => {
     const text = String(row[1] ?? row[0] ?? "").trim();
     const match = text.match(/^A(\d+)\.\s*(?:A\d+\.)?\s*(.*?)(?:【|$)/i);
-    if (match && match[2]) names[match[1]] = match[2].trim();
+    if (match && match[2]) names[`A${match[1]}`] = match[2].trim();
   });
   return names;
 }
@@ -17497,24 +17502,35 @@ function kanoSummaryFromRawWorkbook(sheets) {
   const headers = data.rows[0].map((cell) => String(cell || "").trim());
   const pairs = new Map();
   headers.forEach((header, index) => {
-    const match = header.match(/^A(\d+)__(1|2)$/i);
+    // Accept A1__1 as well as survey exports such as Q76_1__1.
+    // Some platforms inconsistently use a single underscore for one side.
+    const match = header.match(/^(.+?)_+(1|2)$/i);
     if (!match) return;
-    const entry = pairs.get(match[1]) || { id: match[1] };
+    const id = normalizeKanoFeatureId(match[1]);
+    if (!id) return;
+    const entry = pairs.get(id) || { id, order: index };
     entry[match[2]] = index;
-    pairs.set(match[1], entry);
+    pairs.set(id, entry);
   });
   const names = kanoFeatureNames(sheets);
-  return [...pairs.values()]
+  const completePairs = [...pairs.values()]
     .filter((pair) => Number.isInteger(pair["1"]) && Number.isInteger(pair["2"]))
-    .sort((a, b) => Number(a.id) - Number(b.id))
-    .map((pair) => {
-      const counts = { A: 0, O: 0, M: 0, I: 0, R: 0, Q: 0 };
-      data.rows.slice(1).forEach((row) => {
-        const category = classifyKanoPair(row[pair["1"]], row[pair["2"]]);
-        if (category) counts[category] += 1;
-      });
-      return { id: pair.id, name: names[pair.id] || `A${pair.id}`, ...counts };
-    })
+    .sort((a, b) => a.order - b.order);
+  const conflictCount = (reverseScale) => completePairs.reduce((total, pair) => {
+    return total + data.rows.slice(1).reduce((pairTotal, row) => {
+      const category = classifyKanoPair(row[pair["1"]], row[pair["2"]], reverseScale);
+      return pairTotal + (category === "R" || category === "Q" ? 1 : 0);
+    }, 0);
+  }, 0);
+  const reverseScale = conflictCount(true) < conflictCount(false);
+  return completePairs.map((pair) => {
+    const counts = { A: 0, O: 0, M: 0, I: 0, R: 0, Q: 0 };
+    data.rows.slice(1).forEach((row) => {
+      const category = classifyKanoPair(row[pair["1"]], row[pair["2"]], reverseScale);
+      if (category) counts[category] += 1;
+    });
+    return { id: pair.id, name: names[pair.id] || pair.id, ...counts };
+  })
     .filter((item) => item.A + item.O + item.M + item.I + item.R + item.Q > 0);
 }
 
@@ -17529,6 +17545,10 @@ function importKanoWorkbook(sheets) {
   }
   const sheet = worksheetByName(sheets, /summary|汇总|kano/i) || sheets[0];
   const rows = sheet?.rows || [];
+  const headerText = (rows[0] || []).map((cell) => String(cell || "").trim()).join("|");
+  if ((rows[0] || []).length > 7 && /(?:^|\|)(?:rid|respondent|受访者|样本编号)(?:\||$)/i.test(headerText)) {
+    throw new Error("未识别到成对的 KANO 正反向题列，请检查列名是否以 _1/_2 或 __1/__2 结尾");
+  }
   const start = rows.length && rows[0].some((cell) => /属性|feature|魅力|attractive/i.test(String(cell || ""))) ? 1 : 0;
   document.querySelector("#kanoData").value = rowsToCsvText(rows.slice(start).map((row) => row.slice(0, 7)));
   runKanoAnalysis();
