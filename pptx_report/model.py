@@ -102,6 +102,10 @@ class ReportNarrative:
     key_questions: list[str]
     ending_message: str
     confidence: float = 0.0
+    research_themes: list[dict] = field(default_factory=list)
+    chapter_rules: list[dict] = field(default_factory=list)
+    research_theme_assignments: list[dict] = field(default_factory=list)
+    research_theme_warnings: list[dict] = field(default_factory=list)
 
     def validate(self) -> List[Dict[str, Any]]:
         issues: List[Dict[str, Any]] = []
@@ -153,6 +157,10 @@ class ReportNarrative:
             "key_questions": list(self.key_questions),
             "ending_message": self.ending_message,
             "confidence": self.confidence,
+            "research_themes": [dict(item) for item in self.research_themes],
+            "chapter_rules": [dict(item) for item in self.chapter_rules],
+            "research_theme_assignments": [dict(item) for item in self.research_theme_assignments],
+            "research_theme_warnings": [dict(item) for item in self.research_theme_warnings],
         }
 
     @classmethod
@@ -173,6 +181,10 @@ class ReportNarrative:
             ],
             ending_message=str(data.get("ending_message") or ""),
             confidence=max(0.0, min(1.0, float(data.get("confidence") or 0.0))),
+            research_themes=[dict(item) for item in data.get("research_themes", []) if isinstance(item, dict)],
+            chapter_rules=[dict(item) for item in data.get("chapter_rules", []) if isinstance(item, dict)],
+            research_theme_assignments=[dict(item) for item in data.get("research_theme_assignments", []) if isinstance(item, dict)],
+            research_theme_warnings=[dict(item) for item in data.get("research_theme_warnings", []) if isinstance(item, dict)],
         )
 
 

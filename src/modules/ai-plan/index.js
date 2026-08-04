@@ -216,7 +216,7 @@ export async function generateAiPlan(config, options = {}) {
     if (!errors.length) {
       try {
         const maxTokens = config.mode === "detailed" ? 12000 : 5000;
-        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config), { maxTokens });
+        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config), { maxTokens, taskTier: "quality" });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output = `${localPlan}\n\n---\n\n> 大模型调用失败，已回退为本地方案框架。错误信息：${error.message}`;

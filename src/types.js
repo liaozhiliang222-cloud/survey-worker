@@ -90,6 +90,7 @@
  * @property {number} [maxTokens=3500] - 最大 token
  * @property {boolean} [stream=true] - 是否流式
  * @property {string} [responseFormat] - 响应格式
+ * @property {"fast"|"quality"|"structured"|"balanced"} [taskTier="balanced"] - 平台内置模型任务等级
  * @property {number} [timeoutMs=360000] - 超时毫秒
  * @property {Function} [onProgress] - 进度回调
  */

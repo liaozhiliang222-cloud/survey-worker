@@ -32,7 +32,17 @@ const fetchImpl = async (url, options) => {
     });
   }
   if (mode === "network" && body.model === "deepseek-v4-pro") throw new TypeError("socket reset");
-  if (body.stream) {
+  const isChannelProbe = body.messages?.some((message) => String(message.content || "").includes("channel-health-probe"));
+  if (mode === "channel-probe" && isChannelProbe) {
+    const response = () => new Response(JSON.stringify({ choices: [{ message: { content: "OK" } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+    if (String(url).includes("api.surveykit.cc")) {
+      return new Promise((resolve) => setTimeout(() => resolve(response()), 40));
+    }
+    return response();
+  }  if (body.stream) {
     return new Response('data: {"choices":[{"delta":{"content":"stream-ok"}}]}\n\ndata: [DONE]\n\n', { status: 200, headers: { "Content-Type": "text/event-stream" } });
   }
   const content = mode === "structured" && /^deepseek-v4-/.test(body.model)
@@ -47,11 +57,12 @@ const handler = createAiProxyHandler({ env, maxBodyBytes: 1024, fetchImpl });
 const server = http.createServer(handler);
 const port = await listen(server);
 
-function payload(overrides = {}) {
+function payload(overrides = {}, taskTier = "") {
   return {
     provider: "deepseek",
     url: "https://api.deepseek.com/v1/chat/completions",
     apiKey: "",
+    ...(taskTier ? { taskTier } : {}),
     body: {
       model: "deepseek-v4-pro",
       messages: [{ role: "user", content: "test" }],
@@ -72,6 +83,27 @@ try {
 
   env.SURVEYKIT_GATEWAY_API_KEY = "gateway-secret";
   env.SENSENOVA_API_KEY = "sense-secret";
+
+  calls = [];
+  response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload({}, "quality")),
+  });
+  assert.equal(calls[0].body.model, "deepseek-v4-pro");
+  assert.equal(response.headers.get("x-ai-source"), "builtin-bailian");
+  assert.equal(response.headers.get("x-ai-task-tier"), "quality");
+
+  calls = [];
+  response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload({}, "fast")),
+  });
+  assert.equal(calls[0].body.model, "deepseek-v4-flash");
+  assert.equal(response.headers.get("x-ai-source"), "builtin-surveykit-gateway");
+  assert.equal(response.headers.get("x-ai-task-tier"), "fast");
+
   calls = [];
   response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
     method: "POST",
@@ -126,6 +158,36 @@ try {
   assert.equal(response.headers.get("x-ai-source"), "builtin-sensenova");
   assert.equal(response.headers.get("x-ai-attempts"), "deepseek-v4-flash");
   delete env.SENSENOVA_API_KEY;
+
+  env.SURVEYKIT_GATEWAY_API_KEY = "gateway-secret";
+  env.SENSENOVA_API_KEY = "sense-secret";
+  calls = [];
+  mode = "channel-probe";
+  response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload({ response_format: { type: "json_object" } }, "structured")),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-ai-source"), "builtin-sensenova");
+  const probeCalls = calls.filter((call) => call.body.messages.some((message) => String(message.content || "").includes("channel-health-probe")));
+  const reportCalls = calls.filter((call) => !call.body.messages.some((message) => String(message.content || "").includes("channel-health-probe")));
+  assert.equal(probeCalls.length, 2);
+  assert.equal(reportCalls.length, 1);
+  assert.match(reportCalls[0].url, /sensenova\.cn/);
+  delete env.SURVEYKIT_GATEWAY_API_KEY;
+  delete env.SENSENOVA_API_KEY;
+  calls = [];
+  mode = "structured";
+  response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload({ response_format: { type: "json_object" } }, "structured")),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-actual-model"), "qwen3.7-max");
+  assert.equal(response.headers.get("x-ai-task-tier"), "structured");
+  assert.deepEqual(calls.map((call) => call.body.model), ["deepseek-v4-flash", "qwen3.7-max"]);
 
   calls = [];
   mode = "structured";

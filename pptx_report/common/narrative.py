@@ -101,6 +101,17 @@ def build_slide_briefs(
     values = list(pages)
     narrative = _narrative_payload(report_narrative)
     central_thesis = str(narrative.get("central_thesis") or "").strip()
+    theme_classification = narrative.get("research_theme_classification") if isinstance(narrative.get("research_theme_classification"), dict) else {
+        "themes": narrative.get("research_themes", []),
+        "chapter_rules": narrative.get("chapter_rules", []),
+        "assignments": narrative.get("research_theme_assignments", []),
+    }
+    theme_by_question: dict[str, dict] = {}
+    for assignment in theme_classification.get("assignments", []):
+        if not isinstance(assignment, dict) or assignment.get("unit_type") != "page":
+            continue
+        for question_id in assignment.get("question_ids", []):
+            theme_by_question.setdefault(str(question_id), assignment)
     narrative_chapters = [
         chapter for chapter in narrative.get("chapters", [])
         if isinstance(chapter, dict)
@@ -145,6 +156,11 @@ def build_slide_briefs(
         narrative_chapter, narrative_chapter_index = _chapter_for_page(
             page, narrative_chapters, page_chapter_order
         )
+        theme_assignment = next((
+            theme_by_question.get(str(question_id))
+            for question_id in question_ids
+            if str(question_id) in theme_by_question
+        ), None)
         previous_chapter = (
             str(narrative_chapters[narrative_chapter_index - 1].get("title") or "")
             if narrative_chapter_index > 0 else ""
@@ -192,6 +208,9 @@ def build_slide_briefs(
             density=str(page.get("density") or "medium"),
             central_thesis=central_thesis,
             chapter_context=_chapter_context(narrative_chapter),
+            research_theme=str(page.get("research_theme") or (theme_assignment or {}).get("research_theme") or ""),
+            decision_area=str(page.get("decision_area") or (theme_assignment or {}).get("decision_area") or ""),
+            chapter_reason=str(page.get("chapter_reason") or (theme_assignment or {}).get("chapter_reason") or ""),
             previous_chapter=previous_chapter,
             next_chapter=next_chapter,
             user_modified=bool(page.get("user_modified")),

@@ -196,6 +196,7 @@ export async function generateAiQuestionnaire(config, options = {}) {
       try {
         output = await callAiChatCompletion(settings, buildAiQuestionnairePrompt(config), {
           maxTokens: 32000,
+          taskTier: "fast",
           timeoutMs: config.lengthMode === "long" ? 600000 : 360000,
           stream: true,
           onProgress: options.onProgress

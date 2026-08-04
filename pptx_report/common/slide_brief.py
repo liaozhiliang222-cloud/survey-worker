@@ -31,6 +31,9 @@ class SlideBrief:
     density: str = "medium"
     central_thesis: str = ""
     chapter_context: str = ""
+    research_theme: str = ""
+    decision_area: str = ""
+    chapter_reason: str = ""
     previous_chapter: str = ""
     next_chapter: str = ""
     user_modified: bool = False

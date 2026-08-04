@@ -69,6 +69,7 @@
             <button class="nav-item" data-view="turf" style="display:none">TURF 分析</button>
             <button class="nav-item" data-view="conjoint" style="display:none">联合分析</button>
             <button class="nav-item" data-view="abc-value" style="display:none">ABC 价值模型</button>
+            <button class="nav-item" data-view="cluster-analysis" style="display:none">用户分群分析</button>
           </div>
           <div class="nav-group">
             <div class="nav-phase">
@@ -1236,6 +1237,11 @@
               <h3>ABC 用户价值模型</h3>
               <p>从 A 态度、B 行为、C 消费三维合成用户价值指数，识别高价值人群与提升机会。</p>
             </button>
+            <button class="tool-card ready" type="button" data-jump="cluster-analysis">
+              <span>用户分群</span>
+              <h3>用户分群分析</h3>
+              <p>使用K-Means、两步聚类和系统聚类识别差异化用户群体，输出分群规模、核心特征和样本归属。</p>
+            </button>
           </div>
         </section>
 
@@ -2076,6 +2082,432 @@
           </div>
         </section>
 
+        <section class="view" id="cluster-analysis">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">调研后 · 研究模型</p>
+              <h2 class="title-with-help">
+                <span>用户分群分析</span>
+                <button class="model-help-btn" type="button" data-jump="cluster-analysis-guide" aria-label="查看用户分群分析说明">?</button>
+              </h2>
+            </div>
+            <p class="panel-note">根据需求、态度、行为和用户属性识别差异化用户群体。支持 K-Means、两步聚类与系统聚类三种方法，全部计算在浏览器本地完成。</p>
+          </div>
+
+          <div class="cluster-workflow">
+            <!-- 顶部方法切换 -->
+            <div class="cluster-method-tabs" role="tablist" aria-label="聚类方法">
+              <button class="cluster-method-tab active" type="button" data-cluster-method="kmeans" role="tab" aria-selected="true">K-Means聚类</button>
+              <button class="cluster-method-tab" type="button" data-cluster-method="twostep" role="tab" aria-selected="false">两步聚类</button>
+              <button class="cluster-method-tab" type="button" data-cluster-method="hierarchical" role="tab" aria-selected="false">系统聚类<small>（层次聚类）</small></button>
+            </div>
+            <p class="panel-note" id="clusterMethodNote">K-Means 面向连续数值变量，需要预先指定分群数量。</p>
+
+            <!-- 01 导入数据 -->
+            <div class="cluster-step panel">
+              <div class="step-badge">1</div>
+              <div class="step-body">
+                <h3>导入数据</h3>
+                <div class="import-dropzone" id="clusterDropzone">
+                  <input class="hidden" id="clusterFileInput" type="file" accept=".xlsx,.csv,.sav" />
+                  <div class="dropzone-inner">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0L8 8m4-4l4 4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round"/></svg>
+                    <p>点击或拖拽 Excel / CSV / SAV 文件到此处</p>
+                    <small id="clusterFileName">未选择文件</small>
+                  </div>
+                </div>
+                <div class="ai-report-data-actions">
+                  <button class="secondary-btn" id="clusterUseProjectData" type="button">使用当前项目数据</button>
+                  <button class="ghost-btn" id="clusterLoadExample" type="button">加载示例数据</button>
+                  <button class="ghost-btn" id="clusterClearData" type="button" disabled>清除数据</button>
+                </div>
+                <div class="hidden" id="clusterSheetPicker">
+                  <label class="span-row field">
+                    <span class="field-heading">选择工作表</span>
+                    <select id="clusterSheetSelect"></select>
+                  </label>
+                </div>
+                <div class="cluster-data-preview hidden" id="clusterDataPreview"></div>
+              </div>
+            </div>
+
+            <!-- 02 定义变量 -->
+            <div class="cluster-step panel">
+              <div class="step-badge">2</div>
+              <div class="step-body">
+                <h3>定义变量</h3>
+                <p class="panel-note">为每个字段指定角色（ID / 聚类 / 描述 / 权重 / 排除）与测量类型。系统已按数据自动识别，可手动修正；多选变量组可整组加入。</p>
+                <div class="cluster-variable-toolbar">
+                  <button class="ghost-btn" id="clusterRoleSuggest" type="button">应用角色建议</button>
+                  <button class="ghost-btn" id="clusterExpandMissing" type="button">批量设置缺失码</button>
+                </div>
+                <div class="table-wrap cluster-variable-table-wrap">
+                  <table class="cluster-variable-table" id="clusterVariableTable">
+                    <thead>
+                      <tr>
+                        <th>字段</th>
+                        <th>角色</th>
+                        <th>测量类型</th>
+                        <th>识别为</th>
+                        <th>唯一值</th>
+                        <th>缺失数</th>
+                        <th>缺失码</th>
+                        <th>选项</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+                <div id="clusterMultiGroups" class="cluster-multi-groups"></div>
+              </div>
+            </div>
+
+            <!-- 03 方法建议（本地规则） -->
+            <div class="cluster-step panel">
+              <div class="step-badge">3</div>
+              <div class="step-body">
+                <h3>方法建议</h3>
+                <div id="clusterMethodAdvice" class="cluster-method-advice">
+                  <span>导入数据并选择聚类变量后，系统会根据变量结构与样本量给出方法建议。</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 04 配置模型 -->
+            <div class="cluster-step panel">
+              <div class="step-badge">4</div>
+              <div class="step-body">
+                <h3>配置模型</h3>
+
+                <div class="cluster-options" id="clusterKmeansOptions">
+                  <label class="span-row field">
+                    <span class="field-heading">分群数量 K</span>
+                    <input id="kmK" type="number" min="2" value="3" />
+                    <small class="field-note">范围 2 ≤ K &lt; 有效样本量；默认 3。可通过下方诊断比较辅助选择。</small>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">初始化中心</span>
+                    <select id="kmInitMode">
+                      <option value="scattered" selected>自动选择分散的初始中心（确定性）</option>
+                      <option value="manual">手动输入初始中心</option>
+                      <option value="imported">导入之前保存的中心</option>
+                    </select>
+                  </label>
+                  <label class="span-row field hidden" id="kmManualCentersField">
+                    <span class="field-heading">手动初始中心（每行一个群体，数值与聚类变量顺序一致，原始尺度）</span>
+                    <textarea id="kmManualCenters" rows="3" placeholder="例如：&#10;3,4,5&#10;6,5,4"></textarea>
+                  </label>
+                  <label class="span-row field hidden" id="kmImportedCentersField">
+                    <span class="field-heading">导入中心</span>
+                    <input id="kmImportedCenters" type="text" placeholder="从项目数据中加载上次保存的中心（JSON）" />
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">计算方法</span>
+                    <select id="kmRunMode">
+                      <option value="batch" selected>迭代并分类（批量分配后更新中心，默认）</option>
+                      <option value="sequential">运行均值更新（每分配一个样本立即更新中心）</option>
+                      <option value="classify">仅分类（使用初始中心直接分配，不更新）</option>
+                    </select>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">最大迭代次数</span>
+                    <input id="kmMaxIterations" type="number" min="1" max="999" value="10" />
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">收敛标准</span>
+                    <input id="kmConvergence" type="number" min="0" max="1" step="0.001" value="0" />
+                    <small class="field-note">收敛阈值 = 收敛标准 × 初始中心之间的最小距离。默认 0 表示迭代到中心不再变化。</small>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">缺失值处理</span>
+                    <select id="kmMissing">
+                      <option value="listwise" selected>Listwise（任一聚类变量缺失则排除该样本，默认）</option>
+                      <option value="pairwise">Pairwise（按样本实际非缺失变量计算距离，按有效维度归一化）</option>
+                    </select>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">标准化方式</span>
+                    <select id="kmStandardization">
+                      <option value="zscore" selected>Z-score（默认）</option>
+                      <option value="range01">范围 0—1</option>
+                      <option value="range-1-1">范围 -1—1</option>
+                      <option value="maxabs1">最大绝对值为 1</option>
+                      <option value="mean1">均值为 1</option>
+                      <option value="std1">标准差为 1</option>
+                      <option value="none">不标准化（不同量纲变量将直接参与距离计算，存在量纲风险）</option>
+                    </select>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">频数权重</span>
+                    <select id="kmUseWeight">
+                      <option value="" selected>不使用权重</option>
+                      <option value="weightField">使用权重变量（在变量定义中标记）</option>
+                    </select>
+                    <small class="field-note">权重要求为大于 0 的数值；缺失或非正权重样本将被排除。群体规模同时输出加权与未加权统计。</small>
+                  </label>
+                  <div class="span-row field">
+                    <span class="field-heading">K 值诊断（K=2—8 辅助比较）</span>
+                    <div class="button-row compact">
+                      <button class="secondary-btn" id="kmRunDiagnostics" type="button" disabled>运行 K 诊断</button>
+                    </div>
+                    <div id="kmDiagnosticsResult" class="cluster-diagnostics"></div>
+                    <small class="field-note">SSE 与 Silhouette 仅作为选择参考，不替代用户对业务含义的判断。</small>
+                  </div>
+                </div>
+
+                <div class="cluster-options hidden" id="clusterTwostepOptions">
+                  <label class="span-row field">
+                    <span class="field-heading">距离方式</span>
+                    <select id="tsDistance">
+                      <option value="loglikelihood" selected>对数似然距离（默认，支持连续 + 分类变量）</option>
+                      <option value="euclidean">欧氏距离（仅所有聚类变量均为连续变量时可用）</option>
+                    </select>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">群数选择</span>
+                    <select id="tsAutoSelect">
+                      <option value="auto" selected>自动选择（BIC / AIC）</option>
+                      <option value="fixed">固定群数</option>
+                    </select>
+                  </label>
+                  <label class="span-row field hidden" id="tsCriterionField">
+                    <span class="field-heading">自动选择标准</span>
+                    <select id="tsCriterion">
+                      <option value="BIC" selected>BIC（默认）</option>
+                      <option value="AIC">AIC</option>
+                    </select>
+                  </label>
+                  <label class="span-row field hidden" id="tsMaxClustersField">
+                    <span class="field-heading">最大群数</span>
+                    <input id="tsMaxClusters" type="number" min="2" max="30" value="15" />
+                    <small class="field-note">自动选择在 2—最大群数 范围内比较信息准则。</small>
+                  </label>
+                  <label class="span-row field hidden" id="tsFixedKField">
+                    <span class="field-heading">固定群数</span>
+                    <input id="tsFixedK" type="number" min="2" max="30" value="3" />
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">连续变量标准化</span>
+                    <select id="tsStandardization">
+                      <option value="zscore" selected>自动标准化（默认）</option>
+                      <option value="none">全部关闭（连续变量量纲不同时将影响距离，不建议）</option>
+                    </select>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">缺失值处理</span>
+                    <select id="tsMissing">
+                      <option value="exclude" selected>排除缺失（默认，系统缺失样本不进入模型）</option>
+                      <option value="include_user_codes">包含用户缺失码（用户定义的缺失码作为有效类别参与分类变量）</option>
+                    </select>
+                    <small class="field-note">空白值、NaN 等系统缺失不会作为合法连续数值。</small>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">噪声阈值（稀疏叶节点样本数）</span>
+                    <input id="tsNoiseThreshold" type="number" min="0" value="0" />
+                    <small class="field-note">叶节点样本数低于阈值时标记为“噪声/离群样本”（cluster_id = -1），不计入正式群体。0 表示关闭。</small>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">案例顺序稳定性检查</span>
+                    <select id="tsStabilityRuns">
+                      <option value="0" selected>不检查（默认，节省计算时间）</option>
+                      <option value="3">使用 3 种随机顺序重复运行</option>
+                      <option value="5">使用 5 种随机顺序重复运行</option>
+                    </select>
+                    <small class="field-note">两步聚类可能受数据顺序影响，稳定性检查输出各次推荐群数与样本归属一致性。</small>
+                  </label>
+                  <details class="cluster-advanced">
+                    <summary>高级参数（默认无需修改）</summary>
+                    <label class="span-row field">
+                      <span class="field-heading">初始距离阈值（留空自动）</span>
+                      <input id="tsInitialThreshold" type="number" min="0" step="0.1" value="" />
+                    </label>
+                    <label class="span-row field">
+                      <span class="field-heading">最大分支数</span>
+                      <input id="tsMaxBranch" type="number" min="4" value="8" />
+                    </label>
+                    <label class="span-row field">
+                      <span class="field-heading">随机顺序种子</span>
+                      <input id="tsSeed" type="number" value="20240101" />
+                    </label>
+                  </details>
+                </div>
+
+                <div class="cluster-options hidden" id="clusterHierarchicalOptions">
+                  <label class="span-row field">
+                    <span class="field-heading">聚类对象</span>
+                    <select id="hiObject">
+                      <option value="cases" selected>对案例聚类（将受访者划分成群体）</option>
+                      <option value="variables">对变量聚类（识别彼此相似的变量）</option>
+                    </select>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">数据类型</span>
+                    <select id="hiDataType">
+                      <option value="interval" selected>区间／连续数据</option>
+                      <option value="count">计数数据</option>
+                      <option value="binary">二元数据</option>
+                    </select>
+                    <small class="field-note" id="hiDataTypeNote">一个模型中原则上使用同类型变量；混合数据类型建议改用两步聚类。</small>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">聚类方法</span>
+                    <select id="hiLinkage">
+                      <option value="ward" selected>Ward 法（默认）</option>
+                      <option value="between">组间联接法</option>
+                      <option value="within">组内联接法</option>
+                      <option value="nearest">最近邻法／单联接法</option>
+                      <option value="furthest">最远邻法／完全联接法</option>
+                      <option value="centroid">重心法</option>
+                      <option value="median">中位数法</option>
+                    </select>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">距离方式</span>
+                    <select id="hiDistance">
+                      <option value="squared-euclidean" selected>平方欧氏距离（Ward 法默认推荐）</option>
+                      <option value="euclidean">欧氏距离</option>
+                      <option value="cosine">余弦距离</option>
+                      <option value="pearson">Pearson 相关距离</option>
+                      <option value="chebyshev">Chebyshev 距离</option>
+                      <option value="cityblock">城市街区／曼哈顿距离</option>
+                      <option value="minkowski">Minkowski 距离</option>
+                      <option value="chi-square">卡方距离（计数数据）</option>
+                      <option value="phi-square">Phi-square 距离（计数数据）</option>
+                      <option value="simple-matching">简单匹配（二元）</option>
+                      <option value="jaccard">Jaccard（二元）</option>
+                      <option value="dice">Dice（二元）</option>
+                      <option value="russell-rao">Russell–Rao（二元）</option>
+                      <option value="phi">Phi 四格相关（二元）</option>
+                      <option value="yule-q">Yule’s Q（二元）</option>
+                      <option value="rogers-tanimoto">Rogers–Tanimoto（二元）</option>
+                      <option value="sokal-sneath">Sokal–Sneath（二元）</option>
+                    </select>
+                  </label>
+                  <label class="span-row field hidden" id="hiMinkowskiField">
+                    <span class="field-heading">Minkowski 参数 p</span>
+                    <input id="hiMinkowskiP" type="number" min="0.1" step="0.1" value="2" />
+                    <small class="field-note">p &gt; 0</small>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">标准化方式</span>
+                    <select id="hiStandardization">
+                      <option value="zscore" selected>Z-score（默认）</option>
+                      <option value="range-1-1">范围 -1—1</option>
+                      <option value="range01">范围 0—1</option>
+                      <option value="maxabs1">最大绝对值为 1</option>
+                      <option value="mean1">均值为 1</option>
+                      <option value="std1">标准差为 1</option>
+                      <option value="none">不标准化</option>
+                    </select>
+                    <small class="field-note">二元数据不做数值标准化。</small>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">距离变换</span>
+                    <select id="hiDistanceTransform">
+                      <option value="none" selected>不变换</option>
+                      <option value="abs">绝对值</option>
+                      <option value="sign">改变符号</option>
+                      <option value="rescale01">重缩放至 0—1</option>
+                    </select>
+                  </label>
+                  <label class="span-row field hidden" id="hiBinaryValueField">
+                    <span class="field-heading">正值 / 负值编码</span>
+                    <div class="binary-value-grid">
+                      <input id="hiPositiveValue" type="text" value="1" placeholder="正值，如 1 / 是 / Y" />
+                      <input id="hiNegativeValue" type="text" value="0" placeholder="负值，如 0 / 否 / N" />
+                    </div>
+                  </label>
+                  <label class="span-row field">
+                    <span class="field-heading">指定群数</span>
+                    <input id="hiSelectedK" type="number" min="2" value="3" />
+                    <small class="field-note" id="hiKRangeNote">同时输出 2—10 群归属方案与聚合系数跳升建议，可在结果页切换切割位置。</small>
+                  </label>
+                  <div class="span-row field" id="hiSampleLimitNote">
+                    <span class="field-heading">样本量保护</span>
+                    <p class="panel-note" id="hiSampleLimitText">系统聚类需要计算距离矩阵。N ≤ 300 正常运行；301—500 显示性能提示；501—1000 显示高风险提示；N &gt; 1000 默认阻止案例聚类。</p>
+                  </div>
+                </div>
+
+                <div class="button-row" id="clusterRunArea">
+                  <button class="primary-btn" id="clusterRunButton" type="button" disabled>开始分析</button>
+                  <button class="secondary-btn" id="clusterCancelButton" type="button" disabled>取消</button>
+                  <span class="cluster-run-status" id="clusterRunStatus"></span>
+                </div>
+                <div class="cluster-progress hidden" id="clusterProgress">
+                  <div class="progress-track"><div class="progress-fill" id="clusterProgressFill" style="width:0%"></div></div>
+                  <span id="clusterProgressText">准备中…</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 05 查看结果 -->
+            <div class="audit-results" id="clusterResults" aria-live="polite">
+              <div class="empty-state">
+                <strong>等待分析</strong>
+                <span>导入数据 → 定义变量 → 配置模型后点击“开始分析”，这里会显示模型概览、群体规模、特征矩阵、画像卡与样本归属。</span>
+              </div>
+            </div>
+
+            <!-- 06 导出与保存 -->
+            <div class="cluster-step panel hidden" id="clusterExportPanel">
+              <div class="step-badge">6</div>
+              <div class="step-body">
+                <h3>导出与保存</h3>
+                <p class="panel-note">分析结果已自动保存到当前项目。导出文件包含模型摘要、群体规模、群体画像、样本归属与算法专属工作表。</p>
+                <div class="button-row">
+                  <button class="secondary-btn" id="clusterExportExcel" type="button">导出 Excel</button>
+                  <button class="secondary-btn" id="clusterExportCsv" type="button">导出分群归属 CSV</button>
+                  <button class="secondary-btn" id="clusterExportFullCsv" type="button">导出带标签完整数据 CSV</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="cluster-analysis-guide">
+          <div class="page-title">
+            <div>
+              <p class="eyebrow">模型说明</p>
+              <h2>用户分群分析</h2>
+            </div>
+            <button class="secondary-btn" type="button" data-jump="cluster-analysis">返回工具</button>
+          </div>
+
+          <div class="guide-layout">
+            <article class="guide-card guide-card-main">
+              <span>适用场景</span>
+              <h3>识别需求、态度、行为与属性差异化的用户群体</h3>
+              <p>用于用户画像、市场细分、需求分层、新品目标人群识别、高价值人群识别、产品定位与营销人群策略。所有计算均在浏览器本地完成，原始受访者数据不会离开浏览器。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>K-Means 聚类</span>
+              <h3>面向连续数值变量，需预先指定分群数量</h3>
+              <p>通过平方欧氏距离迭代更新聚类中心。支持批量更新、运行均值更新与仅分类三种模式，支持 Listwise/Pairwise 缺失处理与可选频数权重。当聚类变量全部为连续数值（或 Likert 量表视为尺度变量）时推荐使用。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>两步聚类</span>
+              <h3>可同时处理连续与分类变量，自动判断群数</h3>
+              <p>第一阶段用 CF Tree 预聚类，第二阶段对叶节点做凝聚式聚合，通过 BIC 或 AIC 自动选择群数。默认使用对数似然距离。适合样本量较大、需要用户属性参与分群的场景。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>系统聚类</span>
+              <h3>通过树状图观察群体逐步合并过程</h3>
+              <p>支持组间/组内联接、单联接、完全联接、重心法、中位数法与 Ward 法，支持区间、计数与二元数据距离。适合样本量较小、希望探索群数或对变量聚类（识别相似变量）的场景。</p>
+            </article>
+
+            <article class="guide-card">
+              <span>使用提醒</span>
+              <h3>与统计软件的结果可能存在差异</h3>
+              <p>本工具参考主流统计软件的聚类方法与公开算法原理实现。由于初始化、数据顺序和软件内部优化机制不同，结果可能与其他统计软件存在差异。ANOVA 的 F 值与显著性仅用于描述变量对群体区分的相对贡献，不作为独立假设检验结论。</p>
+            </article>
+          </div>
+
+          <button class="secondary-btn guide-back" type="button" data-jump="cluster-analysis">返回用户分群分析</button>
+        </section>
+
         <section class="view" id="abc-guide" style="display:none">
           <div class="page-title">
             <div>
@@ -2659,6 +3091,8 @@
     <script src="./ppt-report-ai.js?v=20260802-2"></script>
     <script src="./app.js?v=20260804-2"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
+    <script src="./cluster-core.js?v=20260804-1"></script>
+    <script src="./cluster-analysis.js?v=20260804-1"></script>
     <!-- Vite 模块化入口（Phase 1 过渡期：共享模块已提取，功能模块渐进迁移） -->
     <script type="module" src="/src/main.js"></script>
     <!-- MaxDiff 模块桥接：在 legacy 服务器（无 Vite）下也能加载阶段三/四的校验与 MNL/HB 模型 -->

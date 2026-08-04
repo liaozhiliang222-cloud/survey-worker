@@ -27,6 +27,33 @@ const DEFAULT_BUILTIN_MODELS = [
   "glm-5.1",
   "qwen3.5-plus",
 ];
+const TASK_TIER_MODEL_PRIORITY = {
+  fast: ["deepseek-v4-flash", "qwen3.6-plus"],
+  storyline: ["deepseek-v4-flash"],
+  quality: ["deepseek-v4-pro", "qwen3.7-max", "qwen3.7-plus", "deepseek-v4-flash"],
+  structured: ["deepseek-v4-flash", "qwen3.7-max", "qwen3.7-plus"],
+};
+const TASK_TIER_REQUEST_BUDGET_MS = {
+  fast: 54_000,
+  storyline: 22_000,
+  structured: 54_000,
+  quality: 82_000,
+  balanced: 82_000,
+};
+const TASK_TIER_ATTEMPT_TIMEOUT_MS = {
+  fast: 20_000,
+  storyline: 16_000,
+  structured: 24_000,
+  quality: 38_000,
+  balanced: 38_000,
+};
+const MIN_REMAINING_BUDGET_MS = 1_500;
+
+function timeoutError(message) {
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
+}
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -119,6 +146,21 @@ function getBuiltinConfigs(env) {
   return configs;
 }
 
+function routeBuiltinConfigs(configs, taskTier) {
+  const priorities = TASK_TIER_MODEL_PRIORITY[taskTier];
+  if (!priorities) return configs;
+  const orderedConfigs = taskTier === "storyline"
+    ? [...configs].sort((a, b) => Number(b.source === "builtin-sensenova") - Number(a.source === "builtin-sensenova"))
+    : configs;
+  const routed = [];
+  for (const model of priorities) {
+    for (const config of orderedConfigs) {
+      if (config.models.includes(model)) routed.push({ ...config, models: [model] });
+    }
+  }
+  return routed.length ? routed : orderedConfigs;
+}
+
 function extractAssistantContent(text) {
   try {
     const payload = JSON.parse(text);
@@ -135,10 +177,24 @@ function extractAssistantContent(text) {
 
 function containsUpstreamError(text) {
   try {
-    return Boolean(JSON.parse(text)?.error);
+    const payload = JSON.parse(text);
+    if (payload?.error) return true;
+    const assistantContent = String(
+      payload?.choices?.[0]?.message?.content
+      || payload?.choices?.[0]?.text
+      || payload?.message
+      || "",
+    );
+    return containsQuotaOrAccessError(assistantContent);
   } catch {
-    return false;
+    return containsQuotaOrAccessError(text);
   }
+}
+
+function containsQuotaOrAccessError(value) {
+  const message = String(value || "").trim();
+  if (!message) return false;
+  return /(?:free\s+quota\s+exhausted|exceeded\s+(?:your\s+)?(?:current\s+)?quota|insufficient[_\s-]*quota|allocationquota|use\s+free\s+tier\s+only|add\s+funds|quota\s+(?:has\s+been\s+)?exhausted|billing\s+(?:quota|limit)|账户?余额不足|免费额度(?:已)?(?:用尽|耗尽)|额度(?:已)?(?:用尽|耗尽|不足)|欠费|无权限访问(?:该)?模型)/i.test(message);
 }
 
 function containsJsonObject(text) {
@@ -163,8 +219,11 @@ function prepareBuiltinBody(body, model) {
   return next;
 }
 
-async function callUpstream(targetUrl, apiKey, body, timeoutMs = 240_000) {
+async function callUpstream(targetUrl, apiKey, body, timeoutMs = 240_000, externalSignal = null) {
   const controller = new AbortController();
+  const abortFromExternal = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const upstream = await fetch(targetUrl, {
@@ -180,9 +239,54 @@ async function callUpstream(targetUrl, apiKey, body, timeoutMs = 240_000) {
     return { upstream, text: await upstream.text(), stream: false };
   } finally {
     clearTimeout(timeout);
+    externalSignal?.removeEventListener("abort", abortFromExternal);
   }
 }
-function upstreamResponse(text, upstream, model, source, attempts = []) {
+
+function structuredProbeCandidates(configs) {
+  const all = configs.flatMap((config) => (config.models || []).map((model) => ({ config, model })));
+  if (!all.length) return [];
+  const first = all[0];
+  const alternate = all.find((candidate) =>
+    candidate.model === first.model && candidate.config.source !== first.config.source
+  );
+  return alternate ? [first, alternate] : [];
+}
+
+async function prioritizeStructuredChannels(configs) {
+  const candidates = structuredProbeCandidates(configs);
+  if (candidates.length < 2) return configs;
+  const controllers = candidates.map(() => new AbortController());
+  const tasks = candidates.map((candidate, index) => (async () => {
+    const targetUrl = validateTarget(candidate.config.provider, candidate.config.url, true);
+    const probeBody = prepareBuiltinBody({
+      model: candidate.model,
+      messages: [{ role: "user", content: "channel-health-probe: reply OK" }],
+      temperature: 0,
+      max_tokens: 48,
+    }, candidate.model);
+    const result = await callUpstream(
+      targetUrl,
+      candidate.config.apiKey,
+      probeBody,
+      Math.min(4_000, candidate.config.timeoutMs),
+      controllers[index].signal,
+    );
+    if (!result.upstream.ok || !result.text.trim() || containsUpstreamError(result.text)) {
+      throw new Error(`${candidate.config.source} probe failed`);
+    }
+    return candidate.config;
+  })());
+  try {
+    const winner = await Promise.any(tasks);
+    return [winner, ...configs.filter((config) => config !== winner)];
+  } catch {
+    return configs;
+  } finally {
+    controllers.forEach((controller) => controller.abort());
+  }
+}
+function upstreamResponse(text, upstream, model, source, attempts = [], taskTier = "balanced") {
   return new Response(text || upstream.body, {
     status: upstream.status,
     headers: {
@@ -192,6 +296,7 @@ function upstreamResponse(text, upstream, model, source, attempts = []) {
       "X-Actual-Model": upstream.headers.get("X-Actual-Model") || model,
       "X-AI-Source": source,
       "X-AI-Attempts": attempts.join(","),
+      "X-AI-Task-Tier": taskTier,
     },
   });
 }
@@ -214,44 +319,76 @@ export async function onRequest({ request, env }) {
 
     const clientApiKey = String(payload.apiKey || "").trim();
     const useBuiltin = !clientApiKey;
-    const builtins = useBuiltin ? getBuiltinConfigs(env) : [];
+    const taskTier = ["fast", "quality", "structured", "storyline"].includes(payload.taskTier) ? payload.taskTier : "balanced";
+    const requestStartedAt = Date.now();
+    const requestBudgetMs = TASK_TIER_REQUEST_BUDGET_MS[taskTier] || TASK_TIER_REQUEST_BUDGET_MS.balanced;
+    const attemptTimeoutLimitMs = TASK_TIER_ATTEMPT_TIMEOUT_MS[taskTier] || TASK_TIER_ATTEMPT_TIMEOUT_MS.balanced;
+    let builtins = useBuiltin ? routeBuiltinConfigs(getBuiltinConfigs(env), taskTier) : [];
     if (useBuiltin && !builtins.length) {
       return json({ error: { message: "\u5e73\u53f0\u5185\u7f6e AI \u670d\u52a1\u5c1a\u672a\u5b8c\u6210\u914d\u7f6e\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u3002" } }, 503);
     }
 
     if (!useBuiltin) {
       const targetUrl = validateTarget(payload.provider || "custom", payload.url);
-      const { upstream, text } = await callUpstream(targetUrl, clientApiKey, body, 280_000);
-      if (body.stream && upstream.ok) return upstreamResponse("", upstream, body.model, "user-key", [body.model]);
+      let upstreamResult;
+      try {
+        upstreamResult = await callUpstream(
+          targetUrl,
+          clientApiKey,
+          body,
+          body.stream ? 280_000 : requestBudgetMs,
+        );
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          return json({ error: { message: "\u6a21\u578b\u54cd\u5e94\u8d85\u65f6\uff0c\u8bf7\u7f29\u77ed\u8f93\u5165\u6216\u7a0d\u540e\u91cd\u8bd5\u3002" } }, 504);
+        }
+        throw error;
+      }
+      const { upstream, text } = upstreamResult;
+      if (body.stream && upstream.ok) return upstreamResponse("", upstream, body.model, "user-key", [body.model], taskTier);
       if (!text.trim()) return json({ error: { message: "\u6a21\u578b\u8fd4\u56de\u4e3a\u7a7a\uff0c\u8bf7\u68c0\u67e5\u6a21\u578b\u540d\u79f0\u3001\u989d\u5ea6\u6216\u670d\u52a1\u72b6\u6001\u3002" } }, 502);
-      return upstreamResponse(text, upstream, body.model, "user-key", [body.model]);
+      return upstreamResponse(text, upstream, body.model, "user-key", [body.model], taskTier);
     }
 
     const wantsJson = body.response_format?.type === "json_object";
+    if (useBuiltin && taskTier === "structured" && wantsJson && !body.stream) {
+      builtins = await prioritizeStructuredChannels(builtins);
+    }
     const attempts = [];
     let lastResult = null;
     let lastError = null;
+    providerLoop:
     for (const builtin of builtins) {
       const targetUrl = validateTarget(builtin.provider, builtin.url, true);
       for (const model of builtin.models) {
-        const attemptCount = Math.max(1, Number(builtin.attemptsPerModel) || 1);
+        const configuredAttempts = Math.max(1, Number(builtin.attemptsPerModel) || 1);
+        const attemptCount = ["fast", "structured"].includes(taskTier) ? 1 : configuredAttempts;
         for (let attempt = 1; attempt <= attemptCount; attempt += 1) {
+          const remainingMs = requestBudgetMs - (Date.now() - requestStartedAt);
+          if (remainingMs < MIN_REMAINING_BUDGET_MS) {
+            lastError = timeoutError("AI proxy request budget exhausted");
+            break providerLoop;
+          }
           attempts.push(model);
           const upstreamBody = prepareBuiltinBody(body, model);
+          const attemptTimeoutMs = Math.max(
+            1_000,
+            Math.min(builtin.timeoutMs, attemptTimeoutLimitMs, remainingMs - 500),
+          );
           let result;
           try {
-            result = await callUpstream(targetUrl, builtin.apiKey, upstreamBody, builtin.timeoutMs);
+            result = await callUpstream(targetUrl, builtin.apiKey, upstreamBody, attemptTimeoutMs);
           } catch (error) {
             lastError = error;
             continue;
           }
           lastResult = { ...result, model, builtin };
           if (result.stream) {
-            return upstreamResponse("", result.upstream, model, builtin.source, attempts);
+            return upstreamResponse("", result.upstream, model, builtin.source, attempts, taskTier);
           }
           if (!result.upstream.ok || !result.text.trim() || containsUpstreamError(result.text)) continue;
           if (wantsJson && !containsJsonObject(result.text)) continue;
-          return upstreamResponse(result.text, result.upstream, model, builtin.source, attempts);
+          return upstreamResponse(result.text, result.upstream, model, builtin.source, attempts, taskTier);
         }
       }
     }
@@ -265,7 +402,8 @@ export async function onRequest({ request, env }) {
         : (lastError?.name === "AbortError"
           ? "\u6a21\u578b\u54cd\u5e94\u8d85\u65f6"
           : (lastError?.message || "\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9"));
-      return json({ error: { message: `\u6240\u6709\u5185\u7f6e AI \u670d\u52a1\u5747\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9\uff1a${reason}\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002` } }, 502);
+      const status = lastError?.name === "AbortError" ? 504 : 502;
+      return json({ error: { message: `\u6240\u6709\u5185\u7f6e AI \u670d\u52a1\u5747\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9\uff1a${reason}\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002` } }, status);
     }
     return upstreamResponse(
       lastResult.text,
@@ -273,6 +411,7 @@ export async function onRequest({ request, env }) {
       lastResult.model,
       lastResult.builtin.source,
       attempts,
+      taskTier,
     );
   } catch (error) {
     return json({ error: { message: error.message || "AI 代理调用失败。" } }, 400);

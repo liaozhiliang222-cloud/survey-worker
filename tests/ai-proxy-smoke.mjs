@@ -5,7 +5,16 @@ const mod = await import(`data:text/javascript;base64,${Buffer.from(source).toSt
 let mode = "normal";
 let calls = [];
 
+if (!source.includes("TASK_TIER_REQUEST_BUDGET_MS") || !source.includes("break providerLoop")) {
+  throw new Error("Cloudflare request budget guard is missing");
+}
+
 globalThis.fetch = async (url, options) => {
+  if (mode === "abort") {
+    const error = new Error("upstream timeout");
+    error.name = "AbortError";
+    throw error;
+  }
   const body = JSON.parse(options.body);
   calls.push({ url, options, body });
   const gatewayCalls = calls.filter((call) => String(call.url).includes("api.surveykit.cc")).length;
@@ -21,6 +30,14 @@ globalThis.fetch = async (url, options) => {
       headers: { "Content-Type": "application/json" },
     });
   }
+  if (mode === "gateway-quota-content" && String(url).includes("api.surveykit.cc")) {
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: 'Free quota exhausted. Please disable the "use free tier only" mode.' } }],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (mode === "network" && body.model === "deepseek-v4-pro") throw new TypeError("socket reset");
   if (mode === "quota" && body.model === "deepseek-v4-pro") {
     return new Response(JSON.stringify({ error: { code: "AllocationQuota.FreeTierOnly" } }), {
@@ -28,7 +45,17 @@ globalThis.fetch = async (url, options) => {
       headers: { "Content-Type": "application/json" },
     });
   }
-  if (body.stream) {
+  const isChannelProbe = body.messages?.some((message) => String(message.content || "").includes("channel-health-probe"));
+  if (mode === "channel-probe" && isChannelProbe) {
+    const response = () => new Response(JSON.stringify({ choices: [{ message: { content: "OK" } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+    if (String(url).includes("api.surveykit.cc")) {
+      return new Promise((resolve) => setTimeout(() => resolve(response()), 40));
+    }
+    return response();
+  }  if (body.stream) {
     return new Response('data: {"choices":[{"delta":{"content":"stream-ok"}}]}\n\ndata: [DONE]\n\n', { status: 200, headers: { "Content-Type": "text/event-stream" } });
   }
   const content = mode === "structured" && /^deepseek-v4-/.test(body.model)
@@ -40,7 +67,7 @@ globalThis.fetch = async (url, options) => {
   });
 };
 
-function makeRequest({ apiKey = "", structured = false, stream = false } = {}) {
+function makeRequest({ apiKey = "", structured = false, stream = false, taskTier } = {}) {
   return new Request("https://surveykit.cc/api/ai", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -48,6 +75,7 @@ function makeRequest({ apiKey = "", structured = false, stream = false } = {}) {
       provider: "deepseek",
       url: "https://api.deepseek.com/v1/chat/completions",
       apiKey,
+      ...(taskTier ? { taskTier } : {}),
       body: {
         model: "deepseek-v4-pro",
         messages: [{ role: "user", content: "test" }],
@@ -70,6 +98,50 @@ if (calls[0].url !== "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/com
 if (calls[0].body.model !== "deepseek-v4-pro") throw new Error("DeepSeek Pro is not the primary model");
 if (calls[0].options.headers.Authorization !== "Bearer server-secret") throw new Error("wrong builtin auth");
 if (response.headers.get("X-Actual-Model") !== "deepseek-v4-pro") throw new Error("wrong primary model header");
+
+// Quality tasks skip Flash-only providers and reach DeepSeek Pro first.
+calls = [];
+response = await mod.onRequest({
+  request: makeRequest({ taskTier: "quality" }),
+  env: {
+    SURVEYKIT_GATEWAY_API_KEY: "gateway-secret",
+    SENSENOVA_API_KEY: "sense-secret",
+    DASHSCOPE_API_KEY: "server-secret",
+  },
+});
+if (calls[0].body.model !== "deepseek-v4-pro" || response.headers.get("X-AI-Source") !== "builtin-bailian") {
+  throw new Error("quality routing did not select DeepSeek Pro");
+}
+if (response.headers.get("X-AI-Task-Tier") !== "quality") throw new Error("quality tier header missing");
+
+// Fast tasks keep the low-latency SurveyKit Flash route first.
+calls = [];
+response = await mod.onRequest({
+  request: makeRequest({ taskTier: "fast" }),
+  env: {
+    SURVEYKIT_GATEWAY_API_KEY: "gateway-secret",
+    SENSENOVA_API_KEY: "sense-secret",
+    DASHSCOPE_API_KEY: "server-secret",
+  },
+});
+if (calls[0].body.model !== "deepseek-v4-flash" || response.headers.get("X-AI-Source") !== "builtin-surveykit-gateway") {
+  throw new Error("fast routing did not select DeepSeek Flash");
+}
+if (response.headers.get("X-AI-Task-Tier") !== "fast") throw new Error("fast tier header missing");
+
+// Storyline tasks bypass the unstable gateway and use SenseNova Flash first.
+calls = [];
+response = await mod.onRequest({
+  request: makeRequest({ taskTier: "storyline" }),
+  env: {
+    SURVEYKIT_GATEWAY_API_KEY: "gateway-secret",
+    SENSENOVA_API_KEY: "sense-secret",
+  },
+});
+if (calls[0].body.model !== "deepseek-v4-flash" || response.headers.get("X-AI-Source") !== "builtin-sensenova") {
+  throw new Error("storyline routing did not select SenseNova Flash first");
+}
+if (response.headers.get("X-AI-Task-Tier") !== "storyline") throw new Error("storyline tier header missing");
 
 // The SurveyKit New API gateway takes precedence and keeps Flash as the only default attempt.
 calls = [];
@@ -116,6 +188,22 @@ if (response.status !== 200 || response.headers.get("X-AI-Source") !== "builtin-
 if (calls.length !== 4 || calls[3].url !== "https://token.sensenova.cn/v1/chat/completions") {
   throw new Error("Gateway retries did not continue to SenseNova");
 }
+// Some compatible gateways wrap quota failures in a successful assistant response.
+calls = [];
+mode = "gateway-quota-content";
+response = await mod.onRequest({
+  request: makeRequest({ taskTier: "fast" }),
+  env: {
+    SURVEYKIT_GATEWAY_API_KEY: "gateway-secret",
+    SENSENOVA_API_KEY: "sense-secret",
+  },
+});
+if (response.status !== 200 || response.headers.get("X-AI-Source") !== "builtin-sensenova") {
+  throw new Error("Assistant-content quota fallback failed");
+}
+if (calls.length !== 2 || !calls[1].url.includes("sensenova.cn")) {
+  throw new Error("Assistant-content quota response did not continue to SenseNova");
+}
 mode = "normal";
 
 // SenseNova takes precedence when its production secret is configured.
@@ -132,6 +220,37 @@ if (calls[0].options.headers.Authorization !== "Bearer sense-secret") throw new 
 if (response.headers.get("X-AI-Source") !== "builtin-sensenova") throw new Error("wrong SenseNova source");
 if (response.headers.get("X-AI-Attempts") !== "deepseek-v4-flash") throw new Error("SenseNova should use one model attempt");
 
+// A generic probe selects the faster channel; the full report payload is sent only once.
+calls = [];
+mode = "channel-probe";
+response = await mod.onRequest({
+  request: makeRequest({ structured: true, taskTier: "structured" }),
+  env: {
+    SURVEYKIT_GATEWAY_API_KEY: "gateway-secret",
+    SENSENOVA_API_KEY: "sense-secret",
+    DASHSCOPE_API_KEY: "server-secret",
+  },
+});
+if (response.status !== 200 || response.headers.get("X-AI-Source") !== "builtin-sensenova") {
+  throw new Error("structured channel probe did not select the faster provider");
+}
+const probeCalls = calls.filter((call) => call.body.messages.some((message) => String(message.content || "").includes("channel-health-probe")));
+const reportCalls = calls.filter((call) => !call.body.messages.some((message) => String(message.content || "").includes("channel-health-probe")));
+if (probeCalls.length !== 2 || reportCalls.length !== 1 || !reportCalls[0].url.includes("sensenova.cn")) {
+  throw new Error("full structured payload was not isolated to the probe winner");
+}
+// Report frameworks use a dedicated non-streaming structured route: Flash first, then native-JSON fallback.
+calls = [];
+mode = "structured";
+response = await mod.onRequest({
+  request: makeRequest({ structured: true, taskTier: "structured" }),
+  env: { DASHSCOPE_API_KEY: "server-secret" },
+});
+if (response.status !== 200 || response.headers.get("X-Actual-Model") !== "qwen3.7-max") throw new Error("structured tier fallback failed");
+if (response.headers.get("X-AI-Task-Tier") !== "structured") throw new Error("structured tier header missing");
+if (calls.length !== 2 || calls[0].body.model !== "deepseek-v4-flash" || calls[1].body.model !== "qwen3.7-max") {
+  throw new Error("structured tier did not skip unavailable Pro and validate Flash before Qwen");
+}
 // DeepSeek 不支持严格结构化输出；输出不合规时自动切到 Qwen。
 calls = [];
 mode = "structured";
@@ -181,6 +300,15 @@ response = await mod.onRequest({
 });
 if (response.status !== 200 || calls[0].url !== "https://api.deepseek.com/v1/chat/completions") throw new Error("user key route failed");
 if (calls[0].options.headers.Authorization !== "Bearer user-secret") throw new Error("user key precedence failed");
+
+calls = [];
+mode = "abort";
+response = await mod.onRequest({
+  request: makeRequest({ apiKey: "user-secret", structured: true, taskTier: "structured" }),
+  env: { DASHSCOPE_API_KEY: "server-secret" },
+});
+if (response.status !== 504) throw new Error(`expected bounded user-key timeout, got ${response.status}`);
+mode = "normal";
 
 response = await mod.onRequest({ request: makeRequest(), env: {} });
 if (response.status !== 503) throw new Error(`expected 503, got ${response.status}`);

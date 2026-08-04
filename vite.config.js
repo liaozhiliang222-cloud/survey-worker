@@ -3,10 +3,14 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
 const runtimeFiles = [
+  "research-theme.js",
   "app.js",
   "ppt-report-ai.js",
   "proposal-deck.js",
   "data-worker.js",
+  "cluster-core.js",
+  "cluster-worker.js",
+  "cluster-analysis.js",
   "sw.js",
   "manifest.webmanifest",
   "icon.svg",

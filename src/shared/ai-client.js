@@ -123,7 +123,7 @@ export function normalizeAiResponseContent(content) {
 
 // ─── 流式读取 ───────────────────────────────────────────────
 
-export async function readAiChatCompletionStream(response, onProgress) {
+export async function readAiChatCompletionStream(response, onProgress, onActivity) {
   const reader = response.body?.getReader();
   if (!reader) throw new Error("当前浏览器无法读取 AI 流式响应，请升级浏览器后重试。");
   const decoder = new TextDecoder("utf-8");
@@ -158,6 +158,7 @@ export async function readAiChatCompletionStream(response, onProgress) {
 
   while (true) {
     const { value, done } = await reader.read();
+    if (value?.length && typeof onActivity === "function") onActivity();
     buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
     const frames = buffer.split(/\r?\n\r?\n/);
     buffer = frames.pop() || "";
@@ -237,9 +238,31 @@ export let lastAiActualModel = "";
  * 调用 AI Chat Completion 接口
  * @param {object} settings - AI 设置 { provider, model, url, apiKey }
  * @param {Array<{role: string, content: string}>} messages - 对话消息
- * @param {object} options - { temperature, maxTokens, stream, responseFormat, timeoutMs, onProgress }
+ * @param {object} options - { temperature, maxTokens, stream, responseFormat, taskTier, timeoutMs, onProgress }
  * @returns {Promise<string>} 模型输出文本
  */
+function getAiProxyUrl() {
+  try {
+    if (typeof window !== "undefined" && window.location?.origin && window.location.origin !== "null") {
+      return new URL("/api/ai", window.location.origin).toString();
+    }
+  } catch (_) {}
+  return "/api/ai";
+}
+
+async function fetchAiProxyWithRetry(url, init, attempts = 2) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      lastError = error;
+      if (error?.name === "AbortError" || attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+    }
+  }
+  throw lastError || new Error("AI proxy request failed");
+}
 export async function callAiChatCompletion(settings, messages, options = {}) {
   if (typeof window !== "undefined" && window.location.protocol === "file:") {
     throw new Error("AI 后端代理需要通过本地服务或线上地址访问，不能直接用 file:// 页面调用。请使用 npm run dev 打开本地服务，或访问已部署的网址。");
@@ -260,15 +283,23 @@ export async function callAiChatCompletion(settings, messages, options = {}) {
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 360000;
   const timeoutSeconds = Math.max(1, Math.round(timeoutMs / 1000));
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let timeout;
+  const armTimeout = () => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => controller.abort(), timeoutMs);
+  };
+  armTimeout();
 
-  const response = await fetch("./api/ai", {
+  const response = await fetchAiProxyWithRetry(getAiProxyUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    credentials: "same-origin",
     body: JSON.stringify({
       provider: settings.provider,
       url: settings.url,
       apiKey: settings.apiKey,
+      taskTier: options.taskTier || "balanced",
       body: requestBody
     }),
     signal: controller.signal
@@ -283,7 +314,12 @@ export async function callAiChatCompletion(settings, messages, options = {}) {
   if (response.ok && useStream && response.body) {
     lastAiActualModel = response.headers.get("X-Actual-Model") || "";
     try {
-      return await readAiChatCompletionStream(response, options.onProgress);
+      return await readAiChatCompletionStream(response, options.onProgress, armTimeout);
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error("AI 连续 " + timeoutSeconds + " 秒未返回数据，已为当前生成阶段启用安全降级。");
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }

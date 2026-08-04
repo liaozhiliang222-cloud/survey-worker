@@ -686,7 +686,7 @@ function getWorkspaceFormProject() {
       quota: false,
       cleaning: false,
       header: false,
-      models: Boolean(lastPsmAnalysis || lastKanoAnalysis || lastMaxDiffDesign || lastMaxDiffScore || lastAbcSuggestions)
+      models: Boolean(lastPsmAnalysis || lastKanoAnalysis || lastMaxDiffDesign || lastMaxDiffScore || lastAbcSuggestions || projectDataBus.get("modelResults.cluster.active"))
     },
     assets: { ...((workspaceProject || {}).assets || {}) },
     reportPlans: Array.isArray(workspaceProject?.reportPlans) ? workspaceProject.reportPlans : [],
@@ -769,6 +769,7 @@ function workspaceStatusSnapshot(project, savedStatus = {}) {
     model_psm: Boolean(lastPsmAnalysis || savedStatus.modelPsm),
     model_kano: Boolean(lastKanoAnalysis || savedStatus.modelKano),
     model_maxdiff: Boolean(lastMaxDiffDesign || lastMaxDiffScore || savedStatus.modelMaxdiff),
+    model_cluster: Boolean(projectDataBus.get("modelResults.cluster.active") || savedStatus.modelCluster),
     ai_report: Boolean(lastAiReport || savedStatus.aiReport),
     report_delivery: Boolean(lastAiReport || savedStatus.reportDelivery),
     project_archive: Boolean(savedStatus.archive || project.status.archive),
@@ -797,6 +798,7 @@ function workspaceFlowNodes() {
     { id: "model_psm", stage: "分析产出", name: "PSM 模型", detail: "价格敏感度分析", action: "PSM", jump: "psm", dependsOn: "cleaning_execution" },
     { id: "model_kano", stage: "分析产出", name: "KANO 模型", detail: "需求属性分类", action: "KANO", jump: "kano", dependsOn: "cleaning_execution" },
     { id: "model_maxdiff", stage: "分析产出", name: "MaxDiff 模型", detail: "相对偏好排序", action: "MaxDiff", jump: "maxdiff", dependsOn: "cleaning_execution" },
+    { id: "model_cluster", stage: "分析产出", name: "用户分群", detail: "K-Means / 两步 / 系统聚类", action: "分群分析", jump: "cluster-analysis", dependsOn: "cleaning_execution" },
     { id: "ai_report", stage: "分析产出", name: "AI 洞察报告", detail: "Markdown 报告", action: "生成报告", jump: "ai-report", dependsOn: "crosstab" },
     { id: "report_delivery", stage: "分析产出", name: "报告交付", detail: "MD / Word / PPT", action: "导出报告", jump: "ai-report", dependsOn: "ai_report" },
     { id: "project_archive", stage: "交付归档", name: "项目归档", detail: "冻结项目产出", action: "归档项目", jump: "overview", dependsOn: "report_delivery" },
@@ -837,8 +839,18 @@ function dashboardAssets(project, status) {
     { key: "weightedData", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 015.66 4H8V2z"/></svg>`, name: "加权数据", state: status.data_weighting ? "已生成" : "待执行", done: status.data_weighting, jump: "data-weighting" },
     { key: "crosstab", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1" y="1" width="14" height="14" rx="2"/><path d="M1 6h14M6 1v14"/></svg>`, name: "交叉表", state: savedAssets.crosstabFile ? `${savedAssets.crosstabFile.questions || 0}题 · ${savedAssets.crosstabFile.segments || 0}维度` : status.crosstab ? "已有数据" : "待分析", done: Boolean(status.crosstab || savedAssets.crosstabFile), jump: "pptx-report" },
     { key: "reportPlan", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2h10v12H3z"/><path d="M5 5h6M5 8h6M5 11h4"/></svg>`, name: "报告方案", state: reportPlan ? `${reportPlan.pages}页 · 已保存` : "待规划", done: Boolean(reportPlan), jump: "pptx-report" },
+    { key: "cluster", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="5" cy="5" r="2.2"/><circle cx="11" cy="4" r="2.2"/><circle cx="8" cy="11" r="2.2"/><path d="M5 5l3 6M11 4l-3 7M5 5l6-1"/></svg>`, name: "用户分群", state: clusterAssetState(), done: Boolean(clusterAssetState() !== "待分析"), jump: "cluster-analysis" },
     { key: "reports", icon: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 2h8a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M7 5h3M7 8h3M7 11h2"/></svg>`, name: "报告资产", state: pptxReport ? pptxReport.fileName : status.ai_report ? "已有报告" : "0份", done: Boolean(pptxReport || status.ai_report), jump: "pptx-report" }
   ];
+}
+
+function clusterAssetState() {
+  const active = projectDataBus.get("modelResults.cluster.active");
+  if (!active) return "待分析";
+  const result = projectDataBus.get(`modelResults.cluster.${active.method}`);
+  if (!result) return "已完成";
+  const methodName = active.method === "kmeans" ? "K-Means" : active.method === "twostep" ? "两步聚类" : "系统聚类";
+  return `${methodName} · ${active.selectedK || result.selectedK}个群体 · N=${active.validN || result.validN}`;
 }
 
 function ensureDashboardHeroShell() {

@@ -542,7 +542,7 @@
       setStatus("2/5 正在规划 PPT 故事线");
       try {
         const storyOutput = await callAiChatCompletion(settings, storyPrompt(config, sourceText), {
-          responseFormat: "json_object", maxTokens: 4500, temperature: 0.25, timeoutMs: STORY_TIMEOUT_MS
+          responseFormat: "json_object", maxTokens: 4500, temperature: 0.25, timeoutMs: STORY_TIMEOUT_MS, taskTier: "quality"
         });
         try {
           const parsedStory = parseJsonCandidate(storyOutput);
@@ -564,7 +564,7 @@
       setStatus("3/5 正在生成页面内容");
       try {
         const deckOutput = await callAiChatCompletion(settings, deckPrompt(config, story, sourceText, fallbackDeck), {
-          responseFormat: "json_object", maxTokens: 12000, temperature: 0.2, timeoutMs: PAGE_CONTENT_TIMEOUT_MS
+          responseFormat: "json_object", maxTokens: 12000, temperature: 0.2, timeoutMs: PAGE_CONTENT_TIMEOUT_MS, taskTier: "quality"
         });
         try {
           deck = normalizeDeck(parseJsonCandidate(deckOutput), { projectId: projectIdForDeck(), purpose: config.ppt.purpose, exampleOutputMode: config.ppt.exampleOutputMode, contentDensity: config.ppt.contentDensity });
@@ -703,7 +703,7 @@
     try {
       setStatus("正在重新生成当前页，其他页面保持不变");
       const settings = loadAiSettings();
-      const output = await callAiChatCompletion(settings, [{ role: "system", content: "只输出一个严格JSON页面对象，不输出坐标或代码。保留故事线关系、数据状态和图表定义。illustrative数据只能引用现有dataset_id，不得重新生成整套数据。" }, { role: "user", content: `重写当前页面，保持slide_type和visual_type，补足专业细节并避免与其他页重复。当前页：${JSON.stringify(slide)}。现有illustrative_dataset_id：${state.deck.illustrative_dataset_id || "无"}。整套故事线：${state.deck.slides.map((entry) => entry.slide_question).join(" → ")}` }], { responseFormat: "json_object", maxTokens: 3600, temperature: 0.25 });
+      const output = await callAiChatCompletion(settings, [{ role: "system", content: "只输出一个严格JSON页面对象，不输出坐标或代码。保留故事线关系、数据状态和图表定义。illustrative数据只能引用现有dataset_id，不得重新生成整套数据。" }, { role: "user", content: `重写当前页面，保持slide_type和visual_type，补足专业细节并避免与其他页重复。当前页：${JSON.stringify(slide)}。现有illustrative_dataset_id：${state.deck.illustrative_dataset_id || "无"}。整套故事线：${state.deck.slides.map((entry) => entry.slide_question).join(" → ")}` }], { responseFormat: "json_object", maxTokens: 3600, temperature: 0.25, taskTier: "quality" });
       state.deck = replaceSlidePreservingLocks(state.deck, slide.id, parseJsonCandidate(output));
       lockedSnapshot.forEach((locked) => {
         const index = state.deck.slides.findIndex((entry) => entry.id === locked.id);

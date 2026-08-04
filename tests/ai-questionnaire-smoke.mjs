@@ -30,6 +30,7 @@ vm.runInContext([
   extractFunction("normalizeAiResponseContent", "buildAiQuestionnairePrompt"),
 ].join("\n"), context);
 let streamProgress = null;
+let streamActivityCount = 0;
 const streamedQuestionnaire = await context.readAiChatCompletionStream(new Response([
   'data: {"choices":[{"delta":{"reasoning_content":"规划"}}]}',
   '',
@@ -39,9 +40,10 @@ const streamedQuestionnaire = await context.readAiChatCompletionStream(new Respo
   '',
   'data: [DONE]',
   '',
-].join("\n")), (progress) => { streamProgress = progress; });
+].join("\n")), (progress) => { streamProgress = progress; }, () => { streamActivityCount += 1; });
 assert.equal(streamedQuestionnaire, "# 专业长卷\n正文");
 assert.ok(streamProgress.reasoningLength >= 2);
+assert.ok(streamActivityCount >= 1);
 context.aiStudyTypeLabels = { concept: "Concept", ua: "UA", brand: "Brand", nps: "NPS", pricing: "Pricing", kano: "Kano" };
 vm.runInContext([
   extractFunction("aiStudyTypeValues", "getAiStudyTypes"),
@@ -97,7 +99,7 @@ assert.match(source, /max: Math\.min\(70, target \+ 6\)/);
 assert.match(source, /lengthMode: document\.querySelector\("#aiQuestionnaireLengthMode"\)/);
 assert.equal((source.match(/maxTokens: 32000/g) || []).length, 2);
 assert.match(source, /buildAiQuestionnairePrompt\(\), \{[\s\S]{0,80}maxTokens: 32000/);
-assert.match(source, /buildAiRevisionPrompt\(instruction, lastAiQuestionnaireText\), \{ maxTokens: 32000, timeoutMs: 600000, stream: true \}/);
+assert.match(source, /buildAiRevisionPrompt\(instruction, lastAiQuestionnaireText\), \{ maxTokens: 32000, timeoutMs: 600000, stream: true, taskTier: "fast" \}/);
 assert.match(source, /timeoutMs: design\.config\.lengthMode === "long" \? 600000 : 360000/);
 assert.match(source, /专业长卷通常需要 2–6 分钟/);
 assert.match(source, /if \(options\.stream\) requestBody\.stream = true/);

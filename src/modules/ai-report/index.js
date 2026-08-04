@@ -109,7 +109,9 @@ export function buildAiReportPrompt(context, summary, dataContext) {
         "阶段5 整合审查：确保执行摘要与正文一致。",
         "",
         "【核心写作原则】",
-        "- 数据引用精确到百分比（1位小数），标注基数N=XXX。",
+        "- 数据必须准确，但每个核心发现只保留1句数据证据、最多2个数字；图表已展示的完整占比不得在正文逐项复述。",
+        "- 每个发现先写不含百分比的判断、关系或机制解释，再给数据锚点；建议和业务含义不得重复百分比。",
+        "- 若删掉数字后正文没有剩余观点，说明仍是数据白描，必须改写为集中、分化、断层、趋同、转折或业务障碍等模式判断。",
         "- 洞察标题使用『四字标签+一句话解读』格式。",
         "- 未达显著差异的数据禁止说「显著高于」。",
         "- 禁止模板化过渡语。",
@@ -185,6 +187,7 @@ export async function generateAiReport(context, dataContext, options = {}) {
         const prompt = buildAiReportPrompt(context, summary, dataContext);
         output = await callAiChatCompletion(settings, prompt, {
           maxTokens: 8000,
+          taskTier: "quality",
           timeoutMs: 180000,
           stream: true,
           onProgress: options.onProgress

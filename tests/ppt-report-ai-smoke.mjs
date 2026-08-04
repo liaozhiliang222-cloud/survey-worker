@@ -5,6 +5,7 @@ import vm from "node:vm";
 const source = readFileSync(new URL("../ppt-report-ai.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 assert.ok(html.indexOf("ppt-report-ai.js") < html.indexOf("app.js"), "PPT AI module must load before app.js.");
+assert.ok(html.indexOf("research-theme.js") < html.indexOf("ppt-report-ai.js"), "Research Theme module must load before PPT AI.");
 assert.match(html, /id="pptxNarrativePanel"/);
 assert.match(html, /id="pptxNarrativeConfirmBtn"[^>]*>确认分析维度并生成蓝图</);
 assert.match(html, /确认核心观点、章节与分析维度/);
@@ -17,6 +18,11 @@ const context = vm.createContext({ globalThis: {}, Set, Map, Array, String, Numb
 vm.runInContext(source, context);
 const ai = context.globalThis.PptReportAi;
 assert.ok(ai, "PptReportAi must be exported.");
+assert.deepEqual(
+  ai.parseJsonObject('我们根据输入信息整理如下： {"central_thesis":"判断","nested":{"text":"保留 } 字符"}} 以上为结果。'),
+  { central_thesis: "判断", nested: { text: "保留 } 字符" } },
+);
+assert.throws(() => ai.parseJsonObject("我们根据输入信息构建故事线。"), /未返回可解析的 JSON 对象/);
 assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /最终由用户确认/);
 assert.doesNotMatch(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /page_dimension_plan/);
 
@@ -124,6 +130,23 @@ assert.equal(pageOutput[0].claim, "Decision certainty is the core barrier.");
 assert.deepEqual(Array.from(pageOutput[0].evidence_fact_ids), ["F1"]);
 assert.deepEqual(Array.from(pageOutput[0].evidence_question_ids), ["Q1"]);
 assert.equal(pageOutput[0].bullets.length, 3);
+const narrationPayload = { pages: [{
+  page_idx: 1,
+  title: "Preference is concentrated",
+  claim: "Preference is concentrated",
+  bullets: ["Option A reaches 48%", "Option B reaches 32%", "The pattern shows a concentrated preference structure"],
+  business_implication: "Prioritize the 48% leading proposition",
+}] };
+assert.ok(ai.findDataNarrationIssues(narrationPayload.pages).length >= 1);
+const reducedNarration = ai.validatePageOutput(narrationPayload, reportContext.pages.slice(0, 1));
+assert.deepEqual(
+  Array.from(reducedNarration[0].bullets),
+  ["The pattern shows a concentrated preference structure"],
+);
+assert.equal(reducedNarration[0].bullets.filter((bullet) => bullet.includes("%")).length, 0);
+assert.equal(reducedNarration[0].business_implication, "");
+assert.ok(ai.SLIDE_BRIEF_SYSTEM_PROMPT.includes("bullets[0]"));
+assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /business_implication/);
 assert.match(pageOutput[0].bullets[2], /解释；行动/);
 
 const batchInput = ai.buildPageBatchInput(reportContext.pages.slice(0, 3), narrative, pageOutput[0]);
@@ -168,6 +191,9 @@ const reportNarrative = ai.validateReportNarrative({
 }, reportContext);
 assert.equal(reportNarrative.chapters.length, 3);
 assert.equal(reportNarrative.storyline_type, "diagnosis");
+assert.equal(ai.validateReportNarrative({ ...reportNarrative, storyline_type: "诊断型叙事" }, reportContext).storyline_type, "diagnosis");
+assert.equal(ai.validateReportNarrative({ ...reportNarrative, storyline_type: "问题-解决" }, reportContext).storyline_type, "problem_solution");
+assert.equal(ai.validateReportNarrative({ ...reportNarrative, storyline_type: "洞察驱动" }, reportContext).storyline_type, "diagnosis");
 assert.ok(reportNarrative.central_thesis);
 const { central_thesis: expectedCentralThesis, ...camelCaseNarrative } = reportNarrative;
 const normalizedWrappedNarrative = ai.validateReportNarrative({
@@ -180,16 +206,141 @@ assert.equal(normalizedWrappedNarrative.central_thesis, expectedCentralThesis);
 assert.equal(reportNarrative.confidence, 1);
 assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /中心论点/);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /chapter_context/);
-assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /每页最多引用 2 个数字/);
+assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /正文不得引用百分比/);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /不得逐项复述图表/);
 assert.match(ai.SLIDE_BRIEF_SYSTEM_PROMPT, /可能与…有关/);
 assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /page_idxs/);
+assert.match(ai.PAGE_BLUEPRINT_SYSTEM_PROMPT, /page_blueprint/);
+assert.match(ai.PAGE_BLUEPRINT_SYSTEM_PROMPT, /每页 1–6 题/);
 assert.equal(reportNarrative.chapters[0].page_idxs.join(","), "3,1");
 assert.deepEqual(Array.from(reportNarrative.chapters[0].analysis_strategy.primary_dimensions), ["用户类型"]);
 assert.deepEqual(Array.from(reportNarrative.chapters[0].analysis_strategy.supporting_dimensions), ["年龄"]);
 assert.equal(reportNarrative.chapters[0].analysis_strategy.page_dimension_plan.length, 1);
 const reportNarrativeInput = ai.buildReportNarrativeInput(reportContext, "研究目标");
 assert.deepEqual(Array.from(reportNarrativeInput.dimension_catalog, (item) => item.key), ["总体", "用户类型", "年龄"]);
+assert.equal(reportNarrativeInput.require_page_blueprint, true);
+const frameworkInput = ai.buildReportFrameworkInput(reportNarrativeInput);
+assert.equal(frameworkInput.data_facts, undefined);
+assert.equal(frameworkInput.require_page_blueprint, undefined);
+assert.ok(frameworkInput.insights.length <= 12);
+assert.equal(frameworkInput.question_catalog, undefined);
+assert.equal(frameworkInput.dimension_catalog[0].segments, undefined);
+assert.equal(frameworkInput.page_catalog[0].question_titles, undefined);
+const revisionInput = ai.buildReportNarrativeRevisionInput(
+  reportNarrative,
+  { ...reportContext, require_page_blueprint: false },
+  "move question assignment to concept validation",
+  "research objective",
+);
+assert.equal(revisionInput.revision_feedback, "move question assignment to concept validation");
+assert.equal(revisionInput.current_narrative.chapters.length, 3);
+assert.equal(revisionInput.require_page_blueprint, false);
+assert.equal(revisionInput.current_narrative.chapters[0].page_idxs.join(","), "3,1");
+const localReportNarrative = ai.validateReportNarrative(
+  ai.buildFallbackReportNarrative(reportContext, reportNarrativeInput),
+  { ...reportContext, require_page_blueprint: false },
+);
+assert.ok(localReportNarrative.chapters.length >= 3 && localReportNarrative.chapters.length <= 8);
+assert.equal(localReportNarrative.storyline_type, "diagnosis");
+assert.equal(ai.isReportNarrativeTooSimilarToSource(localReportNarrative, reportNarrativeInput), false);
+assert.deepEqual(
+  Array.from(new Set(localReportNarrative.chapters.flatMap((chapter) => chapter.page_idxs))).sort((a, b) => a - b),
+  Array.from(reportContext.pages, (page) => page.page_idx).sort((a, b) => a - b),
+);
+assert.deepEqual(Array.from(reportNarrativeInput.question_catalog, (item) => item.question_id), ["Q1", "Q2", "Q3"]);
+const fallbackBlueprint = ai.buildFallbackPageBlueprint(reportContext, reportNarrative);
+const fallbackQuestionIds = fallbackBlueprint.flatMap((page) => page.question_ids);
+assert.deepEqual(Array.from(fallbackQuestionIds).sort(), ["Q1", "Q2", "Q3"]);
+assert.equal(new Set(fallbackQuestionIds).size, fallbackQuestionIds.length);
+assert.ok(fallbackBlueprint.every((page) => page.question_ids.length >= 1 && page.question_ids.length <= 6));
+ai.validateReportNarrative({ ...reportNarrative, page_blueprint: fallbackBlueprint }, { ...reportContext, require_page_blueprint: true });
+const logicFirstBlueprint = ai.buildFallbackPageBlueprint({ pages: [
+  {
+    page_idx: 1,
+    source_chapter: "购买行为",
+    current_title: "购买行为概览",
+    questions: [
+      { code: "S1", title: "购买渠道", rows: [{ option: "线上", values: { 总体: 50 } }] },
+      { code: "S2", title: "购买频率", rows: [{ option: "每月", values: { 总体: 40 } }] },
+    ],
+  },
+  {
+    page_idx: 2,
+    source_chapter: "购买行为",
+    current_title: "复杂模型分析",
+    questions: [{
+      code: "C1",
+      title: "复杂矩阵",
+      data_kind: "matrix",
+      model_semantics: { analysis_model: "kano" },
+      rows: Array.from({ length: 12 }, (_, index) => ({
+        option: `选项${index + 1}`,
+        values: { 总体: 25, A组: 20, B组: 30, C组: 35 },
+      })),
+    }],
+  },
+] }, {
+  chapters: [{ chapter_id: "chapter_logic", title: "购买行为", key_question: "用户如何购买？", page_idxs: [1, 2] }],
+});
+assert.deepEqual(Array.from(logicFirstBlueprint, (page) => page.question_ids.join(",")), ["S1,S2", "C1"]);
+assert.ok(logicFirstBlueprint.every((page) => page.question_ids.length <= 6));
+const fiveSeriesRows = (options) => options.map((option) => ({
+  option,
+  values: { 总体: 50, 高意向用户: 55, "0-6岁": 45, "7-9岁": 60, "10-12岁": 48 },
+}));
+const compactProfileBlueprint = ai.buildFallbackPageBlueprint({ pages: [
+  { page_idx: 1, source_chapter: "用户画像", current_title: "城市分布", questions: [{ code: "S3", title: "目前居住的城市", model_semantics: { analysis_model: "descriptive" }, rows: fiveSeriesRows(["一线", "新一线", "省会"]) }] },
+  { page_idx: 2, source_chapter: "用户画像", current_title: "家庭阶段", questions: [{ code: "S4", title: "以下哪种符合您的家庭情况", model_semantics: { analysis_model: "descriptive" }, rows: fiveSeriesRows(["0-6岁", "7-9岁", "10-12岁"]) }] },
+  { page_idx: 3, source_chapter: "其他研究", current_title: "孩子性别", questions: [{ code: "S5", title: "您孩子的性别", model_semantics: { analysis_model: "descriptive" }, rows: fiveSeriesRows(["男", "女"]) }] },
+  { page_idx: 4, source_chapter: "用户画像", current_title: "家长学历", questions: [{ code: "C1", title: "您的最高学历", model_semantics: { analysis_model: "descriptive" }, rows: fiveSeriesRows(["高中", "大专", "本科", "硕士"]) }] },
+  { page_idx: 5, source_chapter: "用户画像", current_title: "家长职业", questions: [{ code: "C2", title: "您的职业", model_semantics: { analysis_model: "descriptive" }, rows: fiveSeriesRows(["企业职员", "专业人员", "自由职业"]) }] },
+  { page_idx: 6, source_chapter: "用户画像", current_title: "家庭收入", questions: [{ code: "C3", title: "您的家庭月总收入", model_semantics: { analysis_model: "descriptive" }, rows: fiveSeriesRows(["1万元以下", "1-2万元", "2-3万元", "3万元以上"]) }] },
+  { page_idx: 7, source_chapter: "概念测试", current_title: "插电影响", questions: [{ code: "B7", title: "设备需要插电使用的影响", model_semantics: { analysis_model: "descriptive" }, rows: fiveSeriesRows(["影响很大", "有影响", "无影响"]) }] },
+  { page_idx: 8, source_chapter: "概念测试", current_title: "续航期望", questions: [{ code: "B8", title: "电池续航期望", model_semantics: { analysis_model: "descriptive" }, rows: fiveSeriesRows(["1-2天", "3-5天", "1周"]) }] },
+  { page_idx: 9, source_chapter: "概念测试", current_title: "便携需求", questions: [{ code: "B9", title: "是否需要设备支持便携移动", model_semantics: { analysis_model: "descriptive" }, rows: fiveSeriesRows(["经常", "偶尔", "不需要"]) }] },
+  { page_idx: 10, source_chapter: "专项研究", current_title: "KANO分析", questions: [{ code: "K1", title: "功能KANO分类", data_kind: "matrix", model_semantics: { analysis_model: "kano" }, rows: fiveSeriesRows(["功能A", "功能B"]) }] },
+] }, {
+  chapters: [{ chapter_id: "chapter_compact", title: "用户与产品机会", key_question: "哪些用户和产品要素最值得关注？", page_idxs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }],
+});
+assert.deepEqual(Array.from(compactProfileBlueprint, (page) => page.question_ids.join(",")), [
+  "S3,S4,S5,C1,C2,C3",
+  "B7,B8,B9",
+  "K1",
+]);
+assert.equal(compactProfileBlueprint[0].title, "核心用户与家庭画像");
+assert.equal(compactProfileBlueprint[1].title, "供电、续航与便携需求");
+assert.ok(compactProfileBlueprint.every((page) => page.question_ids.length >= 1 && page.question_ids.length <= 6));
+const strictBlueprintContext = { ...reportContext, require_page_blueprint: true };
+assert.throws(
+  () => ai.validateReportNarrative(reportNarrative, strictBlueprintContext),
+  /缺少 page_blueprint/,
+);
+const blueprintNarrative = ai.validateReportNarrative({
+  ...reportNarrative,
+  page_blueprint: [
+    { page_id: "logic_01", chapter_id: "chapter_01", title: "画像解释体验差异", purpose: "连接画像与体验", question_ids: ["Q1", "Q3"] },
+    { page_id: "logic_02", chapter_id: "chapter_02", title: "购买行为", purpose: "解释购买动机", question_ids: ["Q2"] },
+  ],
+}, strictBlueprintContext);
+assert.deepEqual(Array.from(blueprintNarrative.page_blueprint[0].question_ids), ["Q1", "Q3"]);
+assert.deepEqual(Array.from(blueprintNarrative.page_blueprint[0].question_titles), ["年龄分布", "Q3"]);
+assert.throws(
+  () => ai.validateReportNarrative({
+    ...reportNarrative,
+    page_blueprint: [
+      { page_id: "dup_01", chapter_id: "chapter_01", question_ids: ["Q1", "Q2"] },
+      { page_id: "dup_02", chapter_id: "chapter_02", question_ids: ["Q2", "Q3"] },
+    ],
+  }, strictBlueprintContext),
+  /重复分配题目 Q2/,
+);
+const recomposedByQuestions = ai.recomposePagesByNarrative(reportContext.pages, blueprintNarrative);
+assert.deepEqual(
+  Array.from(recomposedByQuestions, (page) => page.questions.map((question) => question.code).join(",")),
+  ["Q1,Q3", "Q2"],
+  "Narrative page_blueprint must regroup questions across the initial deterministic pages",
+);
+assert.deepEqual(Array.from(recomposedByQuestions, (page) => page.title), ["画像解释体验差异", "购买行为"]);
 assert.match(ai.REPORT_NARRATIVE_SYSTEM_PROMPT, /analysis_strategy/);
 const pagesWithStableIds = reportContext.pages.map((page, index) => ({
   ...page,
@@ -389,6 +540,29 @@ const conceptInput = ai.buildReportNarrativeInput(conceptContext, "BC10 Kids");
 assert.equal(conceptInput.research_archetype, "concept_test");
 assert.deepEqual(Array.from(conceptInput.priority_page_idxs), [1]);
 assert.match(conceptInput.priority_instructions.join(" "), /\u6982\u5ff5\u8868\u73b0/);
+const copiedConceptFramework = {
+  chapters: conceptInput.current_report_structure.map((chapter, index) => ({
+    chapter_id: `copied_${index + 1}`,
+    title: chapter.title,
+    page_idxs: chapter.page_idxs,
+  })),
+};
+assert.equal(ai.isReportNarrativeTooSimilarToSource(copiedConceptFramework, conceptInput), true);
+const logicConceptNarrative = ai.validateReportNarrative(
+  ai.buildFallbackReportNarrative(conceptContext, conceptInput),
+  { ...conceptContext, require_page_blueprint: false },
+);
+assert.equal(logicConceptNarrative.storyline_type, "problem_solution");
+assert.deepEqual(Array.from(logicConceptNarrative.chapters, (chapter) => chapter.title), [
+  "\u6982\u5ff5\u8868\u73b0\u4e0e\u8f6c\u5316\u6f5c\u529b",
+  "\u6838\u5fc3\u4eba\u7fa4\u4e0e\u9700\u6c42\u57fa\u7840",
+  "\u8f6c\u5316\u969c\u788d\u4e0e\u98ce\u9669\u8bca\u65ad",
+]);
+assert.equal(ai.isReportNarrativeTooSimilarToSource(logicConceptNarrative, conceptInput), false);
+assert.deepEqual(
+  Array.from(new Set(logicConceptNarrative.chapters.flatMap((chapter) => chapter.page_idxs))).sort((a, b) => a - b),
+  [1, 2, 3],
+);
 const conceptChapters = [
   {
     chapter_id: "chapter_01",
