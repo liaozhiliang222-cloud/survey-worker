@@ -4804,7 +4804,7 @@ function formatPrice(value) {
 
 function csvCell(value) {
   const text = String(value ?? "");
-  return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  return /[",，\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 function downloadCsv(filename, rows) {
@@ -6920,13 +6920,16 @@ function parseKanoRows(text) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => line.split(/[\t,，]+/).map((value) => value.trim()))
+    .map((line) => line.includes("\t")
+      ? line.split("\t").map((value) => value.trim())
+      : parseCsvLine(line))
     .filter((row) => row.length >= 7)
     .map((row) => {
-      const counts = row.slice(1, 7).map((value) => Number(value));
-      if (!row[0] || counts.some((value) => !Number.isFinite(value) || value < 0)) return null;
+      const counts = row.slice(-6).map((value) => Number(value));
+      const name = row.slice(0, -6).join("，").trim();
+      if (!name || counts.some((value) => !Number.isFinite(value) || value < 0)) return null;
       return {
-        name: row[0],
+        name,
         attractive: counts[0],
         oneDimensional: counts[1],
         mustBe: counts[2],
@@ -17537,9 +17540,9 @@ function kanoSummaryFromRawWorkbook(sheets) {
 function importKanoWorkbook(sheets) {
   const raw = kanoSummaryFromRawWorkbook(sheets);
   if (raw.length) {
-    document.querySelector("#kanoData").value = raw
-      .map((item) => [item.name, item.A, item.O, item.M, item.I, item.R, item.Q].join(","))
-      .join("\n");
+    document.querySelector("#kanoData").value = rowsToCsvText(
+      raw.map((item) => [item.name, item.A, item.O, item.M, item.I, item.R, item.Q])
+    );
     runKanoAnalysis();
     return `${raw.length} 个 KANO 功能项（原始正反向题）`;
   }

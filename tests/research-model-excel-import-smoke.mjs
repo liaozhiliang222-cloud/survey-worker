@@ -8,9 +8,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const start = app.indexOf("function worksheetByName");
 const end = app.indexOf("async function handleResearchModelExcelImport", start);
+const csvLineStart = app.indexOf("function parseCsvLine");
+const csvLineEnd = app.indexOf("function decodeXmlText", csvLineStart);
+const csvCellStart = app.indexOf("function csvCell");
+const csvCellEnd = app.indexOf("function downloadCsv", csvCellStart);
+const kanoRowsStart = app.indexOf("function parseKanoRows");
+const kanoRowsEnd = app.indexOf("function analyzeKanoRow", kanoRowsStart);
 assert.ok(start >= 0 && end > start, "KANO workbook helpers must exist");
 const context = vm.createContext({ console });
-vm.runInContext(`${app.slice(start, end)}\nthis.classifyKanoPair = classifyKanoPair; this.kanoSummaryFromRawWorkbook = kanoSummaryFromRawWorkbook;`, context);
+vm.runInContext(`${app.slice(csvLineStart, csvLineEnd)}\n${app.slice(csvCellStart, csvCellEnd)}\n${app.slice(start, end)}\n${app.slice(kanoRowsStart, kanoRowsEnd)}\nthis.classifyKanoPair = classifyKanoPair; this.kanoSummaryFromRawWorkbook = kanoSummaryFromRawWorkbook; this.rowsToCsvText = rowsToCsvText; this.parseKanoRows = parseKanoRows;`, context);
 
 assert.equal(context.classifyKanoPair(1, 5), "O");
 assert.equal(context.classifyKanoPair(1, 4), "A");
@@ -60,6 +66,19 @@ assert.equal(surveySummary[0].A, 1);
 assert.equal(surveySummary[0].R, 0);
 assert.equal(surveySummary[1].M, 2);
 assert.equal(surveySummary[0].A + surveySummary[0].O + surveySummary[0].M + surveySummary[0].I + surveySummary[0].R + surveySummary[0].Q, 2);
+const commaRows = [
+  ["池底，池壁，水线清洁", 1, 2, 3, 4, 5, 6],
+  ["外观设计,精致\"高级\"", 6, 5, 4, 3, 2, 1]
+];
+const encodedRows = context.rowsToCsvText(commaRows);
+const parsedCommaRows = context.parseKanoRows(encodedRows);
+assert.equal(parsedCommaRows.length, 2);
+assert.equal(parsedCommaRows[0].name, commaRows[0][0]);
+assert.equal(parsedCommaRows[1].name, commaRows[1][0]);
+assert.equal(parsedCommaRows[1].questionable, 1);
+const legacyCommaRow = context.parseKanoRows("池底，池壁，水线清洁,1,2,3,4,5,6");
+assert.equal(legacyCommaRow.length, 1);
+assert.equal(legacyCommaRow[0].name, "池底，池壁，水线清洁");
 
 for (const name of ["psm", "kano", "maxdiff", "driver", "turf", "conjoint"]) {
   const file = path.join(root, "templates", "research-models", `${name}-template.xlsx`);
