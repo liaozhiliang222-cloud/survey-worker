@@ -233,6 +233,35 @@ export class ConversationManager {
 
 /** 最近一次 AI 调用后端实际使用的模型名 */
 export let lastAiActualModel = "";
+export let lastAiDiagnostics = Object.freeze({});
+
+function createAiClientRequestId() {
+  return globalThis.crypto?.randomUUID?.() || ("ai-" + Date.now() + "-" + Math.random().toString(16).slice(2));
+}
+
+function recordAiDiagnostics(response, clientRequestId) {
+  lastAiActualModel = response.headers.get("X-Actual-Model") || "";
+  lastAiDiagnostics = Object.freeze({
+    requestId: response.headers.get("X-AI-Request-ID") || clientRequestId,
+    source: response.headers.get("X-AI-Source") || "",
+    model: lastAiActualModel,
+    taskTier: response.headers.get("X-AI-Task-Tier") || "",
+    durationMs: Number(response.headers.get("X-AI-Duration-Ms")) || 0,
+    rotation: response.headers.get("X-AI-Rotation") || "",
+    fallbackUsed: response.headers.get("X-AI-Fallback-Used") === "1",
+    attempts: response.headers.get("X-AI-Attempt-Sources") || "",
+    errorType: response.headers.get("X-AI-Error-Type") || "",
+  });
+}
+
+function createAiProxyError(message, response, payload, clientRequestId) {
+  const error = new Error(message);
+  error.requestId = payload?.error?.request_id || lastAiDiagnostics.requestId || clientRequestId;
+  error.errorType = payload?.error?.type || lastAiDiagnostics.errorType || "";
+  error.retryable = Boolean(payload?.error?.retryable);
+  error.status = response?.status || 0;
+  return error;
+}
 
 /**
  * 调用 AI Chat Completion 接口
@@ -289,10 +318,11 @@ export async function callAiChatCompletion(settings, messages, options = {}) {
     timeout = setTimeout(() => controller.abort(), timeoutMs);
   };
   armTimeout();
+  const clientRequestId = createAiClientRequestId();
 
   const response = await fetchAiProxyWithRetry(getAiProxyUrl(), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Request-ID": clientRequestId, "X-AI-Rotation-Key": clientRequestId },
     cache: "no-store",
     credentials: "same-origin",
     body: JSON.stringify({
@@ -312,7 +342,7 @@ export async function callAiChatCompletion(settings, messages, options = {}) {
   });
 
   if (response.ok && useStream && response.body) {
-    lastAiActualModel = response.headers.get("X-Actual-Model") || "";
+    recordAiDiagnostics(response, clientRequestId);
     try {
       return await readAiChatCompletionStream(response, options.onProgress, armTimeout);
     } catch (error) {
@@ -330,15 +360,15 @@ export async function callAiChatCompletion(settings, messages, options = {}) {
     throw new Error("当前环境没有启用 AI 后端代理，请通过 npm run dev 本地服务或 Cloudflare Pages Functions 部署后再调用。");
   }
 
-  lastAiActualModel = response.headers.get("X-Actual-Model") || "";
+  recordAiDiagnostics(response, clientRequestId);
   const payload = await response.json().catch(() => ({}));
   if (payload?.error) {
     const message = payload.error.message || payload.error.code || JSON.stringify(payload.error);
-    throw new Error(message);
+    throw createAiProxyError(message, response, payload, clientRequestId);
   }
   if (!response.ok) {
     const message = payload?.error?.message || payload?.message || `接口返回 ${response.status}`;
-    throw new Error(message);
+    throw createAiProxyError(message, response, payload, clientRequestId);
   }
   const choice = payload?.choices?.[0] || {};
   const message = choice.message || {};

@@ -67,10 +67,10 @@ globalThis.fetch = async (url, options) => {
   });
 };
 
-function makeRequest({ apiKey = "", structured = false, stream = false, taskTier } = {}) {
+function makeRequest({ apiKey = "", structured = false, stream = false, taskTier, rotationKey = "k0" } = {}) {
   return new Request("https://surveykit.cc/api/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Request-ID": "test-request-id", "X-AI-Rotation-Key": rotationKey },
     body: JSON.stringify({
       provider: "deepseek",
       url: "https://api.deepseek.com/v1/chat/completions",
@@ -128,11 +128,28 @@ if (calls[0].body.model !== "deepseek-v4-flash" || response.headers.get("X-AI-So
   throw new Error("fast routing did not select DeepSeek Flash");
 }
 if (response.headers.get("X-AI-Task-Tier") !== "fast") throw new Error("fast tier header missing");
+if (response.headers.get("X-AI-Request-ID") !== "test-request-id") throw new Error("request ID header missing");
+if (!/^\d+$/.test(response.headers.get("X-AI-Duration-Ms") || "")) throw new Error("duration header missing");
+if (!response.headers.get("X-AI-Rotation")) throw new Error("rotation header missing");
+if (!response.headers.get("X-AI-Attempt-Sources")) throw new Error("attempt source header missing");
+
+// Equivalent Flash channels rotate deterministically without changing the model tier.
+calls = [];
+response = await mod.onRequest({
+  request: makeRequest({ taskTier: "fast", rotationKey: "gateway-key" }),
+  env: {
+    SURVEYKIT_GATEWAY_API_KEY: "gateway-secret",
+    SENSENOVA_API_KEY: "sense-secret",
+  },
+});
+if (response.headers.get("X-AI-Source") !== "builtin-sensenova") {
+  throw new Error("deterministic channel rotation did not change the Flash start channel");
+}
 
 // Storyline tasks bypass the unstable gateway and use SenseNova Flash first.
 calls = [];
 response = await mod.onRequest({
-  request: makeRequest({ taskTier: "storyline" }),
+  request: makeRequest({ taskTier: "storyline", rotationKey: "gateway-key" }),
   env: {
     SURVEYKIT_GATEWAY_API_KEY: "gateway-secret",
     SENSENOVA_API_KEY: "sense-secret",
@@ -157,18 +174,18 @@ if (calls[0].options.headers.Authorization !== "Bearer gateway-secret") throw ne
 if (response.headers.get("X-AI-Source") !== "builtin-surveykit-gateway") throw new Error("wrong SurveyKit gateway source");
 if (response.headers.get("X-AI-Attempts") !== "deepseek-v4-flash") throw new Error("SurveyKit gateway should use one model attempt");
 
-// Gateway quota responses retry the aggregate pool before leaving the provider.
+// A failed channel is skipped immediately before retrying the same pooled model.
 calls = [];
 mode = "gateway-quota-once";
 response = await mod.onRequest({
   request: makeRequest(),
   env: { SURVEYKIT_GATEWAY_API_KEY: "gateway-secret", SENSENOVA_API_KEY: "sense-secret" },
 });
-if (response.status !== 200 || response.headers.get("X-AI-Source") !== "builtin-surveykit-gateway") {
-  throw new Error("SurveyKit gateway retry failed");
+if (response.status !== 200 || response.headers.get("X-AI-Source") !== "builtin-sensenova") {
+  throw new Error("Failed channel was not skipped");
 }
 if (calls.length !== 2 || response.headers.get("X-AI-Attempts") !== "deepseek-v4-flash,deepseek-v4-flash") {
-  throw new Error("SurveyKit gateway did not retry the pooled model");
+  throw new Error("Failed channel did not continue to the equivalent provider");
 }
 
 // Exhausted Gateway retries continue to the configured SenseNova provider.
@@ -185,8 +202,8 @@ response = await mod.onRequest({
 if (response.status !== 200 || response.headers.get("X-AI-Source") !== "builtin-sensenova") {
   throw new Error("Cross-provider fallback failed");
 }
-if (calls.length !== 4 || calls[3].url !== "https://token.sensenova.cn/v1/chat/completions") {
-  throw new Error("Gateway retries did not continue to SenseNova");
+if (calls.length !== 2 || calls[1].url !== "https://token.sensenova.cn/v1/chat/completions") {
+  throw new Error("Gateway failure did not fast-skip to SenseNova");
 }
 // Some compatible gateways wrap quota failures in a successful assistant response.
 calls = [];
@@ -310,7 +327,16 @@ response = await mod.onRequest({
 if (response.status !== 504) throw new Error(`expected bounded user-key timeout, got ${response.status}`);
 mode = "normal";
 
+response = await mod.onRequest({
+  request: new Request("https://surveykit.cc/api/ai", { method: "GET", headers: { "X-Request-ID": "health-request-id" } }),
+  env: { SURVEYKIT_GATEWAY_API_KEY: "gateway-secret", SENSENOVA_API_KEY: "sense-secret" },
+});
+const health = await response.json();
+if (response.status !== 200 || health.rotation_mode !== "deterministic" || health.configured_sources.length !== 2) {
+  throw new Error("AI proxy health response is incomplete");
+}
+
 response = await mod.onRequest({ request: makeRequest(), env: {} });
 if (response.status !== 503) throw new Error(`expected 503, got ${response.status}`);
 
-console.log("AI proxy tests passed: DeepSeek primary, structured/quota fallback, user-key precedence, missing-secret guard");
+console.log("AI proxy tests passed: task tiers, deterministic rotation, fast failure skip, tracing, health and compatibility");

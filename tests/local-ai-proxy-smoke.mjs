@@ -22,13 +22,13 @@ const fetchImpl = async (url, options) => {
   if (mode === "gateway-quota-once" && String(url).includes("api.surveykit.cc") && gatewayCalls === 1) {
     return new Response(JSON.stringify({ error: { message: "You exceeded your current quota." } }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: requestHeaders(),
     });
   }
   if (mode === "gateway-down" && String(url).includes("api.surveykit.cc")) {
     return new Response(JSON.stringify({ error: { message: "You exceeded your current quota." } }), {
       status: 429,
-      headers: { "Content-Type": "application/json" },
+      headers: requestHeaders(),
     });
   }
   if (mode === "network" && body.model === "deepseek-v4-pro") throw new TypeError("socket reset");
@@ -36,7 +36,7 @@ const fetchImpl = async (url, options) => {
   if (mode === "channel-probe" && isChannelProbe) {
     const response = () => new Response(JSON.stringify({ choices: [{ message: { content: "OK" } }] }), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: requestHeaders(),
     });
     if (String(url).includes("api.surveykit.cc")) {
       return new Promise((resolve) => setTimeout(() => resolve(response()), 40));
@@ -50,7 +50,7 @@ const fetchImpl = async (url, options) => {
     : '{"ok":true}';
   return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
     status: 200,
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
   });
 };
 const handler = createAiProxyHandler({ env, maxBodyBytes: 1024, fetchImpl });
@@ -71,10 +71,18 @@ function payload(overrides = {}, taskTier = "") {
   };
 }
 
+function requestHeaders(rotationKey = "k0") {
+  return {
+    "Content-Type": "application/json",
+    "X-Request-ID": "local-test-request-id",
+    "X-AI-Rotation-Key": rotationKey,
+  };
+}
+
 try {
   let response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload()),
   });
   assert.equal(response.status, 200);
@@ -87,7 +95,7 @@ try {
   calls = [];
   response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload({}, "quality")),
   });
   assert.equal(calls[0].body.model, "deepseek-v4-pro");
@@ -97,17 +105,21 @@ try {
   calls = [];
   response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload({}, "fast")),
   });
   assert.equal(calls[0].body.model, "deepseek-v4-flash");
   assert.equal(response.headers.get("x-ai-source"), "builtin-surveykit-gateway");
   assert.equal(response.headers.get("x-ai-task-tier"), "fast");
+  assert.equal(response.headers.get("x-ai-request-id"), "local-test-request-id");
+  assert.match(response.headers.get("x-ai-duration-ms"), /^\d+$/);
+  assert.ok(response.headers.get("x-ai-rotation"));
+  assert.ok(response.headers.get("x-ai-attempt-sources"));
 
   calls = [];
   response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload()),
   });
   assert.equal(response.status, 200);
@@ -116,15 +128,23 @@ try {
   assert.equal(calls[0].options.headers.Authorization, "Bearer gateway-secret");
   assert.equal(response.headers.get("x-ai-source"), "builtin-surveykit-gateway");
   assert.equal(response.headers.get("x-ai-attempts"), "deepseek-v4-flash");
+  calls = [];
+  response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
+    method: "POST",
+    headers: requestHeaders("gateway-key"),
+    body: JSON.stringify(payload({}, "fast")),
+  });
+  assert.equal(response.headers.get("x-ai-source"), "builtin-sensenova");
+
   mode = "gateway-quota-once";
   calls = [];
   response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload()),
   });
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-ai-source"), "builtin-surveykit-gateway");
+  assert.equal(response.headers.get("x-ai-source"), "builtin-sensenova");
   assert.equal(calls.length, 2);
   assert.equal(response.headers.get("x-ai-attempts"), "deepseek-v4-flash,deepseek-v4-flash");
 
@@ -132,13 +152,13 @@ try {
   calls = [];
   response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload()),
   });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-ai-source"), "builtin-sensenova");
-  assert.equal(calls.length, 4);
-  assert.equal(calls[3].url, "https://token.sensenova.cn/v1/chat/completions");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].url, "https://token.sensenova.cn/v1/chat/completions");
   mode = "normal";
 
   delete env.SURVEYKIT_GATEWAY_API_KEY;
@@ -148,7 +168,7 @@ try {
   calls = [];
   response = await fetch("http://127.0.0.1:" + port + "/api/ai", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload()),
   });
   assert.equal(response.status, 200);
@@ -165,7 +185,7 @@ try {
   mode = "channel-probe";
   response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload({ response_format: { type: "json_object" } }, "structured")),
   });
   assert.equal(response.status, 200);
@@ -181,7 +201,7 @@ try {
   mode = "structured";
   response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload({ response_format: { type: "json_object" } }, "structured")),
   });
   assert.equal(response.status, 200);
@@ -193,7 +213,7 @@ try {
   mode = "structured";
   response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload({ response_format: { type: "json_object" } })),
   });
   assert.equal(response.status, 200);
@@ -207,7 +227,7 @@ try {
   mode = "network";
   response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload()),
   });
   assert.equal(response.status, 200);
@@ -219,7 +239,7 @@ try {
   mode = "normal";
   response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload({ stream: true })),
   });
   assert.equal(response.status, 200);
@@ -232,7 +252,7 @@ try {
   userPayload.apiKey = "user-secret";
   response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(userPayload),
   });
   assert.equal(response.status, 200);
@@ -245,7 +265,7 @@ try {
   insecureUserGateway.url = "http://api.surveykit.cc/v1/chat/completions";
   response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(insecureUserGateway),
   });
   assert.equal(response.status, 400);
@@ -256,7 +276,7 @@ try {
   mismatched.url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
   response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(mismatched),
   });
   assert.equal(response.status, 400);
@@ -264,7 +284,7 @@ try {
 
   response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: "{bad-json",
   });
   assert.equal(response.status, 400);
@@ -272,16 +292,20 @@ try {
   delete env.DASHSCOPE_API_KEY;
   response = await fetch(`http://127.0.0.1:${port}/api/ai`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(payload()),
   });
   assert.equal(response.status, 503);
 
-  response = await fetch(`http://127.0.0.1:${port}/api/ai`);
-  assert.equal(response.status, 405);
-  assert.equal(response.headers.get("allow"), "POST, OPTIONS");
+  response = await fetch("http://127.0.0.1:" + port + "/api/ai", { headers: { "X-Request-ID": "health-request-id" } });
+  assert.equal(response.status, 200);
+  const health = await response.json();
+  assert.equal(health.rotation_mode, "deterministic");
 
-  console.log("Local AI proxy module smoke passed: fallback, user key, validation and errors");
+  response = await fetch("http://127.0.0.1:" + port + "/api/ai", { method: "PUT" });
+  assert.equal(response.status, 405);
+
+  console.log("Local AI proxy module smoke passed: rotation, fast failure skip, tracing, health and compatibility");
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

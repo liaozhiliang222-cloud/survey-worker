@@ -224,6 +224,7 @@ let lastQuestionPivot = null;
 let lastCrosstabHeaderPlan = null;
 let lastAiActualModel = "";
 let lastAiActualSource = "";
+let lastAiDiagnostics = Object.freeze({});
 let lastAiReport = "";
 let lastAiReportMode = "markdown";
 let crosstabImportMode = "data";
@@ -9847,6 +9848,35 @@ async function fetchAiProxyWithRetry(url, init, attempts = 2) {
   }
   throw lastError || new Error("AI proxy request failed");
 }
+function createAiClientRequestId() {
+  return globalThis.crypto?.randomUUID?.() || ("ai-" + Date.now() + "-" + Math.random().toString(16).slice(2));
+}
+
+function recordAiDiagnostics(response, clientRequestId) {
+  lastAiActualModel = response.headers.get("X-Actual-Model") || "";
+  lastAiActualSource = response.headers.get("X-AI-Source") || "";
+  lastAiDiagnostics = Object.freeze({
+    requestId: response.headers.get("X-AI-Request-ID") || clientRequestId,
+    source: lastAiActualSource,
+    model: lastAiActualModel,
+    taskTier: response.headers.get("X-AI-Task-Tier") || "",
+    durationMs: Number(response.headers.get("X-AI-Duration-Ms")) || 0,
+    rotation: response.headers.get("X-AI-Rotation") || "",
+    fallbackUsed: response.headers.get("X-AI-Fallback-Used") === "1",
+    attempts: response.headers.get("X-AI-Attempt-Sources") || "",
+    errorType: response.headers.get("X-AI-Error-Type") || "",
+  });
+}
+
+function createAiProxyError(message, response, payload, clientRequestId) {
+  const error = new Error(message);
+  error.requestId = payload?.error?.request_id || lastAiDiagnostics.requestId || clientRequestId;
+  error.errorType = payload?.error?.type || lastAiDiagnostics.errorType || "";
+  error.retryable = Boolean(payload?.error?.retryable);
+  error.status = response?.status || 0;
+  return error;
+}
+
 async function callAiChatCompletion(settings, messages, options = {}) {
   if (window.location.protocol === "file:") {
     throw new Error("AI 后端代理需要通过本地服务或线上地址访问，不能直接用 file:// 页面调用。请使用 npm run dev 打开本地服务，或访问已部署的网址。");
@@ -9871,9 +9901,10 @@ async function callAiChatCompletion(settings, messages, options = {}) {
     timeout = setTimeout(() => controller.abort(), timeoutMs);
   };
   armTimeout();
+  const clientRequestId = createAiClientRequestId();
   const response = await fetchAiProxyWithRetry(getAiProxyUrl(), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Request-ID": clientRequestId, "X-AI-Rotation-Key": clientRequestId },
     cache: "no-store",
     credentials: "same-origin",
     body: JSON.stringify({
@@ -9892,8 +9923,7 @@ async function callAiChatCompletion(settings, messages, options = {}) {
     throw new Error(`AI 后端代理连接失败：${error.message}`);
   });
   if (response.ok && options.stream && response.body) {
-    lastAiActualModel = response.headers.get("X-Actual-Model") || "";
-    lastAiActualSource = response.headers.get("X-AI-Source") || "";
+    recordAiDiagnostics(response, clientRequestId);
     try {
       return await readAiChatCompletionStream(response, options.onProgress, armTimeout);
     } catch (error) {
@@ -9910,16 +9940,15 @@ async function callAiChatCompletion(settings, messages, options = {}) {
     throw new Error("当前环境没有启用 AI 后端代理，请通过 npm run dev 本地服务或 Cloudflare Pages Functions 部署后再调用。");
   }
   // 记录后端实际使用的模型名
-  lastAiActualModel = response.headers.get("X-Actual-Model") || "";
-  lastAiActualSource = response.headers.get("X-AI-Source") || "";
+  recordAiDiagnostics(response, clientRequestId);
   const payload = await response.json().catch(() => ({}));
   if (payload?.error) {
     const message = payload.error.message || payload.error.code || JSON.stringify(payload.error);
-    throw new Error(message);
+    throw createAiProxyError(message, response, payload, clientRequestId);
   }
   if (!response.ok) {
     const message = payload?.error?.message || payload?.message || `接口返回 ${response.status}`;
-    throw new Error(message);
+    throw createAiProxyError(message, response, payload, clientRequestId);
   }
   const choice = payload?.choices?.[0] || {};
   const message = choice.message || {};

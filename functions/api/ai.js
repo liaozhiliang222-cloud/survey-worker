@@ -48,6 +48,80 @@ const TASK_TIER_ATTEMPT_TIMEOUT_MS = {
   balanced: 38_000,
 };
 const MIN_REMAINING_BUDGET_MS = 1_500;
+const EXPOSED_HEADERS = [
+  "X-Actual-Model",
+  "X-AI-Source",
+  "X-AI-Attempts",
+  "X-AI-Attempt-Sources",
+  "X-AI-Task-Tier",
+  "X-AI-Request-ID",
+  "X-AI-Duration-Ms",
+  "X-AI-Rotation",
+  "X-AI-Fallback-Used",
+  "X-AI-Error-Type",
+].join(", ");
+
+function createRequestId(request) {
+  const incoming = String(request?.headers?.get("X-Request-ID") || "").trim();
+  if (/^[A-Za-z0-9._:-]{8,128}$/.test(incoming)) return incoming;
+  return crypto.randomUUID();
+}
+
+function stableHash(value) {
+  let hash = 2166136261;
+  for (const char of String(value || "")) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function rotateEquivalentCandidates(configs, taskTier, rotationKey, mode = "deterministic") {
+  if (mode === "off" || configs.length < 2) return { configs, label: mode === "off" ? "off" : "single" };
+  const rotated = [];
+  let groupCount = 0;
+  for (let index = 0; index < configs.length;) {
+    const model = configs[index]?.models?.[0] || "";
+    let end = index + 1;
+    while (end < configs.length && configs[end]?.models?.[0] === model) end += 1;
+    const group = configs.slice(index, end);
+    const offset = group.length > 1 ? stableHash(rotationKey + ":" + taskTier + ":" + model) % group.length : 0;
+    rotated.push(...group.slice(offset), ...group.slice(0, offset));
+    if (group.length > 1) groupCount += 1;
+    index = end;
+  }
+  return { configs: rotated, label: groupCount ? "deterministic:" + groupCount : "single" };
+}
+
+function classifyFailure({ error, status, text, jsonInvalid = false, empty = false } = {}) {
+  if (jsonInvalid) return "invalid_json";
+  if (empty) return "empty_response";
+  if (error?.name === "AbortError") return "timeout";
+  if (error instanceof TypeError) return "network";
+  if (containsQuotaOrAccessError(text)) return "quota";
+  if (Number(status) >= 500) return "upstream_5xx";
+  if (Number(status) >= 400) return "upstream_4xx";
+  return "upstream_error";
+}
+
+function isRetryableFailure(type) {
+  return ["timeout", "network", "quota", "upstream_5xx", "empty_response", "invalid_json", "upstream_error"].includes(type);
+}
+
+function aiHeaders(meta = {}) {
+  return {
+    "Access-Control-Expose-Headers": EXPOSED_HEADERS,
+    ...(meta.requestId ? { "X-AI-Request-ID": meta.requestId } : {}),
+    ...(Number.isFinite(meta.durationMs) ? { "X-AI-Duration-Ms": String(meta.durationMs) } : {}),
+    ...(meta.rotation ? { "X-AI-Rotation": meta.rotation } : {}),
+    ...(meta.errorType ? { "X-AI-Error-Type": meta.errorType } : {}),
+  };
+}
+
+function logAiRequest(meta) {
+  console.log(JSON.stringify({ event: "ai_proxy_request", ...meta }));
+}
+
 
 function timeoutError(message) {
   const error = new Error(message);
@@ -55,15 +129,16 @@ function timeoutError(message) {
   return error;
 }
 
-function json(payload, status = 200) {
+function json(payload, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(payload), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, X-Request-ID, X-AI-Rotation-Key",
       "Cache-Control": "no-store",
+      ...extraHeaders,
     },
   });
 }
@@ -286,50 +361,104 @@ async function prioritizeStructuredChannels(configs) {
     controllers.forEach((controller) => controller.abort());
   }
 }
-function upstreamResponse(text, upstream, model, source, attempts = [], taskTier = "balanced") {
+function upstreamResponse(text, upstream, model, source, attempts = [], taskTier = "balanced", meta = {}) {
   return new Response(text || upstream.body, {
     status: upstream.status,
     headers: {
       "Content-Type": upstream.headers.get("Content-Type") || "application/json; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
+      "Access-Control-Expose-Headers": EXPOSED_HEADERS,
       "Cache-Control": "no-store",
       "X-Actual-Model": upstream.headers.get("X-Actual-Model") || model,
       "X-AI-Source": source,
-      "X-AI-Attempts": attempts.join(","),
+      "X-AI-Attempts": attempts.map((item) => item.model).join(","),
+      "X-AI-Attempt-Sources": attempts.map((item) => item.source + ":" + item.model).join(","),
       "X-AI-Task-Tier": taskTier,
+      "X-AI-Fallback-Used": attempts.length > 1 ? "1" : "0",
+      ...aiHeaders(meta),
     },
   });
 }
 
 export async function onRequest({ request, env }) {
-  if (request.method === "OPTIONS") return json({ ok: true });
-  if (request.method !== "POST") return json({ error: { message: "Method not allowed" } }, 405);
+  const requestId = createRequestId(request);
+  const requestStartedAt = Date.now();
+  let taskTier = "balanced";
+  let rotationLabel = "none";
+  const attempts = [];
+
+  const fail = (message, status, type, extra = {}) => {
+    const durationMs = Date.now() - requestStartedAt;
+    const errorType = type || "internal";
+    logAiRequest({
+      request_id: requestId,
+      task_tier: taskTier,
+      status,
+      outcome: "error",
+      error_type: errorType,
+      duration_ms: durationMs,
+      rotation: rotationLabel,
+      attempts,
+    });
+    return json({
+      error: {
+        message,
+        type: errorType,
+        request_id: requestId,
+        retryable: isRetryableFailure(errorType),
+        ...extra,
+      },
+    }, status, aiHeaders({ requestId, durationMs, rotation: rotationLabel, errorType }));
+  };
+
+  if (request.method === "OPTIONS") {
+    return json({ ok: true }, 200, aiHeaders({ requestId, durationMs: 0, rotation: "none" }));
+  }
+  if (request.method === "GET") {
+    const configs = getBuiltinConfigs(env);
+    return json({
+      ok: true,
+      service: "ai-proxy",
+      rotation_mode: String(env?.AI_ROTATION_MODE || "deterministic").toLowerCase() === "off"
+        ? "off"
+        : "deterministic",
+      configured_sources: configs.map((config) => ({
+        source: config.source,
+        models: config.models,
+      })),
+      task_tiers: Object.keys(TASK_TIER_REQUEST_BUDGET_MS),
+    }, 200, aiHeaders({ requestId, durationMs: Date.now() - requestStartedAt, rotation: "health" }));
+  }
+  if (request.method !== "POST") return fail("Method not allowed", 405, "invalid_request");
 
   const contentLength = Number(request.headers.get("Content-Length")) || 0;
   if (contentLength > MAX_BODY_BYTES) {
-    return json({ error: { message: "AI 请求内容过大。" } }, 413);
+    return fail("\u0041\u0049 \u8bf7\u6c42\u5185\u5bb9\u8fc7\u5927\u3002", 413, "invalid_request", { code: "REQUEST_BODY_TOO_LARGE" });
   }
 
   try {
     const payload = await request.json();
     const body = payload.body;
     if (!body?.model || !Array.isArray(body.messages)) {
-      return json({ error: { message: "模型或消息内容不完整。" } }, 400);
+      return fail("\u6a21\u578b\u6216\u6d88\u606f\u5185\u5bb9\u4e0d\u5b8c\u6574\u3002", 400, "invalid_request");
     }
 
     const clientApiKey = String(payload.apiKey || "").trim();
     const useBuiltin = !clientApiKey;
-    const taskTier = ["fast", "quality", "structured", "storyline"].includes(payload.taskTier) ? payload.taskTier : "balanced";
-    const requestStartedAt = Date.now();
+    taskTier = ["fast", "quality", "structured", "storyline"].includes(payload.taskTier)
+      ? payload.taskTier
+      : "balanced";
     const requestBudgetMs = TASK_TIER_REQUEST_BUDGET_MS[taskTier] || TASK_TIER_REQUEST_BUDGET_MS.balanced;
     const attemptTimeoutLimitMs = TASK_TIER_ATTEMPT_TIMEOUT_MS[taskTier] || TASK_TIER_ATTEMPT_TIMEOUT_MS.balanced;
     let builtins = useBuiltin ? routeBuiltinConfigs(getBuiltinConfigs(env), taskTier) : [];
+
     if (useBuiltin && !builtins.length) {
-      return json({ error: { message: "\u5e73\u53f0\u5185\u7f6e AI \u670d\u52a1\u5c1a\u672a\u5b8c\u6210\u914d\u7f6e\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u3002" } }, 503);
+      return fail("\u5e73\u53f0\u5185\u7f6e \u0041\u0049 \u670d\u52a1\u5c1a\u672a\u5b8c\u6210\u914d\u7f6e\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u3002", 503, "not_configured");
     }
 
     if (!useBuiltin) {
       const targetUrl = validateTarget(payload.provider || "custom", payload.url);
+      const attemptStartedAt = Date.now();
       let upstreamResult;
       try {
         upstreamResult = await callUpstream(
@@ -339,81 +468,177 @@ export async function onRequest({ request, env }) {
           body.stream ? 280_000 : requestBudgetMs,
         );
       } catch (error) {
-        if (error?.name === "AbortError") {
-          return json({ error: { message: "\u6a21\u578b\u54cd\u5e94\u8d85\u65f6\uff0c\u8bf7\u7f29\u77ed\u8f93\u5165\u6216\u7a0d\u540e\u91cd\u8bd5\u3002" } }, 504);
-        }
-        throw error;
+        const errorType = classifyFailure({ error });
+        attempts.push({
+          source: "user-key",
+          model: body.model,
+          duration_ms: Date.now() - attemptStartedAt,
+          outcome: errorType,
+        });
+        const status = errorType === "timeout" ? 504 : 502;
+        return fail(
+          errorType === "timeout" ? "\u6a21\u578b\u54cd\u5e94\u8d85\u65f6\uff0c\u8bf7\u7f29\u77ed\u8f93\u5165\u6216\u7a0d\u540e\u91cd\u8bd5\u3002" : "\u6a21\u578b\u670d\u52a1\u8fde\u63a5\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002",
+          status,
+          errorType,
+        );
       }
+
       const { upstream, text } = upstreamResult;
-      if (body.stream && upstream.ok) return upstreamResponse("", upstream, body.model, "user-key", [body.model], taskTier);
-      if (!text.trim()) return json({ error: { message: "\u6a21\u578b\u8fd4\u56de\u4e3a\u7a7a\uff0c\u8bf7\u68c0\u67e5\u6a21\u578b\u540d\u79f0\u3001\u989d\u5ea6\u6216\u670d\u52a1\u72b6\u6001\u3002" } }, 502);
-      return upstreamResponse(text, upstream, body.model, "user-key", [body.model], taskTier);
+      const errorType = upstream.ok && (body.stream || text.trim())
+        ? ""
+        : classifyFailure({ status: upstream.status, text, empty: !body.stream && !text.trim() });
+      attempts.push({
+        source: "user-key",
+        model: body.model,
+        status: upstream.status,
+        duration_ms: Date.now() - attemptStartedAt,
+        outcome: errorType || "success",
+      });
+      if (!body.stream && !text.trim()) {
+        return fail("\u6a21\u578b\u8fd4\u56de\u4e3a\u7a7a\uff0c\u8bf7\u68c0\u67e5\u6a21\u578b\u540d\u79f0\u3001\u989d\u5ea6\u6216\u670d\u52a1\u72b6\u6001\u3002", 502, "empty_response");
+      }
+
+      const durationMs = Date.now() - requestStartedAt;
+      logAiRequest({
+        request_id: requestId,
+        task_tier: taskTier,
+        status: upstream.status,
+        outcome: errorType ? "error" : "success",
+        error_type: errorType || undefined,
+        duration_ms: durationMs,
+        rotation: "user-key",
+        attempts,
+      });
+      return upstreamResponse(
+        body.stream && upstream.ok ? "" : text,
+        upstream,
+        body.model,
+        "user-key",
+        attempts,
+        taskTier,
+        { requestId, durationMs, rotation: "user-key", errorType: errorType || undefined },
+      );
     }
 
+    const rotationMode = String(env?.AI_ROTATION_MODE || "deterministic").toLowerCase() === "off"
+      ? "off"
+      : "deterministic";
+    const rotationKey = String(
+      request.headers.get("X-AI-Rotation-Key")
+      || payload.rotationKey
+      || requestId,
+    );
+    const rotated = rotateEquivalentCandidates(builtins, taskTier, rotationKey, rotationMode);
+    builtins = rotated.configs;
+    rotationLabel = rotated.label;
+
     const wantsJson = body.response_format?.type === "json_object";
-    if (useBuiltin && taskTier === "structured" && wantsJson && !body.stream) {
+    if (taskTier === "structured" && wantsJson && !body.stream) {
       builtins = await prioritizeStructuredChannels(builtins);
+      rotationLabel = "probe+" + rotationLabel;
     }
-    const attempts = [];
-    let lastResult = null;
+
     let lastError = null;
+    let lastFailureType = "upstream_error";
     providerLoop:
     for (const builtin of builtins) {
       const targetUrl = validateTarget(builtin.provider, builtin.url, true);
       for (const model of builtin.models) {
         const configuredAttempts = Math.max(1, Number(builtin.attemptsPerModel) || 1);
-        const attemptCount = ["fast", "structured"].includes(taskTier) ? 1 : configuredAttempts;
+        const hasEquivalentAlternative = builtins.some((candidate) =>
+          candidate !== builtin && candidate.models.includes(model)
+        );
+        const attemptCount = hasEquivalentAlternative || ["fast", "structured", "storyline"].includes(taskTier)
+          ? 1
+          : configuredAttempts;
         for (let attempt = 1; attempt <= attemptCount; attempt += 1) {
           const remainingMs = requestBudgetMs - (Date.now() - requestStartedAt);
           if (remainingMs < MIN_REMAINING_BUDGET_MS) {
             lastError = timeoutError("AI proxy request budget exhausted");
+            lastFailureType = "timeout";
             break providerLoop;
           }
-          attempts.push(model);
+
           const upstreamBody = prepareBuiltinBody(body, model);
           const attemptTimeoutMs = Math.max(
             1_000,
             Math.min(builtin.timeoutMs, attemptTimeoutLimitMs, remainingMs - 500),
           );
+          const attemptStartedAt = Date.now();
           let result;
           try {
             result = await callUpstream(targetUrl, builtin.apiKey, upstreamBody, attemptTimeoutMs);
           } catch (error) {
             lastError = error;
+            lastFailureType = classifyFailure({ error });
+            attempts.push({
+              source: builtin.source,
+              model,
+              duration_ms: Date.now() - attemptStartedAt,
+              outcome: lastFailureType,
+            });
             continue;
           }
-          lastResult = { ...result, model, builtin };
-          if (result.stream) {
-            return upstreamResponse("", result.upstream, model, builtin.source, attempts, taskTier);
-          }
-          if (!result.upstream.ok || !result.text.trim() || containsUpstreamError(result.text)) continue;
-          if (wantsJson && !containsJsonObject(result.text)) continue;
-          return upstreamResponse(result.text, result.upstream, model, builtin.source, attempts, taskTier);
+
+          const empty = !result.stream && !result.text.trim();
+          const jsonInvalid = wantsJson && !result.stream && result.upstream.ok && !containsJsonObject(result.text);
+          const upstreamInvalid = !result.upstream.ok || empty || containsUpstreamError(result.text) || jsonInvalid;
+          lastFailureType = upstreamInvalid
+            ? classifyFailure({
+                status: result.upstream.status,
+                text: result.text,
+                jsonInvalid,
+                empty,
+              })
+            : "";
+          attempts.push({
+            source: builtin.source,
+            model,
+            status: result.upstream.status,
+            duration_ms: Date.now() - attemptStartedAt,
+            outcome: lastFailureType || "success",
+          });
+
+          if (upstreamInvalid) continue;
+
+          const durationMs = Date.now() - requestStartedAt;
+          logAiRequest({
+            request_id: requestId,
+            task_tier: taskTier,
+            status: result.upstream.status,
+            outcome: "success",
+            duration_ms: durationMs,
+            rotation: rotationLabel,
+            actual_source: builtin.source,
+            actual_model: model,
+            fallback_used: attempts.length > 1,
+            attempts,
+          });
+          return upstreamResponse(
+            result.stream ? "" : result.text,
+            result.upstream,
+            model,
+            builtin.source,
+            attempts,
+            taskTier,
+            { requestId, durationMs, rotation: rotationLabel },
+          );
         }
       }
     }
-    const jsonInvalid = wantsJson
-      && lastResult?.upstream?.ok
-      && !lastResult?.stream
-      && !containsJsonObject(lastResult.text || "");
-    if (jsonInvalid || !lastResult?.text?.trim()) {
-      const reason = jsonInvalid
-        ? "\u6240\u6709\u5185\u7f6e\u6a21\u578b\u5747\u672a\u8fd4\u56de\u6709\u6548\u7684 JSON"
-        : (lastError?.name === "AbortError"
-          ? "\u6a21\u578b\u54cd\u5e94\u8d85\u65f6"
-          : (lastError?.message || "\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9"));
-      const status = lastError?.name === "AbortError" ? 504 : 502;
-      return json({ error: { message: `\u6240\u6709\u5185\u7f6e AI \u670d\u52a1\u5747\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9\uff1a${reason}\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002` } }, status);
-    }
-    return upstreamResponse(
-      lastResult.text,
-      lastResult.upstream,
-      lastResult.model,
-      lastResult.builtin.source,
-      attempts,
-      taskTier,
-    );
+
+    const reason = lastFailureType === "invalid_json"
+      ? "\u6240\u6709\u5185\u7f6e\u6a21\u578b\u5747\u672a\u8fd4\u56de\u6709\u6548\u7684 JSON"
+      : (lastFailureType === "timeout"
+        ? "\u6a21\u578b\u54cd\u5e94\u8d85\u65f6"
+        : (lastError?.message || "\u4e0a\u6e38\u6a21\u578b\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9"));
+    const status = lastFailureType === "timeout" ? 504 : 502;
+    return fail("\u6240\u6709\u5185\u7f6e AI \u670d\u52a1\u5747\u672a\u8fd4\u56de\u6709\u6548\u5185\u5bb9\uff1a" + reason + "\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002", status, lastFailureType);
   } catch (error) {
-    return json({ error: { message: error.message || "AI 代理调用失败。" } }, 400);
+    const type = error instanceof SyntaxError || /missing|only|not allowed|does not match|invalid|\u4e0d\u5b8c\u6574|\u4e0d\u5141\u8bb8/i.test(error?.message || "")
+      ? "invalid_request"
+      : classifyFailure({ error });
+    const status = type === "invalid_request" ? 400 : (type === "timeout" ? 504 : 502);
+    return fail(error.message || "AI \u4ee3\u7406\u8c03\u7528\u5931\u8d25\u3002", status, type);
   }
 }
