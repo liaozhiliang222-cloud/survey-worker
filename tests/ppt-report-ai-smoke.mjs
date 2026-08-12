@@ -236,6 +236,28 @@ assert.equal(revisionInput.revision_feedback, "move question assignment to conce
 assert.equal(revisionInput.current_narrative.chapters.length, 3);
 assert.equal(revisionInput.require_page_blueprint, false);
 assert.equal(revisionInput.current_narrative.chapters[0].page_idxs.join(","), "3,1");
+const mergedRevision = ai.mergeReportNarrativeRevision(reportNarrative, {
+  central_thesis: "年轻用户转化首先取决于价值确定性。",
+  chapters: [
+    { chapter_id: "chapter_01", title: "核心人群与机会", page_idxs: [3] },
+    { chapter_id: "chapter_02", title: "决策机制", purpose: "解释转化机制", key_question: "什么影响决策？", page_idxs: [1, 2, 4] },
+    { chapter_id: "chapter_03", title: "优化机会", page_idxs: [6, 5, 2] },
+  ],
+}, { ...reportContext, require_page_blueprint: false });
+const validatedRevision = ai.validateReportNarrative(mergedRevision, { ...reportContext, require_page_blueprint: false });
+assert.equal(validatedRevision.central_thesis, "年轻用户转化首先取决于价值确定性。");
+assert.equal(validatedRevision.chapters[0].purpose, "界定核心用户");
+assert.equal(validatedRevision.chapters[1].key_question, "什么影响决策？");
+assert.deepEqual(
+  Array.from(validatedRevision.chapters.flatMap((chapter) => chapter.page_idxs)).sort((a, b) => a - b),
+  [1, 2, 3, 4, 5, 6],
+);
+assert.equal(new Set(validatedRevision.chapters.flatMap((chapter) => chapter.page_idxs)).size, 6);
+const partialRevision = ai.mergeReportNarrativeRevision(reportNarrative, {
+  chapters: [{ chapter_id: "chapter_02", title: "购买决策机制" }],
+}, { ...reportContext, require_page_blueprint: false });
+assert.equal(partialRevision.chapters.length, 3);
+assert.equal(partialRevision.chapters[1].title, "购买决策机制");
 const localReportNarrative = ai.validateReportNarrative(
   ai.buildFallbackReportNarrative(reportContext, reportNarrativeInput),
   { ...reportContext, require_page_blueprint: false },

@@ -13344,7 +13344,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     const narrativeConfirmBtn = document.querySelector("#pptxNarrativeConfirmBtn");
     const narrativeRegenerateBtn = document.querySelector("#pptxNarrativeRegenerateBtn");
     const continueEditBtn = document.querySelector("#pptxContinueEditBtn");
-    // 修订故事线功能已移除（AI 局部修订成功率不稳定，统一改用"重新生成故事线"）
+    const narrativeFeedback = document.querySelector("#pptxNarrativeFeedback");
+    const narrativeReviseBtn = document.querySelector("#pptxNarrativeReviseBtn");
+    const narrativeUndoRevisionBtn = document.querySelector("#pptxNarrativeUndoRevisionBtn");
+    const narrativeRevisionStatus = document.querySelector("#pptxNarrativeRevisionStatus");
     if (!dropzone) return;
 
     let selectedFile = null;
@@ -13362,6 +13365,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     let planUndoStack = [];
     let planRedoStack = [];
     let draggedPageIndex = -1;
+    let narrativeRevisionHistory = [];
+    let narrativeRevisionRunning = false;
     let draggedQuestion = null;
     let moveQuestionContext = null;
     let pendingReportNarrative = null;
@@ -15818,12 +15823,18 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           </label>`).join("");
         const plannedPages = (narrative.page_blueprint || [])
           .filter((page) => page.chapter_id === chapter.chapter_id);
+        const assignedPages = (chapter.page_idxs || []).map((pageIdx) => {
+          const page = editedPagePlan?.pages?.find((item) => Number(item.page_idx) === Number(pageIdx));
+          return page ? `${pageIdx}. ${page.title || page.source_chapter || "分析页"}` : `${pageIdx}. 分析页`;
+        });
         const pagePlan = plannedPages.length ? `
           <div class="pptx-narrative-page-plan">
             <small>AI 计划页面与题目组合</small>
             <ol>${plannedPages.map((page) => `
               <li><strong>${escapeHtml(page.title || "分析页")}</strong><span>${escapeHtml((page.question_titles || page.question_ids || []).join(" · "))}</span></li>`).join("")}</ol>
-          </div>` : "";
+          </div>` : (assignedPages.length
+            ? `<div class="pptx-narrative-page-plan"><small>当前归属页面</small><p>${escapeHtml(assignedPages.join(" · "))}</p></div>`
+            : "");
         return `
         <article class="pptx-narrative-chapter" data-narrative-chapter="${index}">
           <span>${String(index + 1).padStart(2, "0")}</span>
@@ -16461,7 +16472,169 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       }
         }
 
-    // 修订故事线功能已移除：AI 局部修订成功率不稳定，统一改用"重新生成故事线"按钮
+    function cloneReportNarrative(narrative) {
+      return narrative ? JSON.parse(JSON.stringify(narrative)) : null;
+    }
+
+    function setNarrativeRevisionBusy(active, message = "") {
+      narrativeRevisionRunning = active;
+      if (narrativeReviseBtn) narrativeReviseBtn.disabled = active;
+      if (narrativeFeedback) narrativeFeedback.disabled = active;
+      if (narrativeConfirmBtn) narrativeConfirmBtn.disabled = active;
+      if (narrativeRegenerateBtn) narrativeRegenerateBtn.disabled = active;
+      if (narrativeUndoRevisionBtn) narrativeUndoRevisionBtn.disabled = active;
+      if (narrativeRevisionStatus && message) narrativeRevisionStatus.textContent = message;
+    }
+
+    function describeNarrativeRevision(before, after) {
+      const beforeChapters = before?.chapters || [];
+      const afterChapters = after?.chapters || [];
+      const beforeByPage = new Map();
+      const afterByPage = new Map();
+      beforeChapters.forEach((chapter) => (chapter.page_idxs || []).forEach((pageIdx) => {
+        beforeByPage.set(Number(pageIdx), chapter.chapter_id);
+      }));
+      afterChapters.forEach((chapter) => (chapter.page_idxs || []).forEach((pageIdx) => {
+        afterByPage.set(Number(pageIdx), chapter.chapter_id);
+      }));
+      const movedPages = Array.from(afterByPage).filter(([pageIdx, chapterId]) => (
+        beforeByPage.has(pageIdx) && beforeByPage.get(pageIdx) !== chapterId
+      )).length;
+      const thesisChanged = String(before?.central_thesis || "") !== String(after?.central_thesis || "");
+      const chapterChanged = beforeChapters.map((chapter) => chapter.title).join("|")
+        !== afterChapters.map((chapter) => chapter.title).join("|");
+      return [
+        thesisChanged ? "核心观点已调整" : "核心观点保持",
+        chapterChanged ? "章节结构已调整" : "章节结构保持",
+        movedPages ? `${movedPages} 页归属已调整` : "页面归属保持",
+      ].join("；");
+    }
+
+    function applyRevisedReportNarrative(narrative) {
+      pendingReportNarrative = narrative;
+      editedPagePlan.report_narrative = narrative;
+      editedPagePlan.research_theme_classification = narrative?.research_theme_classification || null;
+      editedPagePlan.research_theme_warnings = narrative?.research_theme_warnings || [];
+      renderReportNarrative(narrative);
+    }
+
+    function buildNarrativeRevisionMessages(revisionInput, validationError = "") {
+      const repairInstruction = validationError
+        ? `上一次结果未通过校验：${validationError}。请修正结构后返回完整 JSON。`
+        : "";
+      return [
+        {
+          role: "system",
+          content: [
+            "你是资深市场研究总监。请根据用户反馈修改当前报告故事线。",
+            "根据研究目的判断页面归属，不要按表面关键词归类。未被反馈点名的内容尽量保持不变。",
+            "只能修改中心观点、叙事类型、章节标题/目的/核心问题、章节顺序、页面归属和分析维度建议。",
+            "不得新增或删除输入页面；每个 page_idx 必须且只能出现在一个章节。不得生成逐页正文、SlideBrief 或 PPT。",
+            "返回完整 JSON 对象：{\"central_thesis\":\"\",\"storyline_type\":\"diagnosis\",\"ending_message\":\"\",\"chapters\":[{\"chapter_id\":\"chapter_01\",\"title\":\"\",\"purpose\":\"\",\"key_question\":\"\",\"allowed_themes\":[],\"page_idxs\":[1],\"analysis_strategy\":{\"baseline_dimension\":\"总体\",\"primary_dimensions\":[],\"supporting_dimensions\":[],\"rationale\":\"\"}}]}。",
+            "优先沿用现有 chapter_id。只输出 JSON，不要解释。",
+            repairInstruction,
+          ].filter(Boolean).join("\n"),
+        },
+        { role: "user", content: JSON.stringify(revisionInput) },
+      ];
+    }
+
+    async function reviseReportNarrativeFromFeedback() {
+      const feedback = String(narrativeFeedback?.value || "").trim();
+      if (narrativeRevisionRunning) return;
+      if (!pendingReportNarrative) {
+        showToast("请先生成故事线，再提交修改意见。", "warning");
+        return;
+      }
+      if (!feedback) {
+        showToast("请先填写希望调整的内容。", "warning");
+        narrativeFeedback?.focus();
+        return;
+      }
+      const settings = loadAiSettings();
+      const errors = validateAiSettings(settings);
+      if (settings.mode === "local" || errors.length) {
+        if (narrativeRevisionStatus) narrativeRevisionStatus.textContent = `AI 设置尚未就绪：${errors.join("；")}`;
+        return;
+      }
+      const aiPlanner = window.PptReportAi;
+      const original = cloneReportNarrative(pendingReportNarrative);
+      setNarrativeRevisionBusy(true, "正在提交异步修订任务…");
+      try {
+        const context = lastPptxInsightContext || await requestPptxInsightContext();
+        lastPptxInsightContext = context;
+        const coreContext = { ...buildPptxNarrativeContext(context), require_page_blueprint: false };
+        const revisionInput = aiPlanner.buildReportNarrativeRevisionInput(
+          original,
+          coreContext,
+          feedback,
+          (titleInput.value || "调研分析报告").trim(),
+        );
+        let validationError = "";
+        let revisedNarrative = null;
+        for (let attempt = 0; attempt < 2 && !revisedNarrative; attempt += 1) {
+          const operation = `report_narrative_revision_${attempt + 1}`;
+          try {
+            const output = await callAiChatCompletionJob(
+              settings,
+              buildNarrativeRevisionMessages(revisionInput, validationError),
+              {
+                maxTokens: 3200,
+                timeoutMs: 90000,
+                temperature: 0,
+                responseFormat: "json_object",
+                taskTier: attempt ? "fast" : "quality",
+                stream: false,
+                operation,
+                onJobProgress: (state) => {
+                  if (narrativeRevisionStatus) {
+                    narrativeRevisionStatus.textContent = `${state.message || "AI 正在修改故事线"}；页面刷新后任务仍会继续。`;
+                  }
+                },
+              },
+            );
+            const parsed = aiPlanner.parseJsonObject(output);
+            const merged = aiPlanner.mergeReportNarrativeRevision(original, parsed, coreContext);
+            revisedNarrative = aiPlanner.validateReportNarrative(merged, coreContext);
+          } catch (error) {
+            clearAiJobCacheOperations(operation);
+            validationError = String(error?.message || error);
+            if (attempt >= 1) throw error;
+            if (narrativeRevisionStatus) narrativeRevisionStatus.textContent = "首次结果结构不完整，正在自动修复一次…";
+          }
+        }
+        narrativeRevisionHistory.push(original);
+        narrativeRevisionHistory = narrativeRevisionHistory.slice(-5);
+        applyRevisedReportNarrative(revisedNarrative);
+        if (narrativeUndoRevisionBtn) {
+          narrativeUndoRevisionBtn.classList.remove("hidden");
+          narrativeUndoRevisionBtn.disabled = false;
+        }
+        const summary = describeNarrativeRevision(original, revisedNarrative);
+        if (narrativeRevisionStatus) narrativeRevisionStatus.textContent = `修改完成：${summary}。`;
+        editedPagePlan.narrative_revision_log = [
+          ...(editedPagePlan.narrative_revision_log || []),
+          { feedback, summary, revised_at: new Date().toISOString() },
+        ].slice(-10);
+        if (narrativeFeedback) narrativeFeedback.value = "";
+      } catch (error) {
+        if (narrativeRevisionStatus) narrativeRevisionStatus.textContent = `修改失败：${error.message}。原故事线已保留。`;
+      } finally {
+        setNarrativeRevisionBusy(false);
+        if (narrativeUndoRevisionBtn) narrativeUndoRevisionBtn.disabled = !narrativeRevisionHistory.length;
+      }
+    }
+
+    function undoNarrativeRevision() {
+      const previous = narrativeRevisionHistory.pop();
+      if (!previous) return;
+      applyRevisedReportNarrative(previous);
+      if (narrativeRevisionStatus) narrativeRevisionStatus.textContent = "已撤销上一次故事线修改。";
+      if (narrativeUndoRevisionBtn) {
+        narrativeUndoRevisionBtn.classList.toggle("hidden", !narrativeRevisionHistory.length);
+        narrativeUndoRevisionBtn.disabled = !narrativeRevisionHistory.length;
+      }
+    }
     function normalizePptxDimensions(values) {
       const available = new Set(["总体", ...(editedPagePlan?.available_dimensions || []).map((item) => String(item?.key || "").trim()).filter(Boolean)]);
       const selected = Array.from(new Set((values || []).map((value) => String(value || "").trim()).filter((value) => available.has(value))));
@@ -17477,8 +17650,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     narrativeRegenerateBtn?.addEventListener("click", () => {
       clearAiJobCacheOperations("report_narrative_");
       clearAiJobCacheOperations("slide_brief_");
+      narrativeRevisionHistory = [];
+      narrativeUndoRevisionBtn?.classList.add("hidden");
       generatePptxAiReport();
     });
+    narrativeReviseBtn?.addEventListener("click", () => reviseReportNarrativeFromFeedback());
+    narrativeUndoRevisionBtn?.addEventListener("click", () => undoNarrativeRevision());
     narrativeContent?.addEventListener("change", (event) => {
       const input = event.target?.closest?.("input[data-narrative-dimension]");
       if (!input) return;

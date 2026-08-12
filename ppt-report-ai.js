@@ -681,6 +681,141 @@
       require_page_blueprint: false,
     };
   }
+  function mergeReportNarrativeRevision(currentNarrative = {}, revisionPayload = {}, context = {}) {
+    const revision = normalizeReportNarrativePayload(revisionPayload) || {};
+    const current = compactReportNarrativeForRevision(currentNarrative);
+    const currentChapters = Array.isArray(current.chapters) ? current.chapters : [];
+    const currentById = new Map(currentChapters.map((chapter) => [String(chapter.chapter_id || ""), chapter]));
+    const currentByTitle = new Map(currentChapters.map((chapter) => [String(chapter.title || ""), chapter]));
+    let rawChapters = Array.isArray(revision.chapters) && revision.chapters.length
+      ? revision.chapters : currentChapters;
+    // A short response is usually a partial patch. Keep untouched chapters.
+    if (rawChapters.length < 3 && currentChapters.length >= 3) {
+      const revisionsById = new Map(rawChapters
+        .filter((chapter) => chapter?.chapter_id)
+        .map((chapter) => [String(chapter.chapter_id), chapter]));
+      const revisionsByTitle = new Map(rawChapters
+        .filter((chapter) => chapter?.title)
+        .map((chapter) => [String(chapter.title), chapter]));
+      const unmatched = [...rawChapters];
+      rawChapters = currentChapters.map((chapter) => {
+        const revised = revisionsById.get(String(chapter.chapter_id || ""))
+          || revisionsByTitle.get(String(chapter.title || ""));
+        if (revised) unmatched.splice(unmatched.indexOf(revised), 1);
+        return revised || chapter;
+      });
+      rawChapters.push(...unmatched);
+    }
+    const usedChapterIds = new Set();
+    const chapters = rawChapters.slice(0, 8).map((chapter, index) => {
+      const base = currentById.get(String(chapter?.chapter_id || ""))
+        || currentByTitle.get(String(chapter?.title || ""))
+        || currentChapters[index]
+        || {};
+      let chapterId = String(chapter?.chapter_id || base.chapter_id || `chapter_${String(index + 1).padStart(2, "0")}`).trim();
+      if (usedChapterIds.has(chapterId)) chapterId = `chapter_${String(index + 1).padStart(2, "0")}`;
+      usedChapterIds.add(chapterId);
+      const baseStrategy = base.analysis_strategy && typeof base.analysis_strategy === "object"
+        ? base.analysis_strategy : {};
+      const revisedStrategy = chapter?.analysis_strategy && typeof chapter.analysis_strategy === "object"
+        ? chapter.analysis_strategy : {};
+      return {
+        chapter_id: chapterId,
+        title: String(chapter?.title || base.title || "").trim(),
+        purpose: String(chapter?.purpose || base.purpose || "").trim(),
+        key_question: String(chapter?.key_question || base.key_question || "").trim(),
+        allowed_themes: uniqueStrings(chapter?.allowed_themes?.length
+          ? chapter.allowed_themes : base.allowed_themes),
+        page_idxs: Array.isArray(chapter?.page_idxs)
+          ? chapter.page_idxs.map(Number).filter(Number.isFinite)
+          : Array.from(base.page_idxs || []).map(Number).filter(Number.isFinite),
+        analysis_strategy: {
+          ...baseStrategy,
+          ...revisedStrategy,
+          baseline_dimension: String(
+            revisedStrategy.baseline_dimension || baseStrategy.baseline_dimension || "总体"
+          ),
+          primary_dimensions: uniqueStrings(
+            revisedStrategy.primary_dimensions?.length
+              ? revisedStrategy.primary_dimensions : baseStrategy.primary_dimensions
+          ).slice(0, 1),
+          supporting_dimensions: uniqueStrings(
+            revisedStrategy.supporting_dimensions?.length
+              ? revisedStrategy.supporting_dimensions : baseStrategy.supporting_dimensions
+          ).slice(0, 1),
+          rationale: String(revisedStrategy.rationale || baseStrategy.rationale || "").trim(),
+          page_dimension_plan: Array.isArray(revisedStrategy.page_dimension_plan)
+            ? revisedStrategy.page_dimension_plan
+            : (baseStrategy.page_dimension_plan || []),
+        },
+      };
+    });
+    const allowedPageIndexes = (context?.pages || [])
+      .map((page) => Number(page?.page_idx)).filter(Number.isFinite);
+    const allowedPages = new Set(allowedPageIndexes);
+    const assignedPages = new Set();
+    chapters.forEach((chapter) => {
+      chapter.page_idxs = chapter.page_idxs.filter((pageIdx) => (
+        (!allowedPages.size || allowedPages.has(pageIdx)) && !assignedPages.has(pageIdx)
+      ));
+      chapter.page_idxs.forEach((pageIdx) => assignedPages.add(pageIdx));
+    });
+    const originalChapterByPage = new Map();
+    currentChapters.forEach((chapter) => (chapter.page_idxs || []).forEach((pageIdx) => {
+      originalChapterByPage.set(Number(pageIdx), String(chapter.chapter_id || ""));
+    }));
+    const mergedChapterById = new Map(chapters.map((chapter) => [chapter.chapter_id, chapter]));
+    allowedPageIndexes.filter((pageIdx) => !assignedPages.has(pageIdx)).forEach((pageIdx) => {
+      const originalChapter = mergedChapterById.get(originalChapterByPage.get(pageIdx));
+      const target = originalChapter || chapters.reduce((smallest, chapter) => (
+        !smallest || chapter.page_idxs.length < smallest.page_idxs.length ? chapter : smallest
+      ), null);
+      if (target) target.page_idxs.push(pageIdx);
+    });
+    const currentClassification = currentNarrative?.research_theme_classification || {};
+    const revisedAssignments = revision.research_theme_assignments
+      || current.research_theme_assignments || currentClassification.assignments || [];
+    const themeAllowedChapters = new Map();
+    const assignmentThemeByPage = new Map(revisedAssignments.map((assignment) => [
+      Number(assignment?.page_idx),
+      String(assignment?.research_theme || assignment?.theme_id || ""),
+    ]));
+    chapters.forEach((chapter) => {
+      chapter.allowed_themes = uniqueStrings([
+        ...(chapter.allowed_themes || []),
+        ...(chapter.page_idxs || []).map((pageIdx) => assignmentThemeByPage.get(Number(pageIdx))),
+      ]);
+    });
+    chapters.forEach((chapter) => (chapter.allowed_themes || []).forEach((themeId) => {
+      const titles = themeAllowedChapters.get(themeId) || new Set();
+      titles.add(chapter.title);
+      themeAllowedChapters.set(themeId, titles);
+    }));
+    const researchThemes = (revision.research_themes
+      || current.research_themes || currentClassification.themes || []).map((theme) => ({
+      ...theme,
+      allowed_chapters: Array.from(themeAllowedChapters.get(theme.theme_id) || theme.allowed_chapters || []),
+    }));
+    const chapterRules = chapters.map((chapter) => ({
+      chapter: chapter.title,
+      allowed_themes: uniqueStrings(chapter.allowed_themes),
+    }));
+    return {
+      report_title: String(revision.report_title || current.report_title || "").trim(),
+      central_thesis: String(revision.central_thesis || current.central_thesis || "").trim(),
+      storyline_type: revision.storyline_type || current.storyline_type,
+      chapters,
+      page_blueprint: Array.isArray(revision.page_blueprint)
+        ? revision.page_blueprint : (currentNarrative.page_blueprint || []),
+      key_questions: uniqueStrings(revision.key_questions?.length
+        ? revision.key_questions : chapters.map((chapter) => chapter.key_question)),
+      ending_message: String(revision.ending_message || current.ending_message || current.central_thesis || "").trim(),
+      research_themes: researchThemes,
+      chapter_rules: chapterRules,
+      research_theme_assignments: revisedAssignments,
+      confidence: revision.confidence ?? currentNarrative.confidence ?? 0.85,
+    };
+  }
   function classifyReportPageRole(page, archetype, coreModule) {
     const text = pageResearchText(page).toLowerCase();
     const sourceChapter = String(page?.source_chapter || page?.chapter || "").trim();
@@ -1687,6 +1822,7 @@
     buildFallbackReportNarrative,
     compactResearchThemeClassification,
     isReportNarrativeTooSimilarToSource,
+    mergeReportNarrativeRevision,
     buildFallbackPageBlueprint,
     chunkPages,
     chunkPagesByChapter,

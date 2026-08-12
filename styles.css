@@ -5574,6 +5574,14 @@ tbody tr.warn td {
   line-height: 1.45;
 }
 
+.pptx-narrative-page-plan p {
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
 .pptx-narrative-confirm-note {
   padding: 11px 14px;
   border: 1px solid #bfdbfe;

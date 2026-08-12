@@ -27,6 +27,9 @@ for (const mapping of [
   assert.ok(app.includes(mapping), `Missing localized option: ${mapping}`);
 }
 assert.match(html, /id="pptxContinueEditBtn"/);
+assert.match(html, /id="pptxNarrativeFeedback"/);
+assert.match(html, /id="pptxNarrativeReviseBtn"/);
+assert.match(html, /id="pptxNarrativeUndoRevisionBtn"/);
 assert.match(app, /user_modified/);
 assert.match(app, /mergeSlideBriefSuggestion/);
 assert.match(app, /persistSlideOrder/);
@@ -171,7 +174,15 @@ assert.match(workflowDispatch, /generatePptxQuickAiReport\(\)/);
 assert.match(app, /function availableNarrativeDimensions/);
 assert.match(app, /function updateNarrativeChapterDimensions/);
 assert.match(app, /function confirmNarrativeDimensionSelections/);
+assert.match(app, /async function reviseReportNarrativeFromFeedback/);
+assert.match(app, /function undoNarrativeRevision/);
+assert.match(app, /buildReportNarrativeRevisionInput/);
+assert.match(app, /mergeReportNarrativeRevision/);
+assert.match(app, /report_narrative_revision_/);
+assert.match(app, /原故事线已保留/);
+assert.match(app, /narrativeRevisionHistory/);
 assert.match(app, /data-narrative-dimension/);
+assert.match(app, /当前归属页面/);
 assert.match(app, /page_dimension_plan: \[\]/);
 assert.match(app, /dimension_selection_confirmed: true/);
 assert.match(html, /确认分析维度并生成蓝图/);
