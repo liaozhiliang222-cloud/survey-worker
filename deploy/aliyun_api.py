@@ -31,7 +31,9 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote
+from urllib.request import Request as UrlRequest, urlopen
 
 # 确保运行日志中的中文 debug print 不会因 stdout 编码非 UTF-8 而崩溃
 # （Windows 默认控制台编码 / 部分 Linux 容器 locale 非 utf-8 时会触发 latin-1 报错）
@@ -82,6 +84,15 @@ JOB_STATE_LOCK = threading.RLock()
 JOB_SEMAPHORE = threading.BoundedSemaphore(MAX_CONCURRENT_JOBS)
 JOB_DIR = Path(tempfile.gettempdir()) / "surveykit-ppt-jobs"
 JOB_DIR.mkdir(parents=True, exist_ok=True)
+AI_JOB_DIR = Path(tempfile.gettempdir()) / "surveykit-ai-jobs"
+AI_JOB_DIR.mkdir(parents=True, exist_ok=True)
+AI_JOB_SEMAPHORE = threading.BoundedSemaphore(
+    max(1, int(os.environ.get("AI_MAX_CONCURRENT_JOBS", "4")))
+)
+AI_PROXY_URL = os.environ.get("AI_PROXY_URL", "https://surveykit.cc/api/ai").strip()
+AI_JOB_TIMEOUT_SECONDS = max(15, int(os.environ.get("AI_JOB_TIMEOUT_SECONDS", "90")))
+AI_JOB_MAX_ATTEMPTS = max(1, min(5, int(os.environ.get("AI_JOB_MAX_ATTEMPTS", "3"))))
+AI_JOB_MAX_BODY_BYTES = 2 * 1024 * 1024
 TEMPLATE_DIR = Path(tempfile.gettempdir()) / "surveykit-ppt-templates"
 TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATE_TTL_SECONDS = 24 * 60 * 60
@@ -432,7 +443,16 @@ async def update_template_profile(template_id: str, request: Request):
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "service": "pptx-report"}
+    return {
+        "ok": True,
+        "service": "pptx-report",
+        "capabilities": {
+            "pptx_jobs": True,
+            "ai_jobs": True,
+            "ai_job_max_attempts": AI_JOB_MAX_ATTEMPTS,
+            "ai_job_timeout_seconds": AI_JOB_TIMEOUT_SECONDS,
+        },
+    }
 
 
 @app.post("/api/pptx-report/model-chart")
@@ -1254,10 +1274,387 @@ def download_generate_job(job_id: str, delete_after: bool = False):
         },
     )
 
+
+def _ai_job_state_path(job_id: str) -> Path:
+    return AI_JOB_DIR / f"{job_id}.json"
+
+
+def _ai_job_request_path(job_id: str) -> Path:
+    return AI_JOB_DIR / f"{job_id}.request.json"
+
+
+def _ai_job_result_path(job_id: str) -> Path:
+    return AI_JOB_DIR / f"{job_id}.result.json"
+
+
+def _read_ai_job_state(job_id: str) -> dict | None:
+    if not _valid_job_id(job_id):
+        return None
+    try:
+        return json.loads(_ai_job_state_path(job_id).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _write_ai_job_state(job_id: str, payload: dict) -> dict:
+    target = _ai_job_state_path(job_id)
+    with JOB_STATE_LOCK:
+        current = _read_ai_job_state(job_id) or {}
+        if (
+            current.get("status") in {"cancel_requested", "cancelled"}
+            and payload.get("status") in {"queued", "running", "ready"}
+        ):
+            payload = {
+                **payload,
+                "status": current.get("status"),
+                "message": current.get("message", "正在取消任务"),
+            }
+        merged = {
+            **current,
+            **payload,
+            "job_id": job_id,
+            "job_type": "ai_chat_completion",
+            "updated_at": time.time(),
+            "service_instance_id": SERVICE_INSTANCE_ID,
+        }
+        temporary = target.with_name(f"{job_id}.{uuid.uuid4().hex}.tmp")
+        temporary.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
+        try:
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return merged
+
+
+def _remove_ai_job_files(job_id: str) -> None:
+    _ai_job_state_path(job_id).unlink(missing_ok=True)
+    _ai_job_request_path(job_id).unlink(missing_ok=True)
+    _ai_job_result_path(job_id).unlink(missing_ok=True)
+
+
+def _cleanup_ai_jobs() -> None:
+    now = time.time()
+    for state_path in AI_JOB_DIR.glob("*.json"):
+        if not _valid_job_id(state_path.stem):
+            continue
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            ttl = FAILED_JOB_TTL_SECONDS if state.get("status") in {"failed", "cancelled", "lost"} else JOB_TTL_SECONDS
+            if state_path.stat().st_mtime < now - ttl:
+                _remove_ai_job_files(state_path.stem)
+        except (OSError, json.JSONDecodeError):
+            pass
+
+
+def _ai_job_fingerprint(payload: dict, client_id: str, operation: str) -> str:
+    digest = hashlib.sha256()
+    digest.update(client_id.encode("utf-8"))
+    digest.update(operation.encode("utf-8"))
+    digest.update(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _find_active_ai_duplicate(client_id: str, fingerprint: str) -> dict | None:
+    if not client_id:
+        return None
+    for state_path in AI_JOB_DIR.glob("*.json"):
+        if not _valid_job_id(state_path.stem):
+            continue
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            state.get("client_id") == client_id
+            and state.get("request_fingerprint") == fingerprint
+            and state.get("status") in {"queued", "running"}
+        ):
+            return state
+    return None
+
+
+def _ai_error_message(payload: dict, status: int) -> str:
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(error, dict):
+        return str(error.get("message") or error.get("code") or f"AI 接口返回 {status}")
+    if error:
+        return str(error)
+    return str(payload.get("message") or f"AI 接口返回 {status}") if isinstance(payload, dict) else f"AI 接口返回 {status}"
+
+
+def _call_ai_proxy(payload: dict, request_id: str, timeout_seconds: int) -> tuple[dict, dict]:
+    request = UrlRequest(
+        AI_PROXY_URL,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-Request-ID": request_id,
+            "X-AI-Rotation-Key": request_id,
+            "User-Agent": "SurveyKit-AI-Job/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            raw = response.read(AI_JOB_MAX_BODY_BYTES + 1)
+            if len(raw) > AI_JOB_MAX_BODY_BYTES:
+                raise RuntimeError("AI 返回结果过大。")
+            result = json.loads(raw.decode("utf-8"))
+            diagnostics = {
+                "request_id": response.headers.get("X-AI-Request-ID") or request_id,
+                "source": response.headers.get("X-AI-Source") or "",
+                "model": response.headers.get("X-Actual-Model") or "",
+                "task_tier": response.headers.get("X-AI-Task-Tier") or "",
+                "duration_ms": int(response.headers.get("X-AI-Duration-Ms") or 0),
+                "fallback_used": response.headers.get("X-AI-Fallback-Used") == "1",
+                "attempt_sources": response.headers.get("X-AI-Attempt-Sources") or "",
+            }
+            if isinstance(result, dict) and result.get("error"):
+                raise RuntimeError(_ai_error_message(result, 502))
+            return result, diagnostics
+    except HTTPError as exc:
+        raw = exc.read(AI_JOB_MAX_BODY_BYTES).decode("utf-8", errors="replace")
+        try:
+            detail = json.loads(raw)
+        except json.JSONDecodeError:
+            detail = {"message": raw[:500]}
+        error = RuntimeError(_ai_error_message(detail, exc.code))
+        error.status = exc.code
+        raise error from exc
+    except (URLError, TimeoutError) as exc:
+        error = RuntimeError(f"AI 后台连接失败：{getattr(exc, 'reason', exc)}")
+        error.status = 504
+        raise error from exc
+
+
+def _run_ai_job(job_id: str, payload: dict) -> None:
+    transient_statuses = {408, 425, 429, 500, 502, 503, 504, 524}
+    attempts = []
+    try:
+        with AI_JOB_SEMAPHORE:
+            state = _read_ai_job_state(job_id) or {}
+            if state.get("status") in {"cancel_requested", "cancelled"}:
+                raise JobCancelled("任务已取消")
+            _write_ai_job_state(job_id, {
+                "status": "running",
+                "started_at": state.get("started_at") or time.time(),
+                "progress": 12,
+                "message": "后台已开始调用 AI",
+            })
+            last_error = None
+            for attempt in range(1, AI_JOB_MAX_ATTEMPTS + 1):
+                state = _read_ai_job_state(job_id) or {}
+                if state.get("status") in {"cancel_requested", "cancelled"}:
+                    raise JobCancelled("任务已取消")
+                request_id = f"job-{job_id[:12]}-{attempt}-{uuid.uuid4().hex[:8]}"
+                _write_ai_job_state(job_id, {
+                    "status": "running",
+                    "progress": min(85, 18 + attempt * 18),
+                    "message": f"AI 生成中（第 {attempt}/{AI_JOB_MAX_ATTEMPTS} 次通道尝试）",
+                    "attempt": attempt,
+                    "max_attempts": AI_JOB_MAX_ATTEMPTS,
+                })
+                started = time.time()
+                try:
+                    result, diagnostics = _call_ai_proxy(payload, request_id, AI_JOB_TIMEOUT_SECONDS)
+                    state = _read_ai_job_state(job_id) or {}
+                    if state.get("status") in {"cancel_requested", "cancelled"}:
+                        raise JobCancelled("任务已取消")
+                    attempts.append({
+                        "attempt": attempt,
+                        "request_id": diagnostics.get("request_id") or request_id,
+                        "source": diagnostics.get("source") or "",
+                        "model": diagnostics.get("model") or "",
+                        "duration_ms": diagnostics.get("duration_ms") or int((time.time() - started) * 1000),
+                        "ok": True,
+                    })
+                    _ai_job_result_path(job_id).write_text(
+                        json.dumps(result, ensure_ascii=False), encoding="utf-8"
+                    )
+                    _write_ai_job_state(job_id, {
+                        "status": "ready",
+                        "progress": 100,
+                        "message": "AI 结果已生成",
+                        "finished_at": time.time(),
+                        "diagnostics": diagnostics,
+                        "attempts": attempts,
+                    })
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    last_error = exc
+                    status = int(getattr(exc, "status", 0) or 0)
+                    attempts.append({
+                        "attempt": attempt,
+                        "request_id": request_id,
+                        "duration_ms": int((time.time() - started) * 1000),
+                        "status": status,
+                        "ok": False,
+                        "message": str(exc)[:500],
+                    })
+                    if attempt >= AI_JOB_MAX_ATTEMPTS or (status and status not in transient_statuses):
+                        break
+                    time.sleep(min(4, attempt))
+            raise RuntimeError(str(last_error or "AI 任务失败"))
+    except JobCancelled:
+        _ai_job_result_path(job_id).unlink(missing_ok=True)
+        _write_ai_job_state(job_id, {
+            "status": "cancelled",
+            "progress": 0,
+            "message": "AI 任务已取消",
+            "finished_at": time.time(),
+            "attempts": attempts,
+        })
+    except Exception as exc:  # noqa: BLE001
+        _write_ai_job_state(job_id, {
+            "status": "failed",
+            "progress": 0,
+            "message": str(exc),
+            "finished_at": time.time(),
+            "attempts": attempts,
+        })
+
+
+def _start_ai_job(job_id: str, payload: dict, recovering: bool = False) -> None:
+    threading.Thread(
+        target=_run_ai_job,
+        args=(job_id, payload),
+        daemon=True,
+        name=f"ai-job-{'recover-' if recovering else ''}{job_id[:8]}",
+    ).start()
+
+
+def _recover_incomplete_ai_jobs() -> None:
+    now = time.time()
+    for state_path in AI_JOB_DIR.glob("*.json"):
+        if not _valid_job_id(state_path.stem):
+            continue
+        state = _read_ai_job_state(state_path.stem) or {}
+        if state.get("status") not in {"queued", "running"}:
+            continue
+        if now - float(state.get("updated_at") or 0) < 15:
+            continue
+        try:
+            payload = json.loads(_ai_job_request_path(state_path.stem).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            _write_ai_job_state(state_path.stem, {
+                "status": "lost",
+                "progress": 0,
+                "message": "服务重启后无法恢复 AI 请求，请重试。",
+                "finished_at": time.time(),
+            })
+            continue
+        _write_ai_job_state(state_path.stem, {
+            "status": "queued",
+            "progress": 5,
+            "message": "服务重启后正在恢复 AI 任务",
+        })
+        _start_ai_job(state_path.stem, payload, recovering=True)
+
+
+@app.post("/api/pptx-report/ai-jobs")
+async def create_ai_job(request: Request):
+    _cleanup_ai_jobs()
+    raw = await request.body()
+    if len(raw) > AI_JOB_MAX_BODY_BYTES:
+        return JSONResponse({"error": {"message": "AI 任务请求过大（最大 2MB）。"}}, status_code=413)
+    try:
+        request_payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JSONResponse({"error": {"message": "AI 任务请求必须是 JSON。"}}, status_code=400)
+    if not isinstance(request_payload, dict):
+        return JSONResponse({"error": {"message": "AI 任务请求必须是对象。"}}, status_code=400)
+    ai_payload = request_payload.get("payload")
+    if not isinstance(ai_payload, dict) or not isinstance(ai_payload.get("body"), dict):
+        return JSONResponse({"error": {"message": "缺少有效的 AI 请求 payload。"}}, status_code=400)
+    if str(ai_payload.get("apiKey") or "").strip():
+        return JSONResponse({"error": {"message": "用户 API Key 请求不能创建后台任务。"}}, status_code=400)
+    ai_payload.pop("apiKey", None)
+    operation = str(request_payload.get("operation") or "structured_generation")[:80]
+    client_id = str(request.headers.get("x-surveykit-client-id") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{8,128}", client_id):
+        client_id = ""
+    fingerprint = _ai_job_fingerprint(ai_payload, client_id, operation) if client_id else ""
+    with JOB_STATE_LOCK:
+        duplicate = _find_active_ai_duplicate(client_id, fingerprint)
+        if duplicate:
+            return JSONResponse({**duplicate, "deduplicated": True}, status_code=202)
+        job_id = uuid.uuid4().hex
+        _ai_job_request_path(job_id).write_text(
+            json.dumps(ai_payload, ensure_ascii=False), encoding="utf-8"
+        )
+        state = _write_ai_job_state(job_id, {
+            "status": "queued",
+            "progress": 5,
+            "message": "AI 任务已创建，等待执行",
+            "operation": operation,
+            "created_at": time.time(),
+            "started_at": None,
+            "finished_at": None,
+            "client_id": client_id,
+            "request_fingerprint": fingerprint,
+            "attempt": 0,
+            "max_attempts": AI_JOB_MAX_ATTEMPTS,
+        })
+    _start_ai_job(job_id, ai_payload)
+    return JSONResponse(state, status_code=202, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/pptx-report/ai-jobs/{job_id}")
+def get_ai_job(job_id: str):
+    state = _read_ai_job_state(job_id)
+    if state is None:
+        return JSONResponse({"error": {"message": "AI 任务不存在或已过期。"}}, status_code=404)
+    if state.get("status") in {"queued", "running"}:
+        stale = time.time() - float(state.get("updated_at") or 0) > (AI_JOB_TIMEOUT_SECONDS + 90)
+        if stale:
+            try:
+                payload = json.loads(_ai_job_request_path(job_id).read_text(encoding="utf-8"))
+                _write_ai_job_state(job_id, {
+                    "status": "queued",
+                    "progress": 5,
+                    "message": "检测到 AI 任务停滞，正在恢复",
+                })
+                _start_ai_job(job_id, payload, recovering=True)
+                state = _read_ai_job_state(job_id) or state
+            except (OSError, json.JSONDecodeError):
+                state = _write_ai_job_state(job_id, {
+                    "status": "lost",
+                    "progress": 0,
+                    "message": "AI 任务停滞且无法恢复，请重试。",
+                    "finished_at": time.time(),
+                })
+    response_payload = dict(state)
+    if state.get("status") == "ready":
+        try:
+            response_payload["result"] = json.loads(_ai_job_result_path(job_id).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            response_payload.update({
+                "status": "lost",
+                "progress": 0,
+                "message": "AI 结果文件已丢失，请重试。",
+            })
+    return JSONResponse(response_payload, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/pptx-report/ai-jobs/{job_id}/cancel")
+def cancel_ai_job(job_id: str):
+    state = _read_ai_job_state(job_id)
+    if state is None:
+        return JSONResponse({"error": {"message": "AI 任务不存在或已过期。"}}, status_code=404)
+    if state.get("status") in {"ready", "failed", "cancelled", "lost"}:
+        return JSONResponse(state, headers={"Cache-Control": "no-store"})
+    state = _write_ai_job_state(job_id, {
+        "status": "cancel_requested",
+        "message": "正在取消 AI 任务",
+    })
+    return JSONResponse(state, status_code=202, headers={"Cache-Control": "no-store"})
+
 @app.on_event("startup")
 def _startup_recover_jobs():
     """Recover incomplete jobs after service restart."""
     _recover_incomplete_jobs()
+    _recover_incomplete_ai_jobs()
 
 
 if __name__ == "__main__":

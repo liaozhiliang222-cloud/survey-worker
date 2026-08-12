@@ -9852,6 +9852,185 @@ function createAiClientRequestId() {
   return globalThis.crypto?.randomUUID?.() || ("ai-" + Date.now() + "-" + Math.random().toString(16).slice(2));
 }
 
+const AI_JOB_CACHE_KEY = "surveykit_ai_job_cache_v1";
+
+function readAiJobCache() {
+  try {
+    const value = JSON.parse(localStorage.getItem(AI_JOB_CACHE_KEY) || "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeAiJobCache(cache) {
+  try {
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+    const entries = Object.entries(cache || {})
+      .filter(([, item]) => Number(item?.updatedAt || 0) >= cutoff)
+      .slice(-40);
+    localStorage.setItem(AI_JOB_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch { /* 隐私模式或容量限制时不影响当前请求 */ }
+}
+
+function clearAiJobCacheOperations(prefix) {
+  const cache = readAiJobCache();
+  Object.keys(cache).forEach((key) => {
+    if (String(cache[key]?.operation || "").startsWith(prefix)) delete cache[key];
+  });
+  writeAiJobCache(cache);
+}
+
+function aiJobPayloadFingerprint(payload) {
+  const text = JSON.stringify(payload);
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${text.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function getAiJobClientId() {
+  const key = "surveykit_ai_job_client_id";
+  let value = "";
+  try {
+    value = localStorage.getItem(key) || "";
+  } catch { /* ignore */ }
+  if (!/^[A-Za-z0-9_.-]{8,128}$/.test(value)) {
+    value = `web-ai-${globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2)}`;
+    try { localStorage.setItem(key, value); } catch { /* ignore */ }
+  }
+  return value;
+}
+
+async function readAiJobApiError(response, fallback) {
+  const payload = await response.json().catch(() => ({}));
+  return payload?.error?.message || payload?.message || `${fallback}（${response.status}）`;
+}
+
+function aiProxyPayload(settings, messages, options = {}) {
+  const requestBody = {
+    model: settings.model,
+    messages,
+    temperature: options.temperature ?? 0.35,
+    max_tokens: options.maxTokens ?? 3500,
+  };
+  if (options.responseFormat === "json_object") {
+    requestBody.response_format = { type: "json_object" };
+  }
+  if (options.stream) requestBody.stream = true;
+  return {
+    provider: settings.provider,
+    url: settings.url,
+    apiKey: settings.apiKey,
+    taskTier: options.taskTier || "balanced",
+    body: requestBody,
+  };
+}
+
+function aiContentFromPayload(payload) {
+  const choice = payload?.choices?.[0] || {};
+  const message = choice.message || {};
+  const content = normalizeAiResponseContent(
+    message.content
+    || message.reasoning_content
+    || choice.text
+    || choice.delta?.content
+    || payload?.output_text
+    || payload?.response
+    || payload?.content
+    || ""
+  );
+  if (!content.trim()) {
+    const preview = JSON.stringify(payload).slice(0, 240);
+    throw new Error(`接口返回为空，请检查模型名称或供应商配置。返回摘要：${preview || "无内容"}`);
+  }
+  return content.trim();
+}
+
+function recordAiJobDiagnostics(state) {
+  const diagnostics = state?.diagnostics || {};
+  lastAiActualModel = diagnostics.model || "";
+  lastAiActualSource = diagnostics.source || "";
+  lastAiDiagnostics = Object.freeze({
+    requestId: diagnostics.request_id || "",
+    source: lastAiActualSource,
+    model: lastAiActualModel,
+    taskTier: diagnostics.task_tier || "",
+    durationMs: Number(diagnostics.duration_ms) || 0,
+    rotation: "durable-job",
+    fallbackUsed: Boolean(diagnostics.fallback_used),
+    attempts: diagnostics.attempt_sources || (state?.attempts || []).map((item) => item.source).filter(Boolean).join(","),
+    errorType: "",
+  });
+}
+
+async function callAiChatCompletionJob(settings, messages, options = {}) {
+  if (settings.apiKey || options.stream) {
+    return callAiChatCompletion(settings, messages, options);
+  }
+  const operation = String(options.operation || "structured_generation").slice(0, 80);
+  const payload = aiProxyPayload(settings, messages, { ...options, stream: false });
+  delete payload.apiKey;
+  const fingerprint = aiJobPayloadFingerprint(payload);
+  const cacheKey = `${operation}:${fingerprint}`;
+  const cache = readAiJobCache();
+  let record = cache[cacheKey];
+  let jobId = record?.jobId || "";
+  if (!jobId) {
+    const response = await fetch("/pptx-api/ai-jobs", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-SurveyKit-Client-ID": getAiJobClientId(),
+      },
+      cache: "no-store",
+      credentials: "same-origin",
+      body: JSON.stringify({ operation, payload }),
+    });
+    if (!response.ok) throw new Error(await readAiJobApiError(response, "创建 AI 后台任务失败"));
+    const state = await response.json();
+    jobId = state.job_id;
+    record = { jobId, operation, fingerprint, updatedAt: Date.now() };
+    cache[cacheKey] = record;
+    writeAiJobCache(cache);
+  }
+  for (let attempt = 0; attempt < 1800; attempt += 1) {
+    const response = await fetch(`/pptx-api/ai-jobs/${encodeURIComponent(jobId)}`, {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    if (response.status === 404) {
+      delete cache[cacheKey];
+      writeAiJobCache(cache);
+      throw new Error("AI 后台任务已过期，请重新提交。");
+    }
+    if (!response.ok) throw new Error(await readAiJobApiError(response, "读取 AI 后台任务失败"));
+    const state = await response.json();
+    record.updatedAt = Date.now();
+    record.status = state.status;
+    cache[cacheKey] = record;
+    writeAiJobCache(cache);
+    options.onJobProgress?.(state);
+    if (state.status === "ready") {
+      recordAiJobDiagnostics(state);
+      record.status = "ready";
+      record.updatedAt = Date.now();
+      cache[cacheKey] = record;
+      writeAiJobCache(cache);
+      return aiContentFromPayload(state.result || {});
+    }
+    if (["failed", "cancelled", "lost"].includes(state.status)) {
+      delete cache[cacheKey];
+      writeAiJobCache(cache);
+      throw new Error(state.message || "AI 后台任务失败");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 900));
+  }
+  throw new Error("AI 后台任务等待超时，请稍后重试。");
+}
+
 function recordAiDiagnostics(response, clientRequestId) {
   lastAiActualModel = response.headers.get("X-Actual-Model") || "";
   lastAiActualSource = response.headers.get("X-AI-Source") || "";
@@ -9881,16 +10060,7 @@ async function callAiChatCompletion(settings, messages, options = {}) {
   if (window.location.protocol === "file:") {
     throw new Error("AI 后端代理需要通过本地服务或线上地址访问，不能直接用 file:// 页面调用。请使用 npm run dev 打开本地服务，或访问已部署的网址。");
   }
-  const requestBody = {
-    model: settings.model,
-    messages,
-    temperature: options.temperature ?? 0.35,
-    max_tokens: options.maxTokens ?? 3500
-  };
-  if (options.responseFormat === "json_object") {
-    requestBody.response_format = { type: "json_object" };
-  }
-  if (options.stream) requestBody.stream = true;
+  const proxyPayload = aiProxyPayload(settings, messages, options);
   // 流式请求按“无数据时长”计时；持续返回内容时允许总耗时超过 timeoutMs。
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs ?? 360000;
@@ -9907,13 +10077,7 @@ async function callAiChatCompletion(settings, messages, options = {}) {
     headers: { "Content-Type": "application/json", "X-Request-ID": clientRequestId, "X-AI-Rotation-Key": clientRequestId },
     cache: "no-store",
     credentials: "same-origin",
-    body: JSON.stringify({
-      provider: settings.provider,
-      url: settings.url,
-      apiKey: settings.apiKey,
-      taskTier: options.taskTier || "balanced",
-      body: requestBody
-    }),
+    body: JSON.stringify(proxyPayload),
     signal: controller.signal
   }).catch((error) => {
     clearTimeout(timeout);
@@ -9950,23 +10114,7 @@ async function callAiChatCompletion(settings, messages, options = {}) {
     const message = payload?.error?.message || payload?.message || `接口返回 ${response.status}`;
     throw createAiProxyError(message, response, payload, clientRequestId);
   }
-  const choice = payload?.choices?.[0] || {};
-  const message = choice.message || {};
-  const content = normalizeAiResponseContent(
-    message.content ||
-    message.reasoning_content ||
-    choice.text ||
-    choice.delta?.content ||
-    payload.output_text ||
-    payload.response ||
-    payload.content ||
-    ""
-  );
-  if (!content.trim()) {
-    const preview = JSON.stringify(payload).slice(0, 240);
-    throw new Error(`接口返回为空，请检查模型名称或供应商配置。返回摘要：${preview || "无内容"}`);
-  }
-  return content.trim();
+  return aiContentFromPayload(payload);
 }
 
 function normalizeAiResponseContent(content) {
@@ -13227,6 +13375,13 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     let pptxGenerationRunning = false;
     let pptxGenerationAttempt = 0;
 
+    const resumableAiJobCount = Object.values(readAiJobCache())
+      .filter((item) => String(item?.operation || "").startsWith("report_narrative_"))
+      .length;
+    if (resumableAiJobCount && aiWriteStatus) {
+      aiWriteStatus.textContent = `检测到 ${resumableAiJobCount} 个可恢复的故事线阶段。重新选择原文件并点击生成后，将从后台任务继续。`;
+    }
+
     function currentPptxStatusElement() {
       const previewVisible = previewPanel && previewPanel.style.display !== "none";
       return previewVisible ? (confirmStatus || genStatus) : (genStatus || confirmStatus);
@@ -15958,7 +16113,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         "Use 3-6 chapters. Keep the entire answer concise.",
       ].join("\n");      let frameworkPayload;
       try {
-        frameworkPayload = aiPlanner.parseJsonObject(await callAiChatCompletion(settings, [
+        const frameworkOperation = "report_narrative_framework";
+        frameworkPayload = aiPlanner.parseJsonObject(await callAiChatCompletionJob(settings, [
           { role: "system", content: frameworkPrompt },
           {
             role: "user",
@@ -15978,12 +16134,22 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           responseFormat: "json_object",
           taskTier: "storyline",
           stream: false,
+          operation: frameworkOperation,
+          onJobProgress: (state) => {
+            const progressValue = 30 + Math.round((Number(state.progress) || 0) * 0.18);
+            setPptxProgress(progressValue, state.message || "后台正在生成章节框架", "AI 研究");
+            aiWriteStatus.textContent = `故事线阶段：${state.message || "后台正在生成章节框架"}。页面刷新后任务仍会继续。`;
+          },
         }));
       } catch (error) {
+        clearAiJobCacheOperations("report_narrative_framework");
         throw new Error(`章节框架阶段失败：${error?.message || error}`);
       }
       const rawChapters = Array.isArray(frameworkPayload.chapters) ? frameworkPayload.chapters : [];
-      if (rawChapters.length < 3 || rawChapters.length > 8) throw new Error("AI 未返回 3-8 个有效章节框架。");
+      if (rawChapters.length < 3 || rawChapters.length > 8) {
+        clearAiJobCacheOperations("report_narrative_framework");
+        throw new Error("AI 未返回 3-8 个有效章节框架。");
+      }
       const normalizeId = (value, fallback) => {
         const normalized = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_").replace(/[^a-z0-9_]/g, "");
         return /^[a-z][a-z0-9_]{1,63}$/.test(normalized) ? normalized : fallback;
@@ -16031,6 +16197,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const assignmentBatches = [];
       for (let index = 0; index < compactPages.length; index += 4) assignmentBatches.push(compactPages.slice(index, index + 4));
       async function requestAssignmentBatch(pages, batchIndex, allowSplit = true) {
+        const assignmentOperation = `report_narrative_assignment_${batchIndex + 1}_${pages.map((page) => page.page_idx).join("_")}`;
         const buildMessages = () => [
           { role: "system", content: assignmentPrompt },
           {
@@ -16061,15 +16228,20 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
           try {
             const isFinalFallback = attempt === maxAttempts;
-            return aiPlanner.parseJsonObject(await callAiChatCompletion(settings, buildMessages(), {
+            return aiPlanner.parseJsonObject(await callAiChatCompletionJob(settings, buildMessages(), {
               maxTokens: 650,
               timeoutMs: 65000,
               temperature: 0,
               responseFormat: "json_object",
               taskTier: isFinalFallback ? "fast" : "storyline",
               stream: false,
+              operation: assignmentOperation,
+              onJobProgress: (state) => {
+                aiWriteStatus.textContent = `故事线阶段：${state.message || `正在处理第 ${batchIndex + 1} 批页面归属`}。页面刷新后任务仍会继续。`;
+              },
             }));
           } catch (error) {
+            clearAiJobCacheOperations(assignmentOperation);
             lastError = error;
             const message = String(error?.message || error);
             if (attempt >= maxAttempts || !transientPattern.test(message)) break;
@@ -16538,6 +16710,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
 
       const requestPages = async (targetPages, phase, requestIndex) => {
         const repairMode = phase === "repair";
+        const slideBriefOperation = `slide_brief_${phase}_${targetPages.map((page) => pptxPageStableId(page)).join("_")}`;
         const firstPageIndex = contextPages.findIndex(
           (page) => pptxPageStableId(page) === pptxPageStableId(targetPages[0])
         );
@@ -16551,7 +16724,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const userContent = JSON.stringify(batchInput);
         inputCharacters += userContent.length;
         try {
-          const output = await callAiChatCompletion(settings, [
+          const output = await callAiChatCompletionJob(settings, [
             { role: "system", content: aiPlanner.SLIDE_BRIEF_SYSTEM_PROMPT },
             { role: "user", content: userContent },
           ], {
@@ -16563,6 +16736,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             responseFormat: "json_object",
             taskTier: "fast",
             stream: false,
+            operation: slideBriefOperation,
+            onJobProgress: (state) => {
+              aiWriteStatus.textContent = `页面蓝图：${state.message || "后台正在生成"}。页面刷新后重新选择原文件可继续。`;
+            },
           });
           return {
             pages: aiPlanner.validatePageOutput(
@@ -16573,6 +16750,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             target_pages: targetPages,
           };
         } catch (error) {
+          clearAiJobCacheOperations(slideBriefOperation);
           const errorType = classifyFailure(error);
           console.warn(`SlideBrief ${phase} ${requestIndex + 1}:`, error);
           return {
@@ -17066,6 +17244,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         aiWriteStatus.textContent = message;
         if (confirmStatus) confirmStatus.textContent = message;
         setPptxProgress(100, "已按故事线重构报告蓝图", "AI 蓝图");
+        clearAiJobCacheOperations("report_narrative_");
+        clearAiJobCacheOperations("slide_brief_");
         if (narrativePanel) narrativePanel.style.display = "none";
       } catch (error) {
         console.warn("PPT SlideBrief AI fallback:", error);
@@ -17294,7 +17474,11 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     });
     confirmBtn && confirmBtn.addEventListener("click", () => doGeneratePptx());
     aiWriteBtn && aiWriteBtn.addEventListener("click", () => runSelectedPptxAiWorkflow());
-    narrativeRegenerateBtn?.addEventListener("click", () => generatePptxAiReport());
+    narrativeRegenerateBtn?.addEventListener("click", () => {
+      clearAiJobCacheOperations("report_narrative_");
+      clearAiJobCacheOperations("slide_brief_");
+      generatePptxAiReport();
+    });
     narrativeContent?.addEventListener("change", (event) => {
       const input = event.target?.closest?.("input[data-narrative-dimension]");
       if (!input) return;
