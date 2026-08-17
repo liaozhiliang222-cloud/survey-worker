@@ -293,6 +293,186 @@ def _parse_spss_pivot_rows(rows: list) -> tuple[list, list[dict]] | None:
         })
 
     return questions, groups
+
+
+def _parse_flat_question_rows(rows: list) -> tuple[list, list[dict]] | None:
+    """Parse flat crosstabs with one segment header row and inline question rows.
+
+    A common export shape is::
+
+        题目/选项 | 总体 | C0总体 | C0-高意向 | ...
+        有效样本量 | n=100 | n=40 | n=20 | ...
+        Q1. 题目文本
+        选项一    | 0.4  | 0.5  | 0.6  | ...
+
+    Unlike CAPTION and SPSS pivot exports, question rows do not carry a
+    dedicated marker. Detecting the header/base pair first keeps the fallback
+    conservative and prevents ordinary data sheets from being misclassified.
+    """
+    if len(rows) < 4:
+        return None
+
+    def cell_text(value) -> str:
+        return "" if value is None else _norm(value)
+
+    def numeric_value(value):
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = cell_text(value).replace(",", "")
+        if not text or text in {"-", "—", "–"}:
+            return None
+        text = re.sub(r"^[nN]\s*=\s*", "", text)
+        try:
+            if text.endswith("%"):
+                return float(text[:-1]) / 100
+            return float(text)
+        except (TypeError, ValueError):
+            return None
+
+    header_row_idx = None
+    base_row_idx = None
+    for ri in range(min(15, len(rows) - 1)):
+        row = rows[ri]
+        next_row = rows[ri + 1]
+        first = cell_text(row[0]) if row else ""
+        next_first = cell_text(next_row[0]) if next_row else ""
+        headers = [cell_text(value) for value in row[1:] if cell_text(value)]
+        base_values = [numeric_value(value) for value in next_row[1:]]
+        has_question_option_header = (
+            ("题目" in first and "选项" in first)
+            or first.lower() in {"question/option", "question / option"}
+        )
+        has_base_row = (
+            "样本" in next_first
+            or next_first.upper() == "BASE"
+            or sum(value is not None for value in base_values) >= 2
+        )
+        if len(headers) >= 2 and has_question_option_header and has_base_row:
+            header_row_idx = ri
+            base_row_idx = ri + 1
+            break
+
+    if header_row_idx is None or base_row_idx is None:
+        return None
+
+    header_row = rows[header_row_idx]
+    segment_columns = [
+        ("Total" if cell_text(header_row[ci]).lower() in {
+            str(alias).lower() for alias in TOTAL_ALIASES
+        } else cell_text(header_row[ci]), ci)
+        for ci in range(1, len(header_row))
+        if cell_text(header_row[ci])
+    ]
+    if len(segment_columns) < 2:
+        return None
+
+    base_row = rows[base_row_idx]
+    base_by_col = {
+        ci: numeric_value(base_row[ci])
+        for _, ci in segment_columns
+        if ci < len(base_row) and numeric_value(base_row[ci]) is not None
+    }
+
+    question_pattern = re.compile(
+        r"^([A-Za-z]+\d+(?:[_-]\d+)*(?:\.\d+)*)[.．]\s*(.+)$"
+    )
+    starts = []
+    for ri in range(base_row_idx + 1, len(rows)):
+        row = rows[ri]
+        first = cell_text(row[0]) if row else ""
+        match = question_pattern.match(first)
+        if not match:
+            continue
+        trailing_cells = row[1:] if len(row) > 1 else []
+        if any(numeric_value(value) is not None for value in trailing_cells):
+            continue
+        starts.append((ri, match))
+    if not starts:
+        return None
+
+    questions = []
+    for question_idx, (start, match) in enumerate(starts):
+        end = starts[question_idx + 1][0] if question_idx + 1 < len(starts) else len(rows)
+        code = match.group(1)
+        title = match.group(2).strip()
+        title = re.sub(rf"^{re.escape(code)}[.．]\s*", "", title).strip()
+
+        categories = []
+        data_by_col = {ci: [] for _, ci in segment_columns}
+        for ri in range(start + 1, end):
+            row = rows[ri]
+            category = cell_text(row[0]) if row else ""
+            if not category:
+                continue
+            values = {
+                ci: numeric_value(row[ci]) if ci < len(row) else None
+                for _, ci in segment_columns
+            }
+            if not any(value is not None for value in values.values()):
+                continue
+            categories.append(
+                re.sub(r"\s*[（(][^（）()]*[）)]\s*$", "", category).strip()
+            )
+            for _, ci in segment_columns:
+                data_by_col[ci].append(values[ci])
+
+        if not categories:
+            continue
+
+        segments = [name for name, _ in segment_columns]
+        data = {name: data_by_col[ci] for name, ci in segment_columns}
+        base = {
+            name: (
+                int(base_by_col[ci])
+                if ci in base_by_col and float(base_by_col[ci]).is_integer()
+                else base_by_col.get(ci)
+            )
+            for name, ci in segment_columns
+        }
+        questions.append({
+            "code": code,
+            "title": title,
+            "categories": categories,
+            "segments": segments,
+            "seg_cols": segment_columns,
+            "data": data,
+            "data_by_col": data_by_col,
+            "stats": {},
+            "stats_by_col": {},
+            "base": base,
+            "base_by_col": base_by_col,
+            "part": "",
+        })
+
+    if not questions:
+        return None
+
+    groups = []
+    group_lookup = {}
+    for name, ci in segment_columns:
+        if name.lower() in {str(alias).lower() for alias in TOTAL_ALIASES}:
+            continue
+        match = re.match(r"^([A-Za-z]+\d+(?:_\d+)*)(?:-|总体|整体|总计|合计)", name)
+        group_name = match.group(1) if match else "全部维度"
+        if group_name not in group_lookup:
+            group_lookup[group_name] = {
+                "name": group_name,
+                "segments": [],
+                "cols": [],
+            }
+            groups.append(group_lookup[group_name])
+        group_lookup[group_name]["segments"].append(name)
+        group_lookup[group_name]["cols"].append(ci)
+
+    if not groups:
+        groups = [{
+            "name": "全部维度",
+            "segments": [name for name, _ in segment_columns if name != "Total"],
+            "cols": [ci for name, ci in segment_columns if name != "Total"],
+        }]
+    return questions, groups
+
+
 def parse_crosstab(path: str, sheet_name: str = None) -> list:
     """解析问卷交叉表导出为题目列表。
 
@@ -348,6 +528,11 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
     spss_pivot = _parse_spss_pivot_rows(rows)
     if spss_pivot is not None:
         questions, _cached_dimension_groups = spss_pivot
+        return questions
+
+    flat_crosstab = _parse_flat_question_rows(rows)
+    if flat_crosstab is not None:
+        questions, _cached_dimension_groups = flat_crosstab
         return questions
 
     for ri, row in enumerate(rows):

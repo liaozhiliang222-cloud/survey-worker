@@ -85,6 +85,38 @@ def main() -> None:
         assert pivot_age[0]["segments"] == ["Total", "18-24岁", "25-34岁"]
         assert pivot_age[0]["data"]["18-24岁"] == [0.69, 0.31]
         assert pivot_age[0]["base"]["25-34岁"] == 55
+
+        flat_path = Path(temp_dir) / "flat-question-crosstab.xlsx"
+        flat_workbook = Workbook()
+        flat_sheet = flat_workbook.active
+        flat_sheet.title = "交叉表"
+        flat_rows = [
+            ["题目/选项", "总体", "C0总体", "C0-高意向", "C1总体", "C1-已购买"],
+            ["有效样本量", "n=100", "n=40", "n=20", "n=60", "n=30"],
+            ["Q1. Q1.购买意愿【单选】", None, None, None, None, None],
+            ["愿意", 0.7, 0.8, 0.9, 0.6, 0.7],
+            ["不愿意", 0.3, 0.2, 0.1, 0.4, 0.3],
+            ["Q2_1. 使用场景【多选】", None, None, None, None, None],
+            ["家庭", 0.6, 0.7, 0.8, 0.5, 0.6],
+            ["户外", 0.4, 0.3, 0.2, 0.5, 0.4],
+        ]
+        for row in flat_rows:
+            flat_sheet.append(row)
+        flat_workbook.save(flat_path)
+
+        flat_questions = parse_crosstab(str(flat_path))
+        assert len(flat_questions) == 2
+        assert flat_questions[0]["code"] == "Q1"
+        assert flat_questions[0]["title"] == "购买意愿【单选】"
+        assert flat_questions[0]["segments"] == [
+            "Total", "C0总体", "C0-高意向", "C1总体", "C1-已购买",
+        ]
+        assert flat_questions[0]["base"]["Total"] == 100
+        assert flat_questions[1]["data"]["C1-已购买"] == [0.6, 0.4]
+        flat_groups = build_jd_report._cached_dimension_groups
+        assert [group["name"] for group in flat_groups] == ["C0", "C1"]
+        flat_c0 = apply_dimension(flat_questions, flat_groups, "C0")
+        assert flat_c0[0]["segments"] == ["Total", "C0总体", "C0-高意向"]
     print("crosstab parser smoke passed")
 
 

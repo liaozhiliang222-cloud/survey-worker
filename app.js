@@ -13120,12 +13120,6 @@ function renderAiReportImportState(text, filename) {
 function detectAiReportFields() {
   const rawText = document.querySelector("#aiReportData").value;
 
-  return sheets;
-}
-
-async function xlsxToDelimitedTableText(arrayBuffer) {
-  const sheets = await xlsxToWorkbookSheets(arrayBuffer);
-
   // --- Crosstab format detection ---
   if (rawText.startsWith("[CROSSTAB]")) {
     const crosstabText = rawText.slice("[CROSSTAB]".length).trim();
