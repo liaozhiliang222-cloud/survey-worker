@@ -87,6 +87,42 @@ NoNewPrivileges=true
 WantedBy=multi-user.target
 EOF
 
+CERT_DIR="/etc/letsencrypt/live/${SERVER_NAME}"
+if [[ -f "${CERT_DIR}/fullchain.pem" && -f "${CERT_DIR}/privkey.pem" ]]; then
+cat > "/etc/nginx/sites-available/${SERVICE_NAME}" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${SERVER_NAME};
+
+    return 308 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${SERVER_NAME};
+
+    ssl_certificate ${CERT_DIR}/fullchain.pem;
+    ssl_certificate_key ${CERT_DIR}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 26m;
+    proxy_connect_timeout 30s;
+    proxy_send_timeout 180s;
+    proxy_read_timeout 180s;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+else
 cat > "/etc/nginx/sites-available/${SERVICE_NAME}" <<EOF
 server {
     listen 80;
@@ -108,6 +144,7 @@ server {
     }
 }
 EOF
+fi
 
 ln -sfn "/etc/nginx/sites-available/${SERVICE_NAME}" "/etc/nginx/sites-enabled/${SERVICE_NAME}"
 rm -f /etc/nginx/sites-enabled/default
@@ -121,10 +158,25 @@ systemctl reload nginx
 
 echo
 echo "Local API check:"
-curl --fail --silent --show-error http://127.0.0.1:8000/healthz
+api_ready=false
+for attempt in $(seq 1 20); do
+  if curl --fail --silent --show-error http://127.0.0.1:8000/healthz; then
+    api_ready=true
+    break
+  fi
+  sleep 1
+done
+if [[ "${api_ready}" != "true" ]]; then
+  echo "PPTX API did not become ready within 20 seconds."
+  exit 1
+fi
 echo
 echo "Nginx check:"
-curl --fail --silent --show-error -H "Host: ${SERVER_NAME}" http://127.0.0.1/healthz
+if [[ -f "${CERT_DIR}/fullchain.pem" && -f "${CERT_DIR}/privkey.pem" ]]; then
+  curl --fail --silent --show-error --resolve "${SERVER_NAME}:443:127.0.0.1" "https://${SERVER_NAME}/healthz"
+else
+  curl --fail --silent --show-error -H "Host: ${SERVER_NAME}" http://127.0.0.1/healthz
+fi
 echo
 echo "Deployment completed."
 echo "Release: ${RELEASE_ID} (${SOURCE_REVISION})"
