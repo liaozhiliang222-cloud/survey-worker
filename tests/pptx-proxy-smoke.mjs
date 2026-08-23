@@ -15,6 +15,11 @@ function listen(server) {
 const backendRequests = [];
 const backend = http.createServer((req, res) => {
   backendRequests.push(req.url);
+  if (req.url.startsWith("/healthz")) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, service: "pptx-report", path: req.url }));
+    return;
+  }
   if (req.url.includes("/download")) {
     res.writeHead(200, {
       "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -44,6 +49,13 @@ const proxy = http.createServer(handler);
 const proxyPort = await listen(proxy);
 
 try {
+  const health = await fetch(`http://127.0.0.1:${proxyPort}/pptx-api/healthz`);
+  assert.equal(health.status, 200);
+  const healthPayload = await health.json();
+  assert.equal(healthPayload.service, "pptx-report");
+  assert.equal(healthPayload.proxy.service, "surveykit-pptx-proxy");
+  assert.equal(healthPayload.proxy.runtime, "node");
+
   const preview = await fetch(`http://127.0.0.1:${proxyPort}/pptx-api/preview?title=module`, {
     method: "POST",
     headers: { "Content-Type": "application/octet-stream" },
@@ -66,7 +78,8 @@ try {
   const timedOut = await fetch(`http://127.0.0.1:${proxyPort}/pptx-api/slow`);
   assert.equal(timedOut.status, 502);
   assert.match((await timedOut.json()).error.message, /超时/);
-  assert.deepEqual(backendRequests.slice(0, 3), [
+  assert.deepEqual(backendRequests.slice(0, 4), [
+    "/healthz",
     "/api/pptx-report/preview?title=module",
     "/api/pptx-report/jobs/abc/download?delete_after=true",
     "/api/pptx-report/slow",

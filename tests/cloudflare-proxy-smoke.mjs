@@ -3,10 +3,19 @@ import fs from "node:fs/promises";
 
 const source = await fs.readFile(new URL("../functions/pptx-api/_proxy.js", import.meta.url), "utf8");
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
-const { proxyToBackend } = await import(moduleUrl);
+const { proxyToBackend, resolveBackend } = await import(moduleUrl);
 const originalFetch = globalThis.fetch;
 
 try {
+  assert.equal(
+    resolveBackend({ PPTX_BACKEND_URL: "http://backend.example.com/" }),
+    "https://backend.example.com",
+  );
+  assert.equal(
+    resolveBackend({ PPTX_BACKEND_URL: "http://127.0.0.1:8000/" }),
+    "http://127.0.0.1:8000",
+  );
+
   let fetchCalls = 0;
   globalThis.fetch = async () => {
     fetchCalls += 1;
@@ -46,6 +55,42 @@ try {
   assert.equal(captured.options.method, "POST");
   assert.equal(captured.options.headers.get("x-surveykit-proxy"), "cloudflare-pages");
   assert.equal(captured.options.headers.get("x-project-id"), "project-1");
+
+  globalThis.fetch = async (target) => {
+    captured = { target: String(target) };
+    return new Response(JSON.stringify({
+      ok: true,
+      service: "pptx-report",
+      release: { version: "backend-1", revision: "abc" },
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  const health = await proxyToBackend(
+    new Request("https://surveykit.cc/pptx-api/healthz"),
+    {
+      PPTX_BACKEND_URL: "http://backend.example.com/",
+      SURVEYKIT_RELEASE: "web-1",
+      SURVEYKIT_COMMIT: "def",
+    },
+  );
+  assert.equal(health.status, 200);
+  assert.equal(captured.target, "https://backend.example.com/healthz");
+  const healthPayload = await health.json();
+  assert.equal(healthPayload.service, "pptx-report");
+  assert.equal(healthPayload.proxy.service, "surveykit-pptx-proxy");
+  assert.equal(healthPayload.proxy.backend_protocol, "https");
+  assert.equal(healthPayload.proxy.release.version, "web-1");
+
+  globalThis.fetch = async () => new Response("redirect", {
+    status: 301,
+    headers: { Location: "https://other.example.com/healthz" },
+  });
+  const redirected = await proxyToBackend(
+    new Request("https://surveykit.cc/pptx-api/healthz"),
+    { PPTX_BACKEND_URL: "https://backend.example.com" },
+  );
+  assert.equal(redirected.status, 502);
+  assert.match((await redirected.json()).error.message, /最终 HTTPS 地址/);
+
   globalThis.fetch = async () => new Response(new ReadableStream({
     start(controller) {
       controller.enqueue(new TextEncoder().encode("PK-cloudflare-"));

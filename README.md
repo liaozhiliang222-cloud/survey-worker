@@ -14,6 +14,7 @@ npm run dev
 
 - `PORT`：本地 Web 端口。
 - `PPTX_BACKEND_URL`：PPTX Python 服务地址，默认 `http://127.0.0.1:8000`。
+- `SURVEYKIT_RELEASE` / `SURVEYKIT_COMMIT`：发布编号与 Git revision，会暴露在健康接口中。
 - `PPTX_PROXY_TIMEOUT_MS`：PPTX 代理超时毫秒数，默认 120000，可配置范围 1000–300000。
 - `PPTX_PROXY_MAX_BODY_BYTES`：本地 PPTX 代理请求体上限，默认 30 MiB。
 - `AI_PROXY_MAX_BODY_BYTES`：本地 AI 代理请求体上限，默认 1 MiB。
@@ -55,5 +56,7 @@ Python 测试生成物位于 `tests/output/`，并已排除在版本控制之外
 ## 部署配置
 
 Cloudflare Pages 必须显式配置 `PPTX_BACKEND_URL`，未配置时代理返回 503，不再回退到代码内置生产地址。生产环境建议使用 HTTPS 后端域名，并通过 `/pptx-api/healthz` 验证代理与 Python 服务的完整链路。
+
+正式发布、生产验证与后端回滚步骤见 [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md)。
 
 `.env.example` 仅提供变量名称和本地默认值，不应写入真实密钥。

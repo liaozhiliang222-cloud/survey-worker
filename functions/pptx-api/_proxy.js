@@ -16,6 +16,14 @@ function jsonResponse(payload, status = 200, extraHeaders = {}) {
   });
 }
 
+function isPrivateHttpHost(hostname) {
+  const host = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+  if (["localhost", "127.0.0.1", "::1"].includes(host) || host.endsWith(".local")) return true;
+  if (/^10\./.test(host) || /^192\.168\./.test(host)) return true;
+  const private172 = host.match(/^172\.(\d{1,3})\./);
+  return Boolean(private172 && Number(private172[1]) >= 16 && Number(private172[1]) <= 31);
+}
+
 function resolveBackend(env) {
   const raw = env && typeof env[BACKEND_ENV] === "string" ? env[BACKEND_ENV].trim() : "";
   if (!raw) return "";
@@ -26,7 +34,10 @@ function resolveBackend(env) {
   if (url.search || url.hash) {
     throw new Error("query strings and fragments are not allowed in the backend URL");
   }
-  return raw.replace(/\/+$/, "");
+  if (url.protocol === "http:" && !isPrivateHttpHost(url.hostname)) {
+    url.protocol = "https:";
+  }
+  return url.toString().replace(/\/+$/, "");
 }
 
 function proxyTimeoutMs(env) {
@@ -62,10 +73,22 @@ async function upstreamError(upstream) {
   } catch {
     if (text) message = text.slice(0, 400);
   }
-  if (upstream.status === 403) {
+  let responseStatus = upstream.status;
+  if (upstream.status >= 300 && upstream.status < 400) {
+    responseStatus = 502;
+    message = "PPTX 后端地址仍发生重定向。请将 PPTX_BACKEND_URL 配置为最终 HTTPS 地址。";
+  } else if (upstream.status === 403) {
     message = "PPTX 后端拒绝访问。请检查后端访问策略和 PPTX_BACKEND_URL 配置。";
   }
-  return jsonResponse({ error: { message, status: upstream.status } }, upstream.status);
+  return jsonResponse({ error: { message, status: upstream.status } }, responseStatus);
+}
+
+function proxyReleaseInfo(env = {}) {
+  return {
+    version: String(env.SURVEYKIT_RELEASE || "unknown"),
+    revision: String(env.SURVEYKIT_COMMIT || env.CF_PAGES_COMMIT_SHA || ""),
+    deployed_at: String(env.SURVEYKIT_DEPLOYED_AT || ""),
+  };
 }
 
 export async function proxyToBackend(request, env) {
@@ -110,11 +133,31 @@ export async function proxyToBackend(request, env) {
       redirect: "manual",
     });
     if (!upstream.ok) return upstreamError(upstream);
+    if (backendPath === "/healthz") {
+      const backendHealth = await upstream.json().catch(() => null);
+      if (!backendHealth || typeof backendHealth !== "object") {
+        return jsonResponse({ error: { message: "PPTX 后端健康响应不是有效 JSON。" } }, 502);
+      }
+      return jsonResponse({
+        ...backendHealth,
+        proxy: {
+          ok: true,
+          service: "surveykit-pptx-proxy",
+          release: proxyReleaseInfo(env),
+          backend_protocol: new URL(backend).protocol.replace(":", ""),
+        },
+      }, 200, {
+        "X-SurveyKit-Service": "surveykit-pptx-proxy",
+        "X-SurveyKit-Release": String(env.SURVEYKIT_RELEASE || "unknown"),
+      });
+    }
     return new Response(upstream.body, {
       status: upstream.status,
       headers: {
         ...Object.fromEntries(upstream.headers.entries()),
         "Access-Control-Allow-Origin": "*",
+        "X-SurveyKit-Service": "surveykit-pptx-proxy",
+        "X-SurveyKit-Release": String(env.SURVEYKIT_RELEASE || "unknown"),
       },
     });
   } catch (error) {
@@ -126,3 +169,5 @@ export async function proxyToBackend(request, env) {
     clearTimeout(timeout);
   }
 }
+
+export { resolveBackend };

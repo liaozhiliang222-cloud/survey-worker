@@ -2,8 +2,21 @@
 set -euo pipefail
 
 APP_DIR="/opt/surveykit-ppt"
+BACKUP_DIR="${BACKUP_DIR:-/opt/surveykit-ppt-backups}"
 SERVICE_NAME="surveykit-ppt"
 SERVER_NAME="${SERVER_NAME:-ppt-api.surveykit.cc}"
+RELEASE_ID="${SURVEYKIT_RELEASE:-$(date -u +%Y%m%dT%H%M%SZ)}"
+SOURCE_REVISION="${SURVEYKIT_COMMIT:-unknown}"
+DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+if [[ ! "${RELEASE_ID}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "SURVEYKIT_RELEASE may only contain letters, digits, dot, underscore and hyphen."
+  exit 1
+fi
+if [[ ! "${SOURCE_REVISION}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "SURVEYKIT_COMMIT may only contain letters, digits, dot, underscore and hyphen."
+  exit 1
+fi
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Please run this installer as root."
@@ -19,9 +32,32 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y python3 python3-venv python3-pip nginx curl libreoffice-impress
 
-mkdir -p "${APP_DIR}"
+mkdir -p "${APP_DIR}" "${BACKUP_DIR}"
+BACKUP_PATH=""
+if [[ -d "${APP_DIR}/deploy" && -d "${APP_DIR}/pptx_report" ]]; then
+  BACKUP_PATH="${BACKUP_DIR}/$(date -u +%Y%m%dT%H%M%SZ)-before-${RELEASE_ID}.tar.gz"
+  backup_items=(deploy pptx_report)
+  if [[ -f "${APP_DIR}/RELEASE.json" ]]; then
+    backup_items+=(RELEASE.json)
+  fi
+  tar -C "${APP_DIR}" -czf "${BACKUP_PATH}" "${backup_items[@]}"
+  mapfile -t old_backups < <(find "${BACKUP_DIR}" -maxdepth 1 -type f -name '*.tar.gz' -printf '%T@ %p\n' | sort -rn | tail -n +6 | cut -d' ' -f2-)
+  if (( ${#old_backups[@]} )); then
+    rm -f -- "${old_backups[@]}"
+  fi
+fi
+
+rm -rf "${APP_DIR}/deploy" "${APP_DIR}/pptx_report"
 cp -a deploy "${APP_DIR}/"
 cp -a pptx_report "${APP_DIR}/"
+
+cat > "${APP_DIR}/RELEASE.json" <<EOF
+{
+  "version": "${RELEASE_ID}",
+  "revision": "${SOURCE_REVISION}",
+  "deployed_at": "${DEPLOYED_AT}"
+}
+EOF
 
 python3 -m venv "${APP_DIR}/venv"
 "${APP_DIR}/venv/bin/pip" install --upgrade pip wheel
@@ -39,6 +75,9 @@ User=root
 WorkingDirectory=${APP_DIR}/deploy
 Environment=PYTHONUTF8=1
 Environment=PYTHONUNBUFFERED=1
+Environment=SURVEYKIT_RELEASE=${RELEASE_ID}
+Environment=SURVEYKIT_COMMIT=${SOURCE_REVISION}
+Environment=SURVEYKIT_DEPLOYED_AT=${DEPLOYED_AT}
 ExecStart=${APP_DIR}/venv/bin/python -m uvicorn aliyun_api:app --host 127.0.0.1 --port 8000 --workers 2 --timeout-keep-alive 120
 Restart=always
 RestartSec=3
@@ -74,7 +113,8 @@ ln -sfn "/etc/nginx/sites-available/${SERVICE_NAME}" "/etc/nginx/sites-enabled/$
 rm -f /etc/nginx/sites-enabled/default
 
 systemctl daemon-reload
-systemctl enable --now "${SERVICE_NAME}"
+systemctl enable "${SERVICE_NAME}"
+systemctl restart "${SERVICE_NAME}"
 nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
@@ -87,3 +127,7 @@ echo "Nginx check:"
 curl --fail --silent --show-error -H "Host: ${SERVER_NAME}" http://127.0.0.1/healthz
 echo
 echo "Deployment completed."
+echo "Release: ${RELEASE_ID} (${SOURCE_REVISION})"
+if [[ -n "${BACKUP_PATH}" ]]; then
+  echo "Rollback backup: ${BACKUP_PATH}"
+fi

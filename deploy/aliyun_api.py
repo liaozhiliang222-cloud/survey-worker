@@ -99,6 +99,23 @@ TEMPLATE_TTL_SECONDS = 24 * 60 * 60
 REPORT_BLUEPRINT_STORE = ReportBlueprintStore()
 
 
+def _release_info() -> dict:
+    metadata = {}
+    metadata_path = PARENT / "RELEASE.json"
+    if metadata_path.exists():
+        try:
+            parsed = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                metadata = parsed
+        except (OSError, json.JSONDecodeError):
+            metadata = {}
+    return {
+        "version": str(os.environ.get("SURVEYKIT_RELEASE") or metadata.get("version") or "unknown"),
+        "revision": str(os.environ.get("SURVEYKIT_COMMIT") or metadata.get("revision") or ""),
+        "deployed_at": str(os.environ.get("SURVEYKIT_DEPLOYED_AT") or metadata.get("deployed_at") or ""),
+    }
+
+
 def _blueprint_slides(page_config: dict | None) -> list[dict]:
     slides = json.loads(json.dumps(list((page_config or {}).get("pages") or [])))
     seen = set()
@@ -443,16 +460,27 @@ async def update_template_profile(template_id: str, request: Request):
 
 @app.get("/healthz")
 def healthz():
-    return {
+    release = _release_info()
+    return JSONResponse({
         "ok": True,
         "service": "pptx-report",
+        "instance_id": SERVICE_INSTANCE_ID,
+        "release": release,
         "capabilities": {
             "pptx_jobs": True,
             "ai_jobs": True,
             "ai_job_max_attempts": AI_JOB_MAX_ATTEMPTS,
             "ai_job_timeout_seconds": AI_JOB_TIMEOUT_SECONDS,
         },
-    }
+        "limits": {
+            "max_upload_bytes": MAX_UPLOAD_BYTES,
+            "max_concurrent_pptx_jobs": MAX_CONCURRENT_JOBS,
+        },
+    }, headers={
+        "Cache-Control": "no-store",
+        "X-SurveyKit-Service": "pptx-report",
+        "X-SurveyKit-Release": release["version"],
+    })
 
 
 @app.post("/api/pptx-report/model-chart")

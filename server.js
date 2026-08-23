@@ -5,6 +5,7 @@ const { configuredBodyLimit } = require("./lib/request-body");
 const { sendJson } = require("./lib/http-response");
 const { createPptxProxyHandler } = require("./lib/pptx-proxy");
 const { createAiProxyHandler } = require("./lib/ai-proxy");
+const { releaseInfo } = require("./lib/release-info");
 
 const root = __dirname;
 const port = Number(process.env.PORT || 4281);
@@ -40,7 +41,17 @@ http
       sendJson(res, 200, {
         ok: true,
         service: "surveykit-web",
-        pptx_backend_configured: Boolean(process.env.PPTX_BACKEND_URL)
+        runtime: "node",
+        release: releaseInfo(),
+        dependencies: {
+          pptx_backend_configured: Boolean(process.env.PPTX_BACKEND_URL),
+          ai_proxy_configured: Boolean(
+            process.env.SURVEYKIT_API_KEY
+            || process.env.SENSENOVA_API_KEY
+            || process.env.DASHSCOPE_API_KEY
+            || process.env.BAILIAN_API_KEY
+          )
+        }
       });
       return;
     }

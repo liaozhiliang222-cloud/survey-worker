@@ -27,6 +27,14 @@ const DEFAULT_BUILTIN_MODELS = [
   "glm-5.1",
   "qwen3.5-plus",
 ];
+
+function releaseInfo(env = {}) {
+  return {
+    version: String(env.SURVEYKIT_RELEASE || "unknown"),
+    revision: String(env.SURVEYKIT_COMMIT || env.CF_PAGES_COMMIT_SHA || ""),
+    deployed_at: String(env.SURVEYKIT_DEPLOYED_AT || ""),
+  };
+}
 const TASK_TIER_MODEL_PRIORITY = {
   fast: ["deepseek-v4-flash", "qwen3.6-plus"],
   storyline: ["deepseek-v4-flash"],
@@ -419,6 +427,7 @@ export async function onRequest({ request, env }) {
     return json({
       ok: true,
       service: "ai-proxy",
+      release: releaseInfo(env),
       rotation_mode: String(env?.AI_ROTATION_MODE || "deterministic").toLowerCase() === "off"
         ? "off"
         : "deterministic",

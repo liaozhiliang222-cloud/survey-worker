@@ -66,7 +66,11 @@ const backendRequests = [];
 const backend = http.createServer((req, res) => {
   backendRequests.push({ method: req.method, url: req.url });
   res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ ok: true, path: req.url }));
+  res.end(JSON.stringify({
+    ok: true,
+    service: req.url.startsWith("/healthz") ? "pptx-report" : "fixture-backend",
+    path: req.url,
+  }));
 });
 
 const backendPort = await listen(backend);
@@ -89,15 +93,19 @@ try {
 
   const appHealth = await fetch(`http://127.0.0.1:${appPort}/healthz`);
   assert.equal(appHealth.status, 200);
-  assert.deepEqual(await appHealth.json(), {
-    ok: true,
-    service: "surveykit-web",
-    pptx_backend_configured: true
-  });
+  const appHealthPayload = await appHealth.json();
+  assert.equal(appHealthPayload.ok, true);
+  assert.equal(appHealthPayload.service, "surveykit-web");
+  assert.equal(appHealthPayload.runtime, "node");
+  assert.equal(appHealthPayload.release.version, "1.0.0");
+  assert.equal(appHealthPayload.dependencies.pptx_backend_configured, true);
 
   const backendHealth = await fetch(`http://127.0.0.1:${appPort}/pptx-api/healthz?probe=1`);
   assert.equal(backendHealth.status, 200);
-  assert.equal((await backendHealth.json()).path, "/healthz?probe=1");
+  const backendHealthPayload = await backendHealth.json();
+  assert.equal(backendHealthPayload.path, "/healthz?probe=1");
+  assert.equal(backendHealthPayload.proxy.service, "surveykit-pptx-proxy");
+  assert.equal(backendHealthPayload.proxy.runtime, "node");
 
   const oversizedPptx = await fetch(`http://127.0.0.1:${appPort}/pptx-api/parse`, {
     method: "POST",
