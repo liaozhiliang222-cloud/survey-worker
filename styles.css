@@ -5727,6 +5727,46 @@ tbody tr.warn td {
   line-height: 1.5;
 }
 
+.pptx-narrative-quality {
+  display: grid;
+  gap: 8px;
+  padding: 11px 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.pptx-narrative-quality.review {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.pptx-narrative-quality.blocked {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.pptx-narrative-quality > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.pptx-narrative-quality p,
+.pptx-narrative-quality ul {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pptx-narrative-quality ul {
+  padding-left: 18px;
+}
+
 .pptx-narrative-feedback {
   display: grid;
   gap: 10px;

@@ -1,0 +1,73 @@
+{
+  "version": "ai_report_quality_v1",
+  "blueprint_cases": [
+    {
+      "id": "concept_profile_bundle",
+      "chapter": "核心人群与需求基础",
+      "questions": [
+        { "code": "S1", "title": "您的性别" },
+        { "code": "S2", "title": "您的年龄" },
+        { "code": "S3", "title": "您的家庭结构" }
+      ],
+      "expected_groups": [["S1", "S2", "S3"]]
+    },
+    {
+      "id": "ua_usage_behavior_bundle",
+      "chapter": "使用行为与场景",
+      "questions": [
+        { "code": "U1", "title": "产品使用频率" },
+        { "code": "U2", "title": "每次使用时长" },
+        { "code": "U3", "title": "最近一次使用时间" }
+      ],
+      "expected_groups": [["U1", "U2", "U3"]]
+    },
+    {
+      "id": "nps_diagnosis_bundle",
+      "chapter": "推荐表现与驱动诊断",
+      "questions": [
+        { "code": "N1", "title": "净推荐值NPS" },
+        { "code": "N2", "title": "愿意推荐的主要原因" },
+        { "code": "N3", "title": "不愿推荐的主要原因" }
+      ],
+      "expected_groups": [["N1", "N2", "N3"]]
+    },
+    {
+      "id": "complex_models_stay_separate",
+      "chapter": "专项模型分析",
+      "questions": [
+        { "code": "K1", "title": "功能KANO分类", "analysis_model": "kano" },
+        { "code": "P1", "title": "价格敏感度PSM", "analysis_model": "psm" }
+      ],
+      "expected_groups": [["K1"], ["P1"]]
+    }
+  ],
+  "copy_cases": [
+    {
+      "id": "percentage_readout_blocked",
+      "pages": [
+        {
+          "page_idx": 1,
+          "title": "功能A占比48%",
+          "bullets": ["数据显示功能A达到48%"],
+          "business_implication": "优先覆盖48%的用户",
+          "evidence_fact_ids": ["F1"]
+        }
+      ],
+      "expected_status": "blocked",
+      "expected_issue": "percentage_narration"
+    },
+    {
+      "id": "interpretation_copy_passes",
+      "pages": [
+        {
+          "page_idx": 1,
+          "title": "核心需求集中在决策确定性",
+          "bullets": ["需求集中反映用户仍需要更清晰的选择依据", "不同人群的关注点存在分化"],
+          "business_implication": "优先补强选择引导和场景化说明",
+          "evidence_fact_ids": ["F1"]
+        }
+      ],
+      "expected_status": "pass"
+    }
+  ]
+}

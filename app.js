@@ -9953,6 +9953,7 @@ function createAiClientRequestId() {
 }
 
 const AI_JOB_CACHE_KEY = "surveykit_ai_job_cache_v1";
+const AI_REPORT_STAGE_CACHE_KEY = "surveykit_ai_report_stage_cache_v1";
 
 function readAiJobCache() {
   try {
@@ -9989,6 +9990,74 @@ function aiJobPayloadFingerprint(payload) {
     hash = Math.imul(hash, 16777619);
   }
   return `${text.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function readAiReportStageCache() {
+  try {
+    const value = JSON.parse(localStorage.getItem(AI_REPORT_STAGE_CACHE_KEY) || "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeAiReportStageCache(cache) {
+  try {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const entries = Object.entries(cache || {})
+      .filter(([, item]) => Number(item?.updatedAt || 0) >= cutoff)
+      .sort((left, right) => Number(left[1]?.updatedAt || 0) - Number(right[1]?.updatedAt || 0))
+      .slice(-8);
+    localStorage.setItem(AI_REPORT_STAGE_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch { /* 缓存不可用时仍可依赖后台耐久任务 */ }
+}
+
+function aiReportStageFingerprint(frameworkInput = {}) {
+  return aiJobPayloadFingerprint({
+    report_title: frameworkInput.report_title,
+    research_objective: frameworkInput.research_objective,
+    research_archetype: frameworkInput.research_archetype,
+    core_research_module: frameworkInput.core_research_module,
+    pages: (frameworkInput.page_catalog || []).map((page) => ({
+      page_idx: Number(page?.page_idx),
+      source_chapter: String(page?.source_chapter || ""),
+      current_title: String(page?.current_title || ""),
+      question_ids: Array.from(page?.question_ids || []).map(String),
+    })),
+  });
+}
+
+function updateAiReportStageSnapshot(fingerprint, patch) {
+  if (!fingerprint) return null;
+  const cache = readAiReportStageCache();
+  const current = cache[fingerprint] && typeof cache[fingerprint] === "object"
+    ? cache[fingerprint] : {};
+  const next = {
+    ...current,
+    ...(patch || {}),
+    assignments: {
+      ...(current.assignments || {}),
+      ...(patch?.assignments || {}),
+    },
+    updatedAt: Date.now(),
+  };
+  cache[fingerprint] = next;
+  writeAiReportStageCache(cache);
+  return next;
+}
+
+function clearAiReportStageCache() {
+  try { localStorage.removeItem(AI_REPORT_STAGE_CACHE_KEY); } catch { /* ignore */ }
+}
+
+function aiReportResumeSummary() {
+  const snapshots = Object.values(readAiReportStageCache());
+  if (!snapshots.length) return "";
+  const latest = snapshots.sort((left, right) => Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0))[0];
+  const assigned = Object.keys(latest?.assignments || {}).length;
+  if (latest?.status === "narrative_ready") return "检测到已完成的故事线阶段，可继续确认维度并生成蓝图。";
+  if (latest?.framework) return `检测到可恢复的故事线：章节框架已完成${assigned ? `，已保留 ${assigned} 页 AI 归属` : ""}。重新选择原文件后将从未完成页面继续。`;
+  return "检测到可恢复的故事线后台任务。重新选择原文件后将继续处理。";
 }
 
 function getAiJobClientId() {
@@ -13477,8 +13546,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     const resumableAiJobCount = Object.values(readAiJobCache())
       .filter((item) => String(item?.operation || "").startsWith("report_narrative_"))
       .length;
-    if (resumableAiJobCount && aiWriteStatus) {
-      aiWriteStatus.textContent = `检测到 ${resumableAiJobCount} 个可恢复的故事线阶段。重新选择原文件并点击生成后，将从后台任务继续。`;
+    const reportResumeText = aiReportResumeSummary();
+    if ((resumableAiJobCount || reportResumeText) && aiWriteStatus) {
+      aiWriteStatus.textContent = reportResumeText
+        || `检测到 ${resumableAiJobCount} 个可恢复的故事线阶段。重新选择原文件并点击生成后，将从后台任务继续。`;
     }
 
     function currentPptxStatusElement() {
@@ -15607,6 +15678,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         report_narrative: plan.report_narrative && typeof plan.report_narrative === "object"
           ? plan.report_narrative
           : null,
+        ai_report_quality: plan.ai_report_quality && typeof plan.ai_report_quality === "object"
+          ? plan.ai_report_quality
+          : null,
         executive_summary: String(plan.executive_summary || "").trim(),
         global_findings: Array.isArray(plan.global_findings) ? plan.global_findings : [],
         storyline: Array.isArray(plan.storyline) ? plan.storyline : [],
@@ -15906,6 +15980,16 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         return;
       }
       const dimensionOptions = availableNarrativeDimensions();
+      const qualityReview = narrative.quality_review || editedPagePlan?.ai_report_quality?.narrative || null;
+      const qualityStatusLabels = { pass: "本地质检通过", review: "建议复核", blocked: "结构未通过" };
+      const qualityIssues = (qualityReview?.issues || []).slice(0, 3);
+      const qualityHtml = qualityReview ? `
+        <div class="pptx-narrative-quality ${escapeHtml(qualityReview.status || "review")}" data-pptx-report-quality>
+          <div><strong>${escapeHtml(qualityStatusLabels[qualityReview.status] || "本地质检")}</strong><span>${Number(qualityReview.score || 0)} 分 · 不额外调用 AI</span></div>
+          ${qualityIssues.length
+            ? `<ul>${qualityIssues.map((issue) => `<li>${escapeHtml(issue.message)}</li>`).join("")}</ul>`
+            : `<p>页面覆盖、章节归属和研究逻辑结构未发现明显问题。</p>`}
+        </div>` : "";
       const chapters = (narrative.chapters || []).map((chapter, index) => {
         const strategy = chapter.analysis_strategy || {};
         const selectedDimensions = new Set(narrativeSelectedDimensions(chapter));
@@ -15951,6 +16035,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           <small>报告核心观点 · ${escapeHtml(narrative.storyline_type || "")}</small>
           <strong>${escapeHtml(narrative.central_thesis || "")}</strong>
         </div>
+        ${qualityHtml}
         <div class="pptx-narrative-confirm-note">AI 已按故事线重新规划每页题目组合。请核对页面编排并确认各章节分析维度；对比图会自动包含总体基准。</div>
         <div class="pptx-narrative-chapters">${chapters}</div>
         <div class="pptx-narrative-thesis">
@@ -16186,6 +16271,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         current_title: String(page.current_title || "").slice(0, 100),
         question_ids: Array.from(page.question_ids || []),
       }));
+      const stageFingerprint = aiReportStageFingerprint(frameworkInput);
+      let stageSnapshot = readAiReportStageCache()[stageFingerprint] || {};
       const dimensionKeys = (frameworkInput.dimension_catalog || [])
         .map((dimension) => String(dimension?.key || dimension?.label || "").trim())
         .filter(Boolean);
@@ -16216,43 +16303,63 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         "Do not copy source module names mechanically and do not assign pages.",
         "Output: {\"central_thesis\":\"\",\"chapters\":[{\"chapter_id\":\"chapter_01\",\"title\":\"\",\"purpose\":\"\",\"key_question\":\"\"}]}",
         "Use 3-6 chapters. Keep the entire answer concise.",
-      ].join("\n");      let frameworkPayload;
+      ].join("\n");
+      let frameworkPayload = stageSnapshot.framework && typeof stageSnapshot.framework === "object"
+        ? stageSnapshot.framework : null;
       try {
-        const frameworkOperation = "report_narrative_framework";
-        frameworkPayload = aiPlanner.parseJsonObject(await callAiChatCompletionJob(settings, [
-          { role: "system", content: frameworkPrompt },
-          {
-            role: "user",
-            content: JSON.stringify({
-              objective: frameworkInput.research_objective,
-              archetype: frameworkInput.research_archetype,
-              core_module: frameworkInput.core_research_module,
-              priority_instruction: (frameworkInput.priority_instructions || [])[0] || "",
-              research_intent_summary: researchIntentSummary,
-              source_modules: sourceModules,
-            }),
-          },
-        ], {
-          maxTokens: 800,
-          timeoutMs: 65000,
-          temperature: 0,
-          responseFormat: "json_object",
-          taskTier: "storyline",
-          stream: false,
-          operation: frameworkOperation,
-          onJobProgress: (state) => {
-            const progressValue = 30 + Math.round((Number(state.progress) || 0) * 0.18);
-            setPptxProgress(progressValue, state.message || "后台正在生成章节框架", "AI 研究");
-            aiWriteStatus.textContent = `故事线阶段：${state.message || "后台正在生成章节框架"}。页面刷新后任务仍会继续。`;
-          },
-        }));
+        if (frameworkPayload) {
+          aiWriteStatus.textContent = "故事线阶段：已恢复章节框架，正在继续未完成的页面归属。";
+        } else {
+          const frameworkOperation = "report_narrative_framework";
+          frameworkPayload = aiPlanner.parseJsonObject(await callAiChatCompletionJob(settings, [
+            { role: "system", content: frameworkPrompt },
+            {
+              role: "user",
+              content: JSON.stringify({
+                objective: frameworkInput.research_objective,
+                archetype: frameworkInput.research_archetype,
+                core_module: frameworkInput.core_research_module,
+                priority_instruction: (frameworkInput.priority_instructions || [])[0] || "",
+                research_intent_summary: researchIntentSummary,
+                source_modules: sourceModules,
+              }),
+            },
+          ], {
+            maxTokens: 800,
+            timeoutMs: 65000,
+            temperature: 0,
+            responseFormat: "json_object",
+            taskTier: "storyline",
+            stream: false,
+            operation: frameworkOperation,
+            onJobProgress: (state) => {
+              const progressValue = 30 + Math.round((Number(state.progress) || 0) * 0.18);
+              setPptxProgress(progressValue, state.message || "后台正在生成章节框架", "AI 研究");
+              aiWriteStatus.textContent = `故事线阶段：${state.message || "后台正在生成章节框架"}。页面刷新后任务仍会继续。`;
+            },
+          }));
+          stageSnapshot = updateAiReportStageSnapshot(stageFingerprint, {
+            status: "framework_ready",
+            framework: frameworkPayload,
+            page_count: compactPages.length,
+          }) || stageSnapshot;
+        }
       } catch (error) {
         clearAiJobCacheOperations("report_narrative_framework");
+        updateAiReportStageSnapshot(stageFingerprint, {
+          status: "framework_failed",
+          error: String(error?.message || error),
+        });
         throw new Error(`章节框架阶段失败：${error?.message || error}`);
       }
       const rawChapters = Array.isArray(frameworkPayload.chapters) ? frameworkPayload.chapters : [];
       if (rawChapters.length < 3 || rawChapters.length > 8) {
         clearAiJobCacheOperations("report_narrative_framework");
+        updateAiReportStageSnapshot(stageFingerprint, {
+          status: "framework_failed",
+          framework: null,
+          error: "AI 未返回 3-8 个有效章节框架。",
+        });
         throw new Error("AI 未返回 3-8 个有效章节框架。");
       }
       const normalizeId = (value, fallback) => {
@@ -16302,7 +16409,21 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const assignmentBatches = [];
       for (let index = 0; index < compactPages.length; index += 4) assignmentBatches.push(compactPages.slice(index, index + 4));
       async function requestAssignmentBatch(pages, batchIndex, allowSplit = true) {
-        const assignmentOperation = `report_narrative_assignment_${batchIndex + 1}_${pages.map((page) => page.page_idx).join("_")}`;
+        stageSnapshot = readAiReportStageCache()[stageFingerprint] || stageSnapshot || {};
+        const cachedAssignments = pages.map((page) => stageSnapshot?.assignments?.[String(page.page_idx)] || null);
+        const cachedPages = pages.filter((_, index) => cachedAssignments[index]);
+        const pendingPages = pages.filter((_, index) => !cachedAssignments[index]);
+        if (!pendingPages.length) return { assignments: cachedAssignments };
+        if (cachedPages.length) {
+          const pendingResult = await requestAssignmentBatch(pendingPages, batchIndex, allowSplit);
+          return {
+            assignments: [
+              ...cachedAssignments.filter(Boolean),
+              ...(pendingResult.assignments || []),
+            ],
+          };
+        }
+        const assignmentOperation = `report_narrative_assignment_${batchIndex + 1}_${pendingPages.map((page) => page.page_idx).join("_")}`;
         const buildMessages = () => [
           { role: "system", content: assignmentPrompt },
           {
@@ -16316,7 +16437,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 question: chapter.key_question,
                 theme: chapter.allowed_themes[0],
               })),
-              pages: pages.map((page) => ({
+              pages: pendingPages.map((page) => ({
                 id: page.page_idx,
                 title: page.current_title,
                 source: page.source_chapter,
@@ -16333,7 +16454,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
           try {
             const isFinalFallback = attempt === maxAttempts;
-            return aiPlanner.parseJsonObject(await callAiChatCompletionJob(settings, buildMessages(), {
+            const payload = aiPlanner.parseJsonObject(await callAiChatCompletionJob(settings, buildMessages(), {
               maxTokens: 650,
               timeoutMs: 65000,
               temperature: 0,
@@ -16345,6 +16466,22 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 aiWriteStatus.textContent = `故事线阶段：${state.message || `正在处理第 ${batchIndex + 1} 批页面归属`}。页面刷新后任务仍会继续。`;
               },
             }));
+            const allowedPageIds = new Set(pendingPages.map((page) => Number(page.page_idx)));
+            const assignments = (payload.assignments || []).filter((assignment) =>
+              allowedPageIds.has(Number(assignment?.page_idx))
+            );
+            if (assignments.length) {
+              const assignmentPatch = {};
+              assignments.forEach((assignment) => {
+                assignmentPatch[String(Number(assignment.page_idx))] = assignment;
+              });
+              stageSnapshot = updateAiReportStageSnapshot(stageFingerprint, {
+                status: "assigning_pages",
+                assignments: assignmentPatch,
+                page_count: compactPages.length,
+              }) || stageSnapshot;
+            }
+            return { ...payload, assignments };
           } catch (error) {
             clearAiJobCacheOperations(assignmentOperation);
             lastError = error;
@@ -16355,12 +16492,16 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           }
         }
         const error = lastError;
-        if (allowSplit && pages.length > 1) {
-          const midpoint = Math.ceil(pages.length / 2);
-          const first = await requestAssignmentBatch(pages.slice(0, midpoint), batchIndex, false);
-          const second = await requestAssignmentBatch(pages.slice(midpoint), batchIndex, false);
+        if (allowSplit && pendingPages.length > 1) {
+          const midpoint = Math.ceil(pendingPages.length / 2);
+          const first = await requestAssignmentBatch(pendingPages.slice(0, midpoint), batchIndex, false);
+          const second = await requestAssignmentBatch(pendingPages.slice(midpoint), batchIndex, false);
           return { assignments: [...(first.assignments || []), ...(second.assignments || [])] };
         }
+        updateAiReportStageSnapshot(stageFingerprint, {
+          status: "assignment_failed",
+          error: String(error?.message || error),
+        });
         throw new Error(`页面归属第 ${batchIndex + 1} 批失败：${error?.message || error}`);
       }
       const assignmentPayloads = [];
@@ -16370,7 +16511,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           requestAssignmentBatch(pages, waveStart + waveOffset)
         ));
         assignmentPayloads.push(...results);
-      }      const chapterById = new Map(chapters.map((chapter) => [chapter.chapter_id, chapter]));
+      }
+      const chapterById = new Map(chapters.map((chapter) => [chapter.chapter_id, chapter]));
       // 容错索引：把 chapter_id 与 title 都做小写归一化，AI 拼错大小写/连字符时也能命中
       const normalizeKey = (value) => String(value || "").trim().toLowerCase().replace(/[\s\-]+/g, "_").replace(/[^a-z0-9_\u4e00-\u9fa5]/g, "");
       const chapterByNormalizedId = new Map();
@@ -16404,48 +16546,19 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           confidence: 0.85,
         };
       }).filter(Boolean);
-      // 本地兜底：AI 偶尔会漏返/拼错个别页面，直接抛"AI 页面归属不完整（n/m），请重试"会让用户被迫重试整个故事线生成。
-      // 把未归属页面按 source_chapter → 章节 title 关键词匹配；命中失败再分配到当前页数最少的章节，
-      // 保证每页都有归属，让报告生成能继续推进。
       if (assignedPages.size !== compactPages.length) {
         const unassignedPages = compactPages
           .filter((page) => !assignedPages.has(Number(page.page_idx)))
           .map((page) => Number(page.page_idx));
-        console.warn(`AI 页面归属不完整（${assignedPages.size}/${compactPages.length}），启用本地兜底补全剩余 ${unassignedPages.length} 页。`);
-        unassignedPages.forEach((pageIdx) => {
-          const page = pageByIndex.get(pageIdx);
-          if (!page) return;
-          // 1) source_chapter 关键词命中章节 title
-          let fallbackChapter = chapters.find((chapter) => {
-            const src = normalizeKey(page.source_chapter);
-            const ttl = normalizeKey(chapter.title);
-            return src && ttl && (src.includes(ttl) || ttl.includes(src));
-          });
-          // 2) 标题文本相似命中
-          if (!fallbackChapter) {
-            const pageTitle = normalizeKey(page.current_title);
-            fallbackChapter = chapters.find((chapter) => {
-              const ttl = normalizeKey(chapter.title);
-              return ttl && pageTitle && (pageTitle.includes(ttl) || ttl.includes(pageTitle));
-            });
-          }
-          // 3) 页数最少的章节，均衡分布
-          if (!fallbackChapter) {
-            fallbackChapter = chapters.reduce((min, chapter) =>
-              (chapter.page_idxs.length < min.page_idxs.length ? chapter : min), chapters[0]);
-          }
-          assignedPages.add(pageIdx);
-          fallbackChapter.page_idxs.push(pageIdx);
-          assignments.push({
-            classification_id: `page:${pageIdx}`,
-            page_idx: pageIdx,
-            question_ids: page.question_ids,
-            theme_id: fallbackChapter.allowed_themes[0],
-            research_theme: fallbackChapter.allowed_themes[0],
-            chapter_reason: "AI 归属缺失，已按源模块与章节语义本地补全。",
-            confidence: 0.5,
-          });
+        const retryAssignments = {};
+        unassignedPages.forEach((pageIdx) => { retryAssignments[String(pageIdx)] = null; });
+        updateAiReportStageSnapshot(stageFingerprint, {
+          status: "assignment_incomplete",
+          assignments: retryAssignments,
+          missing_page_idxs: unassignedPages,
+          error: `AI 页面归属不完整（${assignedPages.size}/${compactPages.length}）`,
         });
+        throw new Error(`AI 页面归属不完整（${assignedPages.size}/${compactPages.length}），已保留完成结果；再次生成将只续跑缺失页面。`);
       }
       chapters.forEach((chapter) => {
         chapter.page_idxs.sort((a, b) => compactPages.findIndex((page) => page.page_idx === a)
@@ -16463,7 +16576,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         ending_message: String(frameworkPayload.ending_message || frameworkPayload.central_thesis || "").trim(),
         confidence: Math.max(0, Math.min(1, Number(frameworkPayload.confidence) || 0.85)),
       };
-      return aiPlanner.validateReportNarrative(narrative, coreContext);
+      const validatedNarrative = aiPlanner.validateReportNarrative(narrative, coreContext);
+      const qualityReview = aiPlanner.auditReportNarrative(validatedNarrative, coreContext);
+      validatedNarrative.quality_review = qualityReview;
+      updateAiReportStageSnapshot(stageFingerprint, {
+        status: "narrative_ready",
+        quality_review: qualityReview,
+        error: "",
+      });
+      return validatedNarrative;
     }
     async function generatePptxAiReport() {
       if (!selectedFile || !editedPagePlan?.pages?.length) return false;
@@ -16485,6 +16606,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       setPptxProgress(8, "正在汇总 DataFact 与 Insight", "AI 研究");
       aiWriteStatus.textContent = "阶段 1/2：正在汇总 DataFact 与 Insight…";
       let narrativeWaitTimer = null;
+      const previousNarrative = cloneReportNarrative(pendingReportNarrative);
       lastAiActualModel = "";
       lastAiActualSource = "";
       try {
@@ -16522,12 +16644,15 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         clearInterval(narrativeWaitTimer);
         narrativeWaitTimer = null;
         setPptxProgress(65, "核心观点已生成，正在组织章节逻辑", "AI 研究");
-        pendingReportNarrative = outcome.report_narrative;
+        pendingReportNarrative = outcome.report_narrative || previousNarrative;
         editedPagePlan.report_narrative = pendingReportNarrative;
+        editedPagePlan.ai_report_quality = pendingReportNarrative?.quality_review
+          ? { version: "ai_report_quality_v1", narrative: pendingReportNarrative.quality_review }
+          : null;
         editedPagePlan.research_theme_classification = pendingReportNarrative?.research_theme_classification || null;
         editedPagePlan.research_theme_warnings = pendingReportNarrative?.research_theme_warnings || [];
         renderReportNarrative(pendingReportNarrative, outcome.error);
-        if (pendingReportNarrative) {
+        if (outcome.report_narrative) {
           aiWriteBtn.textContent = "重新生成故事线";
           const narrativeStatus = "AI 故事线已返回，当前页面展示的是模型生成并经结构校验后的结果。请先检查，不满意时可在下方提交反馈修改。";
           const themeCount = pendingReportNarrative?.research_theme_classification?.themes?.length || 0;
@@ -16546,16 +16671,21 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
           })[lastAiActualSource] || lastAiActualSource;
           aiWriteStatus.textContent = narrativeStatus + themeStatus + (routeLabel ? " 本次通道：" + routeLabel + "。" : "");
           setPptxProgress(100, "核心观点、章节逻辑与推荐维度已生成", "AI 研究");
+        } else if (previousNarrative) {
+          aiWriteStatus.textContent = `新故事线生成失败，上一版已保留：${outcome.error}`;
+          setPptxProgress(0, "新故事线未完成，已保留上一版", "AI 研究");
         } else {
           aiWriteStatus.textContent = `Report Narrative 生成失败，未使用本地故事线重组：${outcome.error}`;
         }
         narrativePanel?.scrollIntoView({ behavior: "smooth", block: "start" });
-        return Boolean(pendingReportNarrative);
+        return Boolean(outcome.report_narrative);
       } catch (error) {
-        pendingReportNarrative = null;
-        editedPagePlan.report_narrative = null;
-        renderReportNarrative(null, error.message);
-        aiWriteStatus.textContent = `故事线准备失败：${error.message}。仍可按原流程生成报告。`;
+        pendingReportNarrative = previousNarrative;
+        editedPagePlan.report_narrative = previousNarrative;
+        renderReportNarrative(previousNarrative, error.message);
+        aiWriteStatus.textContent = previousNarrative
+          ? `故事线准备失败：${error.message}。上一版故事线已保留。`
+          : `故事线准备失败：${error.message}。仍可按原流程生成报告。`;
         setPptxProgress(0, "AI 研究规划失败", "AI 研究");
         return false;
       } finally {
@@ -16607,6 +16737,13 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     function applyRevisedReportNarrative(narrative) {
       pendingReportNarrative = narrative;
       editedPagePlan.report_narrative = narrative;
+      if (narrative?.quality_review) {
+        editedPagePlan.ai_report_quality = {
+          ...(editedPagePlan.ai_report_quality || {}),
+          version: "ai_report_quality_v1",
+          narrative: narrative.quality_review,
+        };
+      }
       editedPagePlan.research_theme_classification = narrative?.research_theme_classification || null;
       editedPagePlan.research_theme_warnings = narrative?.research_theme_warnings || [];
       renderReportNarrative(narrative);
@@ -16690,6 +16827,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
             const parsed = aiPlanner.parseJsonObject(output);
             const merged = aiPlanner.mergeReportNarrativeRevision(original, parsed, coreContext);
             revisedNarrative = aiPlanner.validateReportNarrative(merged, coreContext);
+            revisedNarrative.quality_review = aiPlanner.auditReportNarrative(revisedNarrative, coreContext);
           } catch (error) {
             clearAiJobCacheOperations(operation);
             validationError = String(error?.message || error);
@@ -16962,6 +17100,18 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         editedPagePlan.planning_mode = editedPagePlan.page_planning_mode || "ai";
         applyNarrativePageOrder();
         ensureStableSlideBriefs();
+        const narrativeQuality = reportNarrative.quality_review
+          || aiPlanner.auditReportNarrative(reportNarrative, { ...context, pages: contextPages });
+        const slideBriefQuality = aiPlanner.auditSlideBriefQuality(editedPagePlan.pages || []);
+        editedPagePlan.ai_report_quality = {
+          version: "ai_report_quality_v1",
+          status: [narrativeQuality.status, slideBriefQuality.status].includes("blocked")
+            ? "blocked"
+            : ([narrativeQuality.status, slideBriefQuality.status].includes("review") ? "review" : "pass"),
+          score: Math.round((Number(narrativeQuality.score) + Number(slideBriefQuality.score)) / 2),
+          narrative: narrativeQuality,
+          slide_brief: slideBriefQuality,
+        };
         renderPreviewTable(editedPagePlan);
         return 0;
       }
@@ -17220,6 +17370,26 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (page) page.research_theme_warning = warning;
       });
       lastPptxSlideBriefStats.theme_warning_count = themeWarnings.length;
+      const slideBriefQuality = aiPlanner.auditSlideBriefQuality(editedPagePlan.pages || []);
+      const narrativeQuality = reportNarrative.quality_review
+        || aiPlanner.auditReportNarrative(reportNarrative, {
+          ...context,
+          pages: contextPages,
+        });
+      const overallQualityStatus = [narrativeQuality.status, slideBriefQuality.status].includes("blocked")
+        ? "blocked"
+        : ([narrativeQuality.status, slideBriefQuality.status].includes("review") ? "review" : "pass");
+      editedPagePlan.ai_report_quality = {
+        version: "ai_report_quality_v1",
+        status: overallQualityStatus,
+        score: Math.round((Number(narrativeQuality.score) + Number(slideBriefQuality.score)) / 2),
+        narrative: narrativeQuality,
+        slide_brief: slideBriefQuality,
+      };
+      reportNarrative.quality_review = narrativeQuality;
+      lastPptxSlideBriefStats.quality_status = overallQualityStatus;
+      lastPptxSlideBriefStats.quality_score = editedPagePlan.ai_report_quality.score;
+      lastPptxSlideBriefStats.copy_quality_issue_count = (slideBriefQuality.issues || []).length;
       console.info("SlideBrief generation stats", lastPptxSlideBriefStats);
       return applied;
     }
@@ -17455,8 +17625,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         page_blueprint: aiPlanner.buildFallbackPageBlueprint(blueprintContext, reportNarrative),
       }, blueprintContext);
       combined.page_blueprint_local_optimized = true;
+      combined.quality_review = aiPlanner.auditReportNarrative(combined, blueprintContext);
       pendingReportNarrative = combined;
       editedPagePlan.report_narrative = combined;
+      editedPagePlan.ai_report_quality = {
+        ...(editedPagePlan.ai_report_quality || {}),
+        version: "ai_report_quality_v1",
+        narrative: combined.quality_review,
+      };
       return { narrative: combined, localOptimized: true };
     }
     async function confirmReportNarrativeAndGenerate() {
@@ -17504,15 +17680,21 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const themeWarningText = stats?.theme_warning_count
           ? "；发现 " + stats.theme_warning_count + " 页主题与章节仍可能不匹配，已标记供人工调整"
           : "";
+        const qualityStatusLabels = { pass: "质检通过", review: "建议复核", blocked: "结构未通过" };
+        const reportQuality = editedPagePlan.ai_report_quality;
+        const qualityText = reportQuality
+          ? `；本地质量门 ${Number(reportQuality.score || 0)} 分（${qualityStatusLabels[reportQuality.status] || "已检查"}）`
+          : "";
         const narrativeProjection = getPptxOutputPageProjection(editedPagePlan);
         const message = pendingReportNarrative
-          ? `已按故事线重组 ${narrativeProjection.analysisPages} 个分析页，形成 ${narrativeProjection.sectionPages} 个连续章节；最终 PPT 预计 ${narrativeProjection.totalPages} 页。${blueprintLocalOptimized ? "页面题目组合采用本地逻辑优化蓝图；" : ""}AI 更新 ${applied} 页，题目证据与稳定页面 ID 已保留，人工修改或锁定内容未被覆盖${performanceText}${themeWarningText}。`
+          ? `已按故事线重组 ${narrativeProjection.analysisPages} 个分析页，形成 ${narrativeProjection.sectionPages} 个连续章节；最终 PPT 预计 ${narrativeProjection.totalPages} 页。${blueprintLocalOptimized ? "页面题目组合采用本地逻辑优化蓝图；" : ""}AI 更新 ${applied} 页，题目证据与稳定页面 ID 已保留，人工修改或锁定内容未被覆盖${performanceText}${themeWarningText}${qualityText}。`
           : "Report Narrative 不可用，已保留当前确定性蓝图，可继续编辑或生成 PPT。";
         aiWriteStatus.textContent = message;
         if (confirmStatus) confirmStatus.textContent = message;
         setPptxProgress(100, "已按故事线重构报告蓝图", "AI 蓝图");
         clearAiJobCacheOperations("report_narrative_");
         clearAiJobCacheOperations("slide_brief_");
+        clearAiReportStageCache();
         if (narrativePanel) narrativePanel.style.display = "none";
       } catch (error) {
         console.warn("PPT SlideBrief AI fallback:", error);
@@ -17740,10 +17922,18 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       }
     });
     confirmBtn && confirmBtn.addEventListener("click", () => doGeneratePptx());
-    aiWriteBtn && aiWriteBtn.addEventListener("click", () => runSelectedPptxAiWorkflow());
+    aiWriteBtn && aiWriteBtn.addEventListener("click", () => {
+      if (pendingReportNarrative && selectedPptxReportWorkflow() === "research") {
+        clearAiJobCacheOperations("report_narrative_");
+        clearAiJobCacheOperations("slide_brief_");
+        clearAiReportStageCache();
+      }
+      runSelectedPptxAiWorkflow();
+    });
     narrativeRegenerateBtn?.addEventListener("click", () => {
       clearAiJobCacheOperations("report_narrative_");
       clearAiJobCacheOperations("slide_brief_");
+      clearAiReportStageCache();
       narrativeRevisionHistory = [];
       narrativeUndoRevisionBtn?.classList.add("hidden");
       generatePptxAiReport();

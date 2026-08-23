@@ -562,7 +562,9 @@
         }, assignment);
       }),
     };
-  }  function buildReportFrameworkInput(narrativeInput = {}) {
+  }
+
+  function buildReportFrameworkInput(narrativeInput = {}) {
     const clip = (value, limit) => String(value || "").trim().slice(0, limit);
     return {
       report_title: clip(narrativeInput.report_title, 120),
@@ -1393,6 +1395,13 @@
 
   const BLUEPRINT_FAMILY_TITLES = {
     audience_profile: "核心用户与家庭画像",
+    brand_funnel: "品牌认知与转化漏斗",
+    usage_behavior: "使用行为与频率特征",
+    usage_scenario: "核心使用场景与任务",
+    channel_journey: "信息渠道与购买路径",
+    experience_evaluation: "体验评价与满意度诊断",
+    nps_diagnosis: "推荐表现与驱动诊断",
+    service_journey: "服务触点与售后体验",
     feature_priority: "功能需求与优先级",
     power_mobility: "供电、续航与便携需求",
     appearance_design: "产品外观与硬件偏好",
@@ -1412,7 +1421,14 @@
     if (/^b4(?:_|$)/i.test(code) || /^b24$/i.test(code) || /(?:top\s*\d+|功能.*(?:重要|优先|排序)|差异化卖点)/.test(text)) return "feature_priority";
     if (/(?:不愿意购买|仍在犹豫|不考虑购买|拒绝购买|购买障碍|购买顾虑)/.test(text)) return "purchase_barrier";
     if (/(?:购买可能|购买意向|促使.*购买|购买.*(?:原因|驱动))/.test(text)) return "purchase_decision";
-    if (/(?:性别|年龄|家庭情况|家庭结构|城市|学历|职业|收入|婚姻|用户类型|用户画像)/.test(text)) return "audience_profile";
+    if (/(?:性别|年龄|家庭情况|家庭结构|家庭人口|家庭成员|子女|孩子年龄|城市|地区|学历|职业|收入|婚姻|用户类型|用户画像)/.test(text)) return "audience_profile";
+    if (/(?:品牌认知|品牌知名|品牌熟悉|品牌考虑|品牌偏好|品牌漏斗|听说过|首选品牌)/.test(text)) return "brand_funnel";
+    if (/(?:净推荐值|\bnps\b|推荐意愿|愿意推荐|不愿推荐|不推荐|推荐.*原因|推荐驱动)/i.test(text)) return "nps_diagnosis";
+    if (/(?:满意度|整体满意|体验评价|使用评价|产品评价|服务评价)/.test(text)) return "experience_evaluation";
+    if (/(?:信息渠道|了解渠道|获知渠道|购买渠道|购买频率|购买方式|购买时间|购买路径|决策路径|触点|到店|电商平台)/.test(text)) return "channel_journey";
+    if (/(?:使用频率|使用时长|使用习惯|使用行为|使用周期|最近一次使用)/.test(text)) return "usage_behavior";
+    if (/(?:使用场景|使用地点|使用任务|使用目的|使用时机|典型场景)/.test(text)) return "usage_scenario";
+    if (/(?:客服|售后|维修|退换|服务网点|服务体验|咨询服务)/.test(text)) return "service_journey";
     if (/^b2[1-3]$/i.test(code) || /(?:插电|电池|续航|便携|移动|免布线|电源线|wi-?fi|联网方式|联网方案)/i.test(text)) return "power_mobility";
     if (/(?:外观|摄像头.*(?:设计|方案|数量)|硬件设计)/.test(text)) return "appearance_design";
     if (/^b1[1-5]$/i.test(code) || /(?:ai功能|ai伴学|ai对话|语音对话|讲故事|英语口语|互动游戏|诗词|智能聊天|家长端app)/i.test(text)) return "ai_companion";
@@ -1793,6 +1809,233 @@
     }).filter((page) => page && page.title && page.evidence_fact_ids.length);
   }
 
+  function qualityIssue(code, severity, message, detail = {}) {
+    return {
+      code: String(code || "quality_issue"),
+      severity: severity === "error" ? "error" : "warning",
+      message: String(message || "").trim(),
+      page_idxs: Array.from(detail.page_idxs || []).map(Number).filter(Number.isFinite),
+      question_ids: uniqueStrings(detail.question_ids),
+    };
+  }
+
+  function finishQualityAudit(stage, issues, metrics = {}) {
+    const errors = issues.filter((issue) => issue.severity === "error");
+    const warnings = issues.filter((issue) => issue.severity !== "error");
+    const score = Math.max(0, 100 - errors.length * 30 - warnings.length * 8);
+    return {
+      version: "ai_report_quality_v1",
+      stage,
+      status: errors.length ? "blocked" : (warnings.length ? "review" : "pass"),
+      score,
+      issues,
+      metrics: { ...metrics },
+    };
+  }
+
+  function assignmentCoverage(values, expectedValues) {
+    const counts = new Map();
+    (values || []).forEach((value) => {
+      const key = String(value || "").trim();
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const expected = uniqueStrings(expectedValues);
+    return {
+      assigned: Array.from(counts.keys()),
+      missing: expected.filter((value) => !counts.has(value)),
+      duplicates: Array.from(counts).filter(([, count]) => count > 1).map(([value]) => value),
+      unknown: Array.from(counts.keys()).filter((value) => !expected.includes(value)),
+    };
+  }
+
+  function blueprintMergeOpportunities(context, reportNarrative) {
+    const blueprint = Array.from(reportNarrative?.page_blueprint || []);
+    if (!blueprint.length) return [];
+    const plannedPageByQuestion = new Map();
+    blueprint.forEach((page) => (page.question_ids || []).forEach((questionId) => {
+      plannedPageByQuestion.set(String(questionId), String(page.page_id || ""));
+    }));
+    const optimized = buildFallbackPageBlueprint(context, reportNarrative);
+    return optimized.filter((group) => {
+      if ((group.question_ids || []).length < 2) return false;
+      const currentPages = new Set((group.question_ids || []).map((questionId) =>
+        plannedPageByQuestion.get(String(questionId))
+      ).filter(Boolean));
+      return currentPages.size > 1;
+    }).map((group) => ({
+      chapter_id: group.chapter_id,
+      title: group.title,
+      question_ids: uniqueStrings(group.question_ids),
+    }));
+  }
+
+  function auditReportNarrative(reportNarrative, context = {}) {
+    const issues = [];
+    const chapters = Array.from(reportNarrative?.chapters || []);
+    const expectedPageIndexes = (context?.pages || [])
+      .map((page) => Number(page?.page_idx)).filter(Number.isFinite).map(String);
+    const pageCoverage = assignmentCoverage(
+      chapters.flatMap((chapter) => chapter?.page_idxs || []).map(String),
+      expectedPageIndexes
+    );
+    if (pageCoverage.missing.length) {
+      issues.push(qualityIssue("missing_page_assignments", "error",
+        `故事线缺少 ${pageCoverage.missing.length} 个页面归属。`, {
+          page_idxs: pageCoverage.missing,
+        }));
+    }
+    if (pageCoverage.duplicates.length) {
+      issues.push(qualityIssue("duplicate_page_assignments", "error",
+        `故事线有 ${pageCoverage.duplicates.length} 个页面被重复归属。`, {
+          page_idxs: pageCoverage.duplicates,
+        }));
+    }
+    if (pageCoverage.unknown.length) {
+      issues.push(qualityIssue("unknown_page_assignments", "error",
+        `故事线引用了 ${pageCoverage.unknown.length} 个不存在的页面。`, {
+          page_idxs: pageCoverage.unknown,
+        }));
+    }
+    const emptyChapters = chapters.filter((chapter) => !(chapter?.page_idxs || []).length);
+    if (emptyChapters.length) {
+      issues.push(qualityIssue("empty_chapters", "warning",
+        `${emptyChapters.length} 个章节没有分析页面：${emptyChapters.map((chapter) => chapter.title).join("、")}。`));
+    }
+    const genericChapters = chapters.filter((chapter) => {
+      const title = String(chapter?.title || "").trim();
+      const purpose = String(chapter?.purpose || "").trim();
+      const question = String(chapter?.key_question || "").trim();
+      return /^(?:章节\s*\d+|其他研究|研究结果|分析结果|综合分析)$/i.test(title)
+        || purpose.length < 8 || question.length < 6;
+    });
+    if (genericChapters.length) {
+      issues.push(qualityIssue("generic_chapter_logic", "warning",
+        `${genericChapters.length} 个章节的研究目的或核心问题仍较笼统。`));
+    }
+    if (isReportNarrativeTooSimilarToSource(reportNarrative, {
+      current_report_structure: (context?.pages || []).reduce((result, page) => {
+        const title = String(page?.source_chapter || page?.chapter || "其他研究");
+        let chapter = result.find((item) => item.title === title);
+        if (!chapter) {
+          chapter = { title, page_idxs: [] };
+          result.push(chapter);
+        }
+        chapter.page_idxs.push(Number(page?.page_idx));
+        return result;
+      }, []),
+    })) {
+      issues.push(qualityIssue("source_structure_copy", "warning",
+        "故事线与初版章节结构过于相似，建议核对是否真正按研究目的重组。"));
+    }
+    const themeWarnings = Array.from(reportNarrative?.research_theme_warnings || [])
+      .filter((warning) => !warning?.corrected);
+    if (themeWarnings.length) {
+      issues.push(qualityIssue("theme_chapter_mismatch", "warning",
+        `${themeWarnings.length} 个页面的研究主题与章节仍可能不匹配。`, {
+          page_idxs: themeWarnings.map((warning) => warning?.page_idx),
+        }));
+    }
+
+    const questionCatalog = reportQuestionCatalog(context);
+    const blueprint = Array.from(reportNarrative?.page_blueprint || []);
+    let questionCoverage = { missing: [], duplicates: [], unknown: [], assigned: [] };
+    let mergeOpportunities = [];
+    if (blueprint.length) {
+      questionCoverage = assignmentCoverage(
+        blueprint.flatMap((page) => page?.question_ids || []),
+        questionCatalog.map((question) => question.question_id)
+      );
+      if (questionCoverage.missing.length) {
+        issues.push(qualityIssue("missing_questions", "error",
+          `页面蓝图漏掉 ${questionCoverage.missing.length} 道题。`, {
+            question_ids: questionCoverage.missing,
+          }));
+      }
+      if (questionCoverage.duplicates.length) {
+        issues.push(qualityIssue("duplicate_questions", "error",
+          `页面蓝图重复使用 ${questionCoverage.duplicates.length} 道题。`, {
+            question_ids: questionCoverage.duplicates,
+          }));
+      }
+      mergeOpportunities = blueprintMergeOpportunities(context, reportNarrative);
+      if (mergeOpportunities.length) {
+        issues.push(qualityIssue("avoidable_single_question_pages", "warning",
+          `${mergeOpportunities.length} 组相关短题仍可合并，当前分页可能偏碎。`, {
+            question_ids: mergeOpportunities.flatMap((item) => item.question_ids),
+          }));
+      }
+    }
+    const singleQuestionPages = blueprint.filter((page) => (page?.question_ids || []).length === 1).length;
+    return finishQualityAudit("report_narrative", issues, {
+      chapter_count: chapters.length,
+      expected_pages: expectedPageIndexes.length,
+      assigned_pages: pageCoverage.assigned.length,
+      question_count: questionCatalog.length,
+      blueprint_pages: blueprint.length,
+      single_question_pages: singleQuestionPages,
+      single_question_ratio: blueprint.length ? singleQuestionPages / blueprint.length : 0,
+      merge_opportunity_count: mergeOpportunities.length,
+    });
+  }
+
+  function auditSlideBriefQuality(pages = []) {
+    const normalizedPages = (pages || []).map((page) => ({
+      slide_id: page?.slide_id || page?.slide_brief?.slide_id || page?.page_idx,
+      page_idx: page?.page_idx,
+      title: page?.insight_override || page?.slide_brief?.title || page?.title || "",
+      claim: page?.slide_brief?.claim || page?.insight_override || "",
+      bullets: page?.insight_bullets || page?.bullets || page?.slide_brief?.bullets || [],
+      business_implication: page?.business_implication || page?.slide_brief?.business_implication || "",
+      evidence_fact_ids: page?.evidence_fact_ids || page?.slide_brief?.evidence_fact_ids || [],
+    }));
+    const issues = [];
+    const narrationIssues = findDataNarrationIssues(normalizedPages);
+    if (narrationIssues.length) {
+      issues.push(qualityIssue("percentage_narration", "error",
+        `${narrationIssues.length} 页正文仍直接描述百分比。`));
+    }
+    const genericNarrationPages = normalizedPages.filter((page) =>
+      (page.bullets || []).some((bullet) => /^(?:数据显示|从数据看|数据表明|其中|占比最高|排名第一)/.test(String(bullet).trim()))
+    );
+    if (genericNarrationPages.length) {
+      issues.push(qualityIssue("data_readout_copy", "warning",
+        `${genericNarrationPages.length} 页仍存在数据白描式开头。`, {
+          page_idxs: genericNarrationPages.map((page) => page.page_idx),
+        }));
+    }
+    const missingCopyPages = normalizedPages.filter((page) =>
+      page.evidence_fact_ids.length && (!String(page.title).trim() || !(page.bullets || []).length)
+    );
+    if (missingCopyPages.length) {
+      issues.push(qualityIssue("missing_slide_copy", "warning",
+        `${missingCopyPages.length} 个有证据页面缺少完整标题或正文。`, {
+          page_idxs: missingCopyPages.map((page) => page.page_idx),
+        }));
+    }
+    const titleGroups = new Map();
+    normalizedPages.forEach((page) => {
+      const key = String(page.title || "").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
+      if (key.length < 6) return;
+      const group = titleGroups.get(key) || [];
+      group.push(page.page_idx);
+      titleGroups.set(key, group);
+    });
+    const duplicateTitlePages = Array.from(titleGroups.values()).filter((values) => values.length > 1);
+    if (duplicateTitlePages.length) {
+      issues.push(qualityIssue("duplicate_slide_claims", "warning",
+        `${duplicateTitlePages.length} 组页面使用了重复结论标题。`, {
+          page_idxs: duplicateTitlePages.flat(),
+        }));
+    }
+    return finishQualityAudit("slide_brief", issues, {
+      page_count: normalizedPages.length,
+      narration_issue_count: narrationIssues.length,
+      generic_narration_pages: genericNarrationPages.length,
+      missing_copy_pages: missingCopyPages.length,
+      duplicate_title_groups: duplicateTitlePages.length,
+    });
+  }
+
   root.PptReportAi = {
     DEFAULT_BATCH_SIZE,
     REPAIR_BATCH_SIZE,
@@ -1803,6 +2046,9 @@
     PAGE_BLUEPRINT_SYSTEM_PROMPT,
     REPORT_STORYLINE_TYPES,
     SLIDE_BRIEF_SYSTEM_PROMPT,
+    auditReportNarrative,
+    auditSlideBriefQuality,
+    blueprintMergeOpportunities,
     findDataNarrationIssues,
     reduceDataNarrationBullets,
     buildFallbackSlideBriefInput,

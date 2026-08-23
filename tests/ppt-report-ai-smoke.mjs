@@ -332,6 +332,48 @@ assert.deepEqual(Array.from(compactProfileBlueprint, (page) => page.question_ids
 assert.equal(compactProfileBlueprint[0].title, "核心用户与家庭画像");
 assert.equal(compactProfileBlueprint[1].title, "供电、续航与便携需求");
 assert.ok(compactProfileBlueprint.every((page) => page.question_ids.length >= 1 && page.question_ids.length <= 6));
+const fragmentedProfileContext = {
+  pages: [
+    { page_idx: 1, chapter: "用户研究", questions: [{ code: "D1", title: "您的性别", rows: [{ option: "男", values: { 总体: 50 } }] }] },
+    { page_idx: 2, chapter: "用户研究", questions: [{ code: "D2", title: "您的年龄", rows: [{ option: "25-34岁", values: { 总体: 50 } }] }] },
+    { page_idx: 3, chapter: "用户研究", questions: [{ code: "D3", title: "您的家庭结构", rows: [{ option: "三口之家", values: { 总体: 50 } }] }] },
+  ],
+};
+const fragmentedProfileNarrative = {
+  central_thesis: "核心人群特征决定需求差异。",
+  chapters: [{
+    chapter_id: "chapter_profile",
+    title: "核心人群与需求基础",
+    purpose: "识别核心用户及其需求差异。",
+    key_question: "哪些人群构成核心机会？",
+    page_idxs: [1, 2, 3],
+  }],
+  page_blueprint: [
+    { page_id: "p1", chapter_id: "chapter_profile", question_ids: ["D1"] },
+    { page_id: "p2", chapter_id: "chapter_profile", question_ids: ["D2"] },
+    { page_id: "p3", chapter_id: "chapter_profile", question_ids: ["D3"] },
+  ],
+};
+const mergeOpportunities = ai.blueprintMergeOpportunities(fragmentedProfileContext, fragmentedProfileNarrative);
+assert.equal(mergeOpportunities.length, 1);
+assert.deepEqual(Array.from(mergeOpportunities[0].question_ids), ["D1", "D2", "D3"]);
+const fragmentedQuality = ai.auditReportNarrative(fragmentedProfileNarrative, fragmentedProfileContext);
+assert.equal(fragmentedQuality.status, "review");
+assert.equal(fragmentedQuality.metrics.merge_opportunity_count, 1);
+assert.ok(fragmentedQuality.issues.some((issue) => issue.code === "avoidable_single_question_pages"));
+const incompleteQuality = ai.auditReportNarrative({
+  central_thesis: "判断",
+  chapters: [{ title: "章节 1", purpose: "目的", key_question: "问题", page_idxs: [1] }],
+}, fragmentedProfileContext);
+assert.equal(incompleteQuality.status, "blocked");
+assert.ok(incompleteQuality.issues.some((issue) => issue.code === "missing_page_assignments"));
+const copyQuality = ai.auditSlideBriefQuality([
+  { page_idx: 1, insight_override: "核心偏好集中", insight_bullets: ["数据显示选项A达到48%"], evidence_fact_ids: ["F1"] },
+  { page_idx: 2, insight_override: "核心偏好集中", insight_bullets: ["选择呈现明显集中"], evidence_fact_ids: ["F2"] },
+]);
+assert.equal(copyQuality.status, "blocked");
+assert.ok(copyQuality.issues.some((issue) => issue.code === "percentage_narration"));
+assert.ok(copyQuality.issues.some((issue) => issue.code === "duplicate_slide_claims"));
 const strictBlueprintContext = { ...reportContext, require_page_blueprint: true };
 assert.throws(
   () => ai.validateReportNarrative(reportNarrative, strictBlueprintContext),
