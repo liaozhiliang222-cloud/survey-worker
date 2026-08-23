@@ -374,6 +374,59 @@ const copyQuality = ai.auditSlideBriefQuality([
 assert.equal(copyQuality.status, "blocked");
 assert.ok(copyQuality.issues.some((issue) => issue.code === "percentage_narration"));
 assert.ok(copyQuality.issues.some((issue) => issue.code === "duplicate_slide_claims"));
+const blockedQualityGate = ai.buildReportQualityGate({
+  score: copyQuality.score,
+  narrative: { status: "pass", score: 100, issues: [] },
+  slide_brief: copyQuality,
+}, [
+  {
+    page_idx: 1,
+    insight_override: "核心偏好集中",
+    insight_bullets: ["数据显示选项A达到48%"],
+    slide_brief: { slide_id: "slide_1" },
+  },
+  {
+    page_idx: 2,
+    insight_override: "核心偏好集中",
+    insight_bullets: ["选择呈现明显集中"],
+    slide_brief: { slide_id: "slide_2", locked: true },
+  },
+]);
+assert.equal(blockedQualityGate.status, "blocked");
+assert.equal(blockedQualityGate.can_generate, false);
+assert.deepEqual(Array.from(blockedQualityGate.issue_page_idxs), [1, 2]);
+assert.deepEqual(Array.from(blockedQualityGate.repairable_page_idxs), [1]);
+assert.deepEqual(Array.from(blockedQualityGate.protected_page_idxs), [2]);
+assert.equal(blockedQualityGate.can_auto_repair, true);
+const reviewQualityGate = ai.buildReportQualityGate({
+  score: 88,
+  narrative: { status: "pass", score: 100, issues: [] },
+  slide_brief: {
+    status: "review",
+    score: 88,
+    issues: [{
+      code: "data_readout_copy",
+      severity: "warning",
+      message: "1 页仍存在数据白描式开头。",
+      page_idxs: [3],
+      repair_scope: "slide_brief",
+      auto_repairable: true,
+    }],
+  },
+}, [{ page_idx: 3, slide_brief: { slide_id: "slide_3", user_modified: true } }]);
+assert.equal(reviewQualityGate.status, "review");
+assert.equal(reviewQualityGate.can_generate, true);
+assert.equal(reviewQualityGate.requires_confirmation, true);
+assert.deepEqual(Array.from(reviewQualityGate.repairable_page_idxs), []);
+assert.deepEqual(Array.from(reviewQualityGate.protected_page_idxs), [3]);
+const passingQualityGate = ai.buildReportQualityGate({
+  score: 100,
+  narrative: { status: "pass", score: 100, issues: [] },
+  slide_brief: { status: "pass", score: 100, issues: [] },
+}, []);
+assert.equal(passingQualityGate.status, "pass");
+assert.equal(passingQualityGate.can_generate, true);
+assert.equal(passingQualityGate.requires_confirmation, false);
 const strictBlueprintContext = { ...reportContext, require_page_blueprint: true };
 assert.throws(
   () => ai.validateReportNarrative(reportNarrative, strictBlueprintContext),

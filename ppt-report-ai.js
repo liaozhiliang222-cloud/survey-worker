@@ -1816,6 +1816,8 @@
       message: String(message || "").trim(),
       page_idxs: Array.from(detail.page_idxs || []).map(Number).filter(Number.isFinite),
       question_ids: uniqueStrings(detail.question_ids),
+      repair_scope: String(detail.repair_scope || "manual"),
+      auto_repairable: Boolean(detail.auto_repairable),
     };
   }
 
@@ -1990,9 +1992,19 @@
     }));
     const issues = [];
     const narrationIssues = findDataNarrationIssues(normalizedPages);
-    if (narrationIssues.length) {
+    const narrationIssuePages = normalizedPages.filter((page) =>
+      percentageTokenCount(page.title) > 0
+      || percentageTokenCount(page.claim) > 0
+      || percentageTokenCount(page.business_implication) > 0
+      || (page.bullets || []).some((bullet) => percentageTokenCount(bullet) > 0)
+    );
+    if (narrationIssuePages.length) {
       issues.push(qualityIssue("percentage_narration", "error",
-        `${narrationIssues.length} 页正文仍直接描述百分比。`));
+        `${narrationIssuePages.length} 页正文仍直接描述百分比。`, {
+          page_idxs: narrationIssuePages.map((page) => page.page_idx),
+          repair_scope: "slide_brief",
+          auto_repairable: true,
+        }));
     }
     const genericNarrationPages = normalizedPages.filter((page) =>
       (page.bullets || []).some((bullet) => /^(?:数据显示|从数据看|数据表明|其中|占比最高|排名第一)/.test(String(bullet).trim()))
@@ -2001,6 +2013,8 @@
       issues.push(qualityIssue("data_readout_copy", "warning",
         `${genericNarrationPages.length} 页仍存在数据白描式开头。`, {
           page_idxs: genericNarrationPages.map((page) => page.page_idx),
+          repair_scope: "slide_brief",
+          auto_repairable: true,
         }));
     }
     const missingCopyPages = normalizedPages.filter((page) =>
@@ -2010,6 +2024,8 @@
       issues.push(qualityIssue("missing_slide_copy", "warning",
         `${missingCopyPages.length} 个有证据页面缺少完整标题或正文。`, {
           page_idxs: missingCopyPages.map((page) => page.page_idx),
+          repair_scope: "slide_brief",
+          auto_repairable: true,
         }));
     }
     const titleGroups = new Map();
@@ -2025,6 +2041,8 @@
       issues.push(qualityIssue("duplicate_slide_claims", "warning",
         `${duplicateTitlePages.length} 组页面使用了重复结论标题。`, {
           page_idxs: duplicateTitlePages.flat(),
+          repair_scope: "slide_brief",
+          auto_repairable: true,
         }));
     }
     return finishQualityAudit("slide_brief", issues, {
@@ -2034,6 +2052,63 @@
       missing_copy_pages: missingCopyPages.length,
       duplicate_title_groups: duplicateTitlePages.length,
     });
+  }
+
+  function buildReportQualityGate(reportQuality = {}, pages = []) {
+    const stageAudits = [
+      ["narrative", reportQuality?.narrative],
+      ["slide_brief", reportQuality?.slide_brief],
+    ];
+    const issues = stageAudits.flatMap(([stage, audit]) =>
+      Array.from(audit?.issues || []).map((issue) => ({ ...issue, stage }))
+    );
+    const pageByIndex = new Map((pages || []).map((page) => [Number(page?.page_idx), page]));
+    const issuePageIndexes = Array.from(new Set(
+      issues.flatMap((issue) => issue.page_idxs || []).map(Number).filter(Number.isFinite)
+    )).sort((left, right) => left - right);
+    const requestedRepairIndexes = Array.from(new Set(
+      issues.filter((issue) => issue.auto_repairable && issue.repair_scope === "slide_brief")
+        .flatMap((issue) => issue.page_idxs || [])
+        .map(Number)
+        .filter(Number.isFinite)
+    )).sort((left, right) => left - right);
+    const protectedPageIndexes = requestedRepairIndexes.filter((pageIndex) => {
+      const brief = pageByIndex.get(pageIndex)?.slide_brief || {};
+      return Boolean(brief.locked || brief.user_modified);
+    });
+    const protectedSet = new Set(protectedPageIndexes);
+    const repairablePageIndexes = requestedRepairIndexes.filter((pageIndex) =>
+      pageByIndex.has(pageIndex) && !protectedSet.has(pageIndex)
+    );
+    const errors = issues.filter((issue) => issue.severity === "error");
+    const warnings = issues.filter((issue) => issue.severity !== "error");
+    const status = errors.length ? "blocked" : (warnings.length ? "review" : "pass");
+    const signature = JSON.stringify(issues.map((issue) => [
+      issue.stage,
+      issue.code,
+      issue.severity,
+      ...(issue.page_idxs || []),
+    ]));
+    return {
+      version: "ai_report_quality_gate_v1",
+      status,
+      score: Number(reportQuality?.score ?? Math.min(
+        Number(reportQuality?.narrative?.score ?? 100),
+        Number(reportQuality?.slide_brief?.score ?? 100),
+      )),
+      issue_count: issues.length,
+      error_count: errors.length,
+      warning_count: warnings.length,
+      issue_page_idxs: issuePageIndexes,
+      repairable_page_idxs: repairablePageIndexes,
+      protected_page_idxs: protectedPageIndexes,
+      narrative_issue_count: issues.filter((issue) => issue.stage === "narrative").length,
+      can_auto_repair: repairablePageIndexes.length > 0,
+      can_generate: errors.length === 0,
+      requires_confirmation: errors.length === 0 && warnings.length > 0,
+      signature,
+      issues,
+    };
   }
 
   root.PptReportAi = {
@@ -2048,6 +2123,7 @@
     SLIDE_BRIEF_SYSTEM_PROMPT,
     auditReportNarrative,
     auditSlideBriefQuality,
+    buildReportQualityGate,
     blueprintMergeOpportunities,
     findDataNarrationIssues,
     reduceDataNarrationBullets,

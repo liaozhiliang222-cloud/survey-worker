@@ -13511,6 +13511,13 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     const narrativeReviseBtn = document.querySelector("#pptxNarrativeReviseBtn");
     const narrativeUndoRevisionBtn = document.querySelector("#pptxNarrativeUndoRevisionBtn");
     const narrativeRevisionStatus = document.querySelector("#pptxNarrativeRevisionStatus");
+    const reportQualityPanel = document.querySelector("#pptxReportQualityPanel");
+    const reportQualityTitle = document.querySelector("#pptxReportQualityTitle");
+    const reportQualitySummary = document.querySelector("#pptxReportQualitySummary");
+    const reportQualityScore = document.querySelector("#pptxReportQualityScore");
+    const reportQualityIssues = document.querySelector("#pptxReportQualityIssues");
+    const reportQualityNote = document.querySelector("#pptxReportQualityNote");
+    const repairQualityBtn = document.querySelector("#pptxRepairQualityBtn");
     if (!dropzone) return;
 
     let selectedFile = null;
@@ -13542,6 +13549,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     let hasGeneratedPptx = false;
     let pptxGenerationRunning = false;
     let pptxGenerationAttempt = 0;
+    let reportQualityOverrideSignature = "";
 
     const resumableAiJobCount = Object.values(readAiJobCache())
       .filter((item) => String(item?.operation || "").startsWith("report_narrative_"))
@@ -15037,15 +15045,110 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       });
     }
 
+    function refreshPptxReportQuality(plan = editedPagePlan) {
+      const aiPlanner = window.PptReportAi;
+      const narrative = plan?.report_narrative || pendingReportNarrative;
+      if (
+        plan?.report_workflow !== "research"
+        || !narrative
+        || !aiPlanner?.auditSlideBriefQuality
+        || !aiPlanner?.buildReportQualityGate
+      ) {
+        return null;
+      }
+      const narrativeQuality = narrative.quality_review
+        || plan.ai_report_quality?.narrative
+        || null;
+      const slideBriefQuality = aiPlanner.auditSlideBriefQuality(plan.pages || []);
+      const stageQualities = [narrativeQuality, slideBriefQuality].filter(Boolean);
+      const status = stageQualities.some((quality) => quality.status === "blocked")
+        ? "blocked"
+        : (stageQualities.some((quality) => quality.status === "review") ? "review" : "pass");
+      const quality = {
+        version: "ai_report_quality_v1",
+        status,
+        score: stageQualities.length
+          ? Math.round(stageQualities.reduce((sum, item) => sum + Number(item.score || 0), 0) / stageQualities.length)
+          : 100,
+        narrative: narrativeQuality,
+        slide_brief: slideBriefQuality,
+      };
+      quality.gate = aiPlanner.buildReportQualityGate(quality, plan.pages || []);
+      plan.ai_report_quality = quality;
+      if (reportQualityOverrideSignature && reportQualityOverrideSignature !== quality.gate.signature) {
+        reportQualityOverrideSignature = "";
+      }
+      return quality.gate;
+    }
+
+    function renderPptxReportQualityGate(gate) {
+      if (!reportQualityPanel) return;
+      if (!gate) {
+        reportQualityPanel.classList.add("hidden");
+        return;
+      }
+      const statusLabels = {
+        pass: "交付前质量预检通过",
+        review: "交付前建议复核",
+        blocked: "交付前质量预检未通过",
+      };
+      reportQualityPanel.classList.remove("hidden", "pass", "review", "blocked");
+      reportQualityPanel.classList.add(gate.status || "review");
+      if (reportQualityTitle) reportQualityTitle.textContent = statusLabels[gate.status] || "交付前质量预检";
+      if (reportQualitySummary) {
+        reportQualitySummary.textContent = gate.status === "pass"
+          ? "故事线、页面覆盖和逐页文案均可进入生成。"
+          : `${gate.error_count} 项硬错误，${gate.warning_count} 项复核提醒。`;
+      }
+      if (reportQualityScore) reportQualityScore.textContent = `${Number(gate.score || 0)} 分`;
+      if (reportQualityIssues) {
+        reportQualityIssues.innerHTML = (gate.issues || []).slice(0, 6).map((issue) => {
+          const pageText = (issue.page_idxs || []).length ? `（第 ${issue.page_idxs.join("、")} 页）` : "";
+          return `<li>${escapeHtml(issue.message)}${escapeHtml(pageText)}</li>`;
+        }).join("");
+        reportQualityIssues.classList.toggle("hidden", !(gate.issues || []).length);
+      }
+      if (repairQualityBtn) {
+        repairQualityBtn.classList.toggle("hidden", !gate.can_auto_repair);
+        repairQualityBtn.disabled = !gate.can_auto_repair;
+        repairQualityBtn.textContent = gate.can_auto_repair
+          ? `仅修复 ${gate.repairable_page_idxs.length} 个问题页`
+          : "仅修复问题页";
+      }
+      if (reportQualityNote) {
+        const notes = [];
+        if (gate.protected_page_idxs.length) {
+          notes.push(`${gate.protected_page_idxs.length} 个问题页已锁定或人工修改，需人工确认。`);
+        }
+        if (gate.narrative_issue_count) notes.push("故事线问题请在 2.7 中按反馈修改。");
+        if (gate.requires_confirmation) notes.push("普通提醒可在生成时确认后放行。");
+        reportQualityNote.textContent = notes.join(" ");
+      }
+    }
+
+    function reportQualityIssuesByPage(gate) {
+      const result = new Map();
+      (gate?.issues || []).forEach((issue) => (issue.page_idxs || []).forEach((pageIdx) => {
+        const numericPageIdx = Number(pageIdx);
+        const current = result.get(numericPageIdx) || [];
+        current.push(issue);
+        result.set(numericPageIdx, current);
+      }));
+      return result;
+    }
+
     function renderPreviewTable(plan) {
       if (!previewTable) return;
       const pages = plan.pages || [];
       if (pages.length === 0) {
         previewTable.innerHTML = '<div class="empty-state"><strong>无页面</strong><span>没有可渲染的题目。</span></div>';
+        renderPptxReportQualityGate(null);
         if (confirmBtn) confirmBtn.disabled = true;
         return;
       }
       if (confirmBtn) confirmBtn.disabled = false;
+      const reportQualityGate = refreshPptxReportQuality(plan);
+      const qualityIssuesByPage = reportQualityIssuesByPage(reportQualityGate);
 
       // Chart type options
       const chartTypeOptions = [
@@ -15171,6 +15274,11 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         items.forEach(({ page: p, idx }) => {
           const brief = p.slide_brief || {};
           const isLocked = Boolean(brief.locked);
+          const pageQualityIssues = qualityIssuesByPage.get(Number(p.page_idx)) || [];
+          const pageQualityHasError = pageQualityIssues.some((issue) => issue.severity === "error");
+          const pageQualityBadge = pageQualityIssues.length
+            ? `<span class="pptx-brief-badge ${pageQualityHasError ? "quality-error" : "quality-warning"}" title="${escapeHtml(pageQualityIssues.map((issue) => issue.message).join("；"))}">${pageQualityHasError ? "待修复" : "待复核"}</span>`
+            : "";
           const evidenceLabels = [
             ...(brief.evidence_question_ids || []),
             ...(brief.evidence_fact_ids || []),
@@ -15189,6 +15297,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
                 <span class="pptx-preview-page-type">${escapeHtml(typeLabel || "自动匹配")}</span>
                 ${brief.user_modified ? `<span class="pptx-brief-badge modified">用户已修改</span>` : ""}
                 ${isLocked ? `<span class="pptx-brief-badge locked">已锁定</span>` : ""}
+                ${pageQualityBadge}
                 ${p.copy_state === "stale" || p.dimension_copy_stale ? `<span class="pptx-brief-badge modified">文字待同步</span>` : ""}
               </span>
             </summary>
@@ -15282,6 +15391,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       html += `<p style="margin-top:6px;font-size:11px;color:#94a3b8;">提示：章节维度会批量应用到该章节；每页仍可单独覆盖。洞察标题可手动修改，AI建议模式会先填入草稿。</p>`;
 
       previewTable.innerHTML = html;
+      renderPptxReportQualityGate(reportQualityGate);
       setupPptxEditorDragDrop();
       updatePlanHistoryButtons();
     }
@@ -15314,7 +15424,11 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       patchSlideBriefRemote(page, { ...patch, user_modified: true }).catch((error) => {
         showToast(error.message, "warning");
       });
-      if (rerender) renderPreviewTable(editedPagePlan);
+      if (rerender) {
+        renderPreviewTable(editedPagePlan);
+      } else {
+        renderPptxReportQualityGate(refreshPptxReportQuality(editedPagePlan));
+      }
       return true;
     }
 
@@ -16979,7 +17093,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (settings.mode === "local" || errors.length) throw new Error(errors.join("；"));
       const workflowStartedAt = Date.now();
       const aiPlanner = window.PptReportAi;
-      const questionPlanChanges = applyNarrativeQuestionBlueprint(reportNarrative);
+      const qualityRepairMode = Boolean(options.qualityRepair);
+      const questionPlanChanges = options.applyQuestionPlan === false
+        ? 0
+        : applyNarrativeQuestionBlueprint(reportNarrative);
       const dimensionChanges = options.applyDimensionPlan === false ? 0 : applyNarrativeDimensionStrategy(reportNarrative);
       if (questionPlanChanges || dimensionChanges) lastPptxInsightContext = null;
       const contextStartedAt = Date.now();
@@ -17098,7 +17215,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         editedPagePlan.report_workflow = "research";
         editedPagePlan.ai_enhancement = "narrative";
         editedPagePlan.planning_mode = editedPagePlan.page_planning_mode || "ai";
-        applyNarrativePageOrder();
+        if (options.applyNarrativeOrder !== false) applyNarrativePageOrder();
         ensureStableSlideBriefs();
         const narrativeQuality = reportNarrative.quality_review
           || aiPlanner.auditReportNarrative(reportNarrative, { ...context, pages: contextPages });
@@ -17126,7 +17243,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       };
 
       const requestPages = async (targetPages, phase, requestIndex) => {
-        const repairMode = phase === "repair";
+        const repairMode = phase !== "initial";
         const slideBriefOperation = `slide_brief_${phase}_${targetPages.map((page) => pptxPageStableId(page)).join("_")}`;
         const firstPageIndex = contextPages.findIndex(
           (page) => pptxPageStableId(page) === pptxPageStableId(targetPages[0])
@@ -17135,7 +17252,9 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const batchInput = aiPlanner.buildPageBatchInput(
           targetPages, reportNarrative, previousPage, contextPages
         );
-        if (repairMode) {
+        if (phase === "quality_repair") {
+          batchInput.repair_instruction = "仅修复这些质检问题页；保留题目证据、章节与 slide_id；消除百分比白描、重复结论和空泛数据复述；只返回 pages JSON。";
+        } else if (repairMode) {
           batchInput.repair_instruction = "仅补齐这些缺失页面；逐页原样返回 slide_id；只返回 pages JSON。";
         }
         const userContent = JSON.stringify(batchInput);
@@ -17184,7 +17303,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       const initialResults = await aiPlanner.mapWithConcurrency(
         batches,
         concurrency,
-        (batch, batchIndex) => requestPages(batch, "initial", batchIndex),
+        (batch, batchIndex) => requestPages(batch, qualityRepairMode ? "quality_repair" : "initial", batchIndex),
         (completed, total) => {
           const briefProgress = 10 + (completed / Math.max(1, total)) * 52;
           setPptxProgress(briefProgress, `正在生成页面蓝图：${completed}/${total} 批`, "AI 蓝图");
@@ -17327,7 +17446,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       editedPagePlan.report_workflow = "research";
       editedPagePlan.ai_enhancement = "narrative";
       editedPagePlan.planning_mode = editedPagePlan.page_planning_mode || "ai";
-      applyNarrativePageOrder();
+      if (options.applyNarrativeOrder !== false) applyNarrativePageOrder();
       ensureStableSlideBriefs();
       renderPreviewTable(editedPagePlan);
 
@@ -17437,6 +17556,64 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         }
       }
     }
+
+    async function repairPptxReportQuality() {
+      const narrative = pendingReportNarrative || editedPagePlan?.report_narrative;
+      const gate = refreshPptxReportQuality(editedPagePlan);
+      renderPptxReportQualityGate(gate);
+      if (!narrative || !gate?.can_auto_repair) {
+        showToast("当前没有可由 AI 局部修复的问题页。", "warning");
+        return;
+      }
+      const targetPageIndexes = new Set(gate.repairable_page_idxs.map(Number));
+      const targetSlideIds = (editedPagePlan?.pages || [])
+        .filter((page) => targetPageIndexes.has(Number(page.page_idx)))
+        .map((page) => pptxPageStableId(page));
+      if (!targetSlideIds.length) {
+        showToast("问题页已被锁定或人工修改，请先人工确认。", "warning");
+        return;
+      }
+
+      const originalText = repairQualityBtn?.textContent || "仅修复问题页";
+      if (repairQualityBtn) {
+        repairQualityBtn.disabled = true;
+        repairQualityBtn.textContent = `正在修复 0/${targetSlideIds.length} 页…`;
+      }
+      if (aiWriteStatus) aiWriteStatus.textContent = `质量修复：仅发送 ${targetSlideIds.length} 个问题页，其他页面保持不变…`;
+      pushPptxPlanHistory();
+      try {
+        const applied = await generatePptxSlideBriefs(narrative, {
+          applyQuestionPlan: false,
+          applyDimensionPlan: false,
+          applyNarrativeOrder: false,
+          qualityRepair: true,
+          targetSlideIds,
+        });
+        await persistSlideBriefBlueprint();
+        const nextGate = refreshPptxReportQuality(editedPagePlan);
+        renderPreviewTable(editedPagePlan);
+        if (aiWriteStatus) {
+          aiWriteStatus.textContent = nextGate?.status === "pass"
+            ? `质量修复完成：已更新 ${applied}/${targetSlideIds.length} 页，交付前预检通过。`
+            : `质量修复完成：已更新 ${applied}/${targetSlideIds.length} 页，仍有 ${nextGate?.issue_count || 0} 项需要复核。`;
+        }
+        showToast(nextGate?.status === "pass" ? "问题页已修复，质量预检通过。" : "问题页已局部修复，请复核剩余提示。",
+          nextGate?.status === "pass" ? "success" : "warning");
+      } catch (error) {
+        if (aiWriteStatus) aiWriteStatus.textContent = `问题页修复失败：${error.message}`;
+        showToast(error.message || "问题页修复失败。", "warning");
+      } finally {
+        const currentGate = refreshPptxReportQuality(editedPagePlan);
+        renderPptxReportQualityGate(currentGate);
+        if (repairQualityBtn) {
+          repairQualityBtn.disabled = !currentGate?.can_auto_repair;
+          repairQualityBtn.textContent = currentGate?.can_auto_repair
+            ? `仅修复 ${currentGate.repairable_page_idxs.length} 个问题页`
+            : originalText;
+        }
+      }
+    }
+
     async function regenerateSinglePptxSlide(pageIndex, control) {
       const page = editedPagePlan?.pages?.[pageIndex];
       const brief = page?.slide_brief || {};
@@ -17742,6 +17919,27 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (actionStatus) actionStatus.textContent = "请先上传并完成 PPTX 模板分析。";
         return;
       }
+      if (editedPagePlan?.report_workflow === "research") {
+        const qualityGate = refreshPptxReportQuality(editedPagePlan);
+        renderPptxReportQualityGate(qualityGate);
+        if (qualityGate?.status === "blocked") {
+          if (actionStatus) {
+            actionStatus.textContent = `交付前质量预检未通过：仍有 ${qualityGate.error_count} 项硬错误。请先修复问题页或调整故事线。`;
+          }
+          reportQualityPanel?.scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
+        }
+        if (qualityGate?.requires_confirmation && reportQualityOverrideSignature !== qualityGate.signature) {
+          const confirmed = window.confirm(
+            `交付前质量预检仍有 ${qualityGate.warning_count} 项复核提醒，但没有硬错误。是否确认按当前蓝图继续生成 PPT？`
+          );
+          if (!confirmed) {
+            reportQualityPanel?.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+          }
+          reportQualityOverrideSignature = qualityGate.signature;
+        }
+      }
       const staleDimensionPages = (editedPagePlan?.pages || []).filter((page) =>
         page.copy_state === "stale" || page.dimension_copy_stale
       );
@@ -17969,6 +18167,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (aiWriteStatus) aiWriteStatus.textContent = "分析维度已更新；确认后将按当前选择一次性生成蓝图与逐页文字。";
     });
     narrativeConfirmBtn?.addEventListener("click", () => confirmReportNarrativeAndGenerate());
+    repairQualityBtn?.addEventListener("click", () => repairPptxReportQuality());
     continueEditBtn?.addEventListener("click", () => previewPanel?.scrollIntoView({ behavior: "smooth", block: "start" }));
     titleInput?.addEventListener("input", () => invalidatePptxPreview());
     themeInput?.addEventListener("change", () => invalidatePptxPreview("主题色已更新，请重新预览后再生成。"));
