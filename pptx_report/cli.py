@@ -29,6 +29,13 @@ def _collect_segments(xlsx: str) -> dict:
             value = "Total" if str(s).strip().lower() in total_aliases else s
             if value not in segs:
                 segs.append(value)
+    # 多级交叉表的题目默认只挂载第一个维度组，完整维度保存在缓存中。
+    # 解析接口需要返回全部可选人群，否则前端“全部维度”会只显示第一组。
+    for group in build_jd_report._cached_dimension_groups or []:
+        for segment in group.get("segments") or []:
+            value = "Total" if str(segment).strip().lower() in total_aliases else segment
+            if value not in segs:
+                segs.append(value)
     result = {"segments": segs, "questions": len(questions)}
     result.update(build_research_modules(questions))
     # 附带维度分组信息（多级表头时每组对应一个分析维度）

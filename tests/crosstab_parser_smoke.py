@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from pptx_report import build_jd_report  # noqa: E402
 from pptx_report.build_jd_report import apply_dimension, parse_crosstab  # noqa: E402
+from pptx_report.cli import _collect_segments  # noqa: E402
 
 
 def main() -> None:
@@ -85,6 +86,9 @@ def main() -> None:
         assert pivot_age[0]["segments"] == ["Total", "18-24岁", "25-34岁"]
         assert pivot_age[0]["data"]["18-24岁"] == [0.69, 0.31]
         assert pivot_age[0]["base"]["25-34岁"] == 55
+        pivot_summary = _collect_segments(str(pivot_path))
+        assert pivot_summary["segments"] == ["Total", "上海", "18-24岁", "25-34岁"]
+        assert [group["name"] for group in pivot_summary["dimension_groups"]] == ["省份", "年龄"]
 
         flat_path = Path(temp_dir) / "flat-question-crosstab.xlsx"
         flat_workbook = Workbook()

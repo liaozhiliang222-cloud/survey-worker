@@ -5,10 +5,11 @@ const { test, expect } = require("@playwright/test");
 const fixturePath = path.resolve(__dirname, "../fixtures/imports/standard-crosstab.xlsx");
 
 const parseResponse = {
-  segments: ["Total", "高意向", "低意向"],
+  segments: ["Total", "高意向", "低意向", "通勤用户", "外卖小哥"],
   questions: 2,
   dimension_groups: [
     { name: "购买意向", segments: ["Total", "高意向", "低意向"] },
+    { name: "人群", segments: ["通勤用户", "外卖小哥"] },
   ],
   research_modules: [
     { key: "概念测试", label: "概念测试结果" },
@@ -113,7 +114,9 @@ async function uploadAndParse(page) {
   await expect(inspection).toContainText("标准交叉表");
   await expect(inspection).toContainText("2 道题/字段");
   await page.locator("#pptxParseBtn").click();
-  await expect(page.locator("#pptxParseStatus")).toContainText("已识别 3 个人群列、2 道题目");
+  await expect(page.locator("#pptxParseStatus")).toContainText("已识别 5 个人群列、2 道题目");
+  await expect(page.locator("#pptxSegmentDropdown .multiselect-text")).toHaveText("已全选（5）");
+  await expect(page.locator('#pptxSegmentPanel input[type="checkbox"]:not([data-role])')).toHaveCount(5);
   await expect(page.locator("#pptxPreviewBtn")).toBeEnabled();
 }
 
@@ -173,7 +176,10 @@ test("上传、统一诊断、解析并通过异步任务生成研究故事线",
   await openPptxReport(page);
   await uploadAndParse(page);
   await page.locator("#pptxPlanningMode").selectOption("ai");
+  const previewRequestPromise = page.waitForRequest(/\/pptx-api\/preview\?/);
   await page.locator("#pptxPreviewBtn").click();
+  const previewRequest = await previewRequestPromise;
+  expect(new URL(previewRequest.url()).searchParams.get("dimension")).toBe("购买意向,人群");
 
   await expect(page.locator("#pptxNarrativePanel")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#pptxNarrativeContent")).toContainText("概念表现与转化潜力");

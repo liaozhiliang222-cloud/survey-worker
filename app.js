@@ -13918,7 +13918,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     let selectedFileInspection = null;
     let inspectionRequestId = 0;
     let dimensionGroups = [];   // 解析得到的维度分组
-    let currentDimension = "";  // 当前选中的分组名（"" = 全部维度）
+    let currentDimension = "";  // 当前选中的分组名，多个分组使用逗号连接
     let detectedResearchModules = [];
     let recommendedCoreResearchModule = "";
     let pagePlan = null;        // 预览模式返回的页面规划
@@ -14815,7 +14815,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     // 多选下拉文本更新
     function updateMultiselectText() {
       if (!textEl || !segmentPanel) return;
-      const cbs = segmentPanel.querySelectorAll('input[type="checkbox"]');
+      const cbs = segmentPanel.querySelectorAll('input[type="checkbox"]:not([data-role])');
       const checked = Array.from(cbs).filter(cb => cb.checked);
       if (checked.length === 0) {
         textEl.textContent = "请选择";
@@ -14958,6 +14958,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (dimTextEl) { dimTextEl.textContent = "已选 " + checked.length + "/" + dimensionGroups.length; dimTextEl.style.color = "#1e293b"; }
       } else if (allSelected) {
         // 全部维度
+        currentDimension = dimensionGroups.map((group) => group.name).filter(Boolean).join(",");
         if (dimTextEl) { dimTextEl.textContent = "全部维度"; dimTextEl.style.color = "#1e293b"; }
       } else if (dimTextEl) {
         dimTextEl.textContent = "请选择"; dimTextEl.style.color = "#95a1ad";
@@ -15710,7 +15711,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
 
       // 分维度选项：基于步骤2已选的维度分组（+总体），而非后端全量
       const dimOptions = [{key: "总体", label: "总体（单题独立图表）"}];
-      // currentDimension 为空表示「全部维度」已选中，非空为具体分组名(逗号分隔)
+      // currentDimension 保存当前生效的具体分组名；选择「全部维度」时包含所有分组。
       const activeDimNames = currentDimension ? currentDimension.split(",") : [];
       if (activeDimNames.length > 0) {
         activeDimNames.forEach(name => {
