@@ -1,0 +1,36 @@
+{
+  "version": "surveykit_import_fixture_manifest_v1",
+  "privacy": "sanitized synthetic values preserving production workbook structures",
+  "fixtures": [
+    {
+      "file": "standard-crosstab.xlsx",
+      "format": "standard_crosstab",
+      "questions": 2,
+      "min_dimensions": 2
+    },
+    {
+      "file": "flat-crosstab.xlsx",
+      "format": "flat_crosstab",
+      "questions": 2,
+      "min_dimensions": 2
+    },
+    {
+      "file": "raw-survey.xlsx",
+      "format": "raw_survey",
+      "questions": 4,
+      "min_dimensions": 2
+    },
+    {
+      "file": "kano-data-features.xlsx",
+      "format": "kano",
+      "questions": 23,
+      "min_dimensions": 0
+    },
+    {
+      "file": "data-code.xlsx",
+      "format": "data_code",
+      "questions": 4,
+      "min_dimensions": 2
+    }
+  ]
+}

@@ -68,7 +68,7 @@ try {
     new Request("https://surveykit.cc/pptx-api/healthz"),
     {
       PPTX_BACKEND_URL: "http://backend.example.com/",
-      SURVEYKIT_RELEASE: "web-1",
+      CF_PAGES_COMMIT_SHA: "web-commit-1",
       SURVEYKIT_COMMIT: "def",
     },
   );
@@ -78,7 +78,7 @@ try {
   assert.equal(healthPayload.service, "pptx-report");
   assert.equal(healthPayload.proxy.service, "surveykit-pptx-proxy");
   assert.equal(healthPayload.proxy.backend_protocol, "https");
-  assert.equal(healthPayload.proxy.release.version, "web-1");
+  assert.equal(healthPayload.proxy.release.version, "web-commit-1");
 
   globalThis.fetch = async () => new Response("redirect", {
     status: 301,

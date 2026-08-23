@@ -446,6 +446,90 @@ function normalizeViewId(id) {
   }[id] || id;
 }
 
+const NAV_COLLAPSE_STORAGE_KEY = "surveykit_nav_groups_v1";
+
+function navigationItemLabel(item) {
+  return item?.querySelector(":scope > strong")?.textContent?.trim()
+    || item?.textContent?.trim()
+    || "调研工具箱";
+}
+
+function setNavigationGroupExpanded(group, expanded, persist = true) {
+  if (!group) return;
+  group.classList.toggle("collapsed", !expanded);
+  group.querySelector(":scope > .nav-group-toggle")?.setAttribute("aria-expanded", String(expanded));
+  if (!persist) return;
+  const state = {};
+  document.querySelectorAll(".nav-group[data-nav-phase]").forEach((item) => {
+    state[item.dataset.navPhase] = !item.classList.contains("collapsed");
+  });
+  try { localStorage.setItem(NAV_COLLAPSE_STORAGE_KEY, JSON.stringify(state)); } catch (_) {}
+}
+
+function syncNavigationContext(targetId) {
+  const activeItem = [...navItems].find((item) => item.dataset.view === targetId);
+  const activeGroup = activeItem?.closest(".nav-group");
+  if (activeGroup) setNavigationGroupExpanded(activeGroup, true);
+  const label = navigationItemLabel(activeItem) || "调研工具箱";
+  const phase = activeGroup?.querySelector(".nav-phase > span")?.textContent?.trim()
+    || (targetId === "overview" ? "工作台" : "系统");
+  const mobileTitle = document.querySelector(".mobile-topbar strong");
+  if (mobileTitle) mobileTitle.textContent = label;
+  document.title = `${label} · 调研工具箱`;
+  document.querySelectorAll(".module-context-bar").forEach((bar) => {
+    const view = bar.closest(".view");
+    if (!view) return;
+    const item = [...navItems].find((navItem) => navItem.dataset.view === view.id);
+    const group = item?.closest(".nav-group");
+    const stage = group?.querySelector(".nav-phase > span")?.textContent?.trim() || "系统";
+    const stageEl = bar.querySelector(".module-context-stage");
+    const nameEl = bar.querySelector(".module-context-name");
+    if (stageEl) stageEl.textContent = stage;
+    if (nameEl) nameEl.textContent = navigationItemLabel(item);
+  });
+  if (window.history?.replaceState) {
+    const suffix = targetId === "overview" ? "" : `#${targetId}`;
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${suffix}`);
+  }
+  return { label, phase };
+}
+
+function initNavigationExperience() {
+  let savedState = null;
+  try { savedState = JSON.parse(localStorage.getItem(NAV_COLLAPSE_STORAGE_KEY) || "null"); } catch (_) {}
+  document.querySelectorAll(".nav-group[data-nav-phase]").forEach((group, index) => {
+    const items = group.querySelector(":scope > .nav-group-items");
+    const toggle = group.querySelector(":scope > .nav-group-toggle");
+    if (!items || !toggle) return;
+    if (!items.id) items.id = `nav-group-items-${index + 1}`;
+    toggle.setAttribute("aria-controls", items.id);
+    const stored = savedState && typeof savedState[group.dataset.navPhase] === "boolean"
+      ? savedState[group.dataset.navPhase]
+      : !group.classList.contains("collapsed");
+    setNavigationGroupExpanded(group, stored, false);
+    toggle.addEventListener("click", () => {
+      setNavigationGroupExpanded(group, group.classList.contains("collapsed"));
+    });
+  });
+
+  document.querySelectorAll(".view").forEach((view) => {
+    if (view.id === "overview" || view.querySelector(":scope > .module-context-bar")) return;
+    const pageTitle = view.querySelector(":scope > .page-title");
+    if (!pageTitle) return;
+    const bar = document.createElement("div");
+    bar.className = "module-context-bar";
+    bar.innerHTML = `
+      <button class="module-context-back" type="button" data-jump="overview" aria-label="返回项目工作台">
+        <span aria-hidden="true">←</span><span>工作台</span>
+      </button>
+      <span class="module-context-separator" aria-hidden="true">/</span>
+      <span class="module-context-stage">系统</span>
+      <strong class="module-context-name">当前模块</strong>
+    `;
+    view.insertBefore(bar, pageTitle);
+  });
+}
+
 function showView(id) {
   const targetId = normalizeViewId(id);
   if (!targetId) return;
@@ -454,7 +538,12 @@ function showView(id) {
   if (activeView.style.display === "none" || activeView.hidden) return;
   views.forEach((view) => view.classList.toggle("active", view.id === targetId));
   navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === targetId));
-  activeView.scrollIntoView({ block: "start" });
+  syncNavigationContext(targetId);
+  if (window.innerWidth <= 900) {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  } else {
+    activeView.scrollIntoView({ block: "start" });
+  }
 }
 
 navItems.forEach((item) => {
@@ -464,9 +553,40 @@ navItems.forEach((item) => {
   });
 });
 
+initNavigationExperience();
+const initialViewFromHash = normalizeViewId(window.location.hash.replace(/^#/, ""));
+if (initialViewFromHash && document.querySelector(`#${CSS.escape(initialViewFromHash)}`)) {
+  showView(initialViewFromHash);
+} else {
+  syncNavigationContext("overview");
+}
+
 function handleDashboardJumpAction(button) {
   const action = button.dataset.action;
   const target = button.dataset.jump;
+  if (action === "edit-project") {
+    showView("overview");
+    const panel = document.querySelector(".project-panel");
+    panel?.classList.add("form-expanded");
+    const formToggle = document.querySelector("#toggleProjectForm");
+    formToggle?.setAttribute("aria-expanded", "true");
+    const toggleLabel = formToggle?.querySelector("span");
+    if (toggleLabel) toggleLabel.textContent = "收起项目档案";
+    window.setTimeout(() => {
+      panel?.scrollIntoView({ block: "start", behavior: "smooth" });
+      document.querySelector("#workspaceProjectName")?.focus({ preventScroll: true });
+    }, 0);
+    return;
+  }
+  if (action === "view-project-flow") {
+    showView("overview");
+    window.setTimeout(() => document.querySelector(".dashboard-flow-panel")?.scrollIntoView({ block: "start", behavior: "smooth" }), 0);
+    return;
+  }
+  if (action === "download-delivery-pack") {
+    document.querySelector("#workspaceDeliveryPack")?.click();
+    return;
+  }
   if (action === "import-questionnaire") {
     showView("overview");
     const input = document.querySelector("#questionnaireImportFile");
@@ -972,6 +1092,29 @@ function renderWorkspaceProject() {
   document.querySelector("#projectCompletion").textContent = `${completion}%`;
   document.querySelector("#projectNextAction").textContent = next ? `${next.stage} → ${next.name}` : "项目主流程已完成，可导出资产包。";
   document.querySelector("#dashboardRecommendation").textContent = next ? `${next.stage}：${next.name}` : "导出资产包";
+  const focusTitle = document.querySelector("#dashboardFocusTitle");
+  const focusDetail = document.querySelector("#dashboardFocusDetail");
+  const focusStage = document.querySelector("#dashboardFocusStage");
+  const focusCount = document.querySelector("#dashboardFocusCount");
+  const focusProgress = document.querySelector("#dashboardFocusProgress");
+  const focusProgressTrack = focusProgress?.closest("[role='progressbar']");
+  const continueAction = document.querySelector("#dashboardContinueAction");
+  if (focusTitle) focusTitle.textContent = next ? next.name : "项目主流程已完成";
+  if (focusDetail) focusDetail.textContent = next
+    ? `${next.detail}。完成后将继续推进后续项目节点。`
+    : "主要研究资产已经就绪，可以导出交付包并归档当前项目。";
+  if (focusStage) focusStage.textContent = next?.stage || "交付归档";
+  if (focusCount) focusCount.textContent = `${doneCount} / ${nodes.length} 已完成`;
+  if (focusProgress) focusProgress.style.width = `${completion}%`;
+  if (focusProgressTrack) focusProgressTrack.setAttribute("aria-valuenow", String(completion));
+  if (continueAction) {
+    continueAction.textContent = next ? `${next.action}` : "导出交付包";
+    continueAction.dataset.jump = next?.jump || "overview";
+    if (next?.id === "project_setup") continueAction.dataset.action = "edit-project";
+    else if (next?.id === "project_archive") continueAction.dataset.action = "archive-project";
+    else if (!next) continueAction.dataset.action = "download-delivery-pack";
+    else delete continueAction.dataset.action;
+  }
   document.querySelector("#projectSaveStatus").textContent = project.updatedAt
     ? `最近保存 ${formatShortDate(project.updatedAt)}`
     : "草稿未保存";
@@ -983,13 +1126,21 @@ function renderWorkspaceProject() {
     return `<div><strong>${stage}</strong><span>${"●".repeat(completed)}${"○".repeat(stageNodes.length - completed)}</span><small>${completed}/${stageNodes.length}</small></div>`;
   }).join("");
 
+  const currentFlowStage = next?.stage || "交付归档";
   document.querySelector("#projectChecklist").innerHTML = stageNames.map((stage) => {
     const stageNodes = nodes.filter((node) => node.stage === stage);
-    return `<section class="dashboard-stage-block"><h4>${stage}</h4>${stageNodes.map((node) => {
+    const completedCount = stageNodes.filter((node) => status[node.id]).length;
+    const isCurrent = stage === currentFlowStage;
+    return `<section class="dashboard-stage-block ${isCurrent ? "current" : "collapsed"}">
+      <button class="dashboard-stage-toggle" type="button" aria-expanded="${isCurrent}">
+        <strong>${stage}</strong><small>${completedCount}/${stageNodes.length} 已完成</small>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="dashboard-stage-node-list">${stageNodes.map((node) => {
       const nodeStatus = workspaceNodeStatus(node, status);
       const icon = nodeStatus === "completed" ? "●" : nodeStatus === "in_progress" ? "◌" : "○";
       return `<div class="dashboard-flow-node ${nodeStatus}"><span>${icon}</span><div><strong>${node.name}</strong><small>${node.detail}</small></div><button type="button" data-jump="${node.jump}">${node.action}</button></div>`;
-    }).join("")}</section>`;
+    }).join("")}</div></section>`;
   }).join("");
 
   const assets = dashboardAssets(project, status);
@@ -1480,17 +1631,10 @@ function getWorkbookSheets(workbookXml, relationshipXml = "") {
 }
 
 async function xlsxToQuestionnaireText(arrayBuffer) {
-  const sharedXml = await readZipText(arrayBuffer, "xl/sharedStrings.xml").catch(() => "");
-  const workbookXml = await readZipText(arrayBuffer, "xl/workbook.xml").catch(() => "");
-  const relationshipXml = await readZipText(arrayBuffer, "xl/_rels/workbook.xml.rels").catch(() => "");
-  const sharedStrings = sharedStringsFromXml(sharedXml);
-  const sheets = getWorkbookSheets(workbookXml, relationshipXml);
+  const sheets = await xlsxToWorkbookSheets(arrayBuffer);
   const parsedSheets = [];
   for (const sheet of sheets) {
-    const sheetPath = sheet.path;
-    const sheetXml = await readZipText(arrayBuffer, sheetPath).catch(() => "");
-    if (!sheetXml) continue;
-    const rows = xlsxSheetXmlToRows(sheetXml, sharedStrings);
+    const rows = sheet.rows || [];
     const text = rowsToQuestionnaireText(rows);
     const questions = text ? parseQuestions(text) : [];
     if (questions.length) {
@@ -1528,6 +1672,9 @@ function normalizeCodebookTitle(variable, text) {
 }
 
 function parseCodebookRows(rows) {
+  if (window.SurveyKitFileParser?.parseCodebookRows) {
+    return window.SurveyKitFileParser.parseCodebookRows(rows);
+  }
   const codebook = {};
   let current = null;
 
@@ -1645,6 +1792,9 @@ function rowsToDelimitedTableWithContext(rows) {
 }
 
 async function xlsxToWorkbookSheets(arrayBuffer) {
+  if (window.SurveyKitFileParser?.xlsxToWorkbookSheets) {
+    return window.SurveyKitFileParser.xlsxToWorkbookSheets(arrayBuffer);
+  }
   const sharedXml = await readZipText(arrayBuffer, "xl/sharedStrings.xml").catch(() => "");
   const workbookXml = await readZipText(arrayBuffer, "xl/workbook.xml").catch(() => "");
   const relationshipXml = await readZipText(arrayBuffer, "xl/_rels/workbook.xml.rels").catch(() => "");
@@ -2250,16 +2400,9 @@ function parseCrosstabHeaderRows(rows) {
 }
 
 async function xlsxToCrosstabHeaderPlan(arrayBuffer) {
-  const sharedXml = await readZipText(arrayBuffer, "xl/sharedStrings.xml").catch(() => "");
-  const workbookXml = await readZipText(arrayBuffer, "xl/workbook.xml").catch(() => "");
-  const relationshipXml = await readZipText(arrayBuffer, "xl/_rels/workbook.xml.rels").catch(() => "");
-  const sharedStrings = sharedStringsFromXml(sharedXml);
-  const sheetPaths = getWorkbookSheetPaths(workbookXml, relationshipXml);
-
-  for (const sheetPath of sheetPaths) {
-    const sheetXml = await readZipText(arrayBuffer, sheetPath).catch(() => "");
-    if (!sheetXml) continue;
-    const rows = xlsxSheetXmlToRows(sheetXml, sharedStrings);
+  const sheets = await xlsxToWorkbookSheets(arrayBuffer);
+  for (const sheet of sheets) {
+    const rows = sheet.rows || [];
     const definitions = parseCrosstabHeaderRows(rows);
     if (definitions.length) return definitions;
   }
@@ -2559,6 +2702,83 @@ function handleCrosstabQuestionnaireImport(file) {
   }
 }
 
+function renderSharedImportInspection(target, inspection) {
+  const container = typeof target === "string" ? document.querySelector(target) : target;
+  if (!container) return;
+  if (!inspection) {
+    container.classList.add("hidden");
+    container.innerHTML = "";
+    container.removeAttribute("data-status");
+    return;
+  }
+  const roleLabels = {
+    primary_data: "主数据",
+    crosstab: "交叉表",
+    codebook: "题目/编码表",
+    instructions: "说明",
+    other: "辅助 Sheet",
+  };
+  const metrics = inspection.metrics || {};
+  const sheets = (inspection.sheets || []).map((sheet) => `
+    <div class="import-inspection__sheet">
+      <strong>${escapeHtml(sheet.name || "数据表")}</strong>
+      <span>${escapeHtml(roleLabels[sheet.role] || sheet.role || "待判断")} · ${Number(sheet.row_count) || 0} 行 × ${Number(sheet.column_count) || 0} 列</span>
+    </div>
+  `).join("");
+  const diagnostics = (inspection.diagnostics || []).map((item) => `
+    <li>
+      <strong>${escapeHtml(item.message || "文件结构需要确认")}</strong>
+      ${item.action ? `<span class="import-inspection__action">处理建议：${escapeHtml(item.action)}</span>` : ""}
+    </li>
+  `).join("");
+  container.dataset.status = inspection.status || "warning";
+  container.classList.remove("hidden");
+  container.innerHTML = `
+    <div class="import-inspection__summary">
+      <strong>${escapeHtml(inspection.format_label || "数据结构")}</strong>
+      <span>${Number(metrics.sheet_count) || 0} 个 Sheet</span>
+      <span>${Number(metrics.row_count) || 0} 行</span>
+      <span>${Number(metrics.question_count) || Number(metrics.column_count) || 0} 道题/字段</span>
+      <span>${Number(metrics.dimension_count) || 0} 个分组维度</span>
+    </div>
+    ${sheets ? `<div class="import-inspection__sheets">${sheets}</div>` : ""}
+    ${diagnostics ? `<ul class="import-inspection__diagnostics">${diagnostics}</ul>` : ""}
+  `;
+}
+
+function delimitedImportInspection(parsed, filename = "数据文件") {
+  const headers = parsed?.headers || [];
+  const rows = parsed?.rows || [];
+  const dimensions = headers.filter((header) => /性别|年龄|地区|城市|收入|职业|学历|人群|分群|cluster|segment|gender|age|region|city|income/i.test(header));
+  const diagnostics = [];
+  if (!headers.length || !rows.length) {
+    diagnostics.push({
+      severity: "error",
+      message: "没有识别到完整的表头和数据行。",
+      action: "请确认第一行是字段名，第二行开始为样本数据；CSV 文件请使用逗号或制表符分隔。",
+    });
+  } else if (headers.length < 2) {
+    diagnostics.push({
+      severity: "error",
+      message: "当前数据只有一个字段，无法进行交叉分析。",
+      action: "请至少保留两个分类字段，或检查文件分隔符是否正确。",
+    });
+  }
+  return {
+    status: diagnostics.some((item) => item.severity === "error") ? "error" : "ready",
+    format_label: "原始问卷数据",
+    sheets: [{ name: filename, role: "primary_data", row_count: rows.length, column_count: headers.length }],
+    metrics: {
+      sheet_count: 1,
+      row_count: rows.length,
+      column_count: headers.length,
+      question_count: headers.length,
+      dimension_count: dimensions.length,
+    },
+    diagnostics,
+  };
+}
+
 function renderCrosstabImportState(text, filename) {
   const dataField = document.querySelector("#crosstabData");
   dataField.value = normalizeImportedText(text);
@@ -2574,6 +2794,7 @@ function renderCrosstabImportState(text, filename) {
     </div>
   `;
   renderNetGroupPanel();
+  return parsed;
 }
 
 function renderCrosstabHeaderImportState(definitions, filename) {
@@ -2610,13 +2831,45 @@ function handleCrosstabImport(file) {
         showButtonSaved(document.querySelector("#importCrosstabHeader"), "已导入");
         return;
       }
+      let workbookInspection = null;
+      if (/\.xlsx$/i.test(file.name)) {
+        renderSharedImportInspection("#crosstabImportInspection", {
+          status: "warning",
+          format_label: "正在检查文件结构",
+          sheets: [],
+          metrics: {},
+          diagnostics: [],
+        });
+        const parser = window.SurveyKitFileParser;
+        if (parser?.inspectResearchWorkbook) {
+          workbookInspection = await parser.inspectResearchWorkbook(raw);
+          renderSharedImportInspection("#crosstabImportInspection", workbookInspection);
+        }
+      } else if (/\.xls$/i.test(file.name) && !/\.xlsx$/i.test(file.name)) {
+        renderSharedImportInspection("#crosstabImportInspection", {
+          status: "warning",
+          format_label: "旧版 Excel",
+          sheets: [],
+          metrics: {},
+          diagnostics: [{
+            severity: "warning",
+            message: "浏览器无法在导入前完整预览旧版 .xls 结构。",
+            action: "建议用 Excel/WPS 另存为 .xlsx，以获得稳定解析和结构诊断。",
+          }],
+        });
+      }
       const text = /\.sav$/i.test(file.name)
         ? savToDelimitedTableText(raw)
         : /\.xlsx$/i.test(file.name)
           ? await xlsxToDelimitedTableText(raw)
           : String(raw || "");
       if (!normalizeImportedText(text)) throw new Error("未识别到有效数据。");
-      renderCrosstabImportState(text, file.name);
+      const parsed = renderCrosstabImportState(text, file.name);
+      if (workbookInspection) {
+        renderSharedImportInspection("#crosstabImportInspection", workbookInspection);
+      } else if (!/\.xls$/i.test(file.name)) {
+        renderSharedImportInspection("#crosstabImportInspection", delimitedImportInspection(parsed, file.name));
+      }
       showButtonSaved(document.querySelector("#importCrosstabData"), "已导入");
     } catch (error) {
       document.querySelector("#crosstabResults").innerHTML = `
@@ -4952,6 +5205,9 @@ function splitDelimitedLine(line) {
 }
 
 function parseDelimitedTable(text) {
+  if (window.SurveyKitFileParser?.parseDelimitedTable) {
+    return window.SurveyKitFileParser.parseDelimitedTable(text);
+  }
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   if (lines.length < 2) return { headers: [], rows: [] };
   const headers = splitDelimitedLine(lines[0]).map((header, index) => header || `字段${index + 1}`);
@@ -6314,6 +6570,10 @@ function detectCrosstabFields() {
   fillSelectOptions("#crosstabRowVar", parsed.headers);
   fillSelectOptions("#crosstabColVar", parsed.headers);
   if (parsed.headers[1]) document.querySelector("#crosstabColVar").value = parsed.headers[1];
+  if (document.querySelector("#crosstabData").value.trim()) {
+    renderSharedImportInspection("#crosstabImportInspection", delimitedImportInspection(parsed, "粘贴数据"));
+  }
+  window.setTimeout(syncCoreWorkflowUx, 0);
   return parsed;
 }
 
@@ -9162,6 +9422,9 @@ async function generateAiPlan() {
     document.querySelector(missing[0].selector)?.focus();
     return;
   }
+  const generateButton = document.querySelector("#generateAiPlan");
+  setButtonLoading(generateButton, true, "正在生成方案");
+  try {
   const localPlan = buildLocalAiResearchPlan(config);
   const steps = [
     { title: "解析业务需求", detail: config.template && config.templateMode !== "none" ? `整理项目背景，并带入模板「${config.template.name}」的结构与风格。` : "整理项目背景、研究类型、目标人群、样本量和约束条件。" },
@@ -9208,6 +9471,9 @@ async function generateAiPlan() {
   } else {
     setAiPlanActionButtons({ word: wantsWord, ppt: false, project: true });
   }
+  } finally {
+    setButtonLoading(generateButton, false);
+  }
 }
 
 function buildAiPlanRevisionPrompt(instruction, currentDraft) {
@@ -9240,6 +9506,9 @@ async function reviseAiPlan() {
     result.innerHTML = `<div class="empty-state"><strong>缺少修改要求</strong><span>请先写明希望如何修改方案。</span></div>`;
     return;
   }
+  const reviseButton = document.querySelector("#reviseAiPlan");
+  setButtonLoading(reviseButton, true, "正在修改方案");
+  try {
   const settings = loadAiSettings();
   const steps = [
     { title: "读取修改要求", detail: "整理当前方案和用户追加要求。" },
@@ -9280,6 +9549,9 @@ async function reviseAiPlan() {
   renderAiProgress(result, steps, 4, "", "正在修改调研方案");
   renderAiPlanOutput(output, source);
   document.querySelector("#aiPlanReviseInput").value = "";
+  } finally {
+    setButtonLoading(reviseButton, false);
+  }
 }
 
 async function repairAiPlanQuality() {
@@ -12232,7 +12504,7 @@ async function generateAiReport() {
       ? "正在通过后端代理调用平台内置模型..."
       : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}...`;
   result.innerHTML = `<div class="empty-state"><strong>正在生成定量报告</strong><span>${escapeHtml(modelSourceText)}</span></div>`;
-  genButton.disabled = true;
+  setButtonLoading(genButton, true, "正在生成报告");
   setExportButtons(false);
 
   try {
@@ -12295,7 +12567,7 @@ async function generateAiReport() {
       </div>
     `;
   } finally {
-    genButton.disabled = false;
+    setButtonLoading(genButton, false);
   }
 }
 
@@ -13010,23 +13282,77 @@ document.querySelector("#toggleProjectForm")?.addEventListener("click", () => {
   if (!panel) return;
   panel.classList.toggle("form-expanded");
   const expanded = panel.classList.contains("form-expanded");
-  const btn = document.querySelector("#toggleProjectForm span");
+  const toggle = document.querySelector("#toggleProjectForm");
+  const btn = toggle?.querySelector("span");
+  toggle?.setAttribute("aria-expanded", String(expanded));
   if (btn) btn.textContent = expanded ? "收起项目档案" : "展开编辑项目档案";
 });
 
+document.addEventListener("click", (event) => {
+  const toggle = event.target.closest(".dashboard-stage-toggle");
+  if (!toggle) return;
+  const block = toggle.closest(".dashboard-stage-block");
+  if (!block) return;
+  block.classList.toggle("collapsed");
+  toggle.setAttribute("aria-expanded", String(!block.classList.contains("collapsed")));
+});
+
 // === P1-6: Toast notification system ===
-function showToast(message, type = "info", duration = 2800) {
+function dismissToast(toast) {
+  if (!toast || toast.classList.contains("leaving")) return;
+  window.clearTimeout(toast._dismissTimer);
+  toast.classList.add("leaving");
+  toast.addEventListener("animationend", () => toast.remove(), { once: true });
+}
+
+function showToast(message, type = "info", duration = null) {
   const container = document.querySelector("#toastContainer");
   if (!container) return;
-  const icons = { success: "\u2713", error: "\u2717", warning: "!", info: "i" };
+  const normalizedType = ["success", "error", "warning", "info"].includes(type) ? type : "info";
+  const text = String(message ?? "").trim() || "操作已完成";
+  const key = `${normalizedType}:${text}`;
+  const existing = Array.from(container.querySelectorAll(".toast"))
+    .find((item) => item.dataset.toastKey === key && !item.classList.contains("leaving"));
+  const visibleDuration = Number.isFinite(duration)
+    ? duration
+    : normalizedType === "error" ? 5200 : normalizedType === "warning" ? 4200 : 3000;
+
+  if (existing) {
+    window.clearTimeout(existing._dismissTimer);
+    existing._dismissTimer = window.setTimeout(() => dismissToast(existing), visibleDuration);
+    return existing;
+  }
+
+  const icons = { success: "\u2713", error: "\u00d7", warning: "!", info: "i" };
   const toast = document.createElement("div");
-  toast.className = `toast toast-${type}`;
-  toast.innerHTML = `<span class="toast-icon">${icons[type] || "i"}</span><span>${message}</span>`;
+  toast.className = `toast toast-${normalizedType}`;
+  toast.dataset.toastKey = key;
+  toast.setAttribute("role", normalizedType === "error" ? "alert" : "status");
+  toast.setAttribute("aria-live", normalizedType === "error" ? "assertive" : "polite");
+
+  const icon = document.createElement("span");
+  icon.className = "toast-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = icons[normalizedType];
+
+  const content = document.createElement("span");
+  content.className = "toast-message";
+  content.textContent = text;
+
+  const close = document.createElement("button");
+  close.className = "toast-close";
+  close.type = "button";
+  close.setAttribute("aria-label", "关闭通知");
+  close.textContent = "\u00d7";
+  close.addEventListener("click", () => dismissToast(toast));
+
+  toast.append(icon, content, close);
   container.appendChild(toast);
-  setTimeout(() => {
-    toast.classList.add("leaving");
-    toast.addEventListener("animationend", () => toast.remove());
-  }, duration);
+  while (container.querySelectorAll(".toast").length > 4) {
+    container.querySelector(".toast")?.remove();
+  }
+  toast._dismissTimer = window.setTimeout(() => dismissToast(toast), visibleDuration);
+  return toast;
 }
 
 // === P1-6: Enhance showButtonSaved with toast ===
@@ -13040,18 +13366,77 @@ showButtonSaved = function(button, text = "已保存") {
 };
 
 // === P1-6: Add loading state helper ===
-function setButtonLoading(button, loading) {
+function setButtonLoading(button, loading, loadingLabel = "处理中") {
   if (!button) return;
   if (loading) {
-    button._origDisabled = button.disabled;
+    if (button._loadingState) return;
+    button._loadingState = {
+      disabled: button.disabled,
+      html: button.innerHTML,
+      ariaBusy: button.getAttribute("aria-busy"),
+      ariaLabel: button.getAttribute("aria-label")
+    };
     button.disabled = true;
     button.classList.add("btn-loading");
+    button.setAttribute("aria-busy", "true");
+    button.setAttribute("aria-label", loadingLabel);
+    button.textContent = loadingLabel;
   } else {
+    const state = button._loadingState;
+    if (!state) return;
     button.classList.remove("btn-loading");
-    button.disabled = !!button._origDisabled;
-    delete button._origDisabled;
+    button.disabled = state.disabled;
+    button.innerHTML = state.html;
+    if (state.ariaBusy == null) button.removeAttribute("aria-busy");
+    else button.setAttribute("aria-busy", state.ariaBusy);
+    if (state.ariaLabel == null) button.removeAttribute("aria-label");
+    else button.setAttribute("aria-label", state.ariaLabel);
+    delete button._loadingState;
   }
 }
+
+function classifyFeedbackState(text) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  if (/正在|处理中|解析中|生成中|导入中|加载中|计算中|识别中|请稍候/.test(value)) return "loading";
+  if (/失败|错误|异常|无法|不可用|未加载|请求超时|接口返回\s*5\d\d/.test(value)) return "error";
+  if (/缺少|请先|未识别|不完整|未修改|没有匹配|没有可用/.test(value)) return "warning";
+  if (/成功|已完成|已就绪|已下载|已生成|准备完成/.test(value)) return "success";
+  if (/等待|暂无|未生成|无页面|尚未/.test(value)) return "idle";
+  return "neutral";
+}
+
+function enhanceFeedbackStates(root = document) {
+  const states = root instanceof Element && root.matches(".empty-state")
+    ? [root]
+    : Array.from(root.querySelectorAll?.(".empty-state") || []);
+  states.forEach((state) => {
+    const feedbackState = classifyFeedbackState(state.textContent);
+    state.classList.add("feedback-state");
+    state.dataset.feedbackState = feedbackState;
+    state.setAttribute("role", feedbackState === "error" || feedbackState === "warning" ? "alert" : "status");
+    state.setAttribute("aria-live", feedbackState === "error" ? "assertive" : "polite");
+    if (feedbackState === "loading") state.setAttribute("aria-busy", "true");
+    else state.removeAttribute("aria-busy");
+  });
+}
+
+(function initFeedbackStateEnhancer() {
+  let scheduled = false;
+  const schedule = () => {
+    if (scheduled) return;
+    scheduled = true;
+    window.requestAnimationFrame(() => {
+      scheduled = false;
+      enhanceFeedbackStates(document);
+    });
+  };
+  enhanceFeedbackStates(document);
+  new MutationObserver(schedule).observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true
+  });
+})();
 
 // === MOBILE-2: Remove loading overlay ===
 window.addEventListener("load", () => {
@@ -13338,6 +13723,8 @@ function detectAiReportFields() {
   const parsed = parseDelimitedTable(rawText);
   if (!parsed.headers.length) {
     document.querySelector("#aiReportFieldInfo").textContent = "未识别到有效字段，请检查数据格式。";
+    document.querySelector("#generateAiReport").disabled = true;
+    window.setTimeout(syncCoreWorkflowUx, 0);
     return parsed;
   }
   const headerInfos = parsed.headers.map((header, index) => {
@@ -13409,7 +13796,13 @@ document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
     </div>
   `;
   document.querySelector("#generateAiReport").disabled = true;
+  ["#copyAiReport", "#exportAiReportMd", "#exportAiReportWord", "#exportAiReportPpt"].forEach((selector) => {
+    const button = document.querySelector(selector);
+    if (button) button.disabled = true;
+  });
+  lastAiReport = "";
   lastCrosstabDataContext = null;
+  window.setTimeout(syncCoreWorkflowUx, 0);
 });
 
 // ═════════════════ PPT 报告生成页 ═══════════════
@@ -13461,6 +13854,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     const parseBtn = document.querySelector("#pptxParseBtn");
     const clearBtn = document.querySelector("#pptxClearFile");
     const parseStatus = document.querySelector("#pptxParseStatus");
+    const importInspectionEl = document.querySelector("#pptxImportInspection");
     const titleInput = document.querySelector("#pptxReportTitle");
     const themeInput = document.querySelector("#pptxThemeColor");
     const templateModeInput = document.querySelector("#pptxTemplateMode");
@@ -13521,6 +13915,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     if (!dropzone) return;
 
     let selectedFile = null;
+    let selectedFileInspection = null;
+    let inspectionRequestId = 0;
     let dimensionGroups = [];   // 解析得到的维度分组
     let currentDimension = "";  // 当前选中的分组名（"" = 全部维度）
     let detectedResearchModules = [];
@@ -14223,13 +14619,100 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       }
     });
 
-    function setFile(file) {
+    function escapeInspectionHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function renderImportInspection(inspection) {
+      if (!importInspectionEl) return;
+      if (!inspection) {
+        importInspectionEl.classList.add("hidden");
+        importInspectionEl.innerHTML = "";
+        importInspectionEl.removeAttribute("data-status");
+        return;
+      }
+      const roleLabels = {
+        primary_data: "主数据",
+        crosstab: "交叉表",
+        codebook: "题目/编码表",
+        instructions: "说明",
+        other: "辅助 Sheet",
+      };
+      const metrics = inspection.metrics || {};
+      const sheets = (inspection.sheets || []).map((sheet) => `
+        <div class="import-inspection__sheet">
+          <strong>${escapeInspectionHtml(sheet.name)}</strong>
+          <span>${escapeInspectionHtml(roleLabels[sheet.role] || sheet.role || "待判断")} · ${Number(sheet.row_count) || 0} 行 × ${Number(sheet.column_count) || 0} 列</span>
+        </div>
+      `).join("");
+      const diagnostics = (inspection.diagnostics || []).map((item) => `
+        <li>
+          <strong>${escapeInspectionHtml(item.message)}</strong>
+          ${item.action ? `<span class="import-inspection__action">处理建议：${escapeInspectionHtml(item.action)}</span>` : ""}
+        </li>
+      `).join("");
+      importInspectionEl.dataset.status = inspection.status || "warning";
+      importInspectionEl.classList.remove("hidden");
+      importInspectionEl.innerHTML = `
+        <div class="import-inspection__summary">
+          <strong>${escapeInspectionHtml(inspection.format_label || "正在识别")}</strong>
+          <span>${Number(metrics.sheet_count) || 0} 个 Sheet</span>
+          <span>${Number(metrics.question_count) || 0} 道题/字段</span>
+          <span>${Number(metrics.dimension_count) || 0} 个分组维度</span>
+        </div>
+        ${sheets ? `<div class="import-inspection__sheets">${sheets}</div>` : ""}
+        ${diagnostics ? `<ul class="import-inspection__diagnostics">${diagnostics}</ul>` : ""}
+      `;
+    }
+
+    function legacyXlsInspection(file) {
+      return {
+        version: "surveykit_import_inspection_v1",
+        status: "warning",
+        format: "legacy_xls",
+        format_label: "旧版 Excel（由服务端识别）",
+        sheets: [],
+        metrics: { sheet_count: 0, question_count: 0, dimension_count: 0 },
+        diagnostics: [{
+          severity: "warning",
+          code: "LEGACY_XLS_PREVIEW_UNAVAILABLE",
+          message: "浏览器无法在上传前预览旧版 .xls 的 Sheet 结构。",
+          action: "可以继续交给服务端解析；若解析失败，请用 Excel/WPS 另存为 .xlsx 后重试。",
+        }],
+      };
+    }
+
+    async function inspectSelectedFile(file, requestId) {
+      const parser = window.SurveyKitFileParser;
+      if (/\.xls$/i.test(file.name) && !/\.xlsx$/i.test(file.name)) return legacyXlsInspection(file);
+      if (!parser || typeof parser.inspectResearchWorkbook !== "function") {
+        throw new Error("统一文件解析器尚未加载，请按 Ctrl+F5 刷新页面后重试。");
+      }
+      const inspection = await parser.inspectResearchWorkbook(await file.arrayBuffer(), { target: "pptx_crosstab" });
+      if (requestId !== inspectionRequestId) return null;
+      return inspection;
+    }
+
+    async function setFile(file) {
       if (!file) return;
+      const requestId = ++inspectionRequestId;
       selectedFile = file;
+      selectedFileInspection = null;
       fileNameEl.textContent = file.name;
-      parseBtn.disabled = false;
+      parseBtn.disabled = true;
       clearBtn.disabled = false;
-      parseStatus.textContent = "";
+      parseStatus.textContent = "正在检查文件结构…";
+      renderImportInspection({
+        status: "warning",
+        format_label: "正在检查文件结构",
+        sheets: [],
+        metrics: { sheet_count: 0, question_count: 0, dimension_count: 0 },
+        diagnostics: [],
+      });
       if (segmentPanel) segmentPanel.innerHTML = '<p class="panel-note" style="padding:10px;color:#95a1ad;font-size:13px;">解析后将在此列出可对比的人群维度。</p>';
       if (textEl) { textEl.textContent = "解析后可选"; textEl.style.color = "#95a1ad"; }
       populateDimensionDropdown([]);
@@ -14243,6 +14726,34 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       pptxGenerationRunning = false;
       setPptxCancelState(false);
       if (aiWriteBtn) aiWriteBtn.disabled = true;
+      try {
+        const inspection = await inspectSelectedFile(file, requestId);
+        if (!inspection || requestId !== inspectionRequestId) return;
+        selectedFileInspection = inspection;
+        renderImportInspection(inspection);
+        const blocked = inspection.status === "error";
+        parseBtn.disabled = blocked;
+        parseStatus.textContent = blocked
+          ? "文件结构检查未通过，请按上方建议修正后重新上传。"
+          : `结构检查完成：${inspection.format_label}，可继续解析维度。`;
+      } catch (error) {
+        if (requestId !== inspectionRequestId) return;
+        selectedFileInspection = {
+          status: "error",
+          format_label: "文件结构检查失败",
+          sheets: [],
+          metrics: { sheet_count: 0, question_count: 0, dimension_count: 0 },
+          diagnostics: [{
+            severity: "error",
+            code: "LOCAL_INSPECTION_FAILED",
+            message: error.message || "无法读取文件结构。",
+            action: "请确认文件可在 Excel/WPS 中正常打开，并另存为 .xlsx 后重试。",
+          }],
+        };
+        renderImportInspection(selectedFileInspection);
+        parseStatus.textContent = "文件结构检查失败，请按上方建议处理。";
+        parseBtn.disabled = true;
+      }
     }
 
     dropzone.addEventListener("click", () => fileInput.click());
@@ -14263,6 +14774,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
 
     clearBtn.addEventListener("click", () => {
       selectedFile = null;
+      selectedFileInspection = null;
+      inspectionRequestId += 1;
       fileInput.value = "";
       fileNameEl.textContent = "未选择文件";
       parseBtn.disabled = true;
@@ -14278,6 +14791,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       populateDimensionDropdown([]);
       resetCoreResearchModules();
       parseStatus.textContent = "";
+      renderImportInspection(null);
     });
 
     // 多选下拉文本更新
@@ -14529,6 +15043,10 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     }
     parseBtn.addEventListener("click", async () => {
       if (!selectedFile) return;
+      if (selectedFileInspection?.status === "error") {
+        parseStatus.textContent = "文件结构检查未通过，请先按诊断建议修正文件。";
+        return;
+      }
       parseBtn.disabled = true;
       parseStatus.textContent = "解析中…";
       try {
@@ -14543,6 +15061,14 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         }
         const data = await resp.json();
         const segs = data.segments || [];
+        const questionCount = Number(data.questions) || 0;
+        if (!segs.length || questionCount <= 0) {
+          const formatLabel = selectedFileInspection?.format_label || "当前文件";
+          throw new Error(
+            `服务端未从${formatLabel}中识别到${questionCount <= 0 ? "题目" : "人群列"}。`
+            + "请检查交叉表是否保留题目标记、Total/总体列和分组表头；也可根据上方结构诊断修正后重新上传。"
+          );
+        }
         lastAllSegments = segs;
         // 维度分组下拉（有则展示，默认全部维度）
         populateDimensionDropdown(data.dimension_groups || []);
@@ -14551,12 +15077,12 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         renderSegmentOptions(segs);
         updateMultiselectText();
         parseStatus.textContent =
-          `已识别 ${segs.length} 个人群维度、${data.questions || 0} 道题目。` +
+          `已识别 ${segs.length} 个人群列、${questionCount} 道题目。` +
           (dimensionGroups.length ? `，${dimensionGroups.length} 个维度分组` : "");
         recordWorkspaceAsset("crosstabFile", {
           fileName: selectedFile.name,
           size: selectedFile.size,
-          questions: data.questions || 0,
+          questions: questionCount,
           segments: segs.length,
           dimensionGroups: dimensionGroups.length,
         }, `解析交叉表：${selectedFile.name}`);
@@ -19487,12 +20013,142 @@ document.addEventListener("DOMContentLoaded", () => {
   const sidebar = document.querySelector("#appSidebar");
   const overlay = document.querySelector("#sidebarOverlay");
   if (!menuBtn || !sidebar) return;
-  function openSidebar() { sidebar.classList.add("open"); overlay?.classList.add("active"); }
-  function closeSidebar() { sidebar.classList.remove("open"); overlay?.classList.remove("active"); }
+  menuBtn.setAttribute("aria-controls", "appSidebar");
+  menuBtn.setAttribute("aria-expanded", "false");
+  function openSidebar() {
+    sidebar.classList.add("open");
+    overlay?.classList.add("active");
+    document.body.classList.add("sidebar-open");
+    menuBtn.setAttribute("aria-expanded", "true");
+    menuBtn.setAttribute("aria-label", "关闭菜单");
+  }
+  function closeSidebar() {
+    sidebar.classList.remove("open");
+    overlay?.classList.remove("active");
+    document.body.classList.remove("sidebar-open");
+    menuBtn.setAttribute("aria-expanded", "false");
+    menuBtn.setAttribute("aria-label", "打开菜单");
+  }
   menuBtn.addEventListener("click", () => sidebar.classList.contains("open") ? closeSidebar() : openSidebar());
   overlay?.addEventListener("click", closeSidebar);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && sidebar.classList.contains("open")) {
+      closeSidebar();
+      menuBtn.focus();
+    }
+  });
   // 点击导航项后自动关闭
   sidebar.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", closeSidebar));
+})();
+
+// === Core workflow UX: shared step state and progressive disclosure ===
+function setTaskFlowIndicator(view, key, state, detail = "") {
+  const item = view?.querySelector(`[data-flow-indicator="${key}"]`);
+  if (!item) return;
+  item.dataset.state = state;
+  if (state === "active") item.setAttribute("aria-current", "step");
+  else item.removeAttribute("aria-current");
+  const detailEl = item.querySelector("small");
+  if (detail && detailEl) detailEl.textContent = detail;
+}
+
+function setFlowPanelState(panel, state) {
+  if (!panel) return;
+  panel.dataset.flowState = state;
+}
+
+function syncCoreWorkflowUx() {
+  const crosstabView = document.querySelector("#crosstab-analysis");
+  if (crosstabView) {
+    const parsed = parseDelimitedTable(document.querySelector("#crosstabData")?.value || "");
+    const hasData = parsed.headers.length >= 2 && parsed.rows.length > 0;
+    const hasFields = (document.querySelector("#crosstabRowVar")?.options.length || 0) >= 2
+      && (document.querySelector("#crosstabColVar")?.options.length || 0) >= 2;
+    const hasResult = Boolean(lastQuestionPivot || lastCrosstabAnalysis);
+    setTaskFlowIndicator(crosstabView, "import", hasFields ? "completed" : "active", hasData ? `${parsed.rows.length} 行 · ${parsed.headers.length} 字段` : "准备数据字段");
+    setTaskFlowIndicator(crosstabView, "configure", hasResult ? "completed" : hasFields ? "active" : "locked", hasFields ? "选择批量或单表分析" : "等待字段识别");
+    setTaskFlowIndicator(crosstabView, "result", hasResult ? "active" : "locked", hasResult ? "可查看并导出结果" : "查看结果并下载");
+    const configureStage = document.querySelector("#crosstabConfigureStage");
+    if (configureStage) {
+      configureStage.dataset.state = hasResult ? "completed" : hasFields ? "ready" : "locked";
+      const stateLabel = configureStage.querySelector(".workflow-state-label");
+      if (stateLabel) stateLabel.textContent = hasResult ? "已生成结果" : hasFields ? "可以开始分析" : "等待字段识别";
+    }
+  }
+
+  const aiReportView = document.querySelector("#ai-report");
+  if (aiReportView) {
+    const briefReady = Boolean(document.querySelector("#aiReportProjectName")?.value.trim())
+      && Boolean(document.querySelector("#aiReportObjective")?.value.trim());
+    const hasData = Boolean(document.querySelector("#aiReportData")?.value.trim())
+      && !document.querySelector("#generateAiReport")?.disabled;
+    const hasResult = Boolean(lastAiReport) && !document.querySelector("#copyAiReport")?.disabled;
+    aiReportView.classList.toggle("workflow-has-data", hasData);
+    aiReportView.classList.toggle("workflow-has-result", hasResult);
+    setTaskFlowIndicator(aiReportView, "brief", briefReady ? "completed" : "active", briefReady ? "研究目标已填写" : "明确目标与受众");
+    setTaskFlowIndicator(aiReportView, "data", hasData ? "completed" : "active", hasData ? "数据识别完成" : "导入并识别数据");
+    setTaskFlowIndicator(aiReportView, "generate", hasResult ? "completed" : hasData ? "active" : "locked", hasResult ? "报告可以导出" : hasData ? "可以生成报告" : "等待数据识别");
+    const generateStep = aiReportView.querySelector('[data-flow-step="generate"]');
+    if (generateStep) generateStep.dataset.state = hasResult ? "completed" : hasData ? "ready" : "locked";
+    document.querySelector("#aiReportOutputPanel")?.classList.toggle("is-dormant", !hasData);
+  }
+
+  const aiPlanView = document.querySelector("#ai-plan");
+  if (aiPlanView) {
+    const hasBrief = Boolean(document.querySelector("#aiPlanInput")?.value.trim());
+    const hasResult = Boolean(lastAiPlan) && !document.querySelector("#copyAiPlan")?.disabled;
+    aiPlanView.classList.toggle("workflow-has-result", hasResult);
+    setTaskFlowIndicator(aiPlanView, "brief", hasBrief ? "completed" : "active", hasBrief ? "需求信息已准备" : "说明业务问题");
+    setTaskFlowIndicator(aiPlanView, "generate", hasResult ? "completed" : hasBrief ? "active" : "ready", hasResult ? "方案生成完成" : hasBrief ? "可以生成方案" : "填写需求后生成");
+    setTaskFlowIndicator(aiPlanView, "refine", hasResult ? "active" : "locked", hasResult ? "反馈修改并导出" : "等待方案生成");
+  }
+
+  const pptxView = document.querySelector("#pptx-report");
+  if (pptxView) {
+    const fileName = document.querySelector("#pptxFileName")?.textContent?.trim() || "";
+    const hasFile = Boolean(fileName && fileName !== "未选择文件");
+    const parsed = hasFile && !document.querySelector("#pptxPreviewBtn")?.disabled;
+    const previewPanel = document.querySelector("#pptxPreviewPanel");
+    const previewVisible = Boolean(previewPanel && previewPanel.style.display !== "none");
+    const resultText = document.querySelector("#pptxResult")?.textContent || "";
+    const generated = /生成成功|报告已下载/.test(resultText);
+    setTaskFlowIndicator(pptxView, "upload", parsed ? "completed" : "active", parsed ? "文件解析完成" : hasFile ? "等待解析维度" : "检查文件结构");
+    setTaskFlowIndicator(pptxView, "configure", generated ? "completed" : parsed ? "active" : "locked", generated ? "配置与蓝图已确认" : previewVisible ? "调整结构与故事线" : parsed ? "选择维度与模式" : "等待文件解析");
+    setTaskFlowIndicator(pptxView, "download", generated ? "completed" : previewVisible ? "active" : "locked", generated ? "报告已下载" : previewVisible ? "可以生成报告" : "等待报告预览");
+    setFlowPanelState(document.querySelector("#pptxUploadStep"), parsed ? "completed" : "active");
+    setFlowPanelState(document.querySelector("#pptxConfigStep"), parsed ? previewVisible ? "completed" : "active" : "locked");
+    setFlowPanelState(document.querySelector("#pptxDownloadStep"), generated ? "completed" : "locked");
+  }
+}
+
+(function initCoreWorkflowUx() {
+  const relevantViews = new Set(["crosstab-analysis", "ai-report", "ai-plan", "pptx-report"]);
+  const scheduleSync = () => window.setTimeout(syncCoreWorkflowUx, 0);
+  document.addEventListener("input", (event) => {
+    if (relevantViews.has(event.target.closest(".view")?.id)) scheduleSync();
+  });
+  document.addEventListener("change", (event) => {
+    if (relevantViews.has(event.target.closest(".view")?.id)) scheduleSync();
+  });
+  document.addEventListener("click", (event) => {
+    if (relevantViews.has(event.target.closest(".view")?.id)) window.setTimeout(syncCoreWorkflowUx, 80);
+  });
+  [
+    "#crosstabResults", "#aiReportResults", "#aiReportDataPreview", "#aiPlanResults",
+    "#pptxResult", "#pptxPreviewPanel", "#generateAiReport", "#copyAiReport",
+    "#copyAiPlan", "#pptxPreviewBtn", "#pptxParseBtn", "#pptxFileName",
+  ].forEach((selector) => {
+    const target = document.querySelector(selector);
+    if (!target) return;
+    new MutationObserver(scheduleSync).observe(target, {
+      attributes: true,
+      attributeFilter: ["disabled", "style", "hidden", "aria-hidden"],
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  });
+  syncCoreWorkflowUx();
 })();
 
 // === 全局错误捕获：友好提示而非白屏 ===

@@ -84,7 +84,7 @@ assert.match(html, /核心研究模块[\s\S]*field-badge required/);
 assert.match(html, /附加研究模块[\s\S]*可多选/);
 assert.match(html, /混合模式：结构 \+ 风格 \+ 颗粒度复刻/);
 assert.doesNotMatch(html, /data-view="models"|id="models"/);
-assert.match(html, /<span>调研后<\/span>[\s\S]*?<\/div>\s*<button class="nav-item" data-view="pptx-report">PPT 报告生成<\/button>/);
+assert.match(html, /data-nav-phase="after"[\s\S]*?<span>调研后<\/span>[\s\S]*?<div class="nav-group-items">[\s\S]*?data-view="pptx-report"/);
 const postResearchNav = html.slice(html.indexOf("<span>调研后</span>"), html.indexOf("</nav>"));
 assert.ok(postResearchNav.indexOf('data-view="pptx-report"') < postResearchNav.indexOf('data-view="ai-report"'));
 assert.doesNotMatch(source, /jump: "models"/);

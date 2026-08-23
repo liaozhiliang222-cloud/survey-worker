@@ -72,7 +72,9 @@ export function decodeXmlText(value) {
     .replaceAll("&gt;", ">")
     .replaceAll("&amp;", "&")
     .replaceAll("&quot;", "\"")
-    .replaceAll("&apos;", "'");
+    .replaceAll("&apos;", "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)));
 }
 
 export function normalizeImportedText(text) {
@@ -312,6 +314,324 @@ export function getWorkbookSheets(workbookXml, relationshipXml = "") {
 
 export function getWorkbookSheetNames(workbookXml) {
   return [...workbookXml.matchAll(/<(?:\w+:)?sheet\b[^>]*name="([^"]+)"/g)].map((m) => decodeXmlText(m[1]));
+}
+
+// ─── 统一工作簿识别与诊断 ────────────────────────────────────
+
+export const IMPORT_FORMATS = Object.freeze({
+  STANDARD_CROSSTAB: "standard_crosstab",
+  FLAT_CROSSTAB: "flat_crosstab",
+  RAW_SURVEY: "raw_survey",
+  KANO: "kano",
+  DATA_CODE: "data_code",
+  UNKNOWN: "unknown",
+});
+
+export const IMPORT_FORMAT_LABELS = Object.freeze({
+  [IMPORT_FORMATS.STANDARD_CROSSTAB]: "标准交叉表",
+  [IMPORT_FORMATS.FLAT_CROSSTAB]: "平铺交叉表",
+  [IMPORT_FORMATS.RAW_SURVEY]: "原始问卷数据",
+  [IMPORT_FORMATS.KANO]: "KANO 正反向题数据",
+  [IMPORT_FORMATS.DATA_CODE]: "data + code 双 Sheet 数据",
+  [IMPORT_FORMATS.UNKNOWN]: "未识别结构",
+});
+
+function normalizedCell(value) {
+  return String(value ?? "").replace(/\u00a0/g, " ").trim();
+}
+
+function normalizedRows(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => (Array.isArray(row) ? row.map(normalizedCell) : []))
+    .filter((row) => row.some(Boolean));
+}
+
+function workbookWidth(rows) {
+  return rows.reduce((width, row) => Math.max(width, row.length), 0);
+}
+
+function nonEmptyCount(row) {
+  return (row || []).filter((cell) => normalizedCell(cell)).length;
+}
+
+function sheetContains(sheet, pattern) {
+  return sheet.rows.some((row) => row.some((cell) => pattern.test(normalizedCell(cell))));
+}
+
+function looksLikeQuestionCode(value) {
+  return /^(?:Q|S|A|B|C|D|E|F|G|H|K|M|N|P|R|V)\d+(?:[_-]\d+)*(?:\.|\s|$)/i.test(normalizedCell(value));
+}
+
+function normalizeKanoFeatureCode(value) {
+  const match = normalizedCell(value).match(/^(.+?)_{1,2}([12])$/);
+  return match ? match[1].replace(/_+$/, "") : "";
+}
+
+function kanoFeatureCodes(headers) {
+  const counts = new Map();
+  headers.slice(1).forEach((header) => {
+    const code = normalizeKanoFeatureCode(header);
+    if (!code) return;
+    counts.set(code, (counts.get(code) || 0) + 1);
+  });
+  return [...counts.entries()].filter(([, count]) => count >= 2).map(([code]) => code);
+}
+
+function findHeaderRow(sheet) {
+  const candidates = sheet.rows.slice(0, 20).map((row, index) => ({
+    index,
+    row,
+    populated: nonEmptyCount(row),
+    score: nonEmptyCount(row)
+      + (row.some((cell) => /题目|选项|变量|字段|total|总体|总计|合计|rid|id/i.test(normalizedCell(cell))) ? 8 : 0),
+  }));
+  candidates.sort((left, right) => right.score - left.score || left.index - right.index);
+  return candidates[0] || { index: 0, row: [] };
+}
+
+function analyzeSheet(sheet) {
+  const rows = normalizedRows(sheet.rows);
+  const width = workbookWidth(rows);
+  const headerInfo = findHeaderRow({ rows });
+  const header = headerInfo.row.map(normalizedCell);
+  const name = normalizedCell(sheet.name) || `Sheet${Number(sheet.index || 0) + 1}`;
+  const codeMarker = /^(?:本题选项|选项编码|变量编码|value labels?)/i;
+  const isInstruction = /说明|instruction|readme|guide/i.test(name);
+  const isCode = /^(?:code|codes|codebook|features?)$/i.test(name)
+    || /编码|码表|题目字典|变量标签|功能项/i.test(name)
+    || rows.slice(0, 60).some((row) => row.some((cell) => codeMarker.test(normalizedCell(cell))));
+  const hasCaption = sheetContains({ rows }, /CAPTION\s*:/i);
+  const pairedKanoCodes = kanoFeatureCodes(header);
+  const isData = !isInstruction && rows.length >= 2 && width >= 2;
+  return {
+    index: Number(sheet.index || 0),
+    name,
+    rows,
+    row_count: rows.length,
+    column_count: width,
+    header_row_index: headerInfo.index,
+    headers: header,
+    preview: rows.slice(0, 5).map((row) => row.slice(0, 8)),
+    flags: { is_instruction: isInstruction, is_code: isCode, is_data: isData, has_caption: hasCaption },
+    kano_feature_codes: pairedKanoCodes,
+  };
+}
+
+function countStandardCrosstabQuestions(sheets) {
+  const questions = new Set();
+  sheets.forEach((sheet) => sheet.rows.forEach((row) => row.forEach((cell) => {
+    const match = normalizedCell(cell).match(/CAPTION\s*:\s*(.+)/i);
+    if (match) questions.add(match[1].replace(/^\[[^\]]+\]\s*[.．]?\s*/, "").trim());
+  })));
+  return questions.size;
+}
+
+function standardCrosstabDimensions(sheets) {
+  const dimensions = new Set();
+  sheets.filter((sheet) => sheet.flags.has_caption).forEach((sheet) => {
+    const baseIndex = sheet.rows.findIndex((row) => /^BASE$/i.test(normalizedCell(row[0])));
+    if (baseIndex < 1) return;
+    const leaf = sheet.rows[baseIndex - 1] || [];
+    const parent = sheet.rows[baseIndex - 2] || [];
+    let activeParent = "";
+    for (let column = 1; column < Math.max(leaf.length, parent.length); column += 1) {
+      const parentValue = normalizedCell(parent[column]);
+      if (parentValue) activeParent = parentValue;
+      const leafValue = normalizedCell(leaf[column]);
+      if (activeParent && leafValue && !/^(?:total|总体|整体|总计|合计)$/i.test(activeParent)) dimensions.add(activeParent);
+    }
+  });
+  return [...dimensions];
+}
+
+function flatCrosstabInfo(sheets) {
+  let questionCount = 0;
+  const dimensions = new Set();
+  sheets.forEach((sheet) => {
+    const headerIndex = sheet.rows.findIndex((row) =>
+      /题目|选项|指标|question/i.test(normalizedCell(row[0]))
+      && row.slice(1).some((cell) => /total|总体|整体|总计|合计/i.test(normalizedCell(cell)))
+    );
+    if (headerIndex < 0) return;
+    const headers = sheet.rows[headerIndex] || [];
+    headers.slice(1).forEach((header) => {
+      const text = normalizedCell(header);
+      if (!text || /^(?:total|总体|整体|总计|合计)$/i.test(text)) return;
+      const group = text.split(/[-_／/]/)[0].trim();
+      if (group) dimensions.add(group);
+    });
+    sheet.rows.slice(headerIndex + 1).forEach((row) => {
+      const first = normalizedCell(row[0]);
+      if (!looksLikeQuestionCode(first)) return;
+      const numericCells = row.slice(1).filter((cell) => normalizedCell(cell) !== "");
+      if (numericCells.length <= 1) questionCount += 1;
+    });
+  });
+  return { question_count: questionCount, dimensions: [...dimensions] };
+}
+
+function rawSurveyQuestionHeaders(headers) {
+  const idPattern = /^(?:id|rid|respondent|record|序号|编号|样本编号|答卷编号)$/i;
+  return headers.filter((header) => header && !idPattern.test(header));
+}
+
+function rawSurveyDimensions(headers) {
+  const dimensionPattern = /性别|年龄|地区|省份|城市|收入|职业|学历|婚姻|家庭|人群|分群|cluster|segment|gender|age|region|city|income/i;
+  return headers.filter((header) => dimensionPattern.test(header));
+}
+
+function diagnostic(severity, code, message, action = "", sheet = "") {
+  return { severity, code, message, action, sheet };
+}
+
+export async function xlsxToWorkbookSheets(arrayBuffer) {
+  const sharedXml = await readZipText(arrayBuffer, "xl/sharedStrings.xml").catch(() => "");
+  const workbookXml = await readZipText(arrayBuffer, "xl/workbook.xml").catch(() => "");
+  const relationshipXml = await readZipText(arrayBuffer, "xl/_rels/workbook.xml.rels").catch(() => "");
+  if (!workbookXml) throw new Error("文件中缺少 Excel 工作簿结构（xl/workbook.xml），请确认文件未损坏并另存为 .xlsx。");
+  const sharedStrings = sharedStringsFromXml(sharedXml);
+  const sheets = getWorkbookSheets(workbookXml, relationshipXml);
+  const parsedSheets = [];
+  for (const sheet of sheets) {
+    const sheetXml = await readZipText(arrayBuffer, sheet.path).catch(() => "");
+    if (!sheetXml) continue;
+    const rows = xlsxSheetXmlToRows(sheetXml, sharedStrings);
+    if (rows.length) parsedSheets.push({ ...sheet, rows });
+  }
+  return parsedSheets;
+}
+
+/**
+ * 统一识别 Excel 的业务结构。该函数只分类和诊断，不替代后端的精确交叉表计算。
+ * @returns {Promise<object>} ImportInspection v1
+ */
+export async function inspectResearchWorkbook(arrayBuffer, options = {}) {
+  const rawSheets = await xlsxToWorkbookSheets(arrayBuffer);
+  const sheets = rawSheets.map(analyzeSheet);
+  const diagnostics = [];
+  const dataSheets = sheets.filter((sheet) => sheet.flags.is_data && !sheet.flags.is_code);
+  const codeSheets = sheets.filter((sheet) => sheet.flags.is_code);
+  const captionSheets = sheets.filter((sheet) => sheet.flags.has_caption);
+  const kanoDataSheet = dataSheets.find((sheet) => sheet.kano_feature_codes.length >= 2);
+  const flat = flatCrosstabInfo(sheets);
+  let format = IMPORT_FORMATS.UNKNOWN;
+  let questionCount = 0;
+  let dimensions = [];
+  let selectedSheet = dataSheets[0] || sheets[0] || null;
+
+  if (!sheets.length) {
+    diagnostics.push(diagnostic("error", "EMPTY_WORKBOOK", "工作簿中没有可读取的数据 Sheet。", "请删除空白 Sheet，并将数据放在至少包含表头和一行数据的 Sheet 中。"));
+  } else if (captionSheets.length) {
+    format = IMPORT_FORMATS.STANDARD_CROSSTAB;
+    selectedSheet = captionSheets[0];
+    questionCount = countStandardCrosstabQuestions(captionSheets);
+    dimensions = standardCrosstabDimensions(captionSheets);
+  } else if (flat.question_count > 0) {
+    format = IMPORT_FORMATS.FLAT_CROSSTAB;
+    selectedSheet = sheets.find((sheet) => sheet.rows.some((row) => /题目|选项|question/i.test(normalizedCell(row[0])))) || selectedSheet;
+    questionCount = flat.question_count;
+    dimensions = flat.dimensions;
+  } else if (kanoDataSheet) {
+    format = IMPORT_FORMATS.KANO;
+    selectedSheet = kanoDataSheet;
+    const featureSheet = codeSheets.find((sheet) => /feature|功能项/i.test(sheet.name));
+    const featureRows = featureSheet?.rows.slice(1).filter((row) => normalizedCell(row[0])) || [];
+    questionCount = Math.max(kanoDataSheet.kano_feature_codes.length, featureRows.length);
+    dimensions = rawSurveyDimensions(kanoDataSheet.headers);
+  } else if (dataSheets.length && codeSheets.length) {
+    format = IMPORT_FORMATS.DATA_CODE;
+    selectedSheet = dataSheets.sort((left, right) => right.row_count - left.row_count)[0];
+    const codebook = Object.assign({}, ...codeSheets.map((sheet) => parseCodebookRows(sheet.rows)));
+    questionCount = Object.keys(codebook).length || rawSurveyQuestionHeaders(selectedSheet.headers).length;
+    dimensions = [
+      ...rawSurveyDimensions(selectedSheet.headers),
+      ...Object.values(codebook)
+        .filter((entry) => rawSurveyDimensions([entry.title]).length)
+        .map((entry) => entry.title),
+    ].filter((value, index, values) => values.indexOf(value) === index);
+  } else if (dataSheets.length) {
+    format = IMPORT_FORMATS.RAW_SURVEY;
+    selectedSheet = dataSheets.sort((left, right) => right.row_count - left.row_count)[0];
+    questionCount = rawSurveyQuestionHeaders(selectedSheet.headers).length;
+    dimensions = rawSurveyDimensions(selectedSheet.headers);
+  }
+
+  sheets.forEach((sheet) => {
+    let role = "other";
+    if (sheet === selectedSheet) role = "primary_data";
+    else if (sheet.flags.is_code) role = "codebook";
+    else if (sheet.flags.is_instruction) role = "instructions";
+    else if (sheet.flags.has_caption) role = "crosstab";
+    sheet.role = role;
+  });
+
+  if (format === IMPORT_FORMATS.UNKNOWN && !diagnostics.length) {
+    diagnostics.push(diagnostic(
+      "error",
+      "UNRECOGNIZED_WORKBOOK",
+      "未找到可识别的交叉表、原始问卷、KANO 或 data + code 结构。",
+      "请确认首行是字段名；交叉表应包含 CAPTION 或“题目/选项 + 总体”表头；原始数据应至少包含两列和一行样本。"
+    ));
+  }
+  if (format !== IMPORT_FORMATS.UNKNOWN && questionCount === 0) {
+    diagnostics.push(diagnostic(
+      "error",
+      "NO_QUESTIONS_DETECTED",
+      `已识别为${IMPORT_FORMAT_LABELS[format]}，但没有定位到题目或字段。`,
+      "请检查题号/字段名是否位于同一表头行，且题目编码未被合并单元格或空白列隔开。",
+      selectedSheet?.name || ""
+    ));
+  }
+  if (!dimensions.length && [IMPORT_FORMATS.STANDARD_CROSSTAB, IMPORT_FORMATS.FLAT_CROSSTAB].includes(format)) {
+    diagnostics.push(diagnostic(
+      "warning",
+      "NO_GROUP_DIMENSIONS",
+      "已识别题目，但没有识别到可对比的人群分组。",
+      "请保留 Total/总体列，并在其右侧放置至少一个分组列；多级表头请勿删除维度名称。",
+      selectedSheet?.name || ""
+    ));
+  }
+  if (options.target === "pptx_crosstab" && ![
+    IMPORT_FORMATS.STANDARD_CROSSTAB,
+    IMPORT_FORMATS.FLAT_CROSSTAB,
+  ].includes(format)) {
+    diagnostics.push(diagnostic(
+      "error",
+      "PPTX_REQUIRES_CROSSTAB",
+      `当前页面需要交叉表，但文件结构是${IMPORT_FORMAT_LABELS[format] || "未知格式"}。`,
+      "请先在“交叉表分析”中把原始数据生成标准交叉表，再回到此页面上传导出的交叉表。",
+      selectedSheet?.name || ""
+    ));
+  }
+
+  const hasError = diagnostics.some((item) => item.severity === "error");
+  const hasWarning = diagnostics.some((item) => item.severity === "warning");
+  return {
+    version: "surveykit_import_inspection_v1",
+    status: hasError ? "error" : hasWarning ? "warning" : "ready",
+    format,
+    format_label: IMPORT_FORMAT_LABELS[format],
+    selected_sheet: selectedSheet?.name || "",
+    sheets: sheets.map((sheet) => ({
+      index: sheet.index,
+      name: sheet.name,
+      role: sheet.role,
+      row_count: sheet.row_count,
+      column_count: sheet.column_count,
+      header_row_index: sheet.header_row_index,
+      headers: sheet.headers.slice(0, 20),
+      preview: sheet.preview,
+    })),
+    metrics: {
+      sheet_count: sheets.length,
+      question_count: questionCount,
+      dimension_count: dimensions.length,
+      dimensions,
+      row_count: selectedSheet?.row_count || 0,
+      column_count: selectedSheet?.column_count || 0,
+    },
+    diagnostics,
+  };
 }
 
 // ─── SAV 解析 ───────────────────────────────────────────────

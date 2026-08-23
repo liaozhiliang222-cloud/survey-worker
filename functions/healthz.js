@@ -1,17 +1,18 @@
 function releaseInfo(env = {}) {
   return {
-    version: String(env.SURVEYKIT_RELEASE || "unknown"),
+    version: String(env.SURVEYKIT_RELEASE || env.CF_PAGES_COMMIT_SHA || "unknown"),
     revision: String(env.SURVEYKIT_COMMIT || env.CF_PAGES_COMMIT_SHA || ""),
     deployed_at: String(env.SURVEYKIT_DEPLOYED_AT || ""),
   };
 }
 
 export async function onRequestGet({ env }) {
+  const release = releaseInfo(env);
   return new Response(JSON.stringify({
     ok: true,
     service: "surveykit-web",
     runtime: "cloudflare-pages",
-    release: releaseInfo(env),
+    release,
     dependencies: {
       pptx_backend_configured: Boolean(String(env?.PPTX_BACKEND_URL || "").trim()),
       ai_proxy_configured: Boolean(
@@ -26,7 +27,7 @@ export async function onRequestGet({ env }) {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
       "X-SurveyKit-Service": "surveykit-web",
-      "X-SurveyKit-Release": String(env?.SURVEYKIT_RELEASE || "unknown"),
+      "X-SurveyKit-Release": release.version,
     },
   });
 }

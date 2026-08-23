@@ -8,6 +8,7 @@
 
 // ─── 样式模块 ───────────────────────────────────────────────
 import "./styles/index.css";
+import * as fileParserModule from "./shared/file-parser.js";
 
 // ─── 共享模块（已完成提取）───────────────────────────────────
 export * as stats from "./shared/stats.js";
@@ -82,6 +83,9 @@ function initApp() {
 
   // 暴露 MaxDiff 模块（阶段三/四：设计校验 + MNL/HB 模型）给 legacy app.js
   window.SurveyKitMaxDiff = maxdiffModule;
+
+  // 统一文件解析器桥接给仍在迁移中的 legacy 页面。
+  window.SurveyKitFileParser = fileParserModule;
 
   // 移除加载遮罩
   const overlay = document.querySelector("#appLoading");

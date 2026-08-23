@@ -30,7 +30,7 @@ const DEFAULT_BUILTIN_MODELS = [
 
 function releaseInfo(env = {}) {
   return {
-    version: String(env.SURVEYKIT_RELEASE || "unknown"),
+    version: String(env.SURVEYKIT_RELEASE || env.CF_PAGES_COMMIT_SHA || "unknown"),
     revision: String(env.SURVEYKIT_COMMIT || env.CF_PAGES_COMMIT_SHA || ""),
     deployed_at: String(env.SURVEYKIT_DEPLOYED_AT || ""),
   };

@@ -35,4 +35,11 @@ assert.equal(payload.release.revision, "def456");
 assert.equal(payload.dependencies.pptx_backend_configured, true);
 assert.equal(payload.dependencies.ai_proxy_configured, true);
 
+const automaticReleaseResponse = await onRequestGet({
+  env: { CF_PAGES_COMMIT_SHA: "commit-release-789" },
+});
+const automaticReleasePayload = await automaticReleaseResponse.json();
+assert.equal(automaticReleasePayload.release.version, "commit-release-789");
+assert.equal(automaticReleaseResponse.headers.get("x-surveykit-release"), "commit-release-789");
+
 console.log("Health contract smoke passed: local and Cloudflare release metadata");

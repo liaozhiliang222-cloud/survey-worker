@@ -85,7 +85,7 @@ async function upstreamError(upstream) {
 
 function proxyReleaseInfo(env = {}) {
   return {
-    version: String(env.SURVEYKIT_RELEASE || "unknown"),
+    version: String(env.SURVEYKIT_RELEASE || env.CF_PAGES_COMMIT_SHA || "unknown"),
     revision: String(env.SURVEYKIT_COMMIT || env.CF_PAGES_COMMIT_SHA || ""),
     deployed_at: String(env.SURVEYKIT_DEPLOYED_AT || ""),
   };
@@ -148,7 +148,7 @@ export async function proxyToBackend(request, env) {
         },
       }, 200, {
         "X-SurveyKit-Service": "surveykit-pptx-proxy",
-        "X-SurveyKit-Release": String(env.SURVEYKIT_RELEASE || "unknown"),
+        "X-SurveyKit-Release": proxyReleaseInfo(env).version,
       });
     }
     return new Response(upstream.body, {
@@ -157,7 +157,7 @@ export async function proxyToBackend(request, env) {
         ...Object.fromEntries(upstream.headers.entries()),
         "Access-Control-Allow-Origin": "*",
         "X-SurveyKit-Service": "surveykit-pptx-proxy",
-        "X-SurveyKit-Release": String(env.SURVEYKIT_RELEASE || "unknown"),
+        "X-SurveyKit-Release": proxyReleaseInfo(env).version,
       },
     });
   } catch (error) {

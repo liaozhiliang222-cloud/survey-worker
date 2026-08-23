@@ -11,6 +11,8 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 tests/output/
+test-results/
+playwright-report/
 /qa_template_alignment_fixed.pptx
 dist/
 *.bundle
