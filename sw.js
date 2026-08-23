@@ -1,4 +1,4 @@
-const CACHE_NAME = "research-toolbox-v72";
+const CACHE_NAME = "research-toolbox-v73";
 const ASSETS = [
   "./manifest.webmanifest",
   "./icon.svg",
@@ -15,6 +15,7 @@ const ASSETS = [
 function isAppShellRequest(request) {
   const url = new URL(request.url);
   if (request.mode === "navigate") return true;
+  if (url.pathname.startsWith("/src/") || url.pathname.startsWith("/assets/")) return true;
   return ["/", "/index.html", "/app.js", "/ppt-report-ai.js", "/proposal-deck.js", "/styles.css", "/sw.js"].some((path) => url.pathname.endsWith(path));
 }
 

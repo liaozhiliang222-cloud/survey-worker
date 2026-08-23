@@ -14686,11 +14686,29 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       };
     }
 
+    let fileParserLoadPromise = null;
+
+    async function loadSurveyKitFileParser() {
+      if (window.SurveyKitFileParser?.inspectResearchWorkbook) return window.SurveyKitFileParser;
+      if (!fileParserLoadPromise) {
+        fileParserLoadPromise = import("./src/shared/file-parser.js?v=20260823-6")
+          .then((module) => {
+            window.SurveyKitFileParser = module;
+            return module;
+          })
+          .catch((error) => {
+            fileParserLoadPromise = null;
+            throw error;
+          });
+      }
+      return fileParserLoadPromise;
+    }
+
     async function inspectSelectedFile(file, requestId) {
-      const parser = window.SurveyKitFileParser;
       if (/\.xls$/i.test(file.name) && !/\.xlsx$/i.test(file.name)) return legacyXlsInspection(file);
+      const parser = await loadSurveyKitFileParser();
       if (!parser || typeof parser.inspectResearchWorkbook !== "function") {
-        throw new Error("统一文件解析器尚未加载，请按 Ctrl+F5 刷新页面后重试。");
+        throw new Error("统一文件解析器加载失败，请刷新页面后重试。");
       }
       const inspection = await parser.inspectResearchWorkbook(await file.arrayBuffer(), { target: "pptx_crosstab" });
       if (requestId !== inspectionRequestId) return null;

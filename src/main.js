@@ -7,7 +7,8 @@
  */
 
 // ─── 样式模块 ───────────────────────────────────────────────
-import "./styles/index.css";
+// 生产环境当前也支持直接托管源码目录。不要在原生浏览器模块中导入 CSS，
+// 否则静态托管时会因 CSS MIME 类型而中断整个模块入口；完整样式由 index.html 加载。
 import * as fileParserModule from "./shared/file-parser.js";
 
 // ─── 共享模块（已完成提取）───────────────────────────────────
@@ -35,6 +36,10 @@ export {
 // ─── MaxDiff 模块（阶段三/四：设计校验 + MNL/HB 模型）─────────
 import * as maxdiffModule from "./modules/maxdiff/index.js";
 export { maxdiffModule };
+
+// 尽早暴露关键兼容桥接，避免 legacy 页面在 DOMContentLoaded 前后遇到初始化竞态。
+window.SurveyKitFileParser = fileParserModule;
+window.SurveyKitMaxDiff = maxdiffModule;
 
 // ─── 功能模块（已完成提取）───────────────────────────────────
 export * as workspace from "./modules/workspace/index.js";
@@ -80,12 +85,6 @@ function initApp() {
     estimateStorage,
     checkStorageHealth,
   };
-
-  // 暴露 MaxDiff 模块（阶段三/四：设计校验 + MNL/HB 模型）给 legacy app.js
-  window.SurveyKitMaxDiff = maxdiffModule;
-
-  // 统一文件解析器桥接给仍在迁移中的 legacy 页面。
-  window.SurveyKitFileParser = fileParserModule;
 
   // 移除加载遮罩
   const overlay = document.querySelector("#appLoading");
