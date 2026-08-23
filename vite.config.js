@@ -4,6 +4,7 @@ import { defineConfig } from "vite";
 
 const runtimeFiles = [
   "research-theme.js",
+  "ai-plan-quality.js",
   "app.js",
   "ppt-report-ai.js",
   "proposal-deck.js",

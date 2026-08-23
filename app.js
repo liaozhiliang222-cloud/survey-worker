@@ -213,6 +213,9 @@ let lastMaxDiffScore = null;
 let lastMaxDiffMNL = null;
 let lastMaxDiffHB = null;
 let lastAiPlan = "";
+let lastAiPlanAudit = null;
+let lastAiPlanConfig = null;
+let lastAiPlanSource = "";
 let aiPlanTemplates = [];
 let aiQuestionnaireTemplates = [];
 let lastAiPrompt = "";
@@ -656,6 +659,9 @@ function resetWorkspaceRuntimeState() {
   lastHeaderPlan = null;
   projectDataBus.reset();
   if (typeof lastAiPlan !== "undefined") lastAiPlan = null;
+  if (typeof lastAiPlanAudit !== "undefined") lastAiPlanAudit = null;
+  if (typeof lastAiPlanConfig !== "undefined") lastAiPlanConfig = null;
+  if (typeof lastAiPlanSource !== "undefined") lastAiPlanSource = "";
   if (typeof lastAuditReport !== "undefined") lastAuditReport = null;
   if (typeof lastAiReport !== "undefined") lastAiReport = null;
   if (typeof lastPsmAnalysis !== "undefined") lastPsmAnalysis = null;
@@ -8991,10 +8997,81 @@ function sanitizeAiPlanOutput(output) {
   return text || output;
 }
 
+function buildAiPlanQualityBrief(config = lastAiPlanConfig || getAiPlanConfig()) {
+  const quality = window.AiPlanQuality;
+  if (!quality?.buildPlanBrief) return null;
+  const framework = aiPlanPrimaryFramework(config.studyType);
+  return quality.buildPlanBrief(config, {
+    studyTypeName: aiPlanStudyTypeName(config.studyType),
+    modules: aiPlanModules(config.studyType, config.additionalModules),
+    additionalModuleNames: aiPlanAdditionalModuleNames(config.additionalModules),
+    frameworkName: framework.name,
+    frameworkOutput: framework.output
+  });
+}
+
+function syncAiPlanQualityControls(audit = lastAiPlanAudit) {
+  const repairButton = document.querySelector("#repairAiPlanQuality");
+  const hint = document.querySelector("#aiPlanQualityRepairHint");
+  const issueCount = audit?.issues?.length || 0;
+  if (repairButton) repairButton.disabled = !lastAiPlan || issueCount === 0;
+  if (hint) {
+    hint.textContent = !audit
+      ? "生成方案后会进行本地结构审校，不增加 AI 请求。"
+      : issueCount
+        ? `发现 ${issueCount} 项可定向修补的问题；仅在点击修补按钮后调用一次 AI。`
+        : "本地结构审校已通过，无需额外调用 AI。";
+  }
+}
+
+function auditAiPlanOutput(output, config = lastAiPlanConfig || getAiPlanConfig()) {
+  const quality = window.AiPlanQuality;
+  const brief = buildAiPlanQualityBrief(config);
+  lastAiPlanAudit = quality?.auditPlan && brief ? quality.auditPlan(output, brief, config) : null;
+  syncAiPlanQualityControls(lastAiPlanAudit);
+  return lastAiPlanAudit;
+}
+
+function renderAiPlanQualityCard(audit = lastAiPlanAudit) {
+  if (!audit) return "";
+  const statusClass = audit.passed ? "passed" : "needs-work";
+  const statusLabel = audit.passed ? "结构通过" : "建议修补";
+  const dimensions = audit.dimensions.map((item) => `
+    <li>
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${item.score}/${item.weight}</strong>
+      <small>${escapeHtml(item.evidence)}</small>
+    </li>
+  `).join("");
+  const issues = audit.issues.length
+    ? `<ul class="ai-plan-quality-issues">${audit.issues.map((issue) => `<li><strong>${escapeHtml(issue.label)}</strong><span>${escapeHtml(issue.message)}</span></li>`).join("")}</ul>`
+    : `<p class="ai-plan-quality-pass">未发现需要定向修补的结构问题。</p>`;
+  const missingInputs = audit.missing_inputs.length
+    ? `<p class="ai-plan-quality-inputs">仍待确认：${escapeHtml(audit.missing_inputs.join("、"))}</p>`
+    : "";
+  return `
+    <article class="ai-plan-quality ${statusClass}" data-ai-plan-quality>
+      <div class="ai-plan-quality-summary">
+        <div>
+          <span>本地结构审校</span>
+          <strong>${audit.score}<small>/100</small></strong>
+        </div>
+        <span class="ai-plan-quality-status">${statusLabel}</span>
+      </div>
+      <ul class="ai-plan-quality-dimensions">${dimensions}</ul>
+      ${issues}
+      ${missingInputs}
+      <p class="ai-plan-quality-note">该评分检查决策闭环、方法依据、样本与交付结构，不调用模型，也不代替研究负责人终审。</p>
+    </article>
+  `;
+}
+
 function renderAiPlanOutput(output, source) {
   const result = document.querySelector("#aiPlanResults");
+  const audit = auditAiPlanOutput(output);
   const modelNote = lastAiActualModel ? `<p class="panel-note" style="margin-top:12px">当前使用模型：${escapeHtml(lastAiActualModel)}</p>` : "";
   result.innerHTML = `
+    ${renderAiPlanQualityCard(audit)}
     <article class="audit-issue">
       <div class="issue-head">
         <strong>调研方案</strong>
@@ -9019,6 +9096,7 @@ function setAiPlanActionButtons({ word = false, ppt = false, project = false } =
     const button = document.querySelector(selector);
     if (button) button.disabled = !enabled;
   });
+  syncAiPlanQualityControls();
 }
 
 function renderAiPlanPptProgress(activeIndex = 0, note = "") {
@@ -9047,6 +9125,7 @@ function renderAiPlanPptReadySummary({ wantsWord = false } = {}) {
     `);
   } else {
     renderAiPlanPptProgress(5, status);
+    result.insertAdjacentHTML("afterbegin", renderAiPlanQualityCard(lastAiPlanAudit));
   }
 }
 
@@ -9070,6 +9149,10 @@ async function generateAiPlan() {
   const result = document.querySelector("#aiPlanResults");
   const settings = loadAiSettings();
   const config = getAiPlanConfig();
+  lastAiPlanConfig = { ...config };
+  lastAiPlanAudit = null;
+  lastAiPlanSource = "";
+  syncAiPlanQualityControls(null);
   const wantsWord = config.deliverable !== "ppt";
   const wantsPpt = config.deliverable !== "word";
   const missing = [];
@@ -9110,6 +9193,8 @@ async function generateAiPlan() {
   renderAiProgress(result, steps, 3, "", "\u6b63\u5728\u751f\u6210\u8c03\u7814\u65b9\u6848");
   output = sanitizeAiPlanOutput(output);
   lastAiPlan = output;
+  lastAiPlanSource = source;
+  auditAiPlanOutput(output, config);
   setAiPlanActionButtons({ word: wantsWord, ppt: false, project: true });
   if (wantsWord) {
     renderAiPlanOutput(output, source);
@@ -9158,13 +9243,14 @@ async function reviseAiPlan() {
   const settings = loadAiSettings();
   const steps = [
     { title: "读取修改要求", detail: "整理当前方案和用户追加要求。" },
-    { title: "校验模型设置", detail: settings.mode === "local" || !settings.apiKey ? "未配置可用 API Key，将生成本地修改说明。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"} 修改方案。` },
+    { title: "校验模型设置", detail: settings.mode === "local" ? "当前为纯本地模式，无法执行 AI 修改。" : settings.apiKey ? `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"} 修改方案。` : "将通过后端代理调用平台内置模型修改方案。" },
     { title: "重写调研方案", detail: "保留方案结构、研究模块、分析框架和交付计划。" },
     { title: "更新可导出结果", detail: "启用复制、Word、Markdown 与同步项目档案。" }
   ];
   renderAiProgress(result, steps, 0, "", "正在修改调研方案");
-  let output = `${lastAiPlan}\n\n---\n\n# 待修改说明\n\n${instruction}\n\n> 当前未调用大模型，已先把修改要求附在方案末尾。配置 API Key 后可自动重写完整方案。`;
-  let source = "本地方案框架";
+  let output = lastAiPlan;
+  let source = lastAiPlanSource || "当前方案";
+  let revisionError = "";
   renderAiProgress(result, steps, 1, "", "正在修改调研方案");
   if (settings.mode !== "local") {
     const errors = validateAiSettings(settings);
@@ -9174,20 +9260,34 @@ async function reviseAiPlan() {
         output = await callAiChatCompletion(settings, buildAiPlanRevisionPrompt(instruction, lastAiPlan), { maxTokens: 12000, taskTier: "quality" });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
-        output += `\n\n> 大模型修改失败：${error.message}`;
-        source = settings.apiKey ? "本地方案框架（模型调用失败）" : "平台内置免费模型（调用失败）";
+        revisionError = `大模型修改失败：${error.message}`;
       }
     } else {
-      output += `\n\n> 大模型设置未通过校验：${errors.join("；")}`;
-      source = "本地方案框架（设置未通过校验）";
+      revisionError = `大模型设置未通过校验：${errors.join("；")}`;
     }
+  } else {
+    revisionError = "当前为纯本地模式，未调用 AI，原方案已保留。";
+  }
+  if (revisionError) {
+    renderAiPlanOutput(lastAiPlan, source);
+    result.insertAdjacentHTML("afterbegin", `<div class="empty-state ai-plan-revision-error"><strong>方案未修改</strong><span>${escapeHtml(revisionError)}</span></div>`);
+    return;
   }
   renderAiProgress(result, steps, 3, "", "正在修改调研方案");
   output = sanitizeAiPlanOutput(output);
   lastAiPlan = output;
+  lastAiPlanSource = source;
   renderAiProgress(result, steps, 4, "", "正在修改调研方案");
   renderAiPlanOutput(output, source);
   document.querySelector("#aiPlanReviseInput").value = "";
+}
+
+async function repairAiPlanQuality() {
+  const quality = window.AiPlanQuality;
+  if (!lastAiPlan || !lastAiPlanAudit?.issues?.length || !quality?.buildRepairInstruction) return;
+  const input = document.querySelector("#aiPlanReviseInput");
+  input.value = quality.buildRepairInstruction(lastAiPlanAudit);
+  await reviseAiPlan();
 }
 
 async function copyAiPlan() {
@@ -18699,6 +18799,7 @@ document.querySelector("#exportAiPlanMd").addEventListener("click", exportAiPlan
 document.querySelector("#exportAiPlanWord").addEventListener("click", exportAiPlanWord);
 document.querySelector("#applyAiPlanToProject").addEventListener("click", applyAiPlanToProject);
 document.querySelector("#reviseAiPlan").addEventListener("click", reviseAiPlan);
+document.querySelector("#repairAiPlanQuality")?.addEventListener("click", repairAiPlanQuality);
 document.querySelector("#loadAiPlanExample").addEventListener("click", () => {
   document.querySelector("#aiPlanInput").value = "调研目的：某智能硬件企业计划推出一款面向城市养宠家庭的智能宠物饮水机，核心功能包括多重过滤、水质监测、远程提醒和静音运行。当前已有产品原型，需要通过消费者调研验证核心需求、功能偏好、价格接受度和购买渠道，为产品迭代、目标人群定位及上市传播策略提供数据支持。";
   document.querySelector("#aiPlanContext").value = "智能宠物饮水机新品概念测试";

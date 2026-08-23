@@ -2756,7 +2756,11 @@
                   对话修改方案
                   <textarea id="aiPlanReviseInput" placeholder="生成方案后，可以继续输入修改要求。例如：增加PSM模块；缩短为8分钟；加入竞品对比分析；补充质量控制细节。"></textarea>
                 </label>
-                <button class="secondary-btn" id="reviseAiPlan" type="button" disabled>按要求修改方案</button>
+                <div class="button-row compact">
+                  <button class="secondary-btn" id="reviseAiPlan" type="button" disabled>按要求修改方案</button>
+                  <button class="secondary-btn" id="repairAiPlanQuality" type="button" disabled>按质量建议修补方案</button>
+                </div>
+                <p class="panel-note" id="aiPlanQualityRepairHint">生成方案后会进行本地结构审校，不增加 AI 请求。</p>
               </div>
               <p class="panel-note">简要方案适合作为项目启动版 Word；详细方案按正式研究方案结构输出更完整文本，也可导出 Word，正式对客前建议结合预算、样本可达性和客户业务口径再做调整。</p>
             </div>
@@ -3100,6 +3104,7 @@
     })();
     </script>
     <script src="./research-theme.js?v=20260801-1"></script>
+    <script src="./ai-plan-quality.js?v=20260823-1"></script>
     <script src="./ppt-report-ai.js?v=20260812-1"></script>
     <script src="./app.js?v=20260817-1"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
