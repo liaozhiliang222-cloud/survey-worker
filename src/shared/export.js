@@ -136,9 +136,166 @@ export function buildExcelWorkbookXml(sheets) {
 ${excelWorkbookStylesXml()}${worksheets}</Workbook>`;
 }
 
+const XLSX_STYLE_INDEX = {
+  percent: 1, bold: 2, header: 3, top2: 4, bottom2: 5, base: 6,
+  crosstabCaption: 7, crosstabHeaderTop: 8, crosstabHeaderMid: 9,
+  crosstabHeaderBottom: 10, crosstabSigLetters: 11, crosstabBase: 12,
+  crosstabRowLabel: 13, crosstabNetLabel: 14, directoryTitle: 15,
+  directorySection: 16, directoryHeader: 17, directoryBody: 18, directoryLink: 19
+};
+
+function excelXlsxColumnName(index) {
+  let name = "";
+  let value = Math.max(1, Number(index) || 1);
+  while (value > 0) {
+    const offset = (value - 1) % 26;
+    name = String.fromCharCode(65 + offset) + name;
+    value = Math.floor((value - offset) / 26);
+  }
+  return name;
+}
+
+function excelXlsxCellRef(column, row) {
+  return `${excelXlsxColumnName(column)}${row}`;
+}
+
+function excelXlsxColumnsXml(sheet) {
+  const definitions = Array.isArray(sheet.columns) && sheet.columns.length
+    ? sheet.columns
+    : sheet.kind === "crosstab"
+      ? [
+          { index: 1, width: 92 },
+          { index: 2, width: 92 },
+          ...(Math.max(0, Number(sheet.columnCount) - 2) ? [{ index: 3, width: 58, span: Math.max(0, Number(sheet.columnCount) - 3) }] : [])
+        ]
+      : sheet.kind === "directory"
+        ? [{ index: 1, width: 260 }, { index: 2, width: 105 }, { index: 3, width: 72, span: 2 }]
+        : [];
+  if (!definitions.length) return "";
+  return `<cols>${definitions.map((column) => {
+    const min = Math.max(1, Number(column.index) || 1);
+    const max = min + Math.max(0, Number(column.span) || 0);
+    const width = Math.max(1, Number(column.width) || 64) / 7;
+    return `<col min="${min}" max="${max}" width="${width.toFixed(2)}" customWidth="1"/>`;
+  }).join("")}</cols>`;
+}
+
+function excelXlsxSheetXml(sheet) {
+  const merges = [];
+  const hyperlinks = [];
+  let maxColumn = Math.max(1, Number(sheet.columnCount) || 1);
+  const rows = (sheet.rows || []).map((row, rowIndex) => {
+    const definition = Array.isArray(row) ? { cells: row } : (row || { cells: [] });
+    const cells = Array.isArray(definition.cells) ? definition.cells : [];
+    const rowNumber = rowIndex + 1;
+    let column = 1;
+    const cellXml = cells.map((rawCell) => {
+      const cell = rawCell && typeof rawCell === "object" && !Array.isArray(rawCell) ? rawCell : { value: rawCell };
+      if (Number.isInteger(cell.index) && cell.index > 0) column = cell.index;
+      const ref = excelXlsxCellRef(column, rowNumber);
+      const mergeAcross = Number.isInteger(cell.mergeAcross) && cell.mergeAcross > 0 ? cell.mergeAcross : 0;
+      if (mergeAcross) merges.push(`${ref}:${excelXlsxCellRef(column + mergeAcross, rowNumber)}`);
+      if (cell.href) hyperlinks.push({ ref, location: String(cell.href).replace(/^#/, ""), display: String(cell.value ?? "") });
+      const style = XLSX_STYLE_INDEX[cell.format || definition.format] ?? 0;
+      const value = cell.value ?? "";
+      const numeric = cell.type === "number"
+        || typeof value === "number"
+        || (String(value) !== "" && Number.isFinite(Number(value)) && !/%$/.test(String(value)));
+      const xml = numeric
+        ? `<c r="${ref}"${style ? ` s="${style}"` : ""}><v>${Number(value) || 0}</v></c>`
+        : `<c r="${ref}" t="inlineStr"${style ? ` s="${style}"` : ""}><is><t xml:space="preserve">${escapeHtml(value)}</t></is></c>`;
+      column += mergeAcross + 1;
+      maxColumn = Math.max(maxColumn, column - 1);
+      return xml;
+    }).join("");
+    const height = Number.isFinite(definition.height) && definition.height > 0
+      ? ` ht="${definition.height}" customHeight="1"`
+      : "";
+    return `<row r="${rowNumber}"${height}>${cellXml}</row>`;
+  }).join("");
+  const lastRow = Math.max(1, (sheet.rows || []).length);
+  const showGridLines = sheet.showGridlines === false || ["crosstab", "directory"].includes(sheet.kind) ? ' showGridLines="0"' : "";
+  const mergeXml = merges.length ? `<mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>` : "";
+  const hyperlinkXml = hyperlinks.length ? `<hyperlinks>${hyperlinks.map((item) => `<hyperlink ref="${item.ref}" location="${escapeHtml(item.location)}" display="${escapeHtml(item.display)}"/>`).join("")}</hyperlinks>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:${excelXlsxCellRef(maxColumn, lastRow)}"/><sheetViews><sheetView workbookViewId="0"${showGridLines}/></sheetViews><sheetFormatPr defaultRowHeight="18"/>${excelXlsxColumnsXml(sheet)}<sheetData>${rows}</sheetData>${mergeXml}${hyperlinkXml}</worksheet>`;
+}
+
+function excelXlsxStylesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="0.0%"/></numFmts><fonts count="16"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Arial"/></font><font><color rgb="FF006100"/><sz val="11"/><name val="Arial"/></font><font><color rgb="FF9C0006"/><sz val="11"/><name val="Arial"/></font><font><i/><color rgb="FF666666"/><sz val="10"/><name val="Arial"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="10"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FF17365D"/><sz val="10"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FF17365D"/><sz val="9"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FF17365D"/><sz val="9"/><name val="Arial"/></font><font><b/><color rgb="FF375623"/><sz val="10"/><name val="Arial"/></font><font><color rgb="FF334155"/><sz val="10"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FF17365D"/><sz val="10"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="15"/><name val="Microsoft YaHei"/></font><font><u/><color rgb="FF0563C1"/><sz val="10"/><name val="Microsoft YaHei"/></font></fonts><fills count="11"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF4472C4"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFC6EFCE"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFC7CE"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F4E78"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF9DC3E6"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9EAF7"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEAF2F8"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE2F0D9"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF7F9FC"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="7"><border/><border><left/><right/><top/><bottom style="medium"><color rgb="FF1F4E78"/></bottom><diagonal/></border><border><left/><right style="thin"><color rgb="FFB4C6D7"/></right><top/><bottom style="thin"><color rgb="FFB4C6D7"/></bottom><diagonal/></border><border><left/><right/><top/><bottom style="medium"><color rgb="FF70AD47"/></bottom><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFE7EDF3"/></bottom><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFB4C6D7"/></bottom><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFD9E2F3"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="20"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="4" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="6" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="7" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="8" fillId="6" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="9" fillId="7" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="10" fillId="8" borderId="5" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="11" fillId="9" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="12" fillId="10" borderId="4" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="13" fillId="8" borderId="5" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="14" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="13" fillId="7" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="7" fillId="2" borderId="5" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="12" fillId="0" borderId="6" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="15" fillId="0" borderId="6" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+}
+
+function excelZipCrc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function excelZipUint16(bytes, value) {
+  bytes.push(value & 0xff, (value >>> 8) & 0xff);
+}
+
+function excelZipUint32(bytes, value) {
+  bytes.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+}
+
+function excelZipConcat(parts) {
+  const output = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  parts.forEach((part) => { output.set(part, offset); offset += part.length; });
+  return output;
+}
+
+function createExcelZipBytes(entries) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  entries.forEach((entry) => {
+    const name = encoder.encode(entry.name);
+    const data = entry.content instanceof Uint8Array ? entry.content : encoder.encode(String(entry.content ?? ""));
+    const crc = excelZipCrc32(data);
+    const local = [];
+    excelZipUint32(local, 0x04034b50); excelZipUint16(local, 20); excelZipUint16(local, 0x0800); excelZipUint16(local, 0);
+    excelZipUint16(local, 0); excelZipUint16(local, 0); excelZipUint32(local, crc); excelZipUint32(local, data.length); excelZipUint32(local, data.length);
+    excelZipUint16(local, name.length); excelZipUint16(local, 0);
+    localParts.push(new Uint8Array(local), name, data);
+    const central = [];
+    excelZipUint32(central, 0x02014b50); excelZipUint16(central, 20); excelZipUint16(central, 20); excelZipUint16(central, 0x0800); excelZipUint16(central, 0);
+    excelZipUint16(central, 0); excelZipUint16(central, 0); excelZipUint32(central, crc); excelZipUint32(central, data.length); excelZipUint32(central, data.length);
+    excelZipUint16(central, name.length); excelZipUint16(central, 0); excelZipUint16(central, 0); excelZipUint16(central, 0); excelZipUint16(central, 0);
+    excelZipUint32(central, 0); excelZipUint32(central, offset);
+    centralParts.push(new Uint8Array(central), name);
+    offset += local.length + name.length + data.length;
+  });
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = [];
+  excelZipUint32(end, 0x06054b50); excelZipUint16(end, 0); excelZipUint16(end, 0); excelZipUint16(end, entries.length); excelZipUint16(end, entries.length);
+  excelZipUint32(end, centralSize); excelZipUint32(end, offset); excelZipUint16(end, 0);
+  return excelZipConcat([...localParts, ...centralParts, new Uint8Array(end)]);
+}
+
+export function buildExcelWorkbookXlsxBytes(sheets) {
+  const safeSheets = (sheets || []).map((sheet, index) => ({ ...sheet, name: excelSafeSheetName(sheet.name, `Sheet${index + 1}`) }));
+  const sheetOverrides = safeSheets.map((_, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
+  const workbookSheets = safeSheets.map((sheet, index) => `<sheet name="${escapeHtml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("");
+  const worksheetRelationships = safeSheets.map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join("");
+  const styleRelationshipId = safeSheets.length + 1;
+  return createExcelZipBytes([
+    { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheetOverrides}</Types>` },
+    { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+    { name: "xl/workbook.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>${workbookSheets}</sheets></workbook>` },
+    { name: "xl/_rels/workbook.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${worksheetRelationships}<Relationship Id="rId${styleRelationshipId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+    { name: "xl/styles.xml", content: excelXlsxStylesXml() },
+    ...safeSheets.map((sheet, index) => ({ name: `xl/worksheets/sheet${index + 1}.xml`, content: excelXlsxSheetXml(sheet) }))
+  ]);
+}
+
 export function downloadExcelXml(filename, sheetName, rows, options = {}) {
-  const xml = buildExcelWorkbookXml([{ ...options, name: excelSafeSheetName(sheetName), rows }]);
-  downloadTextFile(filename, xml, "application/octet-stream;charset=utf-8");
+  const bytes = buildExcelWorkbookXlsxBytes([{ ...options, name: excelSafeSheetName(sheetName), rows }]);
+  downloadBlob(filename, new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 }
 
 export function downloadExcelFromRows(filename, rows, sheetName = "Sheet1", options = {}) {
@@ -146,7 +303,8 @@ export function downloadExcelFromRows(filename, rows, sheetName = "Sheet1", opti
 }
 
 export function downloadExcelWorkbookXml(filename, sheets) {
-  downloadTextFile(filename, buildExcelWorkbookXml(sheets), "application/octet-stream;charset=utf-8");
+  const bytes = buildExcelWorkbookXlsxBytes(sheets);
+  downloadBlob(filename, new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 }
 
 // ─── SVG → PNG 导出 ─────────────────────────────────────────

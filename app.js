@@ -5177,13 +5177,26 @@ function excelWorkbookStylesXml() {
   </Styles>`;
 }
 
-function downloadExcelFromRows(filename, rows, sheetName = "Sheet1", options = {}) {
-  downloadExcelXml(filename, sheetName, rows, options);
+let excelExportModulePromise = null;
+
+function loadExcelExportModule() {
+  if (!excelExportModulePromise) {
+    excelExportModulePromise = import("./src/shared/export.js?v=20260826-1").catch((error) => {
+      excelExportModulePromise = null;
+      throw error;
+    });
+  }
+  return excelExportModulePromise;
 }
 
-function downloadExcelXml(filename, sheetName, rows, options = {}) {
-  const xml = buildExcelWorkbookXml([{ ...options, name: excelSafeSheetName(sheetName), rows }]);
-  downloadTextFile(filename, xml, "application/octet-stream;charset=utf-8");
+function downloadExcelFromRows(filename, rows, sheetName = "Sheet1", options = {}) {
+  return downloadExcelXml(filename, sheetName, rows, options);
+}
+
+async function downloadExcelXml(filename, sheetName, rows, options = {}) {
+  const { buildExcelWorkbookXlsxBytes } = await loadExcelExportModule();
+  const bytes = buildExcelWorkbookXlsxBytes([{ ...options, name: excelSafeSheetName(sheetName), rows }]);
+  downloadBlob(filename, new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 }
 
 function excelSafeSheetName(name, fallback = "Sheet1") {
@@ -5207,9 +5220,10 @@ ${worksheets}
 </Workbook>`;
 }
 
-function downloadExcelWorkbookXml(filename, sheets) {
-  const xml = buildExcelWorkbookXml(sheets);
-  downloadTextFile(filename, xml, "application/octet-stream;charset=utf-8");
+async function downloadExcelWorkbookXml(filename, sheets) {
+  const { buildExcelWorkbookXlsxBytes } = await loadExcelExportModule();
+  const bytes = buildExcelWorkbookXlsxBytes(sheets);
+  downloadBlob(filename, new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 }
 
 function splitDelimitedLine(line) {
@@ -6657,7 +6671,7 @@ async function exportQuestionPivotWorkbook(onProgress) {
   const sigSheet = await buildCrosstabWorkbookSheetAsync(lastQuestionPivot, plan, bannerPivotIndexes, "significance", onProgress, 84, 96);
   onProgress?.("正在写出 Excel 文件...", 98, "即将触发浏览器下载。");
   await nextUiTick();
-  downloadExcelWorkbookXml("全部交叉表.xlsx", [
+  await downloadExcelWorkbookXml("全部交叉表.xlsx", [
     { name: "目录", rows: buildCrosstabDirectoryRows(countSheet.positions, plan), kind: "directory", columnCount: 5, showGridlines: false },
     { name: "频数", rows: countSheet.rows, kind: "crosstab", columnCount: countSheet.columnCount, showGridlines: false },
     { name: "百分比", rows: percentSheet.rows, kind: "crosstab", columnCount: percentSheet.columnCount, showGridlines: false },
