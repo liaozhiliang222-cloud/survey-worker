@@ -2612,29 +2612,14 @@ async function buildCrosstabWorkbookSheetAsync(items, plan, bannerPivotIndexes, 
     const item = items[index];
     const key = pivotKey(item);
     const bannerItems = bannerPivotIndexes.map((pivotIndex) => pivotIndex.get(key) || item);
-    positions.push({ title: item.title, type: normalizedQuestionType(item), row: rows.length + 1 });
-    rows.push([`CAPTION:${index + 1}. ${item.title}`]);
-    rows.push(...bannerHeaderRows(plan, mode));
-    if (mode === "significance") {
-      rows.push(["", "", ...bannerItems.map((_, bannerIndex) => excelColumnLetter(bannerIndex))]);
-    }
-    rows.push(["BASE", "", ...bannerItems.map((bannerItem) => questionValidBase(bannerItem))]);
-    rows.push([]);
-    buildWorkbookLineDescriptors(item).forEach((descriptor) => {
-      rows.push([
-        "",
-        descriptor.isNetGroup ? { value: descriptor.label, format: "bold" } : descriptor.label,
-        ...bannerItems.map((bannerItem) => workbookValueForDescriptor(bannerItem, bannerItems[0], descriptor, mode))
-      ]);
-    });
-    rows.push([]);
+    appendCrosstabWorkbookBlock(rows, positions, item, index, plan, bannerItems, mode);
     if (index % 3 === 0 || index === items.length - 1) {
       const percent = start + ((index + 1) / Math.max(items.length, 1)) * (end - start);
       onProgress?.(`正在生成${modeLabel}工作表...`, percent, `正在写入第 ${index + 1}/${items.length} 题：${item.title}`);
       await nextUiTick();
     }
   }
-  return { rows, positions };
+  return { rows, positions, columnCount: Math.max(3, 2 + plan.length) };
 }
 
 function resolveQuestionTitleFromMap(variableName) {
@@ -5089,21 +5074,64 @@ function downloadCsv(filename, rows) {
   URL.revokeObjectURL(link.href);
 }
 
+const EXCEL_STYLE_IDS = {
+  percent: "Percent1", bold: "Bold", header: "Header", top2: "Top2", bottom2: "Bottom2", base: "Base",
+  crosstabCaption: "CrosstabCaption", crosstabHeaderTop: "CrosstabHeaderTop", crosstabHeaderMid: "CrosstabHeaderMid",
+  crosstabHeaderBottom: "CrosstabHeaderBottom", crosstabSigLetters: "CrosstabSigLetters", crosstabBase: "CrosstabBase",
+  crosstabRowLabel: "CrosstabRowLabel", crosstabNetLabel: "CrosstabNetLabel", directoryTitle: "DirectoryTitle",
+  directorySection: "DirectorySection", directoryHeader: "DirectoryHeader", directoryBody: "DirectoryBody", directoryLink: "DirectoryLink"
+};
+
 function excelXmlCell(value) {
   const cell = value && typeof value === "object" && !Array.isArray(value)
     ? value
     : { value };
-  const styleMap = { percent: "Percent1", bold: "Bold", header: "Header", top2: "Top2", bottom2: "Bottom2", base: "Base" };
-  const styleId = cell.format && styleMap[cell.format] ? ` ss:StyleID="${styleMap[cell.format]}"` : "";
+  const mappedStyle = cell.format && EXCEL_STYLE_IDS[cell.format];
+  const styleId = mappedStyle ? ` ss:StyleID="${mappedStyle}"` : "";
+  const mergeAcross = Number.isInteger(cell.mergeAcross) && cell.mergeAcross > 0 ? ` ss:MergeAcross="${cell.mergeAcross}"` : "";
+  const index = Number.isInteger(cell.index) && cell.index > 0 ? ` ss:Index="${cell.index}"` : "";
+  const href = cell.href ? ` ss:HRef="${escapeHtml(cell.href)}"` : "";
   if (cell.type === "number") {
-    const href = cell.href ? ` ss:HRef="${escapeHtml(cell.href)}"` : "";
-    return `<Cell${href}${styleId}><Data ss:Type="Number">${cell.value ?? 0}</Data></Cell>`;
+    return `<Cell${index}${href}${styleId}${mergeAcross}><Data ss:Type="Number">${cell.value ?? 0}</Data></Cell>`;
   }
   const text = String(cell.value ?? "");
   const numeric = text !== "" && Number.isFinite(Number(text)) && !/%$/.test(text);
   const type = numeric ? "Number" : "String";
-  const href = cell.href ? ` ss:HRef="${escapeHtml(cell.href)}"` : "";
-  return `<Cell${href}${styleId}><Data ss:Type="${type}">${escapeHtml(text)}</Data></Cell>`;
+  return `<Cell${index}${href}${styleId}${mergeAcross}><Data ss:Type="${type}">${escapeHtml(text)}</Data></Cell>`;
+}
+
+function excelXmlRow(row) {
+  const definition = Array.isArray(row) ? { cells: row } : (row || { cells: [] });
+  const cells = Array.isArray(definition.cells) ? definition.cells : [];
+  const height = Number.isFinite(definition.height) && definition.height > 0 ? ` ss:AutoFitHeight="0" ss:Height="${definition.height}"` : "";
+  const mappedStyle = definition.format && EXCEL_STYLE_IDS[definition.format];
+  const styleId = mappedStyle ? ` ss:StyleID="${mappedStyle}"` : "";
+  return `<Row${height}${styleId}>${cells.map(excelXmlCell).join("")}</Row>`;
+}
+
+function excelWorksheetColumnsXml(sheet) {
+  if (Array.isArray(sheet.columns) && sheet.columns.length) {
+    return sheet.columns.map((column) => {
+      const index = Number.isInteger(column.index) && column.index > 0 ? ` ss:Index="${column.index}"` : "";
+      const width = Number.isFinite(column.width) && column.width > 0 ? ` ss:Width="${column.width}"` : "";
+      const span = Number.isInteger(column.span) && column.span > 0 ? ` ss:Span="${column.span}"` : "";
+      return `<Column${index} ss:AutoFitWidth="0"${width}${span}/>`;
+    }).join("");
+  }
+  const columnCount = Math.max(1, Number(sheet.columnCount) || 1);
+  if (sheet.kind === "crosstab") {
+    const dataColumns = Math.max(0, columnCount - 2);
+    return `<Column ss:Index="1" ss:AutoFitWidth="0" ss:Width="92"/><Column ss:Index="2" ss:AutoFitWidth="0" ss:Width="92"/>${dataColumns ? `<Column ss:Index="3" ss:AutoFitWidth="0" ss:Width="58"${dataColumns > 1 ? ` ss:Span="${dataColumns - 1}"` : ""}/>` : ""}`;
+  }
+  if (sheet.kind === "directory") {
+    return `<Column ss:Index="1" ss:AutoFitWidth="0" ss:Width="260"/><Column ss:Index="2" ss:AutoFitWidth="0" ss:Width="105"/><Column ss:Index="3" ss:AutoFitWidth="0" ss:Width="72" ss:Span="2"/>`;
+  }
+  return "";
+}
+
+function excelWorksheetOptionsXml(sheet) {
+  if (sheet.showGridlines !== false && sheet.kind !== "crosstab" && sheet.kind !== "directory") return "";
+  return `<WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><DoNotDisplayGridlines/><ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios></WorksheetOptions>`;
 }
 
 function excelWorkbookStylesXml() {
@@ -5133,27 +5161,28 @@ function excelWorkbookStylesXml() {
     <Style ss:ID="Base">
       <Font ss:FontName="Arial" ss:Size="10" ss:Italic="1" ss:Color="#666666"/>
     </Style>
+    <Style ss:ID="CrosstabCaption"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#1F4E78"/></Borders><Font ss:FontName="Microsoft YaHei" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1F4E78" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="CrosstabHeaderTop"><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B4C6D7"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B4C6D7"/></Borders><Font ss:FontName="Microsoft YaHei" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#4472C4" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="CrosstabHeaderMid"><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B4C6D7"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B4C6D7"/></Borders><Font ss:FontName="Microsoft YaHei" ss:Size="10" ss:Bold="1" ss:Color="#17365D"/><Interior ss:Color="#9DC3E6" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="CrosstabHeaderBottom"><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B4C6D7"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B4C6D7"/></Borders><Font ss:FontName="Microsoft YaHei" ss:Size="9" ss:Bold="1" ss:Color="#17365D"/><Interior ss:Color="#D9EAF7" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="CrosstabSigLetters"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B4C6D7"/></Borders><Font ss:FontName="Arial" ss:Size="9" ss:Bold="1" ss:Color="#17365D"/><Interior ss:Color="#EAF2F8" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="CrosstabBase"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#70AD47"/></Borders><Font ss:FontName="Arial" ss:Size="10" ss:Bold="1" ss:Color="#375623"/><Interior ss:Color="#E2F0D9" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="CrosstabRowLabel"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E7EDF3"/></Borders><Font ss:FontName="Microsoft YaHei" ss:Size="10" ss:Color="#334155"/><Interior ss:Color="#F7F9FC" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="CrosstabNetLabel"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B4C6D7"/></Borders><Font ss:FontName="Microsoft YaHei" ss:Size="10" ss:Bold="1" ss:Color="#17365D"/><Interior ss:Color="#EAF2F8" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="DirectoryTitle"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Microsoft YaHei" ss:Size="15" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1F4E78" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="DirectorySection"><Alignment ss:Horizontal="Left" ss:Vertical="Center"/><Font ss:FontName="Microsoft YaHei" ss:Size="11" ss:Bold="1" ss:Color="#17365D"/><Interior ss:Color="#D9EAF7" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="DirectoryHeader"><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B4C6D7"/></Borders><Font ss:FontName="Microsoft YaHei" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#4472C4" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="DirectoryBody"><Alignment ss:Horizontal="Left" ss:Vertical="Center" ss:WrapText="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9E2F3"/></Borders><Font ss:FontName="Microsoft YaHei" ss:Size="10" ss:Color="#334155"/></Style>
+    <Style ss:ID="DirectoryLink"><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9E2F3"/></Borders><Font ss:FontName="Microsoft YaHei" ss:Size="10" ss:Color="#0563C1" ss:Underline="Single"/></Style>
   </Styles>`;
 }
 
-function downloadExcelFromRows(filename, rows, sheetName = "Sheet1") {
-  downloadExcelXml(filename, sheetName, rows);
+function downloadExcelFromRows(filename, rows, sheetName = "Sheet1", options = {}) {
+  downloadExcelXml(filename, sheetName, rows, options);
 }
 
-function downloadExcelXml(filename, sheetName, rows) {
-  const safeSheetName = String(sheetName || "Sheet1").replace(/[\\/?*[\]:]/g, "").slice(0, 31) || "Sheet1";
-  const rowXml = rows.map((row) => `<Row>${row.map(excelXmlCell).join("")}</Row>`).join("");
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
-  xmlns:o="urn:schemas-microsoft-com:office:office"
-  xmlns:x="urn:schemas-microsoft-com:office:excel"
-  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-  ${excelWorkbookStylesXml()}
-  <Worksheet ss:Name="${escapeHtml(safeSheetName)}">
-    <Table>${rowXml}</Table>
-  </Worksheet>
-</Workbook>`;
+function downloadExcelXml(filename, sheetName, rows, options = {}) {
+  const xml = buildExcelWorkbookXml([{ ...options, name: excelSafeSheetName(sheetName), rows }]);
   downloadTextFile(filename, xml, "application/octet-stream;charset=utf-8");
 }
 
@@ -5161,13 +5190,13 @@ function excelSafeSheetName(name, fallback = "Sheet1") {
   return String(name || fallback).replace(/[\\/?*[\]:]/g, "").slice(0, 31) || fallback;
 }
 
-function downloadExcelWorkbookXml(filename, sheets) {
+function buildExcelWorkbookXml(sheets) {
   const worksheets = sheets.map((sheet, index) => {
     const sheetName = excelSafeSheetName(sheet.name, `Sheet${index + 1}`);
-    const rowXml = sheet.rows.map((row) => `<Row>${row.map(excelXmlCell).join("")}</Row>`).join("");
-    return `<Worksheet ss:Name="${escapeHtml(sheetName)}"><Table>${rowXml}</Table></Worksheet>`;
+    const rowXml = (sheet.rows || []).map(excelXmlRow).join("");
+    return `<Worksheet ss:Name="${escapeHtml(sheetName)}"><Table ss:DefaultRowHeight="18">${excelWorksheetColumnsXml(sheet)}${rowXml}</Table>${excelWorksheetOptionsXml(sheet)}</Worksheet>`;
   }).join("");
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <?mso-application progid="Excel.Sheet"?>
 <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
  xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -5176,6 +5205,10 @@ function downloadExcelWorkbookXml(filename, sheets) {
 ${excelWorkbookStylesXml()}
 ${worksheets}
 </Workbook>`;
+}
+
+function downloadExcelWorkbookXml(filename, sheets) {
+  const xml = buildExcelWorkbookXml(sheets);
   downloadTextFile(filename, xml, "application/octet-stream;charset=utf-8");
 }
 
@@ -6297,16 +6330,40 @@ function metricLabelForMode(mode) {
   return "显著性";
 }
 
+function mergedCrosstabHeaderCells(values, format, guardValues = []) {
+  const cells = [{ value: "", format, mergeAcross: 1 }];
+  for (let index = 0; index < values.length;) {
+    const value = String(values[index] || "").trim();
+    const guard = String(guardValues[index] || "").trim();
+    let runLength = 1;
+    while (
+      index + runLength < values.length &&
+      String(values[index + runLength] || "").trim() === value &&
+      (!guardValues.length || String(guardValues[index + runLength] || "").trim() === guard)
+    ) {
+      runLength += 1;
+    }
+    cells.push({ value, format, ...(runLength > 1 ? { mergeAcross: runLength - 1 } : {}) });
+    index += runLength;
+  }
+  return cells;
+}
+
 function bannerHeaderRows(plan, mode) {
-  const groupRow = ["", ""];
-  const labelRow = ["", ""];
-  const metricRow = ["", ""];
-  plan.forEach((banner) => {
-    groupRow.push(banner.group || "");
-    labelRow.push(banner.label || "");
-    metricRow.push(metricLabelForMode(mode));
-  });
-  return [groupRow, labelRow, metricRow];
+  const groups = plan.map((banner) => banner.group || "总体");
+  const labels = plan.map((banner) => banner.label || banner.group || "总体");
+  const metric = metricLabelForMode(mode);
+  return [
+    { height: 20, cells: mergedCrosstabHeaderCells(groups, "crosstabHeaderTop") },
+    { height: 20, cells: mergedCrosstabHeaderCells(labels, "crosstabHeaderMid", groups) },
+    {
+      height: 20,
+      cells: [
+        { value: "", format: "crosstabHeaderBottom", mergeAcross: 1 },
+        ...plan.map(() => ({ value: metric, format: "crosstabHeaderBottom" }))
+      ]
+    }
+  ];
 }
 
 function excelColumnLetter(index) {
@@ -6489,54 +6546,102 @@ function workbookValueForDescriptor(item, referenceItem, descriptor, mode) {
   return valueForQuestionRow(row, refRow, mode, (x) => x?.count, (x) => x?.percent, () => questionValidBase(item), () => questionValidBase(reference));
 }
 
+function styledCrosstabValue(value, mode) {
+  if (mode === "significance" && value === "↑") return { value, format: "top2" };
+  if (mode === "significance" && value === "↓") return { value, format: "bottom2" };
+  return value;
+}
+
+function appendCrosstabWorkbookBlock(rows, positions, item, index, plan, bannerItems, mode) {
+  const totalColumns = Math.max(3, 2 + plan.length);
+  positions.push({ title: item.title, type: normalizedQuestionType(item), row: rows.length + 1 });
+  rows.push({
+    height: 25,
+    cells: [{ value: `CAPTION:${index + 1}. ${item.title}`, format: "crosstabCaption", mergeAcross: totalColumns - 1 }]
+  });
+  rows.push(...bannerHeaderRows(plan, mode));
+  if (mode === "significance") {
+    rows.push({
+      height: 18,
+      cells: [
+        { value: "", format: "crosstabSigLetters", mergeAcross: 1 },
+        ...bannerItems.map((_, bannerIndex) => ({ value: excelColumnLetter(bannerIndex), format: "crosstabSigLetters" }))
+      ]
+    });
+  }
+  rows.push({
+    height: 21,
+    cells: [
+      { value: "BASE", format: "crosstabBase", mergeAcross: 1 },
+      ...bannerItems.map((bannerItem) => ({ value: questionValidBase(bannerItem), type: "number", format: "crosstabBase" }))
+    ]
+  });
+  rows.push({ cells: [], height: 8 });
+  buildWorkbookLineDescriptors(item).forEach((descriptor) => {
+    rows.push({
+      cells: [
+        {
+          value: descriptor.label,
+          format: descriptor.isNetGroup ? "crosstabNetLabel" : "crosstabRowLabel",
+          mergeAcross: 1
+        },
+        ...bannerItems.map((bannerItem) => styledCrosstabValue(
+          workbookValueForDescriptor(bannerItem, bannerItems[0], descriptor, mode),
+          mode
+        ))
+      ]
+    });
+  });
+  rows.push({ cells: [], height: 10 });
+}
+
 function buildCrosstabWorkbookSheet(items, plan, bannerPivotIndexes, mode) {
   const rows = [];
   const positions = [];
   items.forEach((item, index) => {
     const key = pivotKey(item);
     const bannerItems = bannerPivotIndexes.map((pivotIndex) => pivotIndex.get(key) || item);
-    positions.push({ title: item.title, type: normalizedQuestionType(item), row: rows.length + 1 });
-    rows.push([`CAPTION:${index + 1}. ${item.title}`]);
-    rows.push(...bannerHeaderRows(plan, mode));
-    if (mode === "significance") {
-      rows.push(["", "", ...bannerItems.map((_, bannerIndex) => excelColumnLetter(bannerIndex))]);
-    }
-    rows.push(["BASE", "", ...bannerItems.map((bannerItem) => questionValidBase(bannerItem))]);
-    rows.push([]);
-    buildWorkbookLineDescriptors(item).forEach((descriptor) => {
-      rows.push([
-        "",
-        descriptor.isNetGroup ? { value: descriptor.label, format: "bold" } : descriptor.label,
-        ...bannerItems.map((bannerItem) => workbookValueForDescriptor(bannerItem, bannerItems[0], descriptor, mode))
-      ]);
-    });
-    rows.push([]);
+    appendCrosstabWorkbookBlock(rows, positions, item, index, plan, bannerItems, mode);
   });
-  return { rows, positions };
+  return { rows, positions, columnCount: Math.max(3, 2 + plan.length) };
 }
 
 function buildCrosstabDirectoryRows(positions, plan) {
   const rows = [
-    ["目录"],
-    ["工作表", "说明"],
-    [{ value: "频数", href: "#'频数'!A1" }, "各题各表头列的样本数"],
-    [{ value: "百分比", href: "#'百分比'!A1" }, "各题各表头列的列百分比"],
-    [{ value: "显著性检验", href: "#'显著性检验'!A1" }, "与第一列相比，↑ 表示显著更高，↓ 表示显著更低"],
-    [],
-    ["表头方案"],
-    ["分组", "列名", "筛选条件"]
+    { height: 30, cells: [{ value: "交叉表目录", format: "directoryTitle", mergeAcross: 4 }] },
+    { height: 21, cells: [
+      { value: "工作表", format: "directoryHeader" },
+      { value: "说明", format: "directoryHeader", mergeAcross: 3 }
+    ] },
+    { cells: [
+      { value: "频数", href: "#'频数'!A1", format: "directoryLink" },
+      { value: "各题各表头列的样本数", format: "directoryBody", mergeAcross: 3 }
+    ] },
+    { cells: [
+      { value: "百分比", href: "#'百分比'!A1", format: "directoryLink" },
+      { value: "各题各表头列的列百分比", format: "directoryBody", mergeAcross: 3 }
+    ] },
+    { cells: [
+      { value: "显著性检验", href: "#'显著性检验'!A1", format: "directoryLink" },
+      { value: "与第一列相比，↑ 表示显著更高，↓ 表示显著更低", format: "directoryBody", mergeAcross: 3 }
+    ] },
+    { cells: [], height: 9 },
+    { height: 22, cells: [{ value: "表头方案", format: "directorySection", mergeAcross: 4 }] },
+    { height: 21, cells: ["分组", "列名", "筛选条件"].map((value) => ({ value, format: "directoryHeader" })) }
   ];
-  plan.forEach((item) => rows.push([item.group || "", item.label || "", item.condition || "总体"]));
-  rows.push([]);
-  rows.push(["题目", "题型", "频数", "百分比", "显著性检验"]);
+  plan.forEach((item) => rows.push({
+    cells: [item.group || "", item.label || "", item.condition || "总体"].map((value) => ({ value, format: "directoryBody" }))
+  }));
+  rows.push({ cells: [], height: 9 });
+  rows.push({ height: 21, cells: ["题目", "题型", "频数", "百分比", "显著性检验"].map((value) => ({ value, format: "directoryHeader" })) });
   positions.forEach((item) => {
-    rows.push([
-      item.title,
-      item.type,
-      { value: "查看", href: `#'频数'!A${item.row}` },
-      { value: "查看", href: `#'百分比'!A${item.row}` },
-      { value: "查看", href: `#'显著性检验'!A${item.row}` }
-    ]);
+    rows.push({ cells: [
+      { value: item.title, format: "directoryBody" },
+      { value: item.type, format: "directoryBody" },
+      { value: "查看", href: `#'频数'!A${item.row}`, format: "directoryLink" },
+      { value: "查看", href: `#'百分比'!A${item.row}`, format: "directoryLink" },
+      { value: "查看", href: `#'显著性检验'!A${item.row}`, format: "directoryLink" }
+    ] });
   });
   return rows;
 }
@@ -6553,10 +6658,10 @@ async function exportQuestionPivotWorkbook(onProgress) {
   onProgress?.("正在写出 Excel 文件...", 98, "即将触发浏览器下载。");
   await nextUiTick();
   downloadExcelWorkbookXml("全部交叉表.xlsx", [
-    { name: "目录", rows: buildCrosstabDirectoryRows(countSheet.positions, plan) },
-    { name: "频数", rows: countSheet.rows },
-    { name: "百分比", rows: percentSheet.rows },
-    { name: "显著性检验", rows: sigSheet.rows }
+    { name: "目录", rows: buildCrosstabDirectoryRows(countSheet.positions, plan), kind: "directory", columnCount: 5, showGridlines: false },
+    { name: "频数", rows: countSheet.rows, kind: "crosstab", columnCount: countSheet.columnCount, showGridlines: false },
+    { name: "百分比", rows: percentSheet.rows, kind: "crosstab", columnCount: percentSheet.columnCount, showGridlines: false },
+    { name: "显著性检验", rows: sigSheet.rows, kind: "crosstab", columnCount: sigSheet.columnCount, showGridlines: false }
   ]);
 }
 
@@ -6692,17 +6797,18 @@ function exportCrosstabAnalysis() {
   const sortedColIdx = colPctAvg.map((v, i) => ({ v, i })).sort((a, b) => b.v - a.v);
   const top2Cols = new Set(sortedColIdx.slice(0, 2).map((x) => x.i));
   const bottom2Cols = new Set(sortedColIdx.slice(-2).map((x) => x.i));
+  const columnCount = ct.colLabels.length + 3;
 
   const rows = [
-    [{ value: `${ct.rowVar} × ${ct.colVar}`, format: "bold" }],
+    { height: 25, cells: [{ value: `${ct.rowVar} × ${ct.colVar}`, format: "crosstabCaption", mergeAcross: columnCount - 1 }] },
     [{ value: "卡方值", format: "bold" }, { value: ct.chiSquare.toFixed(4), type: "number" }],
     [{ value: "自由度", format: "bold" }, { value: ct.degreesOfFreedom, type: "number" }],
     [{ value: "p值", format: "bold" }, { value: ct.pValue === null ? "" : ct.pValue.toFixed(6) }],
-    [],
+    { cells: [], height: 9 },
     [{ value: ct.rowVar, format: "header" }, ...ct.colLabels.map((l) => ({ value: l, format: "header" })), { value: "基数", format: "header" }, { value: "合计%", format: "header" }],
   ];
   ct.rowLabels.forEach((rowLabel, ri) => {
-    const cells = [{ value: rowLabel, format: "bold" }];
+    const cells = [{ value: rowLabel, format: "crosstabRowLabel" }];
     ct.colLabels.forEach((_, ci) => {
       const pct = pctMatrix[ri][ci];
       let fmt = "percent";
@@ -6714,8 +6820,15 @@ function exportCrosstabAnalysis() {
     cells.push({ value: ct.total > 0 ? ct.rowTotals[ri] / ct.total : 0, type: "number", format: "percent" });
     rows.push(cells);
   });
-  rows.push([{ value: "合计", format: "bold" }, ...ct.colTotals.map((v) => ({ value: ct.total > 0 ? v / ct.total : 0, type: "number", format: "percent" })), { value: ct.total, type: "number", format: "base" }, { value: 1, type: "number", format: "percent" }]);
-  downloadExcelFromRows("交叉表分析.xlsx", rows, "交叉表");
+  rows.push([{ value: "合计", format: "crosstabBase" }, ...ct.colTotals.map((v) => ({ value: ct.total > 0 ? v / ct.total : 0, type: "number", format: "percent" })), { value: ct.total, type: "number", format: "crosstabBase" }, { value: 1, type: "number", format: "percent" }]);
+  downloadExcelFromRows("交叉表分析.xlsx", rows, "交叉表", {
+    showGridlines: false,
+    columnCount,
+    columns: [
+      { index: 1, width: 150 },
+      { index: 2, width: 68, span: Math.max(0, columnCount - 2) }
+    ]
+  });
 }
 
 function parseWeightTargets(text) {
