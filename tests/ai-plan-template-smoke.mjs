@@ -5,6 +5,8 @@ import vm from "node:vm";
 
 const source = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const moduleSource = readFileSync(new URL("../src/modules/ai-plan/index.js", import.meta.url), "utf8");
+const aiClientSource = readFileSync(new URL("../src/shared/ai-client.js", import.meta.url), "utf8");
 
 function extractFunction(name, nextName) {
   const marker = `function ${name}(`;
@@ -75,6 +77,17 @@ assert.match(planPrompt, /需求信息模糊时，应结合行业常规做合理
 assert.match(planPrompt, /只保留能直接支持业务决策的必要模块/);
 assert.match(planPrompt, /关键假设、AI 建议值和待确认事项/);
 assert.doesNotMatch(planPrompt, /方案字数不少于|可参考但不要机械照抄的本地方案框架|\blocalPlan\b/);
+assert.match(source, /config\.templateMode === "hybrid" && config\.mode === "detailed" \? 8000 : config\.mode === "detailed" \? 7000 : 5000/);
+assert.match(source, /buildAiResearchPlanPrompt\(config\), \{[\s\S]{0,180}stream: true,[\s\S]{0,80}streamRetryCount: 1/);
+assert.match(source, /buildAiPlanRevisionPrompt\(instruction, lastAiPlan\), \{[\s\S]{0,120}maxTokens: 7000,[\s\S]{0,80}stream: true,[\s\S]{0,80}streamRetryCount: 1/);
+assert.match(moduleSource, /config\.mode === "detailed" \? 7000 : 5000/);
+assert.match(moduleSource, /streamRetryCount: 1/);
+assert.match(aiClientSource, /function isRetryableAiStreamError/);
+assert.match(aiClientSource, /_streamRetryAttempt: retryAttempt \+ 1/);
+const retryContext = vm.createContext({ TypeError });
+vm.runInContext(extractFunction("isRetryableAiStreamError", "callAiChatCompletion"), retryContext);
+assert.equal(retryContext.isRetryableAiStreamError(new TypeError("terminated")), true);
+assert.equal(retryContext.isRetryableAiStreamError({ name: "AbortError", message: "timeout" }), false);
 const exampleStart = source.indexOf('document.querySelector("#loadAiPlanExample")');
 const exampleEnd = source.indexOf('document.querySelector("#generateAiBrief")', exampleStart);
 const exampleHandler = source.slice(exampleStart, exampleEnd);

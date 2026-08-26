@@ -9554,8 +9554,13 @@ async function generateAiPlan() {
     if (!errors.length) {
       try {
         renderAiProgress(result, steps, 2, "正在让大模型把需求改写为完整调研方案。", "正在生成调研方案");
-        const maxTokens = config.templateMode === "hybrid" && config.mode === "detailed" ? 16000 : config.mode === "detailed" ? 12000 : 5000;
-        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config), { maxTokens, taskTier: "quality" });
+        const maxTokens = config.templateMode === "hybrid" && config.mode === "detailed" ? 8000 : config.mode === "detailed" ? 7000 : 5000;
+        output = await callAiChatCompletion(settings, buildAiResearchPlanPrompt(config), {
+          maxTokens,
+          stream: true,
+          streamRetryCount: 1,
+          taskTier: "quality"
+        });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         output = `${localPlan}\n\n---\n\n> 大模型调用失败，已回退为本地方案框架。错误信息：${error.message}`;
@@ -9639,7 +9644,12 @@ async function reviseAiPlan() {
     if (!errors.length) {
       try {
         renderAiProgress(result, steps, 2, "正在按你的要求重写方案，通常需要几十秒。", "正在修改调研方案");
-        output = await callAiChatCompletion(settings, buildAiPlanRevisionPrompt(instruction, lastAiPlan), { maxTokens: 12000, taskTier: "quality" });
+        output = await callAiChatCompletion(settings, buildAiPlanRevisionPrompt(instruction, lastAiPlan), {
+          maxTokens: 7000,
+          stream: true,
+          streamRetryCount: 1,
+          taskTier: "quality"
+        });
         source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
       } catch (error) {
         revisionError = `大模型修改失败：${error.message}`;
@@ -10610,6 +10620,12 @@ function createAiProxyError(message, response, payload, clientRequestId) {
   return error;
 }
 
+function isRetryableAiStreamError(error) {
+  if (error?.name === "AbortError") return false;
+  return error instanceof TypeError
+    || /(?:stream|network|fetch|terminated|connection|流式响应|响应结束.*没有生成有效内容)/i.test(String(error?.message || ""));
+}
+
 async function callAiChatCompletion(settings, messages, options = {}) {
   if (window.location.protocol === "file:") {
     throw new Error("AI 后端代理需要通过本地服务或线上地址访问，不能直接用 file:// 页面调用。请使用 npm run dev 打开本地服务，或访问已部署的网址。");
@@ -10647,6 +10663,15 @@ async function callAiChatCompletion(settings, messages, options = {}) {
     } catch (error) {
       if (error?.name === "AbortError") {
         throw new Error("AI 连续 " + timeoutSeconds + " 秒未返回数据，已为当前生成阶段启用安全降级。");
+      }
+      const retryAttempt = Math.max(0, Number(options._streamRetryAttempt) || 0);
+      const retryCount = Math.max(0, Number(options.streamRetryCount) || 0);
+      if (retryAttempt < retryCount && isRetryableAiStreamError(error)) {
+        await new Promise((resolve) => setTimeout(resolve, 800 * (retryAttempt + 1)));
+        return callAiChatCompletion(settings, messages, {
+          ...options,
+          _streamRetryAttempt: retryAttempt + 1,
+        });
       }
       throw error;
     } finally {
