@@ -152,7 +152,7 @@ def _detect_dimension_groups(
     group_label_rows = []
     for ri in range(max(0, header_row_idx - 15), header_row_idx):
         r = rows[ri]
-        if r[0] is None:
+        if r[0] is None or not _norm(r[0]):
             labels = [
                 (ci, _norm(r[ci]))
                 for ci in range(1, min(len(r), len(hdr)))

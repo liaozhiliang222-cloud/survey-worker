@@ -175,6 +175,17 @@ def main() -> None:
         assert adaptive_questions[0]["base"] == {"全部": 100, "女性": 40}
         assert adaptive_questions[0]["data"]["全部"] == [0.6]
         assert adaptive_questions[0]["data"]["女性"] == [0.75]
+
+        empty_string_header_rows = [
+            ["CAPTION:1. 购买意愿", None, None, None, None, None],
+            ["", None, "总体", "购买人群", None, "年龄"],
+            ["", None, "总体", "女性", "男性", "18-24岁"],
+        ]
+        detected_groups = build_jd_report._detect_dimension_groups(
+            empty_string_header_rows,
+            2,
+        )
+        assert [group["name"] for group in detected_groups] == ["购买人群", "年龄"]
     print("crosstab parser smoke passed")
 
 
