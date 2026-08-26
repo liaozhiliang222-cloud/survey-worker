@@ -37,10 +37,89 @@ from .theme import Theme
 SEGMENT_ORDER = ["都市中产", "都市蓝领", "都市家庭", "都市Z世代", "小镇中年", "小镇青年"]
 
 SHEET_NAME = "Table (%)"
-TOTAL_ALIASES = ("Total", "合计", "总计", "总体", "整体")
+TOTAL_ALIASES = (
+    "Total", "total", "Grand Total", "grand total", "All", "all",
+    "合计", "总计", "总体", "整体", "全体", "全部",
+)
+BASE_ALIASES = {
+    "base", "valid n", "sample size", "n",
+    "有效样本", "有效样本量", "样本量", "样本数",
+}
 
 # 模块缓存：最近一次 parse_crosstab 的维度分组结果
 _cached_dimension_groups: list[dict] = []
+
+
+def _is_total(value) -> bool:
+    return re.sub(r"\s+", " ", _norm(value)).lower() in {
+        re.sub(r"\s+", " ", str(alias).strip()).lower()
+        for alias in TOTAL_ALIASES
+    }
+
+
+def _is_base(value) -> bool:
+    return re.sub(r"\s+", " ", _norm(value)).lower() in BASE_ALIASES
+
+
+def _numeric_cell(value):
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = _norm(value).replace(",", "").replace("，", "")
+    if not text or text in {"-", "—", "–"}:
+        return None
+    text = re.sub(r"^[nN]\s*=\s*", "", text)
+    try:
+        if text.endswith("%"):
+            return float(text[:-1]) / 100
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _caption_parts(value, fallback_index: int) -> tuple[str, str] | None:
+    text = _norm(value)
+    marker = re.match(r"^CAPTION\s*[:：]\s*(.*)$", text, re.IGNORECASE)
+    if not marker:
+        return None
+    body = marker.group(1).strip()
+    bracketed = re.match(r"^\[([^\]]+)\]\s*[.．。:：、]?\s*(.*)$", body)
+    if bracketed:
+        return bracketed.group(1).strip(), bracketed.group(2).strip()
+    numbered = re.match(
+        r"^([A-Za-z]*\d+(?:[_-]\d+)*)\s*[.．。:：、]?\s*(.*)$",
+        body,
+    )
+    if numbered:
+        return numbered.group(1).strip(), numbered.group(2).strip()
+    return f"Q{fallback_index}", body
+
+
+def _sheet_crosstab_score(ws) -> int:
+    """按内容结构为候选 Sheet 评分，避免依赖固定工作表名称。"""
+    name = _norm(ws.title)
+    score = 0
+    if re.search(r"目录|索引|说明|index|toc|readme", name, re.IGNORECASE):
+        score -= 100
+    if re.search(r"%|百分比|percent|percentage|table\s*\(%\)", name, re.IGNORECASE):
+        score += 40
+    elif re.search(r"频数|count|frequency", name, re.IGNORECASE):
+        score += 10
+    for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 250), values_only=True):
+        values = [_norm(value) for value in row if value is not None]
+        if any(re.match(r"^CAPTION\s*[:：]", value, re.IGNORECASE) for value in values):
+            score += 6
+        if any(_is_total(value) for value in values):
+            score += 3
+        if any(_is_base(value) for value in values[:3]):
+            score += 3
+        if any(re.match(
+            r"^(?:百分比|列\s*n?\s*%|column\s*n?\s*%|percent(?:age)?)$",
+            value,
+            re.IGNORECASE,
+        ) for value in values):
+            score += 8
+    return score
+
 def _detect_dimension_groups(
     rows: list, header_row_idx: int
 ) -> list[dict]:
@@ -79,7 +158,7 @@ def _detect_dimension_groups(
                 for ci in range(1, min(len(r), len(hdr)))
                 if r[ci] is not None
                 and _norm(r[ci]) != ""
-                and not (ci == 1 and _norm(r[ci]) in TOTAL_ALIASES)
+                and not _is_total(r[ci])
             ]
             ne = len(labels)
             # 分组标签行的非空列数应该远少于数据表头
@@ -494,27 +573,35 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
         - 整行均为空的选项（如「其他」无数据）会被跳过。
 
     通用化（v11 集成 PWA）：
-        - ``sheet_name`` 为 None 时自动查找名称含 ``table`` 的工作表，否则取第一个；
-        - 人群列不再硬编码 ``SEGMENT_ORDER``，表头行 ``row[1]`` 为
-          ``Total/合计/总计/总体`` 时，``row[2:]`` 全部作为人群列自动收集，
-          支持任意数量、任意命名的人群维度（品牌、城市、年龄等）。
+        - ``sheet_name`` 为 None 时按题目标记、总体列、样本量和百分比指标综合评分；
+        - 总体列可位于任意列，兼容题干占一列或合并占多列；
+        - 支持半角/全角 CAPTION 标记、BASE/有效样本量别名和百分数字符串；
+        - 人群列不再硬编码 ``SEGMENT_ORDER``，支持任意数量、任意命名的人群维度。
     """
     wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
     if sheet_name and sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
     else:
-        # 自动选择含百分比数据的 sheet（优先 (%)，其次 table，最后取第一个非目录 sheet）
-        candidates = [s for s in wb.sheetnames
-                      if "(%)" in s.lower() or "%" in s.lower()]
-        if not candidates:
-            candidates = [s for s in wb.sheetnames if "table" in s.lower()]
-        if not candidates:
-            # 排除常见的目录/索引类 sheet
-            candidates = [s for s in wb.sheetnames
-                          if not any(k in s.lower() for k in ("目录", "index", "toc"))]
-        ws = wb[candidates[0]] if candidates else wb[wb.sheetnames[0]]
+        # 同时检查工作表名称和实际内容结构；名称仅作为加分项，不再作为硬条件。
+        ws = max(
+            (wb[name] for name in wb.sheetnames),
+            key=_sheet_crosstab_score,
+        )
     rows = list(ws.iter_rows(values_only=True))
+    selected_sheet_name = ws.title
     wb.close()
+    percentage_sheet = bool(re.search(
+        r"%|百分比|percent|percentage",
+        selected_sheet_name,
+        re.IGNORECASE,
+    )) or any(
+        any(re.match(
+            r"^(?:百分比|列\s*n?\s*%|column\s*n?\s*%|percent(?:age)?)$",
+            _norm(value),
+            re.IGNORECASE,
+        ) for value in row if value is not None)
+        for row in rows[:250]
+    )
 
     questions: list = []
     cur = None
@@ -536,20 +623,24 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
         return questions
 
     for ri, row in enumerate(rows):
-        # 表头行：row[0] 为空，第 2 列为 Total/合计/总计/总体/整体，第 3 列起为人群名。
+        # 表头行：row[0] 为空，后续某列为 Total/合计/总计/总体/整体。
+        # 题干可能合并占用一列或多列，因此不能固定假设总体在第 2 列。
         # 必须在「row[0] 为 None 即跳过」之前检测，否则表头会被漏掉。
         # 通用化：人群列名不再硬编码，row[2:] 全部自动收集（跳过空值）。
         # 排除"人群"分组占位行（腾讯问卷导出常把 row[2] 写成合并单元格的
         # 占位标签「人群」，真正的列名在紧随其后的第二行表头）。
         # 注意：多级表头文件（如荣耀电商）可能连续 2~3 行都满足此条件，
         # 此时取**最后一行匹配**（列最细的那行）作为正式表头。
+        total_col = next(
+            (i for i in range(1, len(row)) if _is_total(row[i])),
+            None,
+        )
         if (
             cur is not None
             and len(row) > 2
-            and _norm(row[1]) in TOTAL_ALIASES
-            and _norm(row[2]) not in ("", None, "人群")
+            and total_col is not None
             and sum(
-                1 for i in range(2, len(row))
+                1 for i in range(total_col + 1, len(row))
                 if row[i] is not None and _norm(row[i]) != ""
             ) >= 1
         ):
@@ -561,10 +652,10 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
             # 重复铺开（整体×7、是否购买×7、…），若全部收集会导致
             # segments 重复 20+ 次、图表错乱。只取第一组有效维度。
             if new_groups and new_groups[0]["name"] != "全部维度":
-                segs = [_norm(row[1]), *new_groups[0].get("segments", [])]
+                segs = [_norm(row[total_col]), *new_groups[0].get("segments", [])]
             else:
                 segs = []
-                for i in range(1, len(row)):
+                for i in range(total_col, len(row)):
                     if row[i] is None:
                         continue
                     name = _norm(row[i])
@@ -574,9 +665,9 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
                         break
                     segs.append(name)
             if len(segs) < 2:  # 退化情况（只有一个段），退回原逻辑
-                segs = [_norm(row[1])] + [
+                segs = [_norm(row[total_col])] + [
                     _norm(row[i])
-                    for i in range(2, len(row))
+                    for i in range(total_col + 1, len(row))
                     if i < len(row) and row[i] is not None and _norm(row[i]) != ""
                 ]
             cur["segments"] = segs
@@ -585,7 +676,7 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
             # 取**最后一行匹配**（列最细）作为正式表头，覆盖前面较粗的行。
             seg_cols = [
                 (_norm(row[i]), i)
-                for i in range(1, len(row))
+                for i in range(total_col, len(row))
                 if row[i] is not None and _norm(row[i]) not in ("", "人群")
             ]
             cur["seg_cols"] = seg_cols
@@ -612,11 +703,10 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
             current_part = _norm(match.group(1) if match else a[6:-1])
             continue
 
-        # 题目标记 CAPTION:[VARxx].题面
-        if a.startswith("CAPTION:["):
-            m = re.match(r"CAPTION:\[([^\]]+)\]\.?\s*(.*)", a)
-            code = m.group(1) if m else a
-            title = (m.group(2).strip() if m else a)
+        # 题目标记兼容中英文冒号、全角句号、方括号与普通编号。
+        caption = _caption_parts(a, len(questions) + 1)
+        if caption:
+            code, title = caption
             cur = {
                 "code": code,
                 "title": title,
@@ -661,14 +751,13 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
             continue
 
         # 样本量行：BASE
-        if cat.upper() == "BASE":
+        if _is_base(cat):
             for (name, col) in cur["seg_cols"]:
                 v = row[col] if col < len(row) else None
                 if v is not None:
-                    try:
-                        cur["base_by_col"][col] = int(float(v))
-                    except (TypeError, ValueError):
-                        pass
+                    numeric = _numeric_cell(v)
+                    if numeric is not None:
+                        cur["base_by_col"][col] = int(numeric) if numeric.is_integer() else numeric
             # 首列出现 → base（向后兼容）
             seen = set()
             for (name, col) in cur["seg_cols"]:
@@ -686,12 +775,14 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
         for (name, col) in cur["seg_cols"]:
             v = row[col] if col < len(row) else None
             if v is not None:
-                try:
-                    fv = float(v)
+                fv = _numeric_cell(v)
+                if fv is not None:
+                    if percentage_sheet and not (
+                        isinstance(v, str) and _norm(v).endswith("%")
+                    ) and 1 < abs(fv) <= 100:
+                        fv /= 100
                     col_vals[col] = fv
                     all_none = False
-                except (TypeError, ValueError):
-                    pass
         if all_none:
             continue
         cur["categories"].append(clean)
@@ -776,14 +867,13 @@ def apply_dimension(questions: list, dimension_groups: list, group_name: str = N
         nq = dict(q)
         # 所有分维度分析都保留总体列，便于把分群结果与市场整体基准直接比较。
         total_key = next(
-            (name for name in (q.get("segments") or []) if str(name).strip().lower() in {"total", "总体", "整体", "合计", "总计"}),
+            (name for name in (q.get("segments") or []) if _is_total(name)),
             None,
         )
-        total_aliases = {"total", "总体", "整体", "合计", "总计"}
         selected_pairs = []
         total_pair_seen = False
         for name, col in zip(merged_names, merged_cols):
-            is_total = str(name).strip().lower() in total_aliases
+            is_total = _is_total(name)
             if is_total and total_key:
                 # 总体基准统一从原题数据读取，避免维度表头中的“总体”与
                 # 原始“Total”同时成为两列。

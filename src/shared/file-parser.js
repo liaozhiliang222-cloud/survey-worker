@@ -154,7 +154,7 @@ function findZipEntry(bytes, entryName) {
 export async function readZipText(arrayBuffer, entryName) {
   const entry = findZipEntry(new Uint8Array(arrayBuffer), entryName);
   if (!entry) return "";
-  if (entry.compression === 0) return uint8ToString(entry.data);
+  if (entry.compression === 0) return new TextDecoder("utf-8").decode(entry.data);
   if (entry.compression === 8 && "DecompressionStream" in globalThis) {
     const stream = new Blob([entry.data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
     return new Response(stream).text();
@@ -340,6 +340,18 @@ function normalizedCell(value) {
   return String(value ?? "").replace(/\u00a0/g, " ").trim();
 }
 
+function isTotalLabel(value) {
+  return /^(?:total|grand\s*total|all|总体|整体|总计|合计|全体|全部)$/i.test(normalizedCell(value));
+}
+
+function isBaseLabel(value) {
+  return /^(?:base|valid\s*n|sample\s*size|n|有效样本量?|样本量|样本数)$/i.test(normalizedCell(value));
+}
+
+function hasCaptionMarker(value) {
+  return /^caption\s*[:：]/i.test(normalizedCell(value));
+}
+
 function normalizedRows(rows) {
   return (Array.isArray(rows) ? rows : [])
     .map((row) => (Array.isArray(row) ? row.map(normalizedCell) : []))
@@ -400,7 +412,7 @@ function analyzeSheet(sheet) {
   const isCode = /^(?:code|codes|codebook|features?)$/i.test(name)
     || /编码|码表|题目字典|变量标签|功能项/i.test(name)
     || rows.slice(0, 60).some((row) => row.some((cell) => codeMarker.test(normalizedCell(cell))));
-  const hasCaption = sheetContains({ rows }, /CAPTION\s*:/i);
+  const hasCaption = sheetContains({ rows }, /CAPTION\s*[:：]/i);
   const pairedKanoCodes = kanoFeatureCodes(header);
   const isData = !isInstruction && rows.length >= 2 && width >= 2;
   return {
@@ -420,16 +432,31 @@ function analyzeSheet(sheet) {
 function countStandardCrosstabQuestions(sheets) {
   const questions = new Set();
   sheets.forEach((sheet) => sheet.rows.forEach((row) => row.forEach((cell) => {
-    const match = normalizedCell(cell).match(/CAPTION\s*:\s*(.+)/i);
+    const match = normalizedCell(cell).match(/CAPTION\s*[:：]\s*(.+)/i);
     if (match) questions.add(match[1].replace(/^\[[^\]]+\]\s*[.．]?\s*/, "").trim());
   })));
   return questions.size;
 }
 
+function standardCrosstabSheetScore(sheet) {
+  const name = normalizedCell(sheet.name);
+  let score = 0;
+  if (/目录|索引|说明|index|toc|readme/i.test(name)) score -= 100;
+  if (/%|百分比|percent|percentage|table\s*\(%\)/i.test(name)) score += 40;
+  if (/频数|count|frequency/i.test(name)) score += 10;
+  sheet.rows.slice(0, 250).forEach((row) => {
+    if (row.some(hasCaptionMarker)) score += 6;
+    if (row.some(isTotalLabel)) score += 3;
+    if (row.slice(0, 3).some(isBaseLabel)) score += 3;
+    if (row.some((cell) => /^(?:百分比|列\s*n?\s*%|column\s*n?\s*%|percent(?:age)?)$/i.test(normalizedCell(cell)))) score += 8;
+  });
+  return score;
+}
+
 function standardCrosstabDimensions(sheets) {
   const dimensions = new Set();
   sheets.filter((sheet) => sheet.flags.has_caption).forEach((sheet) => {
-    const baseIndex = sheet.rows.findIndex((row) => /^BASE$/i.test(normalizedCell(row[0])));
+    const baseIndex = sheet.rows.findIndex((row) => row.slice(0, 3).some(isBaseLabel));
     if (baseIndex < 1) return;
     const leaf = sheet.rows[baseIndex - 1] || [];
     const parent = sheet.rows[baseIndex - 2] || [];
@@ -438,7 +465,7 @@ function standardCrosstabDimensions(sheets) {
       const parentValue = normalizedCell(parent[column]);
       if (parentValue) activeParent = parentValue;
       const leafValue = normalizedCell(leaf[column]);
-      if (activeParent && leafValue && !/^(?:total|总体|整体|总计|合计)$/i.test(activeParent)) dimensions.add(activeParent);
+      if (activeParent && leafValue && !isTotalLabel(activeParent)) dimensions.add(activeParent);
     }
   });
   return [...dimensions];
@@ -450,13 +477,13 @@ function flatCrosstabInfo(sheets) {
   sheets.forEach((sheet) => {
     const headerIndex = sheet.rows.findIndex((row) =>
       /题目|选项|指标|question/i.test(normalizedCell(row[0]))
-      && row.slice(1).some((cell) => /total|总体|整体|总计|合计/i.test(normalizedCell(cell)))
+      && row.slice(1).some(isTotalLabel)
     );
     if (headerIndex < 0) return;
     const headers = sheet.rows[headerIndex] || [];
     headers.slice(1).forEach((header) => {
       const text = normalizedCell(header);
-      if (!text || /^(?:total|总体|整体|总计|合计)$/i.test(text)) return;
+      if (!text || isTotalLabel(text)) return;
       const group = text.split(/[-_／/]/)[0].trim();
       if (group) dimensions.add(group);
     });
@@ -523,7 +550,9 @@ export async function inspectResearchWorkbook(arrayBuffer, options = {}) {
     diagnostics.push(diagnostic("error", "EMPTY_WORKBOOK", "工作簿中没有可读取的数据 Sheet。", "请删除空白 Sheet，并将数据放在至少包含表头和一行数据的 Sheet 中。"));
   } else if (captionSheets.length) {
     format = IMPORT_FORMATS.STANDARD_CROSSTAB;
-    selectedSheet = captionSheets[0];
+    selectedSheet = [...captionSheets].sort(
+      (left, right) => standardCrosstabSheetScore(right) - standardCrosstabSheetScore(left)
+    )[0];
     questionCount = countStandardCrosstabQuestions(captionSheets);
     dimensions = standardCrosstabDimensions(captionSheets);
   } else if (flat.question_count > 0) {

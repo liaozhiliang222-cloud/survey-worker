@@ -115,6 +115,31 @@ const inspection = await parserModule.inspectResearchWorkbook(xlsxBytes.buffer, 
 assert.equal(inspection.format, "standard_crosstab");
 assert.equal(inspection.metrics.sheet_count, 2);
 assert.ok(inspection.metrics.question_count >= 1);
+assert.deepEqual(inspection.sheets.map((sheet) => sheet.name), ["目录", "频数"]);
+assert.match(inspection.sheets[1].preview.flat().join(" "), /城市级别|一线城市/);
 assert.notEqual(inspection.status, "error");
+
+const variantBytes = buildExcelWorkbookXlsxBytes([
+  {
+    name: "Data_A",
+    kind: "crosstab",
+    columnCount: 6,
+    rows: [
+      { cells: [{ value: "CAPTION：[Q9]。购买意愿", mergeAcross: 5 }] },
+      { cells: [{ value: "", mergeAcross: 2 }, { value: "全体" }, { value: "购买人群" }] },
+      { cells: [{ value: "", mergeAcross: 2 }, { value: "全部" }, { value: "女性" }] },
+      { cells: [{ value: "有效样本量", mergeAcross: 2 }, { value: 100, type: "number" }, { value: 40, type: "number" }] },
+      { cells: [{ value: "愿意", mergeAcross: 2 }, { value: "60%" }, { value: "75%" }] },
+    ],
+  },
+]);
+const variantInspection = await parserModule.inspectResearchWorkbook(
+  variantBytes.buffer,
+  { target: "pptx_crosstab" },
+);
+assert.equal(variantInspection.format, "standard_crosstab");
+assert.equal(variantInspection.selected_sheet, "Data_A");
+assert.equal(variantInspection.metrics.question_count, 1);
+assert.notEqual(variantInspection.status, "error");
 
 console.log("crosstab export style smoke passed");

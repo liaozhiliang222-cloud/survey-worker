@@ -1483,7 +1483,7 @@ function findZipEntry(bytes, entryName) {
 async function readZipText(arrayBuffer, entryName) {
   const entry = findZipEntry(new Uint8Array(arrayBuffer), entryName);
   if (!entry) return "";
-  if (entry.compression === 0) return uint8ToString(entry.data);
+  if (entry.compression === 0) return new TextDecoder("utf-8").decode(entry.data);
   if (entry.compression === 8 && "DecompressionStream" in window) {
     const stream = new Blob([entry.data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
     return new Response(stream).text();
@@ -14843,7 +14843,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     async function loadSurveyKitFileParser() {
       if (window.SurveyKitFileParser?.inspectResearchWorkbook) return window.SurveyKitFileParser;
       if (!fileParserLoadPromise) {
-        fileParserLoadPromise = import("./src/shared/file-parser.js?v=20260823-6")
+        fileParserLoadPromise = import("./src/shared/file-parser.js?v=20260826-2")
           .then((module) => {
             window.SurveyKitFileParser = module;
             return module;

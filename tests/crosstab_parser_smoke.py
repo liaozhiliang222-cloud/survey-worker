@@ -121,6 +121,60 @@ def main() -> None:
         assert [group["name"] for group in flat_groups] == ["C0", "C1"]
         flat_c0 = apply_dimension(flat_questions, flat_groups, "C0")
         assert flat_c0[0]["segments"] == ["Total", "C0总体", "C0-高意向"]
+
+        exported_path = Path(temp_dir) / "exported-styled-crosstab.xlsx"
+        exported_workbook = Workbook()
+        directory_sheet = exported_workbook.active
+        directory_sheet.title = "目录"
+        directory_sheet.append(["交叉表目录"])
+        for sheet_name, metric, values in (
+            ("频数", "频数", (60, 30)),
+            ("百分比", "百分比", (0.6, 0.75)),
+        ):
+            exported_sheet = exported_workbook.create_sheet(sheet_name)
+            exported_sheet.append(["CAPTION:1. Q1. 购买意愿"])
+            exported_sheet.append(["", None, "总体", "购买人群"])
+            exported_sheet.append(["", None, "总体", "高意向"])
+            exported_sheet.append(["", None, metric, metric])
+            exported_sheet.append(["BASE", None, 100, 40])
+            exported_sheet.append([None, None, None, None])
+            exported_sheet.append(["Q1. 购买意愿", None, None, None])
+            exported_sheet.append(["愿意", None, values[0], values[1]])
+        exported_workbook.save(exported_path)
+
+        exported_questions = parse_crosstab(str(exported_path))
+        assert len(exported_questions) == 1
+        assert exported_questions[0]["code"] == "1"
+        assert exported_questions[0]["title"] == "Q1. 购买意愿"
+        assert exported_questions[0]["segments"] == ["总体", "高意向"]
+        assert exported_questions[0]["data"]["总体"] == [0.6]
+        assert exported_questions[0]["data"]["高意向"] == [0.75]
+
+        adaptive_path = Path(temp_dir) / "adaptive-crosstab.xlsx"
+        adaptive_workbook = Workbook()
+        count_sheet = adaptive_workbook.active
+        count_sheet.title = "Data_A"
+        percent_sheet = adaptive_workbook.create_sheet("Data_B")
+        for target_sheet, metric, values in (
+            (count_sheet, "频数", (60, 30)),
+            (percent_sheet, "百分比", ("60%", 75)),
+        ):
+            target_sheet.append(["CAPTION：[Q9]。购买意愿"])
+            target_sheet.append(["", None, None, "全体", "购买人群"])
+            target_sheet.append(["", None, None, "全部", "女性"])
+            target_sheet.append(["", None, None, metric, metric])
+            target_sheet.append(["有效样本量", None, None, 100, 40])
+            target_sheet.append(["愿意", None, None, values[0], values[1]])
+        adaptive_workbook.save(adaptive_path)
+
+        adaptive_questions = parse_crosstab(str(adaptive_path))
+        assert len(adaptive_questions) == 1
+        assert adaptive_questions[0]["code"] == "Q9"
+        assert adaptive_questions[0]["title"] == "购买意愿"
+        assert adaptive_questions[0]["segments"] == ["全部", "女性"]
+        assert adaptive_questions[0]["base"] == {"全部": 100, "女性": 40}
+        assert adaptive_questions[0]["data"]["全部"] == [0.6]
+        assert adaptive_questions[0]["data"]["女性"] == [0.75]
     print("crosstab parser smoke passed")
 
 
