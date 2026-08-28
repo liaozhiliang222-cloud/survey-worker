@@ -63,6 +63,61 @@ async function mockResearchApi(page) {
   return { getLastMessagePayload: () => lastMessagePayload };
 }
 
+async function mockStreamingResearchApi(page, { failFirstStream = false } = {}) {
+  const project = {
+    id: "project-1",
+    title: "荣耀年轻用户 NPS 研究",
+    client_name: "荣耀",
+    brief: "了解年轻用户体验",
+    research_goal: "定位 NPS 改进机会",
+    status: "active",
+  };
+  const messages = [];
+  const requests = [];
+  let streamAttempts = 0;
+  const frame = (event, payload) => `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+  await page.route("**/api/research/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname.replace("/api/research", "");
+    const method = request.method();
+    let payload = {};
+    if (request.postData() && (request.headers()["content-type"] || "").includes("application/json")) payload = JSON.parse(request.postData());
+    const fulfill = (body, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    if (path === "/projects" && method === "GET") return fulfill({ projects: [project] });
+    if (path === "/projects/project-1" && method === "GET") return fulfill({ project });
+    if (path === "/projects/project-1/messages" && method === "GET") return fulfill({ messages });
+    if (path === "/projects/project-1/artifacts" && method === "GET") return fulfill({ artifacts: [] });
+    if (path === "/projects/project-1/files" && method === "GET") return fulfill({ files: [] });
+    if (path === "/projects/project-1/runs/run-1" && method === "GET") return fulfill({ run: { id: "run-1", status: "failed", partial_content: "已接收的第一段", error: { message: "模拟流式中断", retryable: true } } });
+    if (path === "/projects/project-1/messages" && method === "POST") {
+      requests.push(payload);
+      const wantsStream = (request.headers().accept || "").includes("text/event-stream");
+      if (!wantsStream) return fulfill({ error: { message: "应请求 SSE", retryable: true } }, 500);
+      streamAttempts += 1;
+      if (failFirstStream && streamAttempts === 1) {
+        return route.fulfill({
+          status: 200,
+          headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store" },
+          body: frame("delta", { run_id: "run-1", text: "已接收的第一段" }) + frame("error", { run_id: "run-1", error: { message: "模拟流式中断", retryable: true } }),
+        });
+      }
+      const existing = messages.find((message) => message.client_request_id === payload.client_request_id && message.role === "user");
+      const user = existing || { id: `user-${payload.client_request_id}`, role: "user", content: payload.message, client_request_id: payload.client_request_id };
+      const assistant = { id: `assistant-${payload.client_request_id}`, role: "assistant", content: "已接收的第一段\n\n完整第二段" };
+      messages.splice(0, messages.length, user, assistant);
+      const done = { message: assistant, user_message: user, reply: assistant.content, client_request_id: payload.client_request_id, idempotent_replay: Boolean(existing), applied_context: { selected_files: payload.selected_file_ids || [], retrieved_chunks: [] } };
+      return route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store" },
+        body: frame("start", { run_id: "run-1", request_id: "request-1" }) + frame("delta", { run_id: "run-1", text: "已接收的第一段" }) + frame("delta", { run_id: "run-1", text: "\n\n完整第二段" }) + frame("done", done),
+      });
+    }
+    return fulfill({ error: { message: `${method} ${path}` } }, 404);
+  });
+  return { requests, getStreamAttempts: () => streamAttempts };
+}
+
 test("AI 研究员完成项目、对话、成果和继续修改闭环", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("surveykit_tour_done", "1"));
   const mock = await mockResearchApi(page);
@@ -124,6 +179,40 @@ test("AI 研究员移动端使用 Tab 且不横向溢出", async ({ page }) => {
   await expect(page.locator('[data-research-panel="artifacts"]')).toHaveClass(/active/);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test("AI 研究员 SSE 增量显示且完成后不重复", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("surveykit_tour_done", "1"));
+  const mock = await mockStreamingResearchApi(page);
+  await page.goto("/");
+  await page.locator('[data-view="research"]').click();
+  await page.locator(".research-project-card").click();
+  await page.locator("#researchChatInput").fill("请流式输出调研建议");
+  await page.locator("#researchSendMessage").click();
+  await expect(page.locator(".research-message.assistant")).toContainText("已接收的第一段");
+  await expect(page.locator("#researchConnectionState")).toHaveAttribute("data-state", "ready");
+  await expect(page.locator(".research-message.assistant")).toHaveCount(1);
+  await expect(page.locator(".research-message.assistant")).toContainText("完整第二段");
+  expect(mock.requests).toHaveLength(1);
+});
+
+test("AI 研究员流式中断保留部分回复并用幂等请求重试", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("surveykit_tour_done", "1"));
+  const mock = await mockStreamingResearchApi(page, { failFirstStream: true });
+  await page.goto("/");
+  await page.locator('[data-view="research"]').click();
+  await page.locator(".research-project-card").click();
+  await page.locator("#researchChatInput").fill("请流式输出，第一次模拟中断");
+  await page.locator("#researchSendMessage").click();
+  await expect(page.locator(".research-message.user")).toContainText("第一次模拟中断");
+  await expect(page.locator(".research-message.assistant.error")).toContainText("已接收的第一段");
+  await expect(page.locator("#researchFeedback")).toContainText("模拟流式中断");
+  await page.locator("#researchFeedback button").click();
+  await expect(page.locator("#researchConnectionState")).toHaveAttribute("data-state", "ready");
+  await expect(page.locator(".research-message.assistant")).toHaveCount(1);
+  await expect(page.locator(".research-message.assistant")).toContainText("完整第二段");
+  expect(mock.getStreamAttempts()).toBe(2);
+  expect(mock.requests[0].client_request_id).toBe(mock.requests[1].client_request_id);
 });
 
 test("AI 研究员从本地文件打开时可进入新建项目", async ({ page }) => {

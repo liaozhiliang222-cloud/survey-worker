@@ -1,9 +1,11 @@
-/** AI Researcher V0.3 frontend. Server /api/research is authoritative. */
+/** AI Researcher V0.3.1 frontend. Server /api/research is authoritative; SSE 为可选增强。 */
+import { latestStreamSnapshot, normalizeStreamPayload, parseSseBuffer, readSseResponse } from "./stream.mjs";
+
 const API_ROOT = "/api/research";
 const TYPE_LABELS = { research_plan: "调研方案", questionnaire: "定量问卷", interview_guide: "访谈大纲", other: "其他" };
 const FILE_CATEGORY_LABELS = { brief: "Brief", historical_report: "历史报告", questionnaire: "问卷", interview: "访谈笔录", data: "数据", other: "其他" };
 const PARSE_LABELS = { pending: "等待解析", processing: "解析中", completed: "解析完成", failed: "解析失败", unsupported: "需要人工处理" };
-const state = { projects: [], project: null, messages: [], artifacts: [], files: [], selectedFileIds: new Set(), selectedArtifactId: null, activeFileId: null, activeFile: null, autoRetrieve: true, pendingArtifactContent: "", taskType: "free_chat", pollToken: 0, initialized: false };
+const state = { projects: [], project: null, messages: [], artifacts: [], files: [], selectedFileIds: new Set(), selectedArtifactId: null, activeFileId: null, activeFile: null, autoRetrieve: true, pendingArtifactContent: "", taskType: "free_chat", pollToken: 0, initialized: false, streamController: null, runRecoveryToken: 0 };
 const $ = (selector) => document.querySelector(selector);
 
 function node(tag, className, text) { const element = document.createElement(tag); if (className) element.className = className; element.textContent = text == null ? "" : String(text); return element; }
@@ -21,7 +23,9 @@ function updatedLabel(value) { if (!value) return "刚刚更新"; const date = n
 function renderProjects() { const list = $("#researchProjectList"); list.replaceChildren(); if (!state.projects.length) { const empty = node("div", "research-empty-state", "还没有调研项目。创建一个项目，开始与 AI 研究员协作。"); const create = node("button", "primary-btn", "＋ 新建调研项目"); create.type = "button"; create.addEventListener("click", () => showMode("create")); empty.appendChild(create); list.appendChild(empty); return; } state.projects.forEach((project) => { const card = node("button", "research-project-card", ""); card.type = "button"; const head = node("span", "research-project-card-head", ""); head.append(node("strong", "", project.title || "未命名项目"), node("span", "", project.status || "进行中")); card.append(head, node("span", "research-project-client", project.client_name || "未填写客户"), node("p", "", project.research_goal || project.brief || "尚未填写研究目标"), node("small", "", updatedLabel(project.updated_at || project.updatedAt))); card.addEventListener("click", () => openProject(project.id)); list.appendChild(card); }); }
 async function loadProjects() { clearNotice(); try { const result = await api("/projects"); state.projects = result.projects || []; renderProjects(); } catch (error) { notify(error.message, "error", error.retryable ? loadProjects : null); } }
 function fillProject(project) { $("#researchWorkspaceTitle").textContent = project.title || "未命名项目"; $("#researchWorkspaceMeta").textContent = [project.client_name, project.status || "进行中"].filter(Boolean).join(" · ") || "AI Researcher 工作台"; $("#researchProjectTitle").value = project.title || ""; $("#researchProjectClient").value = project.client_name || ""; $("#researchProjectBrief").value = project.brief || ""; $("#researchProjectGoal").value = project.research_goal || ""; }
-function renderMessages() { const list = $("#researchMessageList"); list.replaceChildren(); if (!state.messages.filter((item) => item.role !== "system").length) { const welcome = node("div", "research-welcome", ""); welcome.append(node("strong", "", "我是你的 AI 调研研究员。"), node("p", "", "选择当前任务需要的文件或成果，我会基于项目记忆持续协作。")); list.appendChild(welcome); return; } state.messages.forEach((message) => { if (!message || !["user", "assistant"].includes(message.role)) return; const item = node("article", `research-message ${message.role}`, ""); item.append(node("span", "research-message-role", message.role === "user" ? "你" : "AI研究员"), node("div", "research-message-content", message.content || "")); if (message.role === "assistant") { const actions = node("div", "research-message-actions", ""); const save = node("button", "secondary-btn", "保存为新版本"); save.type = "button"; save.addEventListener("click", () => openSaveDialog(message.content || "")); actions.appendChild(save); item.appendChild(actions); } list.appendChild(item); }); list.scrollTop = list.scrollHeight; }
+function isNearBottom(list) { return list.scrollHeight - list.scrollTop - list.clientHeight < 80; }
+function scrollMessagesToBottom(list) { list.scrollTop = list.scrollHeight; }
+function renderMessages() { const list = $("#researchMessageList"); const shouldStick = isNearBottom(list) || list.querySelector(".research-welcome"); list.replaceChildren(); if (!state.messages.filter((item) => item.role !== "system").length) { const welcome = node("div", "research-welcome", ""); welcome.append(node("strong", "", "我是你的 AI 调研研究员。"), node("p", "", "选择当前任务需要的文件或成果，我会基于项目记忆持续协作。")); list.appendChild(welcome); return; } state.messages.forEach((message) => { if (!message || !["user", "assistant"].includes(message.role)) return; const item = node("article", `research-message ${message.role}${message.pending ? " pending" : ""}${message.error ? " error" : ""}`, ""); item.append(node("span", "research-message-role", message.role === "user" ? "你" : "AI研究员")); const content = node("div", "research-message-content", message.content || ""); if (message.streaming) content.appendChild(node("span", "research-streaming-cursor", "")); item.appendChild(content); if (message.error) item.appendChild(node("p", "research-message-state", message.error)); else if (message.pending && message.role === "user") item.appendChild(node("p", "research-message-state", "正在发送…")); else if (message.streaming) item.appendChild(node("p", "research-message-state", "正在接收回复…")); if (message.role === "assistant" && !message.streaming && !message.error && message.content) { const actions = node("div", "research-message-actions", ""); const save = node("button", "secondary-btn", "保存为新版本"); save.type = "button"; save.addEventListener("click", () => openSaveDialog(message.content || "")); actions.appendChild(save); item.appendChild(actions); } list.appendChild(item); }); if (shouldStick) scrollMessagesToBottom(list); }
 async function loadMessages() { const result = await api(`/projects/${encodeURIComponent(state.project.id)}/messages`); state.messages = result.messages || []; renderMessages(); }
 
 function artifactLabel(artifact) { return TYPE_LABELS[artifact.type] || "其他"; }
@@ -49,7 +53,117 @@ function applyContext(event) { event.preventDefault(); state.autoRetrieve = $("#
 async function openProject(projectId) { clearNotice(); showMode("workspace"); setMobileTab("chat"); state.pollToken += 1; state.selectedFileIds.clear(); state.selectedArtifactId = null; state.taskType = "free_chat"; try { const result = await api(`/projects/${encodeURIComponent(projectId)}`); state.project = result.project || result; fillProject(state.project); await Promise.all([loadMessages(), loadArtifacts(), loadFiles()]); } catch (error) { notify(error.message, "error", error.retryable ? () => openProject(projectId) : null); } }
 async function createProject(event) { event.preventDefault(); const button = $("#researchCreateSubmit"); const body = { title: $("#researchCreateTitle").value.trim(), client_name: $("#researchCreateClient").value.trim(), brief: $("#researchCreateBrief").value.trim(), research_goal: $("#researchCreateGoal").value.trim() }; if (!body.title) return; setBusy(button, true, "创建中…"); try { const result = await api("/projects", { method: "POST", body: jsonBody(body) }); $("#researchCreateForm").reset(); await loadProjects(); await openProject((result.project || result).id); } catch (error) { notify(error.message, "error"); } finally { setBusy(button, false); } }
 async function updateProject(event) { event.preventDefault(); const button = $("#researchSaveProject"); const body = { title: $("#researchProjectTitle").value.trim(), client_name: $("#researchProjectClient").value.trim(), brief: $("#researchProjectBrief").value.trim(), research_goal: $("#researchProjectGoal").value.trim() }; setBusy(button, true, "保存中…"); try { const result = await api(`/projects/${encodeURIComponent(state.project.id)}`, { method: "PATCH", body: jsonBody(body) }); state.project = result.project || result; fillProject(state.project); $("#researchProjectSaveState").textContent = "刚刚保存"; } catch (error) { notify(error.message, "error"); } finally { setBusy(button, false); } }
-async function sendMessage(event, retryBody = null) { event?.preventDefault?.(); if (!state.project) return; const input = $("#researchChatInput"); const body = retryBody || { message: input.value.trim(), artifact_id: state.selectedArtifactId || undefined, selected_file_ids: [...state.selectedFileIds], auto_retrieve: state.autoRetrieve, task_type: state.taskType, client_request_id: requestId() }; if (!body.message) return; if (!retryBody) { state.messages.push({ id: body.client_request_id, role: "user", content: body.message, pending: true }); input.value = ""; renderMessages(); } const button = $("#researchSendMessage"); setBusy(button, true, "AI思考中…"); $("#researchConnectionState").textContent = "正在连接"; try { const result = await api(`/projects/${encodeURIComponent(state.project.id)}/messages`, { method: "POST", body: jsonBody(body) }); await loadMessages(); const assistant = result.message?.role === "assistant" ? result.message : result.reply ? { role: "assistant", content: result.reply } : null; if (assistant && !state.messages.some((item) => item.id && item.id === assistant.id)) { state.messages.push(assistant); renderMessages(); } const applied = result.applied_context; $("#researchConnectionState").textContent = applied ? `显式 ${applied.selected_files?.length || 0} 个文件 · 检索 ${applied.retrieved_chunks?.length || 0} 个片段` : "会话已同步"; clearNotice(); } catch (error) { state.messages = state.messages.filter((item) => !item.pending); renderMessages(); $("#researchConnectionState").textContent = "连接失败"; notify(error.message, "error", error.retryable ? () => sendMessage(null, body) : null); } finally { setBusy(button, false); input.focus(); } }
+function setConnectionState(text, mode = "ready") { const badge = $("#researchConnectionState"); if (!badge) return; badge.textContent = text; badge.dataset.state = mode; }
+function normalizeAssistantResult(result) { return result?.message?.role === "assistant" ? result.message : result?.reply ? { role: "assistant", content: result.reply } : null; }
+function applyMessageResult(result) { const assistant = normalizeAssistantResult(result); const applied = result?.applied_context; setConnectionState(applied ? `显式 ${applied.selected_files?.length || 0} 个文件 · 检索 ${applied.retrieved_chunks?.length || 0} 个片段` : "会话已同步", "ready"); return assistant; }
+function streamRunId(payload) { return String(payload?.run_id || payload?.runId || payload?.id || ""); }
+async function responseError(response) {
+  const payload = await response.json().catch(() => ({}));
+  const error = new Error(friendlyError(response.status, payload));
+  error.status = response.status;
+  error.retryable = Boolean(payload?.error?.retryable || [429, 502, 503, 504].includes(response.status));
+  return error;
+}
+async function postMessage(body, { onDelta, onProgress } = {}) {
+  const response = await fetch(`${API_ROOT}/projects/${encodeURIComponent(state.project.id)}/messages`, { method: "POST", credentials: "same-origin", headers: { Accept: "text/event-stream, application/json", "Content-Type": "application/json" }, body: jsonBody(body) });
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("text/event-stream")) {
+    if (!response.ok) throw await responseError(response);
+    let runId = "";
+    const rememberRun = (payload) => { runId ||= streamRunId(payload); };
+    let read;
+    try {
+      read = await readSseResponse(response, { onDelta, onProgress });
+    } catch (error) {
+      error.runId ||= runId;
+      throw error;
+    }
+    read.events.forEach((event) => rememberRun(event.payload));
+    return { streamed: true, result: read.result, partialContent: read.partialContent, runId: runId || streamRunId(read.result) };
+  }
+  const payload = response.status === 204 ? {} : await response.json().catch(() => ({}));
+  if (!response.ok) { const error = new Error(friendlyError(response.status, payload)); error.status = response.status; error.retryable = Boolean(payload?.error?.retryable || [429, 502, 503, 504].includes(response.status)); throw error; }
+  return { streamed: false, result: payload?.data && typeof payload.data === "object" ? payload.data : payload };
+}
+
+function failPendingMessage(body, error, partial = "") {
+  state.messages.forEach((item) => { if (item.id === body.client_request_id) item.pending = false; });
+  state.messages = state.messages.filter((item) => ![`${body.client_request_id}-stream`, `${body.client_request_id}-partial`].includes(item.id));
+  if (partial) state.messages.push({ id: `${body.client_request_id}-partial`, role: "assistant", content: partial, error: "连接中断，以上为已接收的部分回复。" });
+  renderMessages();
+  setConnectionState("连接失败", "error");
+  notify(error.message, "error", () => sendMessage(null, body));
+}
+async function recoverRun(runId, onProgress) {
+  const deadline = Date.now() + 90_000;
+  let delay = 800;
+  while (Date.now() < deadline) {
+    const { run } = await api(`/projects/${encodeURIComponent(state.project.id)}/runs/${encodeURIComponent(runId)}`);
+    if (run?.partial_content) onProgress?.(run.partial_content);
+    if (run?.status === "completed" && run.result) return run.result;
+    if (run?.status === "failed") { const error = new Error(run.error?.message || "AI研究员运行失败。"); error.retryable = Boolean(run.error?.retryable); throw error; }
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(2_000, Math.round(delay * 1.35));
+  }
+  const error = new Error("连接中断，后台任务仍在运行，请稍后重试以同步结果。"); error.retryable = true; throw error;
+}
+async function sendMessage(event, retryBody = null) {
+  event?.preventDefault?.();
+  if (!state.project) return;
+  const input = $("#researchChatInput");
+  const body = retryBody || { message: input.value.trim(), artifact_id: state.selectedArtifactId || undefined, selected_file_ids: [...state.selectedFileIds], auto_retrieve: state.autoRetrieve, task_type: state.taskType, client_request_id: requestId() };
+  if (!body.message) return;
+  if (!retryBody) {
+    state.messages.push({ id: body.client_request_id, role: "user", content: body.message, pending: true });
+    input.value = "";
+    renderMessages();
+  }
+  const button = $("#researchSendMessage");
+  setBusy(button, true, "AI思考中…");
+  setConnectionState("正在连接", "connecting");
+  let streamedText = "";
+  const renderStreamingAssistant = (content) => {
+    let assistant = state.messages.find((item) => item.id === `${body.client_request_id}-stream`);
+    if (!assistant) { assistant = { id: `${body.client_request_id}-stream`, role: "assistant", content: "", streaming: true }; state.messages.push(assistant); }
+    assistant.content = content;
+    renderMessages();
+    setConnectionState("正在接收回复", "streaming");
+  };
+  try {
+    const { streamed, result, partialContent, runId } = await postMessage(body, {
+      onDelta: (delta) => { streamedText += delta; renderStreamingAssistant(streamedText); },
+      onProgress: (snapshot) => { streamedText = snapshot; renderStreamingAssistant(streamedText); },
+    });
+    streamedText = partialContent || streamedText;
+    await loadMessages();
+    if (result) {
+      state.messages = state.messages.filter((item) => item.id !== `${body.client_request_id}-stream`);
+      const assistant = applyMessageResult(result);
+      if (assistant && !state.messages.some((item) => item.id && item.id === assistant.id)) state.messages.push(assistant);
+      renderMessages();
+    } else if (streamed) {
+      state.messages = state.messages.filter((item) => item.id !== `${body.client_request_id}-stream`);
+      if (streamedText) state.messages.push({ id: `${body.client_request_id}-partial`, role: "assistant", content: streamedText, error: "已接收部分回复；可重试以同步完整结果。" });
+      setConnectionState("已接收部分回复，等待同步", "streaming");
+      renderMessages();
+    }
+    clearNotice();
+  } catch (error) {
+    if (error.runId) {
+      try {
+        const result = await recoverRun(error.runId, (snapshot) => { streamedText = snapshot; renderStreamingAssistant(streamedText); });
+        await loadMessages();
+        state.messages = state.messages.filter((item) => item.id !== `${body.client_request_id}-stream`);
+        const assistant = applyMessageResult(result);
+        if (assistant && !state.messages.some((item) => item.id && item.id === assistant.id)) state.messages.push(assistant);
+        renderMessages(); clearNotice();
+      } catch (recoveryError) { failPendingMessage(body, recoveryError, streamedText); }
+    } else failPendingMessage(body, error, streamedText);
+  } finally {
+    setBusy(button, false);
+    input.focus();
+  }
+}
 
 function openSaveDialog(content) { state.pendingArtifactContent = content; const title = content.split(/\r?\n/).map((line) => line.replace(/^#+\s*/, "").trim()).find(Boolean) || "AI 研究成果"; $("#researchArtifactTitle").value = title.slice(0, 120); const parent = state.artifacts.find((artifact) => artifact.id === state.selectedArtifactId); if (parent) $("#researchArtifactType").value = parent.type; $("#researchSaveArtifactDialog").showModal(); }
 async function saveArtifact(event) { event.preventDefault(); const body = { title: $("#researchArtifactTitle").value.trim(), type: $("#researchArtifactType").value, content: state.pendingArtifactContent, parent_artifact_id: state.selectedArtifactId || undefined }; try { const result = await api(`/projects/${encodeURIComponent(state.project.id)}/artifacts`, { method: "POST", body: jsonBody(body) }); $("#researchSaveArtifactDialog").close(); state.pendingArtifactContent = ""; state.selectedArtifactId = (result.artifact || result).id; await loadArtifacts(); notify("成果已保存为新版本。", "success"); } catch (error) { notify(error.message, "error"); } }
@@ -61,3 +175,4 @@ function setMobileTab(tab) { document.querySelectorAll("[data-research-tab]").fo
 function bindEvents() { $("#researchNewProject")?.addEventListener("click", () => showMode("create")); $("#researchCreateCancel")?.addEventListener("click", () => showMode("home")); $("#researchCreateForm")?.addEventListener("submit", createProject); $("#researchRefreshProjects")?.addEventListener("click", loadProjects); $("#researchBackToProjects")?.addEventListener("click", async () => { state.pollToken += 1; state.project = null; state.selectedFileIds.clear(); clearArtifactContext(); showMode("home"); await loadProjects(); }); $("#researchContextForm")?.addEventListener("submit", updateProject); $("#researchChatForm")?.addEventListener("submit", sendMessage); $("#researchUploadFile")?.addEventListener("click", () => $("#researchFileInput").click()); $("#researchFileInput")?.addEventListener("change", (event) => uploadFiles(event.target.files)); $("#researchFileCategory")?.addEventListener("change", updateFileCategory); $("#researchFileReparse")?.addEventListener("click", reparseFile); $("#researchFileOcr")?.addEventListener("click", requestOcr); $("#researchFileDelete")?.addEventListener("click", deleteFile); $("#researchFileClose")?.addEventListener("click", () => $("#researchFileDialog").close()); $("#researchAddContext")?.addEventListener("click", openContextDialog); $("#researchMemorySearch")?.addEventListener("click", searchMemory); $("#researchContextPickerForm")?.addEventListener("submit", applyContext); $("#researchContextCancel")?.addEventListener("click", () => $("#researchContextDialog").close()); $("#researchSaveArtifactForm")?.addEventListener("submit", saveArtifact); $("#researchArtifactCancel")?.addEventListener("click", () => { state.pendingArtifactContent = ""; $("#researchSaveArtifactDialog").close(); }); $("#researchQuickTasks")?.addEventListener("click", (event) => { const button = event.target.closest("[data-research-prompt]"); if (!button) return; state.taskType = button.dataset.researchTaskType || "free_chat"; $("#researchChatInput").value = button.dataset.researchPrompt; $("#researchChatInput").focus(); }); document.querySelectorAll("[data-research-tab]").forEach((button) => button.addEventListener("click", () => setMobileTab(button.dataset.researchTab))); document.querySelector('[data-view="research"]')?.addEventListener("click", () => { showMode(state.project ? "workspace" : "home"); if (!state.project) loadProjects(); }); }
 export function initAiResearcher() { if (state.initialized || !$("#research")) return; state.initialized = true; bindEvents(); showMode("home"); renderProjects(); if (window.location.hash === "#research") loadProjects(); }
 export const researchApi = { api };
+export const researchStreaming = { latestStreamSnapshot, normalizeStreamPayload, parseSseBuffer, readSseResponse };

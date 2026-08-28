@@ -25,6 +25,24 @@ function json(payload, status = 200, requestId = "") {
   } });
 }
 function fail(message, type, requestId, retryable = false, status = 400) { return json({ error: { message, type, request_id: requestId, retryable } }, status, requestId); }
+function streamError(error, requestId) {
+  if(error?.code==="HARNESS_TIMEOUT")return {message:"AI 研究员响应超时，请稍后重试。",type:"harness_timeout",request_id:requestId,retryable:true};
+  if(error?.code==="HARNESS_TOOL_BLOCKED")return {message:"AI 研究员未能按正文模式完成本轮，请重试。",type:"harness_tool_blocked",request_id:requestId,retryable:true};
+  if(error?.code==="HARNESS_UPSTREAM"&&error?.status===429)return {message:"AI 研究员模型额度不足，请充值或稍后重试。",type:"harness_quota",request_id:requestId,retryable:true};
+  if(error?.code==="HARNESS_UPSTREAM"&&[401,403].includes(error?.status))return {message:"AI 研究员服务认证失败，请联系管理员。",type:"harness_auth",request_id:requestId,retryable:false};
+  if(String(error?.code||"").startsWith("HARNESS_"))return {message:"AI 研究员暂时无法连接，请稍后重试。",type:"harness_unavailable",request_id:requestId,retryable:true};
+  return {message:"AI 研究员服务暂时不可用，请稍后重试。",type:"internal_error",request_id:requestId,retryable:true};
+}
+function sseFrame(event, payload) { return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`; }
+function sseResponse(runId, requestId, task) {
+  const encoder = new TextEncoder(); let controller; let connected = true;
+  const stream = new ReadableStream({ start(value) { controller = value; }, cancel() { connected = false; } });
+  const emit = (event, payload) => { if (!connected) return; try { controller.enqueue(encoder.encode(sseFrame(event, payload))); } catch { connected = false; } };
+  const heartbeat = setInterval(() => emit("progress", { run_id: runId, stage: "heartbeat" }), 10_000);
+  emit("start", { run_id: runId, request_id: requestId });
+  const completion = Promise.resolve().then(() => task(emit)).finally(() => { clearInterval(heartbeat); if (connected) { try { controller.close(); } catch {} } });
+  return { response: new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no", "X-Research-Request-ID": requestId } }), completion };
+}
 function requestId(request) { const supplied = clean(request.headers.get("X-Request-ID"), 128); return /^[\w.:-]{8,128}$/.test(supplied) ? supplied : id(); }
 function decodeBase64Url(value) {
   const normalized = String(value).replace(/-/g, "+").replace(/_/g, "/");
@@ -120,6 +138,12 @@ function store(db) {
     listMessages: (pid) => all("SELECT * FROM research_messages WHERE project_id=? ORDER BY created_at,id",pid),
     async findRequest(pid,rid) { const user=await first("SELECT * FROM research_messages WHERE project_id=? AND role='user' AND client_request_id=?",pid,rid); return user?{user,assistant:await first("SELECT * FROM research_messages WHERE reply_to=?",user.id)}:null; },
     async saveExchange(pid,rid,userText,assistantText) { const existing=await this.findRequest(pid,rid); if(existing)return{...existing,duplicate:true}; const uid=id(),aid=id(); try { await db.batch([db.prepare("INSERT INTO research_messages(id,project_id,role,content,client_request_id,reply_to,created_at) VALUES(?,?,?,?,?,?,?)").bind(uid,pid,"user",userText,rid,null,now()),db.prepare("INSERT INTO research_messages(id,project_id,role,content,client_request_id,reply_to,created_at) VALUES(?,?,?,?,?,?,?)").bind(aid,pid,"assistant",assistantText,null,uid,now()),db.prepare("UPDATE research_projects SET updated_at=? WHERE id=?").bind(now(),pid)]); } catch(error) { const replay=await this.findRequest(pid,rid); if(replay)return{...replay,duplicate:true}; throw error; } return{user:await first("SELECT * FROM research_messages WHERE id=?",uid),assistant:await first("SELECT * FROM research_messages WHERE id=?",aid),duplicate:false}; },
+    getRun: (pid,runId) => first("SELECT * FROM research_ai_runs WHERE project_id=? AND id=?",pid,runId),
+    getRunByRequest: (pid,rid) => first("SELECT * FROM research_ai_runs WHERE project_id=? AND client_request_id=?",pid,rid),
+    async createRun(pid,rid) { const runId=id(),ts=now();await run("INSERT OR IGNORE INTO research_ai_runs(id,project_id,client_request_id,status,partial_content,result,error,created_at,updated_at) VALUES(?,?,?,'queued','','','',?,?)",runId,pid,rid,ts,ts);const item=await this.getRunByRequest(pid,rid);return {run:item,created:item?.id===runId}; },
+    async resetFailedRun(pid,runId) { const ts=now();const result=await run("UPDATE research_ai_runs SET status='queued',partial_content='',result='',error='',started_at=NULL,completed_at=NULL,updated_at=? WHERE project_id=? AND id=? AND status='failed'",ts,pid,runId);return {run:await this.getRun(pid,runId),reset:Number(result?.meta?.changes||0)>0}; },
+    updateRunPartial: (pid,runId,partial) => run("UPDATE research_ai_runs SET partial_content=?,updated_at=? WHERE project_id=? AND id=? AND status IN ('queued','running')",clean(partial,2097152),now(),pid,runId),
+    async updateRun(pid,runId,input) { const current=await this.getRun(pid,runId);if(!current)return null;for(const key of ["status","partial_content","result","error"])if(Object.prototype.hasOwnProperty.call(input,key))current[key]=clean(input[key],key==="partial_content"?2097152:key==="result"?4194304:key==="error"?10000:32);await run("UPDATE research_ai_runs SET status=?,partial_content=?,result=?,error=?,started_at=CASE WHEN ?='running' THEN COALESCE(started_at,?) ELSE started_at END,completed_at=CASE WHEN ? IN ('completed','failed') THEN ? ELSE completed_at END,updated_at=? WHERE project_id=? AND id=?",current.status,current.partial_content,current.result,current.error,current.status,now(),current.status,now(),now(),pid,runId);return this.getRun(pid,runId); },
     getSession: (pid) => first("SELECT * FROM research_agent_sessions WHERE project_id=?",pid),
     async setSession(pid,sid) { const ts=now(); await run("INSERT INTO research_agent_sessions(id,project_id,harness_session_id,created_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET harness_session_id=excluded.harness_session_id,updated_at=excluded.updated_at",id(),pid,sid,ts,ts); return this.getSession(pid); },
     async acquireProjectLock(pid, owner, leaseMs) { const current=Date.now(),expires=current+leaseMs; await run("INSERT INTO research_project_locks(project_id,owner,expires_at) VALUES(?,?,?) ON CONFLICT(project_id) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at WHERE research_project_locks.expires_at < ?",pid,owner,expires,current); const lock=await first("SELECT owner FROM research_project_locks WHERE project_id=?",pid); return lock?.owner===owner; },
@@ -139,6 +163,7 @@ function store(db) {
     async consumeUsage(key,limit,ttlMs) { if(!limit)return true;const current=Date.now(),expires=current+ttlMs;const row=await first("INSERT INTO research_usage_counters(counter_key,count,expires_at) VALUES(?,1,?) ON CONFLICT(counter_key) DO UPDATE SET count=CASE WHEN research_usage_counters.expires_at<=? THEN 1 ELSE research_usage_counters.count+1 END,expires_at=CASE WHEN research_usage_counters.expires_at<=? THEN excluded.expires_at ELSE research_usage_counters.expires_at END RETURNING count",key,expires,current,current);return Number(row?.count||0)<=limit; },
   };
 }
+export const createResearchStore = store;
 
 function harness(env) {
   const base=clean(env.HARNESS_BASE_URL).replace(/\/+$/,""); const style=clean(env.HARNESS_API_STYLE||"opencode").toLowerCase(); const selectedSessions=new Set();
@@ -150,7 +175,7 @@ function harness(env) {
   async function call(path,payload,rid,maximum=timeout()) { if(!base)throw Object.assign(new Error(),{code:"HARNESS_NOT_CONFIGURED"}); const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),Math.max(1,maximum));const headers={"Content-Type":"application/json",Accept:"application/json"};const auth=style==="dsh-rpc"?basicAuth():(clean(env.HARNESS_API_KEY)?`Bearer ${clean(env.HARNESS_API_KEY)}`:"");if(auth)headers.Authorization=auth;try{const response=await fetch(base+path,{method:"POST",headers,body:JSON.stringify(payload),signal:controller.signal});const text=await response.text().catch(()=>"");let data=null;try{data=text?JSON.parse(text):null;}catch{}if(!response.ok)throw Object.assign(new Error(),{code:"HARNESS_UPSTREAM",status:response.status});return data;}catch(error){if(error.code)throw error;const timedOut=error.name==="AbortError";console.error(JSON.stringify({event:"research_harness_error",request_id:rid,error_type:timedOut?"timeout":"unreachable"}));throw Object.assign(new Error(),{code:timedOut?"HARNESS_TIMEOUT":"HARNESS_UNREACHABLE"});}finally{clearTimeout(timer);} }
   async function rpc(method,payload,rid,maximum){const envelope=await call(`/api/${encodeURIComponent(method)}`,{type:"client-request",rpcId:id(),method,payload},rid,maximum);if(envelope?.type!=="server-response"||!envelope?.result)throw Object.assign(new Error(),{code:"HARNESS_BAD_RESPONSE"});if(!envelope.result.ok)throw failure(envelope.result.error);return envelope.result.value;}
   async function ensureModel(sid,rid,maximum){const model=clean(env.HARNESS_MODEL,200);const sessionId=clean(sid,320);if(!model||selectedSessions.has(sessionId))return;const payload={sessionId,provider:clean(env.HARNESS_MODEL_PROVIDER||"newapi",100)||"newapi",model};const reasoningEffort=clean(env.HARNESS_REASONING_EFFORT,50);if(reasoningEffort)payload.reasoningEffort=reasoningEffort;await rpc("session.selectModel",payload,rid,maximum);selectedSessions.add(sessionId);}
-  const dshReply=(events)=>{const message=events.filter(entry=>entry?.event?.type==="assistant/message").at(-1)?.event?.data?.message?.content;if(Array.isArray(message)){const reply=message.filter(part=>part?.type==="text"&&typeof part.text==="string").map(part=>part.text).join("\n").trim();if(reply)return reply.slice(0,2097152);}return events.filter(entry=>entry?.event?.type==="assistant/chunk").map(entry=>entry.event.data?.chunk).filter(chunk=>chunk?.type==="text"&&typeof chunk.text==="string").map(chunk=>chunk.text).join("").trim().slice(0,2097152);};
+  const dshReply=(events)=>{const message=events.filter(entry=>entry?.event?.type==="assistant/message").at(-1)?.event?.data?.message?.content;if(Array.isArray(message)){const reply=message.filter(part=>part?.type==="text"&&typeof part.text==="string").map(part=>part.text).join("\n").trim();if(reply)return reply.slice(0,2097152);}return events.filter(entry=>entry?.event?.type==="assistant/chunk").map(entry=>entry.event.data?.chunk).filter(chunk=>typeof chunk?.text==="string").map(chunk=>chunk.text).join("").trim().slice(0,2097152);};
   const interactiveCall=(events)=>events.filter(entry=>entry?.event?.type==="tool/call"&&["ask_user_question","request_user_input"].includes(String(entry.event.data?.name||""))).at(-1)||null;
   async function createDsh(title,rid){const payload={};if(clean(env.HARNESS_CWD))payload.cwd=clean(env.HARNESS_CWD,1000);const created=await rpc("session.create",payload,rid);const sid=clean(created?.sessionId,320);if(!sid)throw Object.assign(new Error(),{code:"HARNESS_BAD_RESPONSE"});const preset=clean(env.HARNESS_AGENT_PRESET||"survey-research",100);if(preset)await rpc("agentPreset.select",{sessionId:sid,agentPreset:preset},rid);await ensureModel(sid,rid);if(clean(title))await rpc("session.rename",{sessionId:sid,title:clean(title,300)},rid);return sid;}
   async function cancelDsh(sid,rid){try{return await rpc("session.cancel",{sessionId:sid},rid,5000);}catch(error){console.error(JSON.stringify({event:"research_harness_cancel_error",request_id:rid,error_type:String(error?.code||"unknown")}));return null;}}
@@ -158,9 +183,44 @@ function harness(env) {
   async function waitTurnEnd(sid,baseline,rid,deadline){const remaining=()=>Math.max(1,deadline-Date.now());while(Date.now()<deadline){const latest=await rpc("session.history",{sessionId:sid,maxMessages:1},rid,remaining());const events=(Array.isArray(latest?.events)?latest.events:[]).filter(entry=>Number(entry?.event?.seq??-1)>baseline);if(events.some(entry=>entry?.event?.type==="turn/end"))return;await new Promise(resolve=>setTimeout(resolve,Math.min(pollInterval(),remaining())));}throw Object.assign(new Error(),{code:"HARNESS_TIMEOUT"});}
   async function runDshTurn(sid,prompt,rid,deadline,forbidTools){const remaining=()=>Math.max(1,deadline-Date.now());const initial=await dshState(sid,rid,remaining());await rpc("session.prompt",{sessionId:sid,mode:"queue",content:[{type:"text",text:prompt}],clientTimeZone:clean(env.HARNESS_CLIENT_TIME_ZONE||"Asia/Shanghai",100)},rid,remaining());let observedRunning=false,lastHistoryAt=0;while(Date.now()<deadline){await new Promise(resolve=>setTimeout(resolve,Math.min(pollInterval(),remaining())));const state=await dshState(sid,rid,remaining());observedRunning||=state.running;const completed=!state.running&&(observedRunning||state.updatedAt>initial.updatedAt);if(!completed&&Date.now()-lastHistoryAt<10000)continue;lastHistoryAt=Date.now();const latest=await rpc("session.history",{sessionId:sid,maxMessages:1},rid,remaining());const events=Array.isArray(latest?.events)?latest.events:[];const turnEnd=events.filter(entry=>entry?.event?.type==="turn/end").at(-1);const toolCall=forbidTools?events.find(entry=>entry?.event?.type==="tool/call"):null;if(toolCall){if(!turnEnd){await cancelDsh(sid,rid);const baseline=Math.max(-1,...events.map(entry=>Number(entry?.event?.seq??-1)));await waitTurnEnd(sid,baseline,rid,deadline);}return {toolBlocked:true};}if(!turnEnd){const reply=interactiveCall(events)?dshReply(events):"";if(!reply)continue;const cancellation=await cancelDsh(sid,rid);if(cancellation?.accepted)return {reply};continue;}if(turnEnd.event.data?.reason?.kind==="error")throw failure(turnEnd.event.data.reason.error);const reply=dshReply(events);if(!reply)throw Object.assign(new Error(),{code:"HARNESS_BAD_RESPONSE"});return {reply};}throw Object.assign(new Error(),{code:"HARNESS_TIMEOUT"});}
   async function sendDsh(sid,prompt,rid,options={}){const deadline=Date.now()+timeout(options.timeoutMs);const remaining=()=>Math.max(1,deadline-Date.now());try{await ensureModel(sid,rid,remaining());const attempts=options.forbidTools?2:1;for(let attempt=0;attempt<attempts;attempt+=1){const retryPrompt="【强制正文直出重试】上一轮因尝试调用工具已被系统取消。不要调用任何工具，不要创建或读取文件，不要解释执行过程；请基于上一条用户要求，立即在本轮回复正文中给出完整成果。";const result=await runDshTurn(sid,attempt===0?prompt:retryPrompt,rid,deadline,Boolean(options.forbidTools));if(result.reply)return result.reply;if(!result.toolBlocked)break;}throw Object.assign(new Error(),{code:"HARNESS_TOOL_BLOCKED"});}catch(error){if(error?.code==="HARNESS_TIMEOUT")await cancelDsh(sid,rid);throw error;}}
-  return { configured:Boolean(base&&(style!=="dsh-rpc"||(clean(env.HARNESS_USERNAME)&&String(env.HARNESS_PASSWORD||"")))), async create(title,rid){if(style==="dsh-rpc")return createDsh(title,rid);const data=await call("/session",{title},rid);const sid=clean(data?.id||data?.session?.id||data?.data?.id);if(!sid)throw Object.assign(new Error(),{code:"HARNESS_BAD_RESPONSE"});return sid;}, async send(sid,prompt,rid,options={}){if(style==="dsh-rpc")return sendDsh(sid,prompt,rid,options);const data=await call(`/session/${encodeURIComponent(sid)}/message`,{parts:[{type:"text",text:prompt}]},rid,options.timeoutMs?timeout(options.timeoutMs):undefined);const parts=data?.parts||data?.message?.parts||data?.data?.parts||data?.data?.message?.parts;const reply=Array.isArray(parts)?parts.filter(part=>part?.type==="text"&&typeof part.text==="string").map(part=>part.text).join("\n").trim():"";if(!reply)throw Object.assign(new Error(),{code:"HARNESS_BAD_RESPONSE"});return reply.slice(0,2097152);} };
+  async function openDshMux(rid){
+    if(style!=="dsh-rpc")throw Object.assign(new Error(),{code:"HARNESS_STREAM_UNSUPPORTED"});
+    const muxUrl=new URL(base);muxUrl.pathname=`${muxUrl.pathname.replace(/\/+$/,"")}/api/events.mux`;muxUrl.search="";muxUrl.hash="";
+    let response;try{response=await fetch(muxUrl.toString(),{headers:{Upgrade:"websocket",Authorization:basicAuth()}});}catch{throw Object.assign(new Error(),{code:"HARNESS_UNREACHABLE"});}
+    if(response.status!==101||!response.webSocket)throw Object.assign(new Error(),{code:"HARNESS_UPSTREAM",status:response.status||502});
+    const socket=response.webSocket;socket.accept();return socket;
+  }
+  async function sendDshStream(sid,prompt,rid,options={}){
+    const deadline=Date.now()+timeout(options.timeoutMs),remaining=()=>Math.max(1,deadline-Date.now());
+    await ensureModel(sid,rid,remaining());
+    const runAttempt=async(attemptPrompt)=>{
+      const socket=await openDshMux(rid);const events=[];let settled=false,timer,toolBlocked=false;
+      const completion=new Promise((resolve,reject)=>{
+        const finish=(error)=>{if(settled)return;settled=true;clearTimeout(timer);try{socket.close(1000,"complete");}catch{}error?reject(error):resolve();};
+        timer=setTimeout(()=>finish(Object.assign(new Error(),{code:"HARNESS_TIMEOUT"})),remaining());
+        socket.addEventListener("message",async ({data})=>{try{
+          const envelope=typeof data==="string"?JSON.parse(data):JSON.parse(new TextDecoder().decode(data));const frame=envelope?.payload||{};
+          if(frame.type!=="session/event"||String(frame.sessionId||"")!==String(sid))return;
+          const event=frame.event;if(!event||typeof event!=="object")return;events.push({event});
+          if(event.type==="assistant/chunk"&&typeof event.data?.chunk?.text==="string")options.onDelta?.(event.data.chunk.text);
+          if(options.forbidTools&&event.type==="tool/call"&&!toolBlocked){toolBlocked=true;await cancelDsh(sid,rid);}
+          if(event.type==="turn/end"){if(event.data?.reason?.kind==="error")finish(failure(event.data.reason.error));else finish();}
+        }catch{ /* Ignore malformed or unrelated mux frames. */ }});
+        socket.addEventListener("close",()=>{if(!settled)finish(Object.assign(new Error(),{code:"HARNESS_UNREACHABLE"}));});
+        socket.addEventListener("error",()=>finish(Object.assign(new Error(),{code:"HARNESS_UNREACHABLE"})));
+      });
+      try{await rpc("session.prompt",{sessionId:sid,mode:"queue",content:[{type:"text",text:attemptPrompt}],clientTimeZone:clean(env.HARNESS_CLIENT_TIME_ZONE||"Asia/Shanghai",100)},rid,remaining());await completion;return {reply:dshReply(events),toolBlocked};}
+      catch(error){try{socket.close(1011,"aborted");}catch{}throw error;}
+    };
+    try{const attempts=options.forbidTools?2:1;for(let attempt=0;attempt<attempts;attempt+=1){const retryPrompt="【强制正文直出重试】上一轮因尝试调用工具已被系统取消。不要调用任何工具，不要创建或读取文件，不要解释执行过程；请基于上一条用户要求，立即在本轮回复正文中给出完整成果。";const result=await runAttempt(attempt?retryPrompt:prompt);if(result.reply&&!result.toolBlocked)return result.reply;if(result.toolBlocked){options.onReset?.();continue;}break;}throw Object.assign(new Error(),{code:"HARNESS_TOOL_BLOCKED"});}
+    catch(error){if(error?.code==="HARNESS_TIMEOUT")await cancelDsh(sid,rid);throw error;}
+  }
+  return { configured:Boolean(base&&(style!=="dsh-rpc"||(clean(env.HARNESS_USERNAME)&&String(env.HARNESS_PASSWORD||"")))), streaming:style==="dsh-rpc", async create(title,rid){if(style==="dsh-rpc")return createDsh(title,rid);const data=await call("/session",{title},rid);const sid=clean(data?.id||data?.session?.id||data?.data?.id);if(!sid)throw Object.assign(new Error(),{code:"HARNESS_BAD_RESPONSE"});return sid;}, async send(sid,prompt,rid,options={}){if(style==="dsh-rpc")return sendDsh(sid,prompt,rid,options);const data=await call(`/session/${encodeURIComponent(sid)}/message`,{parts:[{type:"text",text:prompt}]},rid,options.timeoutMs?timeout(options.timeoutMs):undefined);const parts=data?.parts||data?.message?.parts||data?.data?.parts||data?.data?.message?.parts;const reply=Array.isArray(parts)?parts.filter(part=>part?.type==="text"&&typeof part.text==="string").map(part=>part.text).join("\n").trim():"";if(!reply)throw Object.assign(new Error(),{code:"HARNESS_BAD_RESPONSE"});return reply.slice(0,2097152);}, stream(sid,prompt,rid,options={}){return sendDshStream(sid,prompt,rid,options);} };
 }
 export const createHarnessClient = harness;
+function publicRun(run){if(!run)return null;return {id:run.id,project_id:run.project_id,client_request_id:run.client_request_id,status:run.status,partial_content:run.partial_content||"",result:run.result?parsedObject(run.result):null,error:run.error?parsedObject(run.error):null,created_at:run.created_at,started_at:run.started_at||null,completed_at:run.completed_at||null,updated_at:run.updated_at};}
+function runStaleMs(env){const normal=integer(env.HARNESS_TIMEOUT,120000,1,300000),long=integer(env.HARNESS_LONG_TASK_TIMEOUT,180000,1,300000);return Math.max(normal,long)*2+60000;}
+async function checkedRun(repo,env,pid,runId,rid){let run=await repo.getRun(pid,runId);if(run&&["queued","running"].includes(run.status)&&Date.now()-Date.parse(run.updated_at)>runStaleMs(env)){await repo.updateRun(pid,run.id,{status:"failed",error:JSON.stringify({message:"后台任务已超时，可安全重试。",type:"run_stale",request_id:rid,retryable:true})});run=await repo.getRun(pid,run.id);}return run;}
 async function hashText(value){const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(String(value||"")));return [...new Uint8Array(digest)].map(item=>item.toString(16).padStart(2,"0")).join("");}
 async function usageKey(uid,request){const source=uid.startsWith("anonymous:")?`${uid}:${request.headers.get("CF-Connecting-IP")||"unknown"}`:uid;return hashText(source);}
 async function checkUsage(repo,uid,request,env){const key=await usageKey(uid,request);const minute=integer(env.RESEARCH_AI_REQUESTS_PER_MINUTE,12,0,10000),day=integer(env.RESEARCH_AI_REQUESTS_PER_DAY,500,0,1000000);if(!await repo.consumeUsage(`minute:${key}:${Math.floor(Date.now()/60000)}`,minute,120000)||!await repo.consumeUsage(`day:${key}:${Math.floor(Date.now()/86400000)}`,day,172800000))throw Object.assign(new Error(),{code:"RATE_LIMIT"});}
@@ -168,7 +228,8 @@ async function parseStoredFile(repo,env,file,bytes){await repo.updateFile(file.p
 async function runFileOcr(repo,env,file){await repo.updateFile(file.project_id,file.id,{ocr_status:"processing",ocr_note:"OCR 处理中。"});try{const source=await (await env.RESEARCH_FILES.get(file.storage_key))?.arrayBuffer();if(!source)throw Object.assign(new Error(),{code:"FILE_STORAGE_MISSING"});const result=await requestProjectOcr({env,file,bytes:source});const text=clean(result.text,integer(env.RESEARCH_MAX_PARSED_CHARS,250000,2000,750000));await repo.updateFile(file.project_id,file.id,{parse_status:"completed",parsed_text:text,summary:text.slice(0,integer(env.RESEARCH_FILE_SUMMARY_CHARS,2000,300,8000)),parse_note:"文本由外部 OCR 服务提取。",ocr_status:"completed",ocr_note:`已通过 ${result.provider} 完成 OCR。`});await repo.replaceFileChunks(file.project_id,file.id,chunkProjectText(text,{targetChars:env.RESEARCH_MEMORY_CHUNK_CHARS,overlapChars:env.RESEARCH_MEMORY_CHUNK_OVERLAP,maxChunks:env.RESEARCH_MAX_CHUNKS_PER_FILE}));}catch(error){console.error(JSON.stringify({event:"research_file_ocr_error",file_id:file.id,error_type:error.code||error.message||"ocr_failed"}));await repo.updateFile(file.project_id,file.id,{ocr_status:"failed",ocr_note:"OCR 未完成，请检查外部 OCR 服务配置后重试。"});}}
 async function projectChunks(repo,env,pid,files){const existing=await repo.listChunks(pid),indexed=new Set(existing.map(chunk=>String(chunk.file_id)));for(const file of files){if(indexed.has(String(file.id))||file.parse_status!=="completed"||!clean(file.parsed_text))continue;const saved=await repo.replaceFileChunks(pid,file.id,chunkProjectText(file.parsed_text,{targetChars:env.RESEARCH_MEMORY_CHUNK_CHARS,overlapChars:env.RESEARCH_MEMORY_CHUNK_OVERLAP,maxChunks:env.RESEARCH_MAX_CHUNKS_PER_FILE}));existing.push(...saved);indexed.add(String(file.id));}return existing;}
 
-export async function onRequest({ request, env, waitUntil = () => {} }) {
+export async function onRequest(context) {
+  const {request,env}=context;const waitUntil=(promise)=>typeof context.waitUntil==="function"?context.waitUntil(promise):promise;
   const rid = requestId(request); const started = Date.now();
   const log = (status, outcome, extra = {}) => console.log(JSON.stringify({ event: "research_api", request_id: rid, method: request.method, status, outcome, duration_ms: Date.now() - started, ...extra }));
   if (request.method === "OPTIONS") return json(null, 204, rid);
@@ -247,11 +308,16 @@ export async function onRequest({ request, env, waitUntil = () => {} }) {
     if (segments.length === 4 && segments[2] === "memory" && segments[3] === "search" && request.method === "GET") { const query=clean(requestUrl.searchParams.get("q"),500);if(!query)return fail("请输入检索词。","invalid_request",rid);const files=await repo.listFiles(pid);const matches=searchProjectChunks(await projectChunks(repo,env,pid,files),files,query,{limit:integer(requestUrl.searchParams.get("limit"),8,1,12)}).map(item=>({...item,content:clean(item.content,1600)}));return json({query,matches},200,rid); }
 
     if (segments.length === 3 && segments[2] === "messages" && request.method === "GET") return json({ messages: await repo.listMessages(pid) }, 200, rid);
+    if (segments.length === 4 && segments[2] === "runs" && request.method === "GET") { const run=await checkedRun(repo,env,pid,segments[3],rid);return run?json({run:publicRun(run)},200,rid):fail("运行记录不存在。","not_found",rid,false,404); }
     if (segments.length === 3 && segments[2] === "messages" && request.method === "POST") {
+      const wantsStream=(request.headers.get("Accept")||"").toLowerCase().includes("text/event-stream");
       const message = clean(input.message, 200000); if (!message) return fail("消息内容不能为空。", "invalid_request", rid);
       const crid = clean(input.client_request_id, 128) || id();
       const replay = await repo.findRequest(pid, crid);
-      if (replay?.assistant) return json({ message: replay.assistant, user_message: replay.user, reply: replay.assistant.content, client_request_id: crid, idempotent_replay: true }, 200, rid);
+      if (replay?.assistant) {
+        const payload={ message: replay.assistant, user_message: replay.user, reply: replay.assistant.content, client_request_id: crid, idempotent_replay: true };
+        if(!wantsStream)return json(payload,200,rid);const prior=await repo.getRunByRequest(pid,crid);const streamed=sseResponse(prior?.id||crid,rid,async emit=>emit("done",{...payload,run_id:prior?.id||null}));waitUntil(streamed.completion);return streamed.response;
+      }
       const requestedFileIds = Array.isArray(input.selected_file_ids) ? [...new Set(input.selected_file_ids.map((value) => clean(value, 128)).filter(Boolean))] : [];
       const maxSelected = integer(env.RESEARCH_MAX_SELECTED_FILES, 8, 1, 12);
       if (requestedFileIds.length > maxSelected) return fail(`每次最多选择 ${maxSelected} 个文件作为上下文。`, "invalid_request", rid);
@@ -259,29 +325,44 @@ export async function onRequest({ request, env, waitUntil = () => {} }) {
       if (selectedFiles.length !== requestedFileIds.length) return fail("所选项目文件不存在。", "not_found", rid, false, 404);
       let artifact = null;
       if (input.artifact_id) { artifact = await repo.getArtifact(pid, clean(input.artifact_id, 128)); if (!artifact) return fail("成果不存在。", "not_found", rid, false, 404); }
+      const priorRecord=await repo.getRunByRequest(pid,crid);const priorRun=priorRecord?await checkedRun(repo,env,pid,priorRecord.id,rid):null;let retriedRun=null;
+      if(priorRun){
+        if(priorRun.status==="failed"){const reset=await repo.resetFailedRun(pid,priorRun.id);if(reset.reset)retriedRun=reset.run;else{const current=reset.run;if(!wantsStream)return json({run:publicRun(current),client_request_id:crid,idempotent_replay:true},202,rid);const streamed=sseResponse(current.id,rid,async emit=>{let item=current;while(["queued","running"].includes(item.status)){emit("progress",{run_id:item.id,stage:item.status,partial_content:item.partial_content||""});await new Promise(resolve=>setTimeout(resolve,1000));item=await checkedRun(repo,env,pid,item.id,rid);}if(item.status==="completed")emit("done",{...parsedObject(item.result),run_id:item.id,idempotent_replay:true});else emit("error",{run_id:item.id,error:parsedObject(item.error)});});waitUntil(streamed.completion);return streamed.response;}}
+        else {if(!wantsStream)return json({run:publicRun(priorRun),client_request_id:crid,idempotent_replay:true},priorRun.status==="completed"?200:202,rid);const streamed=sseResponse(priorRun.id,rid,async emit=>{let current=priorRun;while(["queued","running"].includes(current.status)){emit("progress",{run_id:current.id,stage:current.status,partial_content:current.partial_content||""});await new Promise(resolve=>setTimeout(resolve,1000));current=await checkedRun(repo,env,pid,current.id,rid);}if(current.status==="completed")emit("done",{...(parsedObject(current.result)),run_id:current.id,idempotent_replay:true});else emit("error",{run_id:current.id,error:parsedObject(current.error)});});waitUntil(streamed.completion);return streamed.response;}
+      }
       await checkUsage(repo, uid, request, env);
+      const createdRun=retriedRun?{run:retriedRun,created:true}:await repo.createRun(pid,crid);
+      if(!createdRun.created){const current=createdRun.run;if(!wantsStream)return json({run:publicRun(current),client_request_id:crid,idempotent_replay:true},202,rid);const streamed=sseResponse(current.id,rid,async emit=>{let item=current;while(["queued","running"].includes(item.status)){emit("progress",{run_id:item.id,stage:item.status,partial_content:item.partial_content||""});await new Promise(resolve=>setTimeout(resolve,1000));item=await checkedRun(repo,env,pid,item.id,rid);}if(item.status==="completed")emit("done",{...parsedObject(item.result),run_id:item.id,idempotent_replay:true});else emit("error",{run_id:item.id,error:parsedObject(item.error)});});waitUntil(streamed.completion);return streamed.response;}
+      const runId=createdRun.run.id;
       const configuredTimeout = Number(env.HARNESS_TIMEOUT); const boundedTimeout = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? Math.min(300000, configuredTimeout) : 120000;
       const configuredLongTimeout = Number(env.HARNESS_LONG_TASK_TIMEOUT); const boundedLongTimeout = Number.isFinite(configuredLongTimeout) && configuredLongTimeout > 0 ? Math.min(300000, configuredLongTimeout) : 180000;
       const leaseMs = Math.max(boundedTimeout,boundedLongTimeout) * 3 + 60000; const lockOwner = id();
-      if (!await repo.acquireProjectLock(pid, lockOwner, leaseMs)) return fail("AI 研究员正在处理该项目的上一条消息，请稍后重试。", "project_busy", rid, true, 409);
-      try {
+      if (!await repo.acquireProjectLock(pid, lockOwner, leaseMs)) { await repo.updateRun(pid,runId,{status:"failed",error:JSON.stringify({message:"AI 研究员正在处理该项目的上一条消息，请稍后重试。",type:"project_busy",request_id:rid,retryable:true})});return fail("AI 研究员正在处理该项目的上一条消息，请稍后重试。", "project_busy", rid, true, 409); }
+      let partial="",partialWrites=Promise.resolve();const execute=async(emit=()=>{})=>{try {
+        await repo.updateRun(pid,runId,{status:"running"});emit("progress",{run_id:runId,stage:"preparing"});
         const lockedReplay = await repo.findRequest(pid, crid);
-        if (lockedReplay?.assistant) return json({ message: lockedReplay.assistant, user_message: lockedReplay.user, reply: lockedReplay.assistant.content, client_request_id: crid, idempotent_replay: true }, 200, rid);
+        if (lockedReplay?.assistant) { const result={message:lockedReplay.assistant,user_message:lockedReplay.user,reply:lockedReplay.assistant.content,client_request_id:crid,idempotent_replay:true,run_id:runId};await repo.updateRun(pid,runId,{status:"completed",partial_content:result.reply,result:JSON.stringify(result)});return result; }
         const recentMessages = await repo.listMessages(pid);
         const retrievedChunks=input.auto_retrieve===false?[]:searchProjectChunks(await projectChunks(repo,env,pid,allFiles),allFiles,clean(input.context_query,500)||message,{excludeFileIds:requestedFileIds,limit:integer(env.RESEARCH_MAX_RETRIEVED_CHUNKS,5,1,12)});
         const buildPrompt = (includeRecentMessages) => buildProjectContext({ project, files: selectedFiles, retrievedChunks, artifact, recentMessages, userMessage: message, taskType: input.task_type, includeRecentMessages, limits: contextLimitsFromEnv(env) });
         let session = await repo.getSession(pid); let recreated = false;
         if (!session) { session = await repo.setSession(pid, await agent.create(project.title, rid)); recreated = true; }
         let built = buildPrompt(recreated); let reply; const sendOptions=()=>({forbidTools:Boolean(built.context.direct_reply_only),timeoutMs:built.context.direct_reply_only?boundedLongTimeout:boundedTimeout});
-        try { reply = await agent.send(session.harness_session_id, built.prompt, rid, sendOptions()); }
+        let lastPartialWrite=0;const persistPartial=(snapshot)=>{partialWrites=partialWrites.then(()=>repo.updateRunPartial(pid,runId,snapshot)).catch(()=>{});};const onDelta=(text)=>{partial=(partial+text).slice(0,2097152);emit("delta",{run_id:runId,text});const timestamp=Date.now();if(timestamp-lastPartialWrite>=1000){lastPartialWrite=timestamp;persistPartial(partial);}};const onReset=()=>{partial="";lastPartialWrite=Date.now();emit("progress",{run_id:runId,stage:"retrying",partial_content:""});persistPartial("");};
+        emit("progress",{run_id:runId,stage:"generating"});
+        try { reply = wantsStream&&agent.streaming?await agent.stream(session.harness_session_id,built.prompt,rid,{...sendOptions(),onDelta,onReset}):await agent.send(session.harness_session_id, built.prompt, rid, sendOptions()); }
         catch (error) {
           if (!recreated && error.code === "HARNESS_UPSTREAM" && [404, 410].includes(error.status)) {
-            session = await repo.setSession(pid, await agent.create(project.title, rid)); recreated = true; built = buildPrompt(true); reply = await agent.send(session.harness_session_id, built.prompt, rid, sendOptions());
+            session = await repo.setSession(pid, await agent.create(project.title, rid)); recreated = true; built = buildPrompt(true); reply = wantsStream&&agent.streaming?await agent.stream(session.harness_session_id,built.prompt,rid,{...sendOptions(),onDelta,onReset}):await agent.send(session.harness_session_id, built.prompt, rid, sendOptions());
           } else throw error;
         }
+        await partialWrites;
         const saved = await repo.saveExchange(pid, crid, message, reply);
-        return json({ message: saved.assistant, user_message: saved.user, reply: saved.assistant.content, client_request_id: crid, idempotent_replay: saved.duplicate, session_recreated: recreated, applied_context: built.context }, 200, rid);
-      } finally { await repo.releaseProjectLock(pid, lockOwner); }
+        const result={ message: saved.assistant, user_message: saved.user, reply: saved.assistant.content, client_request_id: crid, idempotent_replay: saved.duplicate, session_recreated: recreated, applied_context: built.context, run_id:runId };
+        await repo.updateRun(pid,runId,{status:"completed",partial_content:result.reply,result:JSON.stringify(result),error:""});return result;
+      }catch(error){await partialWrites;const safe=streamError(error,rid);await repo.updateRun(pid,runId,{status:"failed",partial_content:partial,error:JSON.stringify(safe)});throw error;}finally{await repo.releaseProjectLock(pid,lockOwner);}};
+      if(wantsStream){const streamed=sseResponse(runId,rid,async emit=>{try{const result=await execute(emit);emit("done",result);}catch(error){emit("error",{run_id:runId,error:streamError(error,rid)});}});waitUntil(streamed.completion);return streamed.response;}
+      return json(await execute(),200,rid);
     }
 
     if (segments.length === 3 && segments[2] === "artifacts" && request.method === "GET") return json({ artifacts: await repo.listArtifacts(pid) }, 200, rid);

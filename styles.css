@@ -7757,6 +7757,9 @@ tbody tr.warn td {
 .research-chat-column { display: flex; min-height: 650px; flex-direction: column; background: #fbfdff; }
 .research-connection-state,
 .research-save-state { padding: 4px 7px; border-radius: 999px; color: #176448 !important; background: #e8f7ef; }
+.research-connection-state[data-state="connecting"] { color: #315d91 !important; background: #eaf2fc; }
+.research-connection-state[data-state="streaming"] { color: #155e75 !important; background: #cffafe; }
+.research-connection-state[data-state="error"] { color: #b42318 !important; background: #fee2e2; }
 .research-message-list { display: flex; flex: 1 1 auto; flex-direction: column; gap: 15px; min-height: 280px; max-height: 520px; overflow: auto; padding: 5px 3px 18px; }
 .research-welcome { margin: auto; max-width: 460px; padding: 22px; color: #334155; text-align: center; }
 .research-welcome strong { color: #173f73; font-size: 18px; }
@@ -7767,6 +7770,12 @@ tbody tr.warn td {
 .research-message.user .research-message-role { text-align: right; }
 .research-message-content { padding: 11px 13px; border: 1px solid #d9e4f0; border-radius: 9px; color: #263548; background: #fff; line-height: 1.68; overflow-wrap: anywhere; white-space: pre-wrap; }
 .research-message.user .research-message-content { border-color: #315d91; color: #fff; background: #234b7c; }
+.research-message.pending .research-message-content { opacity: .82; }
+.research-message.error .research-message-content { border-color: #f0b4ad; background: #fff8f7; }
+.research-message-state { margin: 0; color: var(--muted); font-size: 11px; }
+.research-message.error .research-message-state { color: #b42318; }
+.research-streaming-cursor { display: inline-block; width: .55em; height: 1.05em; margin-left: 3px; border-radius: 2px; background: currentColor; vertical-align: -0.16em; animation: research-cursor-blink .9s steps(2, start) infinite; }
+@keyframes research-cursor-blink { to { visibility: hidden; } }
 .research-message-actions { margin-top: 6px; }
 .research-message-actions .secondary-btn { min-height: 34px; padding: 6px 10px; font-size: 12px; }
 .research-quick-tasks { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
