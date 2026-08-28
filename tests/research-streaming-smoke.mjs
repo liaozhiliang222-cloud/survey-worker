@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { extractDshReply } from "../lib/harness.js";
 import { createHarnessClient } from "../functions/api/research/[[path]].js";
+
+const productionConfig = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
+assert.match(productionConfig, /HARNESS_TIMEOUT\s*=\s*"80000"/, "ordinary AI requests must keep the 80 second deadline");
+assert.match(productionConfig, /HARNESS_LONG_TASK_TIMEOUT\s*=\s*"180000"/, "structured deliverables must allow 180 seconds");
 
 assert.equal(extractDshReply([
   { event: { type: "assistant/chunk", data: { chunk: { type: "reasoning", text: "增量" } } } },

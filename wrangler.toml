@@ -16,18 +16,18 @@ bucket_name = "surveykit-research-files"
 
 [env.production.vars]
 PPTX_BACKEND_URL = "https://ppt-api.surveykit.cc"
-SURVEYKIT_RELEASE = "v0.3.1-20260828.2"
-SURVEYKIT_DEPLOYED_AT = "2026-08-28T07:37:45Z"
+SURVEYKIT_RELEASE = "v0.3.1-20260828.3"
+SURVEYKIT_DEPLOYED_AT = "2026-08-28T08:25:32Z"
 HARNESS_API_STYLE = "dsh-rpc"
 HARNESS_AGENT_PRESET = "survey-research"
 HARNESS_MODEL_PROVIDER = "newapi"
 HARNESS_MODEL = "deepseek-v4-flash"
 HARNESS_REASONING_EFFORT = ""
 HARNESS_CLIENT_TIME_ZONE = "Asia/Shanghai"
-# Keep synchronous AI requests below Cloudflare's client-facing 100 second timeout.
+# Long structured deliverables stream while the browser remains connected.
 HARNESS_POLL_INTERVAL = "2000"
 HARNESS_TIMEOUT = "80000"
-HARNESS_LONG_TASK_TIMEOUT = "85000"
+HARNESS_LONG_TASK_TIMEOUT = "180000"
 RESEARCH_AUTH_MODE = "anonymous"
 RESEARCH_ANONYMOUS_USER_ID = "shared-workspace"
 RESEARCH_MAX_FILE_BYTES = "10485760"

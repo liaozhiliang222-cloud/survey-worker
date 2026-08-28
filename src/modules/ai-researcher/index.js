@@ -1,5 +1,5 @@
 /** AI Researcher V0.3.1 frontend. Server /api/research is authoritative; SSE 为可选增强。 */
-import { latestStreamSnapshot, normalizeStreamPayload, parseSseBuffer, readSseResponse } from "./stream.mjs";
+import { RESEARCH_RUN_RECOVERY_TIMEOUT_MS, latestStreamSnapshot, normalizeStreamPayload, parseSseBuffer, readSseResponse } from "./stream.mjs";
 
 const API_ROOT = "/api/research";
 const TYPE_LABELS = { research_plan: "调研方案", questionnaire: "定量问卷", interview_guide: "访谈大纲", other: "其他" };
@@ -95,7 +95,7 @@ function failPendingMessage(body, error, partial = "", wasRetry = false) {
   notify(`${wasRetry ? "重试未成功：" : ""}${error.message}`, "error", error.retryable ? () => sendMessage(null, body) : null);
 }
 async function recoverRun(runId, onProgress) {
-  const deadline = Date.now() + 90_000;
+  const deadline = Date.now() + RESEARCH_RUN_RECOVERY_TIMEOUT_MS;
   let delay = 800;
   while (Date.now() < deadline) {
     const { run } = await api(`/projects/${encodeURIComponent(state.project.id)}/runs/${encodeURIComponent(runId)}`);

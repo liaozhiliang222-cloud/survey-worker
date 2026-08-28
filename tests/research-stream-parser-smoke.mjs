@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { latestStreamSnapshot, normalizeStreamPayload, parseSseBuffer, readSseResponse } from "../src/modules/ai-researcher/stream.mjs";
+import { RESEARCH_RUN_RECOVERY_TIMEOUT_MS, latestStreamSnapshot, normalizeStreamPayload, parseSseBuffer, readSseResponse } from "../src/modules/ai-researcher/stream.mjs";
+
+assert.equal(RESEARCH_RUN_RECOVERY_TIMEOUT_MS, 210_000, "recovery window must outlast the 180 second long-task deadline");
 
 const parsed = parseSseBuffer('event: delta\ndata: {"delta":"第一段"}\n\ndata: {"delta":"第二段"}\n\n');
 assert.equal(parsed.remainder, "");

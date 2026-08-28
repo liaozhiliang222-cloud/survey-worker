@@ -1,4 +1,5 @@
 /** AI Researcher V0.3.1 流式响应工具。SSE 是可选能力；现有 JSON 契约保持兼容。 */
+export const RESEARCH_RUN_RECOVERY_TIMEOUT_MS = 210_000;
 export function latestStreamSnapshot(events = []) {
   let snapshot = "";
   for (const item of events) {
