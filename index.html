@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#102a56" />
     <title>调研工具箱</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=20260823-5" />
+    <link rel="stylesheet" href="./styles.css?v=20260827-2" />
   </head>
   <body>
     <div class="app-loading-overlay" id="appLoading">
@@ -31,6 +31,7 @@
         <nav class="nav" aria-label="工具导航">
           <div class="nav-utility" aria-label="工作区">
             <button class="nav-item active" data-view="overview"><strong>总览</strong><small>项目与下一步</small></button>
+            <button class="nav-item" data-view="research"><strong>AI研究员</strong><small>调研方案与问卷助手</small></button>
             <button class="nav-item" data-view="settings"><strong>设置</strong><small>模型与系统配置</small></button>
           </div>
           <div class="nav-group" data-nav-phase="before">
@@ -365,6 +366,171 @@
               </ul>
             </section>
           </div>
+        </section>
+
+        <section class="view research-view" id="research">
+          <div class="page-title research-page-title">
+            <div>
+              <p class="eyebrow">AI Researcher</p>
+              <h2 id="researchPageHeading">AI研究员</h2>
+              <p class="research-page-subtitle" id="researchPageSubtitle">围绕具体项目连续协作，把关键输出沉淀为可复用成果。</p>
+            </div>
+            <button class="primary-btn" id="researchNewProject" type="button">新建调研项目</button>
+          </div>
+
+          <div class="research-feedback" id="researchFeedback" role="status" aria-live="polite" hidden></div>
+
+          <div class="research-home" id="researchHome">
+            <div class="research-home-head">
+              <div>
+                <h3>我的调研项目</h3>
+                <p>选择项目进入 AI 研究工作台，项目资料与成果会持续保留。</p>
+              </div>
+              <button class="secondary-btn" id="researchRefreshProjects" type="button">刷新项目</button>
+            </div>
+            <div class="research-project-list" id="researchProjectList" aria-live="polite"></div>
+          </div>
+
+          <div class="research-create" id="researchCreate" hidden>
+            <form class="panel research-create-form" id="researchCreateForm">
+              <div class="section-heading compact">
+                <div>
+                  <h3>新建调研项目</h3>
+                  <p>先写清项目背景和研究目标，后续可在工作台继续补充。</p>
+                </div>
+              </div>
+              <label>
+                项目名称 <span class="required-mark" aria-hidden="true">*</span>
+                <input id="researchCreateTitle" name="title" required maxlength="120" placeholder="例如：荣耀年轻用户 NPS 研究" />
+              </label>
+              <label>
+                客户名称
+                <input id="researchCreateClient" name="client_name" maxlength="120" placeholder="选填" />
+              </label>
+              <label>
+                项目背景 / Brief
+                <textarea id="researchCreateBrief" name="brief" rows="4" placeholder="业务背景、已知信息与约束条件"></textarea>
+              </label>
+              <label>
+                核心研究目标
+                <textarea id="researchCreateGoal" name="research_goal" rows="3" placeholder="希望通过本项目回答哪些决策问题"></textarea>
+              </label>
+              <div class="button-row">
+                <button class="primary-btn" id="researchCreateSubmit" type="submit">创建并进入项目</button>
+                <button class="secondary-btn" id="researchCreateCancel" type="button">取消</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="research-workspace" id="researchWorkspace" hidden>
+            <div class="research-workspace-head">
+              <button class="research-back-btn" id="researchBackToProjects" type="button" aria-label="返回我的调研项目">← 返回项目</button>
+              <div>
+                <h3 id="researchWorkspaceTitle">调研项目</h3>
+                <p id="researchWorkspaceMeta">AI Researcher 工作台</p>
+              </div>
+            </div>
+
+            <div class="research-mobile-tabs" role="tablist" aria-label="项目工作台区域">
+              <button class="active" type="button" role="tab" aria-selected="true" data-research-tab="project">项目</button>
+              <button type="button" role="tab" aria-selected="false" data-research-tab="chat">AI研究员</button>
+              <button type="button" role="tab" aria-selected="false" data-research-tab="artifacts">成果</button>
+            </div>
+
+            <div class="research-workspace-grid">
+              <aside class="research-column research-project-column active" data-research-panel="project">
+                <div class="research-column-head">
+                  <div><span>Project Context</span><h4>项目上下文</h4></div>
+                  <span class="research-save-state" id="researchProjectSaveState">已同步</span>
+                </div>
+                <form class="research-context-form" id="researchContextForm">
+                  <label>项目名称<input id="researchProjectTitle" name="title" required maxlength="120" /></label>
+                  <label>客户<input id="researchProjectClient" name="client_name" maxlength="120" /></label>
+                  <label>项目背景 / Brief<textarea id="researchProjectBrief" name="brief" rows="5"></textarea></label>
+                  <label>研究目标<textarea id="researchProjectGoal" name="research_goal" rows="4"></textarea></label>
+                  <button class="secondary-btn" id="researchSaveProject" type="submit">保存项目信息</button>
+                </form>
+                <div class="research-files-section" aria-label="项目文件">
+                  <div class="research-files-head">
+                    <div><strong>项目文件</strong><small id="researchFileCount">0 个文件</small></div>
+                    <button class="secondary-btn" id="researchUploadFile" type="button">＋ 上传文件</button>
+                    <input id="researchFileInput" type="file" accept=".docx,.pdf,.txt,.md,.xlsx,.pptx" multiple hidden />
+                  </div>
+                  <p class="research-files-help">支持 DOCX、PDF、TXT、MD、XLSX、PPTX；单文件默认不超过 10MB。</p>
+                  <div class="research-file-list" id="researchFileList" aria-live="polite"></div>
+                </div>
+              </aside>
+
+              <section class="research-column research-chat-column" data-research-panel="chat">
+                <div class="research-column-head research-chat-head">
+                  <div><span>AI Researcher</span><h4>研究对话</h4></div>
+                  <span class="research-connection-state" id="researchConnectionState">准备就绪</span>
+                </div>
+                <div class="research-current-context">
+                  <div class="research-current-context-head"><strong>当前 AI 上下文</strong><button class="secondary-btn" id="researchAddContext" type="button">＋ 添加上下文</button></div>
+                  <div class="research-context-chips" id="researchContextChips"><span class="research-context-empty">仅使用项目基础信息</span></div>
+                </div>
+                <div class="research-message-list" id="researchMessageList" aria-live="polite"></div>
+                <div class="research-quick-tasks" id="researchQuickTasks" aria-label="快捷任务">
+                  <button type="button" data-research-task-type="research_plan" data-research-prompt="请基于当前项目背景，为我设计一份完整的调研方案。">设计调研方案</button>
+                  <button type="button" data-research-task-type="questionnaire" data-research-prompt="请基于当前项目目标，设计一份可编程的定量问卷。">设计定量问卷</button>
+                  <button type="button" data-research-task-type="interview_guide" data-research-prompt="请基于当前项目，设计一份半结构化深度访谈大纲。">设计访谈大纲</button>
+                  <button type="button" data-research-task-type="free_chat" data-research-prompt="请先梳理这个项目最需要澄清的研究问题。">自由提问</button>
+                </div>
+                <form class="research-composer" id="researchChatForm">
+                  <label class="sr-only" for="researchChatInput">给 AI 研究员发送消息</label>
+                  <textarea id="researchChatInput" rows="3" placeholder="描述你的研究任务、约束或修改要求…"></textarea>
+                  <div class="research-composer-actions">
+                    <span id="researchComposerHint">Enter 换行，点击发送提交</span>
+                    <button class="primary-btn" id="researchSendMessage" type="submit">发送</button>
+                  </div>
+                </form>
+              </section>
+
+              <aside class="research-column research-artifact-column" data-research-panel="artifacts">
+                <div class="research-column-head">
+                  <div><span>Artifacts</span><h4>项目成果</h4></div>
+                  <span id="researchArtifactCount">0 项</span>
+                </div>
+                <div class="research-artifact-list" id="researchArtifactList"></div>
+                <div class="research-artifact-detail" id="researchArtifactDetail" hidden></div>
+              </aside>
+            </div>
+          </div>
+
+          <dialog class="research-save-dialog" id="researchSaveArtifactDialog">
+            <form method="dialog" id="researchSaveArtifactForm">
+              <div class="section-heading compact"><div><h3>保存为项目成果</h3><p>同类型成果再次保存会自动生成新版本。</p></div></div>
+              <label>成果名称<input id="researchArtifactTitle" required maxlength="120" /></label>
+              <label>成果类型<select id="researchArtifactType"><option value="research_plan">调研方案</option><option value="questionnaire">定量问卷</option><option value="interview_guide">访谈大纲</option><option value="other">其他</option></select></label>
+              <div class="button-row"><button class="primary-btn" id="researchArtifactSave" type="submit">保存成果</button><button class="secondary-btn" id="researchArtifactCancel" type="button">取消</button></div>
+            </form>
+          </dialog>
+
+          <dialog class="research-save-dialog research-context-dialog" id="researchContextDialog">
+            <form method="dialog" id="researchContextPickerForm">
+              <div class="section-heading compact"><div><h3>添加 AI 上下文</h3><p>显式资料优先；项目记忆会按当前问题自动补充少量相关片段。</p></div></div>
+              <fieldset>
+                <legend>项目记忆</legend>
+                <label class="research-context-option"><input id="researchAutoRetrieve" type="checkbox" checked /><span>自动检索与当前问题相关的项目片段</span></label>
+                <div class="research-memory-search"><input id="researchMemoryQuery" type="search" placeholder="输入关键词预览检索结果" maxlength="200" /><button class="secondary-btn" id="researchMemorySearch" type="button">检索</button></div>
+                <div class="research-memory-results" id="researchMemoryResults" aria-live="polite"></div>
+              </fieldset>
+              <fieldset><legend>项目文件</legend><div class="research-context-picker-list" id="researchContextFileOptions"></div></fieldset>
+              <fieldset><legend>当前成果（单选）</legend><div class="research-context-picker-list" id="researchContextArtifactOptions"></div></fieldset>
+              <div class="button-row"><button class="primary-btn" id="researchContextApply" type="submit">应用上下文</button><button class="secondary-btn" id="researchContextCancel" type="button">取消</button></div>
+            </form>
+          </dialog>
+
+          <dialog class="research-save-dialog research-file-dialog" id="researchFileDialog">
+            <div class="section-heading compact"><div><h3 id="researchFileDialogTitle">文件详情</h3><p id="researchFileDialogMeta"></p></div></div>
+            <label>文件分类<select id="researchFileCategory"><option value="brief">Brief</option><option value="historical_report">历史报告</option><option value="questionnaire">问卷</option><option value="interview">访谈笔录</option><option value="data">数据</option><option value="other">其他</option></select></label>
+            <div class="research-file-summary"><strong>摘要</strong><pre id="researchFileSummary"></pre></div>
+            <div class="research-file-structure" id="researchFileStructure" hidden><strong>XLSX 结构化上下文</strong><pre id="researchFileStructurePreview"></pre></div>
+            <div class="research-file-preview"><strong>解析内容预览</strong><pre id="researchFilePreview"></pre></div>
+            <p class="research-ocr-state" id="researchFileOcrState"></p>
+            <div class="button-row"><button class="secondary-btn" id="researchFileReparse" type="button">重新解析</button><button class="secondary-btn" id="researchFileOcr" type="button" hidden>按需 OCR</button><button class="danger-btn" id="researchFileDelete" type="button">删除文件</button><button class="secondary-btn" id="researchFileClose" type="button">关闭</button></div>
+          </dialog>
         </section>
 
         <section class="view" id="sample">
@@ -1330,8 +1496,9 @@
           </ol>
 
           <div class="ai-report-workspace">
-            <!-- 步骤 1：上传交叉表 -->
-            <div class="ai-report-config panel flow-panel" id="pptxUploadStep" data-flow-state="active">
+            <div class="pptx-report-main">
+              <!-- 步骤 1：上传交叉表 -->
+              <div class="ai-report-config panel flow-panel" id="pptxUploadStep" data-flow-state="active">
               <div class="ai-report-step">
                 <div class="step-badge">1</div>
                 <div class="step-body">
@@ -1353,10 +1520,10 @@
                   <p class="panel-note" id="pptxParseStatus"></p>
                 </div>
               </div>
-            </div>
+              </div>
 
-            <!-- 步骤 2：配置 -->
-            <div class="ai-report-config panel flow-panel" id="pptxConfigStep" data-flow-state="locked">
+              <!-- 步骤 2：配置 -->
+              <div class="ai-report-config panel flow-panel" id="pptxConfigStep" data-flow-state="locked">
               <div class="ai-report-step">
                 <div class="step-badge">2</div>
                 <div class="step-body">
@@ -1444,10 +1611,10 @@
                   <p class="panel-note" id="pptxGenStatus"></p>
                 </div>
               </div>
-            </div>
+              </div>
 
-            <!-- 步骤 2.5：预览 & 编辑报告结构 -->
-            <div class="ai-report-config panel" id="pptxPreviewPanel" style="display:none;">
+              <!-- 步骤 2.5：预览 & 编辑报告结构 -->
+              <div class="ai-report-config panel" id="pptxPreviewPanel" style="display:none;">
               <div class="ai-report-step">
                 <div class="step-badge">2.5</div>
                 <div class="step-body">
@@ -1462,12 +1629,6 @@
                     <button class="ghost-btn" id="pptxRedoPlanBtn" type="button" disabled>重做</button>
                     <button class="ghost-btn" id="pptxBackToConfig" type="button">返回修改配置</button>
                   </div>
-                  <div class="progress-bar hidden" id="pptxProgress" aria-live="polite">
-                    <div class="progress-fill" id="pptxProgressFill"></div>
-                    <span class="progress-text" id="pptxProgressText">生成中…</span>
-                  </div>
-                  <button class="ghost-btn hidden" id="pptxCancelJobBtn" type="button" disabled>取消生成任务</button>
-                  <p class="panel-note pptx-ai-progress-note" id="pptxAiWriteStatus"></p>
                   <div class="pptx-report-quality hidden" id="pptxReportQualityPanel" aria-live="polite">
                     <div class="pptx-report-quality-head">
                       <div>
@@ -1488,13 +1649,12 @@
                       <span>先在上方完成文件解析和维度选择，然后点击「预览报告结构」。</span>
                     </div>
                   </div>
-                  <p class="panel-note" id="pptxConfirmStatus"></p>
                 </div>
               </div>
-            </div>
+              </div>
 
-            <!-- 步骤 2.7：AI 报告故事线 -->
-            <div class="ai-report-config panel" id="pptxNarrativePanel" style="display:none;">
+              <!-- 步骤 2.7：AI 报告故事线 -->
+              <div class="ai-report-config panel" id="pptxNarrativePanel" style="display:none;">
               <div class="ai-report-step">
                 <div class="step-badge">2.7</div>
                 <div class="step-body">
@@ -1520,15 +1680,24 @@
                   </div>
                 </div>
               </div>
+              </div>
             </div>
+
             <!-- 步骤 3：结果 -->
             <div class="ai-report-config panel flow-panel" id="pptxDownloadStep" data-flow-state="locked">
               <div class="ai-report-step">
                 <div class="step-badge">3</div>
                 <div class="step-body">
                   <h3>下载报告</h3>
-                  <p class="flow-step-locked-note">完成报告预览并生成后，可在这里下载和查看历史记录。</p>
+                  <p class="flow-step-locked-note">完成报告预览后，可在这里跟踪生成进度、下载报告并查看历史记录。</p>
                   <p class="panel-note">生成完成后会自动下载 .pptx 文件。报告含封面、目录、洞察标题、可编辑图表及底部数据来源。</p>
+                  <div class="progress-bar hidden" id="pptxProgress" aria-live="polite">
+                    <div class="progress-fill" id="pptxProgressFill"></div>
+                    <span class="progress-text" id="pptxProgressText">生成中…</span>
+                  </div>
+                  <button class="ghost-btn hidden" id="pptxCancelJobBtn" type="button" disabled>取消生成任务</button>
+                  <p class="panel-note pptx-ai-progress-note" id="pptxAiWriteStatus"></p>
+                  <p class="panel-note" id="pptxConfirmStatus"></p>
                   <div class="audit-results" id="pptxResult">
                     <div class="empty-state">
                       <strong>等待生成</strong>
@@ -3197,15 +3366,15 @@
     <script src="./research-theme.js?v=20260801-1"></script>
     <script src="./ai-plan-quality.js?v=20260823-1"></script>
     <script src="./ppt-report-ai.js?v=20260823-3"></script>
-    <script src="./app.js?v=20260823-7"></script>
+    <script src="./app.js?v=20260826-3"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
     <script src="./cluster-core.js?v=20260804-1"></script>
     <script src="./cluster-analysis.js?v=20260804-1"></script>
     <!-- Vite 模块化入口（Phase 1 过渡期：共享模块已提取，功能模块渐进迁移） -->
-    <script type="module" src="/src/main.js?v=20260823-6"></script>
+    <script type="module" src="./src/main.js?v=20260827-3"></script>
     <!-- MaxDiff 模块桥接：在 legacy 服务器（无 Vite）下也能加载阶段三/四的校验与 MNL/HB 模型 -->
     <script type="module">
-      import * as maxdiff from "/src/modules/maxdiff/index.js?v=20260725-4";
+      import * as maxdiff from "./src/modules/maxdiff/index.js?v=20260827-2";
       window.SurveyKitMaxDiff = maxdiff;
     </script>
   </body>

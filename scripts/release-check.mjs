@@ -11,7 +11,7 @@ const baseUrl = readArg("base-url", process.env.SURVEYKIT_BASE_URL || "http://12
 const expectedRelease = readArg("release", process.env.SURVEYKIT_EXPECTED_RELEASE || "");
 const timeoutMs = Math.max(1_000, Number(readArg("timeout-ms", "20000")) || 20_000);
 
-async function check(path, validate) {
+async function check(path, validate, { verifyRelease = true } = {}) {
   const startedAt = Date.now();
   try {
     const response = await fetch(baseUrl + path, {
@@ -22,7 +22,7 @@ async function check(path, validate) {
     const payload = await response.json().catch(() => null);
     const validation = payload && typeof payload === "object" ? validate(payload) : "响应不是 JSON";
     const release = payload?.release?.version || payload?.proxy?.release?.version || "";
-    const releaseMatches = !expectedRelease || release === expectedRelease;
+    const releaseMatches = !verifyRelease || !expectedRelease || release === expectedRelease;
     return {
       path,
       ok: response.ok && !validation && releaseMatches,
@@ -54,6 +54,7 @@ const checks = await Promise.all([
     && (!expectedRelease || payload.proxy?.release?.version === expectedRelease)
   ) ? "" : "PPTX 完整链路健康契约或代理版本无效"),
   check("/api/ai", (payload) => payload.ok === true ? "" : "AI 代理健康契约无效"),
+  check("/api/research/projects", (payload) => Array.isArray(payload.projects) ? "" : "AI 研究员、D1 或身份绑定无效", { verifyRelease: false }),
 ]);
 
 const summary = {

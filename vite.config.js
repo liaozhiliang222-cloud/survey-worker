@@ -1,6 +1,10 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
+
+const require = createRequire(import.meta.url);
+const { createResearchHandler } = require("./lib/research-handler");
 
 const runtimeFiles = [
   "research-theme.js",
@@ -36,8 +40,28 @@ function copyRuntimeAssets() {
   };
 }
 
-export default defineConfig({
-  plugins: [copyRuntimeAssets()],
+function localResearchApi(env) {
+  return {
+    name: "surveykit-local-research-api",
+    configureServer(server) {
+      const handler = createResearchHandler({
+        env: {
+          ...env,
+          RESEARCH_DEV_USER_ID: env.RESEARCH_DEV_USER_ID || "local-developer",
+        },
+      });
+      server.middlewares.use((request, response, next) => {
+        if (!request.url?.startsWith("/api/research")) return next();
+        Promise.resolve(handler(request, response)).catch(next);
+      });
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  const env = { ...process.env, ...loadEnv(mode, process.cwd(), "") };
+  return {
+  plugins: [localResearchApi(env), copyRuntimeAssets()],
   root: ".",
   build: {
     outDir: "dist",
@@ -65,4 +89,5 @@ export default defineConfig({
       },
     },
   },
+  };
 });

@@ -5,6 +5,7 @@ const { configuredBodyLimit } = require("./lib/request-body");
 const { sendJson } = require("./lib/http-response");
 const { createPptxProxyHandler } = require("./lib/pptx-proxy");
 const { createAiProxyHandler } = require("./lib/ai-proxy");
+const { createResearchHandler } = require("./lib/research-handler");
 const { releaseInfo } = require("./lib/release-info");
 
 const root = __dirname;
@@ -26,6 +27,7 @@ const handlePptxProxy = createPptxProxyHandler({
   timeoutMs: pptxProxyTimeoutMs,
   maxBodyBytes: maxPptxBodyBytes,
 });
+const handleResearch = createResearchHandler({ env: process.env });
 const types = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -62,6 +64,17 @@ http
     }
     if (req.url === "/api/ai") {
       handleAiProxy(req, res);
+      return;
+    }
+    if (req.url.startsWith("/api/research")) {
+      Promise.resolve(handleResearch(req, res)).catch((error) => {
+        console.error(JSON.stringify({ event: "research_api_unhandled_error", error_type: error?.code || error?.name || "unknown" }));
+        if (res.headersSent) {
+          res.destroy();
+          return;
+        }
+        sendJson(res, 500, { error: { message: "AI 研究员服务暂时不可用，请稍后重试。", type: "internal_error", retryable: true } });
+      });
       return;
     }
     let urlPath;

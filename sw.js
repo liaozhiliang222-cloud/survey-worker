@@ -1,4 +1,4 @@
-const CACHE_NAME = "research-toolbox-v74";
+const CACHE_NAME = "research-toolbox-v77";
 const ASSETS = [
   "./manifest.webmanifest",
   "./icon.svg",
@@ -38,6 +38,10 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (/^\/api\/ai(?:\/|$)/.test(url.pathname)) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
+    return;
+  }
+  if (/^\/api\/research(?:\/|$)/.test(url.pathname)) {
     event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
   }

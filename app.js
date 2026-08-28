@@ -20288,7 +20288,7 @@ function syncCoreWorkflowUx() {
     setTaskFlowIndicator(pptxView, "download", generated ? "completed" : previewVisible ? "active" : "locked", generated ? "报告已下载" : previewVisible ? "可以生成报告" : "等待报告预览");
     setFlowPanelState(document.querySelector("#pptxUploadStep"), parsed ? "completed" : "active");
     setFlowPanelState(document.querySelector("#pptxConfigStep"), parsed ? previewVisible ? "completed" : "active" : "locked");
-    setFlowPanelState(document.querySelector("#pptxDownloadStep"), generated ? "completed" : "locked");
+    setFlowPanelState(document.querySelector("#pptxDownloadStep"), generated ? "completed" : previewVisible ? "active" : "locked");
   }
 }
 

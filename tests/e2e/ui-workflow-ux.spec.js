@@ -55,6 +55,27 @@ test("PPT 报告未来步骤初始收起", async ({ page }) => {
   await expect(page.locator("#pptxResult")).toBeHidden();
 });
 
+test("PPT 报告第三步在桌面端固定于右侧", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openView(page, "pptx-report");
+
+  const main = await page.locator("#pptx-report .pptx-report-main").boundingBox();
+  const download = await page.locator("#pptxDownloadStep").boundingBox();
+  expect(main).toBeTruthy();
+  expect(download).toBeTruthy();
+  expect(download.x).toBeGreaterThan(main.x + main.width);
+  expect(Math.abs(download.y - main.y)).toBeLessThan(4);
+  await expect(page.locator("#pptxDownloadStep")).toHaveCSS("position", "sticky");
+
+  await page.locator("#pptxConfigStep").evaluate((panel) => { panel.dataset.flowState = "active"; });
+  await page.locator("#pptxDownloadStep").evaluate((panel) => { panel.dataset.flowState = "active"; });
+  await page.locator(".content").evaluate((content) => { content.scrollTop = 500; });
+  await page.waitForTimeout(100);
+  const stickyDownload = await page.locator("#pptxDownloadStep").boundingBox();
+  expect(stickyDownload.y).toBeGreaterThanOrEqual(54);
+  expect(stickyDownload.y).toBeLessThanOrEqual(62);
+});
+
 test("AI 方案生成前不展示修改和导出操作", async ({ page }) => {
   await openView(page, "ai-plan");
   await expect(page.locator("#ai-plan")).not.toHaveClass(/workflow-has-result/);

@@ -22,6 +22,7 @@ assert.match(rollback, /deploy\/aliyun_api\.py/);
 assert.match(rollback, /curl --fail/);
 assert.match(checker, /\/pptx-api\/healthz/);
 assert.match(checker, /\/api\/ai/);
+assert.match(checker, /\/api\/research\/projects/);
 assert.match(docs, /PPTX_BACKEND_URL=https:\/\//);
 assert.match(docs, /verify:production/);
 
@@ -36,6 +37,7 @@ const server = http.createServer((request, response) => {
       proxy: { ok: true, release: { version: "smoke-1" } },
     },
     "/api/ai": { ok: true, service: "ai-proxy", release: { version: "smoke-1" } },
+    "/api/research/projects": { projects: [] },
   };
   const payload = payloads[request.url];
   response.writeHead(payload ? 200 : 404, { "Content-Type": "application/json" });
@@ -59,6 +61,6 @@ await new Promise((resolve) => server.close(resolve));
 assert.equal(exitCode, 0, output);
 const summary = JSON.parse(output);
 assert.equal(summary.ok, true);
-assert.equal(summary.checks.length, 3);
+assert.equal(summary.checks.length, 4);
 
 console.log("Release process smoke passed: backup, rollback and production verification");
