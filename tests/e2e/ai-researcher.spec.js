@@ -63,7 +63,7 @@ async function mockResearchApi(page) {
   return { getLastMessagePayload: () => lastMessagePayload };
 }
 
-async function mockStreamingResearchApi(page, { failFirstStream = false } = {}) {
+async function mockStreamingResearchApi(page, { failFirstStream = false, failRetryStream = false, retryDelayMs = 0 } = {}) {
   const project = {
     id: "project-1",
     title: "荣耀年轻用户 NPS 研究",
@@ -95,13 +95,14 @@ async function mockStreamingResearchApi(page, { failFirstStream = false } = {}) 
       const wantsStream = (request.headers().accept || "").includes("text/event-stream");
       if (!wantsStream) return fulfill({ error: { message: "应请求 SSE", retryable: true } }, 500);
       streamAttempts += 1;
-      if (failFirstStream && streamAttempts === 1) {
+      if ((failFirstStream && streamAttempts === 1) || (failRetryStream && streamAttempts === 2)) {
         return route.fulfill({
           status: 200,
           headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store" },
           body: frame("delta", { run_id: "run-1", text: "已接收的第一段" }) + frame("error", { run_id: "run-1", error: { message: "模拟流式中断", retryable: true } }),
         });
       }
+      if (streamAttempts > 1 && retryDelayMs) await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       const existing = messages.find((message) => message.client_request_id === payload.client_request_id && message.role === "user");
       const user = existing || { id: `user-${payload.client_request_id}`, role: "user", content: payload.message, client_request_id: payload.client_request_id };
       const assistant = { id: `assistant-${payload.client_request_id}`, role: "assistant", content: "已接收的第一段\n\n完整第二段" };
@@ -198,7 +199,7 @@ test("AI 研究员 SSE 增量显示且完成后不重复", async ({ page }) => {
 
 test("AI 研究员流式中断保留部分回复并用幂等请求重试", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("surveykit_tour_done", "1"));
-  const mock = await mockStreamingResearchApi(page, { failFirstStream: true });
+  const mock = await mockStreamingResearchApi(page, { failFirstStream: true, retryDelayMs: 500 });
   await page.goto("/");
   await page.locator('[data-view="research"]').click();
   await page.locator(".research-project-card").click();
@@ -208,9 +209,29 @@ test("AI 研究员流式中断保留部分回复并用幂等请求重试", async
   await expect(page.locator(".research-message.assistant.error")).toContainText("已接收的第一段");
   await expect(page.locator("#researchFeedback")).toContainText("模拟流式中断");
   await page.locator("#researchFeedback button").click();
+  await expect(page.locator("#researchFeedback")).toContainText("正在重新连接 AI 研究员…");
+  await expect(page.locator("#researchFeedback button")).toHaveText("重试中…");
+  await expect(page.locator("#researchFeedback button")).toBeDisabled();
+  await expect(page.locator("#researchConnectionState")).toContainText("正在重试");
   await expect(page.locator("#researchConnectionState")).toHaveAttribute("data-state", "ready");
   await expect(page.locator(".research-message.assistant")).toHaveCount(1);
   await expect(page.locator(".research-message.assistant")).toContainText("完整第二段");
+  expect(mock.getStreamAttempts()).toBe(2);
+  expect(mock.requests[0].client_request_id).toBe(mock.requests[1].client_request_id);
+});
+
+test("AI 研究员重试仍失败时恢复按钮并明确提示失败", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("surveykit_tour_done", "1"));
+  const mock = await mockStreamingResearchApi(page, { failFirstStream: true, failRetryStream: true, retryDelayMs: 200 });
+  await page.goto("/");
+  await page.locator('[data-view="research"]').click();
+  await page.locator(".research-project-card").click();
+  await page.locator("#researchChatInput").fill("请模拟额度不足后的再次重试");
+  await page.locator("#researchSendMessage").click();
+  await page.locator("#researchFeedback button").click();
+  await expect(page.locator("#researchFeedback")).toContainText("重试未成功：模拟流式中断");
+  await expect(page.locator("#researchFeedback button")).toHaveText("重试");
+  await expect(page.locator("#researchFeedback button")).toBeEnabled();
   expect(mock.getStreamAttempts()).toBe(2);
   expect(mock.requests[0].client_request_id).toBe(mock.requests[1].client_request_id);
 });

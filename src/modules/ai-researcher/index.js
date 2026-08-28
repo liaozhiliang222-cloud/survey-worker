@@ -14,7 +14,7 @@ function formatBytes(value) { const bytes = Number(value || 0); if (bytes < 1024
 function friendlyError(status, payload) { if (status === 401 || status === 403) return "当前登录已失效，请重新登录后再试。"; if (status === 413) return payload?.error?.message || "文件或请求内容超过大小限制。"; if (status === 429) return "AI研究员请求过于频繁，请稍后再试。"; if (status === 504 || payload?.error?.type === "harness_timeout") return "AI研究员响应超时，请稍后重试。"; if ([502, 503].includes(status)) return payload?.error?.message || "AI研究员暂时无法连接，请稍后重试。"; return payload?.error?.message || payload?.message || "请求未完成，请稍后重试。"; }
 async function api(path, options = {}) { const headers = { Accept: "application/json", ...(options.headers || {}) }; if (typeof options.body === "string" && !headers["Content-Type"]) headers["Content-Type"] = "application/json"; const response = await fetch(`${API_ROOT}${path}`, { credentials: "same-origin", ...options, headers }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) { const error = new Error(friendlyError(response.status, payload)); error.status = response.status; error.retryable = Boolean(payload?.error?.retryable || [429, 502, 503, 504].includes(response.status)); throw error; } return payload?.data && typeof payload.data === "object" ? payload.data : payload; }
 const jsonBody = (value) => JSON.stringify(value);
-function notify(message, tone = "info", retry = null) { const box = $("#researchFeedback"); if (!box) return; box.hidden = false; box.className = `research-feedback ${tone}`; box.replaceChildren(node("span", "", message)); if (retry) { const button = node("button", "secondary-btn", "重试"); button.type = "button"; button.addEventListener("click", retry, { once: true }); box.appendChild(button); } }
+function notify(message, tone = "info", retry = null) { const box = $("#researchFeedback"); if (!box) return; box.hidden = false; box.className = `research-feedback ${tone}`; const text = node("span", "", message); box.replaceChildren(text); if (retry) { const button = node("button", "secondary-btn", "重试"); button.type = "button"; button.addEventListener("click", async () => { button.disabled = true; button.textContent = "重试中…"; box.className = "research-feedback info"; text.textContent = "正在重新连接 AI 研究员…"; try { await retry(); } catch (error) { notify(error?.message || "重试未完成，请稍后再试。", "error", retry); } }, { once: true }); box.appendChild(button); } }
 function clearNotice() { const box = $("#researchFeedback"); if (box) box.hidden = true; }
 function setBusy(button, busy, label = "处理中…") { if (!button) return; button.dataset.idleLabel ||= button.textContent; button.disabled = busy; button.textContent = busy ? label : button.dataset.idleLabel; }
 function showMode(mode) { $("#researchHome").hidden = mode !== "home"; $("#researchCreate").hidden = mode !== "create"; $("#researchWorkspace").hidden = mode !== "workspace"; $("#researchNewProject").hidden = mode === "workspace"; }
@@ -86,13 +86,13 @@ async function postMessage(body, { onDelta, onProgress } = {}) {
   return { streamed: false, result: payload?.data && typeof payload.data === "object" ? payload.data : payload };
 }
 
-function failPendingMessage(body, error, partial = "") {
+function failPendingMessage(body, error, partial = "", wasRetry = false) {
   state.messages.forEach((item) => { if (item.id === body.client_request_id) item.pending = false; });
   state.messages = state.messages.filter((item) => ![`${body.client_request_id}-stream`, `${body.client_request_id}-partial`].includes(item.id));
   if (partial) state.messages.push({ id: `${body.client_request_id}-partial`, role: "assistant", content: partial, error: "连接中断，以上为已接收的部分回复。" });
   renderMessages();
   setConnectionState("连接失败", "error");
-  notify(error.message, "error", () => sendMessage(null, body));
+  notify(`${wasRetry ? "重试未成功：" : ""}${error.message}`, "error", error.retryable ? () => sendMessage(null, body) : null);
 }
 async function recoverRun(runId, onProgress) {
   const deadline = Date.now() + 90_000;
@@ -113,6 +113,7 @@ async function sendMessage(event, retryBody = null) {
   const input = $("#researchChatInput");
   const body = retryBody || { message: input.value.trim(), artifact_id: state.selectedArtifactId || undefined, selected_file_ids: [...state.selectedFileIds], auto_retrieve: state.autoRetrieve, task_type: state.taskType, client_request_id: requestId() };
   if (!body.message) return;
+  if (!retryBody) clearNotice();
   if (!retryBody) {
     state.messages.push({ id: body.client_request_id, role: "user", content: body.message, pending: true });
     input.value = "";
@@ -120,7 +121,7 @@ async function sendMessage(event, retryBody = null) {
   }
   const button = $("#researchSendMessage");
   setBusy(button, true, "AI思考中…");
-  setConnectionState("正在连接", "connecting");
+  setConnectionState(retryBody ? "正在重试" : "正在连接", "connecting");
   let streamedText = "";
   const renderStreamingAssistant = (content) => {
     let assistant = state.messages.find((item) => item.id === `${body.client_request_id}-stream`);
@@ -157,8 +158,8 @@ async function sendMessage(event, retryBody = null) {
         const assistant = applyMessageResult(result);
         if (assistant && !state.messages.some((item) => item.id && item.id === assistant.id)) state.messages.push(assistant);
         renderMessages(); clearNotice();
-      } catch (recoveryError) { failPendingMessage(body, recoveryError, streamedText); }
-    } else failPendingMessage(body, error, streamedText);
+      } catch (recoveryError) { failPendingMessage(body, recoveryError, streamedText, Boolean(retryBody)); }
+    } else failPendingMessage(body, error, streamedText, Boolean(retryBody));
   } finally {
     setBusy(button, false);
     input.focus();
