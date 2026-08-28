@@ -29,23 +29,31 @@ const server = http.createServer((req, res) => {
     const payload = body.payload || {};
     if (req.url === "/api/session.create") {
       const sessionId = `dsh-session-${++nextSession}`;
-      sessions.set(sessionId, { events: [], preset: "standard", title: "", model: null });
+      sessions.set(sessionId, { sessionId, events: [], preset: "standard", title: "", model: null, running: false, updatedAt: Date.now() });
       response(res, body.rpcId, { sessionId, agentPreset: "standard" }); return;
+    }
+    if (req.url === "/api/session.list") {
+      response(res, body.rpcId, { items: [...sessions.values()].map(({ sessionId, running, updatedAt }) => ({ sessionId, running, updatedAt })) }); return;
     }
     const session = sessions.get(payload.sessionId);
     if (!session) { response(res, body.rpcId, null, { code: "session-not-found", message: "missing", details: {} }); return; }
     if (req.url === "/api/agentPreset.select") { session.preset = payload.agentPreset; response(res, body.rpcId, { agentPreset: payload.agentPreset }); return; }
     if (req.url === "/api/session.selectModel") { session.model = { provider: payload.provider, model: payload.model, reasoningEffort: payload.reasoningEffort }; response(res, body.rpcId, { selected: session.model }); return; }
     if (req.url === "/api/session.rename") { session.title = payload.title; response(res, body.rpcId, { title: payload.title, seq: 0 }); return; }
-    if (req.url === "/api/session.history") { response(res, body.rpcId, { events: session.events, hasMore: false, projections: {} }); return; }
+    if (req.url === "/api/session.history") { const events = payload.maxMessages === 1 ? session.events.slice(session.turnStart || 0) : session.events; response(res, body.rpcId, { events, hasMore: false, projections: {} }); return; }
     if (req.url === "/api/session.cancel") {
       session.cancelled = true;
+      session.running = false;
+      session.updatedAt += 1;
       if (session.events.at(-1)?.event?.type !== "turn/end") session.events.push({ event: { type: "turn/end", seq: session.events.length, data: { reason: { kind: "cancelled" } } } });
       response(res, body.rpcId, { accepted: true }); return;
     }
     if (req.url === "/api/session.prompt") {
       const start = session.events.length;
       const prompt = payload.content?.[0]?.text || "";
+      session.turnStart = start;
+      session.running = true;
+      session.updatedAt += 1;
       session.events.push({ event: { type: "user/message", seq: start, data: { content: payload.content } } });
       if (prompt === "quota") {
         session.events.push({ event: { type: "turn/end", seq: start + 1, data: { reason: { kind: "error", error: { code: "QUOTA", status: 429, message: "insufficient balance" } } } } });
@@ -72,6 +80,8 @@ const server = http.createServer((req, res) => {
           { event: { type: "turn/end", seq: start + 2, data: { reason: { kind: "completed" } } } },
         );
       }
+      if (!["tool-attempt", "hang", "clarify"].includes(prompt)) session.running = false;
+      session.updatedAt += 1;
       response(res, body.rpcId, { accepted: true }); return;
     }
     res.writeHead(404).end();
@@ -92,8 +102,10 @@ try {
     HARNESS_POLL_INTERVAL: "100",
   } });
   const sessionId = await adapter.createSession({ title: "SurveyKit project", requestId: "dsh-create" });
+  const historyCallsBeforePing = calls.filter((call) => call.url === "/api/session.history").length;
   const reply = await adapter.sendMessage({ sessionId, prompt: "ping", requestId: "dsh-prompt" });
   assert.equal(reply, "DSH connected");
+  assert.equal(calls.filter((call) => call.url === "/api/session.history").length - historyCallsBeforePing, 1, "completed turns should pull history once");
   assert.equal(sessions.get(sessionId).preset, "survey-research");
   assert.deepEqual(sessions.get(sessionId).model, { provider: "newapi", model: "deepseek-v4-flash", reasoningEffort: undefined });
   assert.equal(sessions.get(sessionId).title, "SurveyKit project");
@@ -120,6 +132,7 @@ try {
     adapter.sendMessage({ sessionId, prompt: "quota", requestId: "dsh-quota" }),
     (error) => error.code === "HARNESS_UPSTREAM" && error.status === 429 && error.retryable,
   );
+  assert.ok(calls.filter((call) => call.url === "/api/session.history").every((call) => call.body.payload.maxMessages === 1));
   console.log("harness-dsh-rpc-smoke: PASS");
 } finally {
   await new Promise((resolve) => server.close(resolve));
