@@ -152,6 +152,10 @@ test("AI 研究员完成项目、对话、成果和继续修改闭环", async ({
   expect(mock.getLastMessagePayload().task_type).toBe("research_plan");
   await expect(page.locator("#researchConnectionState")).toContainText("检索 1 个片段");
   await expect(page.locator(".research-message.assistant")).toContainText("NPS 调研方案");
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator(".research-message.assistant .ghost-btn", { hasText: "导出 Word" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("荣耀年轻用户 NPS 研究.docx");
   await page.locator(".research-message.assistant .secondary-btn").click();
   await page.locator("#researchArtifactCancel").click();
   await expect(page.locator("#researchSaveArtifactDialog")).not.toBeVisible();
@@ -207,6 +211,7 @@ test("AI 研究员流式中断保留部分回复并用幂等请求重试", async
   await page.locator("#researchSendMessage").click();
   await expect(page.locator(".research-message.user")).toContainText("第一次模拟中断");
   await expect(page.locator(".research-message.assistant.error")).toContainText("已接收的第一段");
+  await expect(page.locator(".research-message.assistant.error .ghost-btn", { hasText: "导出 Word" })).toHaveCount(0);
   await expect(page.locator("#researchFeedback")).toContainText("模拟流式中断");
   await page.locator("#researchFeedback button").click();
   await expect(page.locator("#researchFeedback")).toContainText("正在重新连接 AI 研究员…");
