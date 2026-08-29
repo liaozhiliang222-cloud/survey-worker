@@ -22,8 +22,10 @@ const originalFetch = globalThis.fetch;
 const calls = [];
 let socket = null;
 let toolRetry = false;
+let toolAttemptCount = 0;
 let upstreamError = false;
 let promptCount = 0;
+let maxTokenMode = null;
 globalThis.fetch = async (input, init = {}) => {
   const url = new URL(input);
   calls.push({ url, init });
@@ -35,14 +37,27 @@ globalThis.fetch = async (input, init = {}) => {
   if (method === "session.prompt") {
     value = { accepted: true };
     promptCount += 1;
+    const prompt = body.payload?.content?.[0]?.text || "";
     queueMicrotask(() => {
-      if (toolRetry && promptCount === 2) {
+      if (prompt === "max-once" || prompt === "max-always") {
+        maxTokenMode = prompt === "max-once" ? "once" : "always";
+        socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "assistant/chunk", data: { chunk: { text: "**Q" } } } } });
+        socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "turn/end", data: { reason: { kind: "max-tokens" } } } } });
+        return;
+      }
+      if (prompt.includes("从最后一个字符之后直接续写")) {
+        socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "assistant/chunk", data: { chunk: { text: maxTokenMode === "always" ? "1" : "50 完整题目" } } } } });
+        socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "turn/end", data: { reason: { kind: maxTokenMode === "always" ? "max-tokens" : "completed" } } } } });
+        return;
+      }
+      if (toolRetry) toolAttemptCount += 1;
+      if (toolRetry && toolAttemptCount === 1) {
         socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "assistant/chunk", data: { chunk: { text: "违规草稿" } } } } });
         socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "tool/call", data: { name: "write" } } } });
         socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "turn/end", data: { reason: { kind: "cancelled" } } } } });
         return;
       }
-      if (toolRetry && promptCount === 3) {
+      if (toolRetry && toolAttemptCount === 2) {
         socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "assistant/chunk", data: { chunk: { text: "强制正文" } } } } });
         socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "turn/end", data: { reason: { kind: "completed" } } } } });
         return;
@@ -68,6 +83,7 @@ try {
     HARNESS_PASSWORD: "secret",
     HARNESS_MODEL: "deepseek",
     HARNESS_TIMEOUT: "2000",
+    HARNESS_MAX_CONTINUATIONS: "1",
   });
   const deltas = [];
   const reply = await client.stream("session-safe", "prompt", "public-request", { onDelta: (text) => deltas.push(text) });
@@ -78,6 +94,17 @@ try {
   assert.equal(mux.init.headers.Upgrade, "websocket");
   assert.equal(mux.init.headers.Authorization, `Basic ${Buffer.from("user:secret").toString("base64")}`);
   assert.ok(!JSON.stringify(deltas).includes("不能泄漏"));
+  const continuedDeltas = [];
+  const continuedReply = await client.stream("session-safe", "max-once", "continue-request", { onDelta: (text) => continuedDeltas.push(text) });
+  assert.equal(continuedReply, "**Q50 完整题目");
+  assert.deepEqual(continuedDeltas, ["**Q", "50 完整题目"], "continuation must append without resetting the first segment");
+  const maxedDeltas = [];
+  await assert.rejects(
+    client.stream("session-safe", "max-always", "max-token-request", { onDelta: (text) => maxedDeltas.push(text) }),
+    (error) => error?.code === "HARNESS_MAX_TOKENS",
+  );
+  assert.deepEqual(maxedDeltas, ["**Q", "1"], "exhausted continuation limit must retain all streamed partial content");
+  const muxCallsBeforeDirect = calls.filter((call) => call.url.pathname === "/api/events.mux").length;
   toolRetry = true;
   const directDeltas = [];
   let directResets = 0;
@@ -86,7 +113,7 @@ try {
   assert.deepEqual(directDeltas, ["强制正文"]);
   assert.equal(directResets, 1, "tool-blocked attempt must clear its streamed draft before retry");
   assert.equal(calls.filter((call) => call.init.body && JSON.parse(call.init.body).method === "session.cancel").length, 1, "tool call must cancel the first direct-reply attempt");
-  assert.equal(calls.filter((call) => call.url.pathname === "/api/events.mux").length, 3, "direct reply retry must reopen mux before its retry prompt");
+  assert.equal(calls.filter((call) => call.url.pathname === "/api/events.mux").length - muxCallsBeforeDirect, 2, "direct reply retry must reopen mux before its retry prompt");
   toolRetry = false;
   upstreamError = true;
   await assert.rejects(client.stream("session-safe", "quota", "error-request"), (error) => error?.code === "HARNESS_UPSTREAM" && error?.status === 429);

@@ -67,6 +67,20 @@ const server = http.createServer((req, res) => {
           { event: { type: "assistant/message", seq: start + 1, data: { message: { content: [{ type: "text", text: "正文直出成功" }] } } } },
           { event: { type: "turn/end", seq: start + 2, data: { reason: { kind: "completed" } } } },
         );
+      } else if (prompt === "max-once" || prompt === "max-always") {
+        session.continuationMode = prompt === "max-once" ? "once" : "always";
+        session.continuationCount = 0;
+        session.events.push(
+          { event: { type: "assistant/message", seq: start + 1, data: { message: { content: [{ type: "text", text: "**Q" }] } } } },
+          { event: { type: "turn/end", seq: start + 2, data: { reason: { kind: "max-tokens" } } } },
+        );
+      } else if (prompt.includes("从最后一个字符之后直接续写")) {
+        session.continuationCount += 1;
+        const maxed = session.continuationMode === "always";
+        session.events.push(
+          { event: { type: "assistant/message", seq: start + 1, data: { message: { content: [{ type: "text", text: maxed ? String(session.continuationCount) : "50 完整题目" }] } } } },
+          { event: { type: "turn/end", seq: start + 2, data: { reason: { kind: maxed ? "max-tokens" : "completed" } } } },
+        );
       } else if (prompt === "hang") {
         // Intentionally leave the turn running so timeout cancellation can be verified.
       } else if (prompt === "clarify") {
@@ -100,6 +114,7 @@ try {
     HARNESS_MODEL: "deepseek-v4-flash",
     HARNESS_TIMEOUT: "2000",
     HARNESS_POLL_INTERVAL: "100",
+    HARNESS_MAX_CONTINUATIONS: "1",
   } });
   const sessionId = await adapter.createSession({ title: "SurveyKit project", requestId: "dsh-create" });
   const historyCallsBeforePing = calls.filter((call) => call.url === "/api/session.history").length;
@@ -128,6 +143,13 @@ try {
     (error) => error.code === "HARNESS_TIMEOUT" && error.retryable,
   );
   assert.equal(activeSession.cancelled, true, "timeout must cancel the remote Harness turn");
+  assert.equal(await adapter.sendMessage({ sessionId, prompt: "max-once", requestId: "dsh-continue" }), "**Q50 完整题目");
+  const continuationPrompts = calls.filter((call) => call.url === "/api/session.prompt").map((call) => call.body.payload.content?.[0]?.text || "");
+  assert.equal(continuationPrompts.filter((text) => text.includes("从最后一个字符之后直接续写")).length, 1, "max-tokens must trigger one continuation prompt");
+  await assert.rejects(
+    adapter.sendMessage({ sessionId, prompt: "max-always", requestId: "dsh-max-tokens" }),
+    (error) => error.code === "HARNESS_MAX_TOKENS" && error.retryable,
+  );
   await assert.rejects(
     adapter.sendMessage({ sessionId, prompt: "quota", requestId: "dsh-quota" }),
     (error) => error.code === "HARNESS_UPSTREAM" && error.status === 429 && error.retryable,

@@ -43,6 +43,20 @@ globalThis.fetch = async (input, init) => {
           { event: { type: "assistant/message", seq, data: { message: { content: [{ type: "text", text: "准备调用工具。" }] } } } },
           { event: { type: "tool/call", seq: seq + 1, data: { name: "write", arguments: "{}" } } },
         );
+      } else if (prompt === "max-once" || prompt === "max-always") {
+        session.continuationMode = prompt === "max-once" ? "once" : "always";
+        session.continuationCount = 0;
+        session.events.push(
+          { event: { type: "assistant/message", seq, data: { message: { content: [{ type: "text", text: "**Q" }] } } } },
+          { event: { type: "turn/end", seq: seq + 1, data: { reason: { kind: "max-tokens" } } } },
+        );
+      } else if (prompt.includes("从最后一个字符之后直接续写")) {
+        session.continuationCount += 1;
+        const maxed = session.continuationMode === "always";
+        session.events.push(
+          { event: { type: "assistant/message", seq, data: { message: { content: [{ type: "text", text: maxed ? String(session.continuationCount) : "50 edge" }] } } } },
+          { event: { type: "turn/end", seq: seq + 1, data: { reason: { kind: maxed ? "max-tokens" : "completed" } } } },
+        );
       } else {
         session.events.push(
           { event: { type: "assistant/message", seq, data: { message: { content: [{ type: "text", text: prompt.includes("强制正文直出重试") ? "edge direct" : "edge connected" }] } } } },
@@ -70,12 +84,15 @@ try {
     HARNESS_MODEL: "deepseek-v4-flash",
     HARNESS_POLL_INTERVAL: "100",
     HARNESS_TIMEOUT: "2000",
+    HARNESS_MAX_CONTINUATIONS: "1",
   });
   const sessionId = await client.create("Edge SurveyKit", "edge-create");
   const historyCallsBeforePing = calls.filter((call) => call.path === "/api/session.history").length;
   assert.equal(await client.send(sessionId, "ping", "edge-send"), "edge connected");
   assert.equal(calls.filter((call) => call.path === "/api/session.history").length - historyCallsBeforePing, 1, "completed turns should pull history once");
   assert.equal(await client.send(sessionId, "tool-attempt", "edge-direct", { forbidTools: true, timeoutMs: 2_000 }), "edge direct");
+  assert.equal(await client.send(sessionId, "max-once", "edge-continue"), "**Q50 edge");
+  await assert.rejects(client.send(sessionId, "max-always", "edge-max-tokens"), (error) => error?.code === "HARNESS_MAX_TOKENS");
   assert.equal(sessions.get(sessionId).cancelled, true);
   assert.equal(sessions.get(sessionId).preset, "survey-research");
   assert.deepEqual(sessions.get(sessionId).model, { provider: "newapi", model: "deepseek-v4-flash", reasoningEffort: undefined });
