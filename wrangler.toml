@@ -16,7 +16,7 @@ bucket_name = "surveykit-research-files"
 
 [env.production.vars]
 PPTX_BACKEND_URL = "https://ppt-api.surveykit.cc"
-SURVEYKIT_RELEASE = "v0.3.1-20260829.4"
+SURVEYKIT_RELEASE = "v0.3.1-20260829.5"
 SURVEYKIT_DEPLOYED_AT = "2026-08-29T02:03:16Z"
 HARNESS_API_STYLE = "dsh-rpc"
 HARNESS_AGENT_PRESET = "survey-research"
