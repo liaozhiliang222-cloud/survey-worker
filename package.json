@@ -47,7 +47,7 @@
     "test:research-streaming": "node tests/research-streaming-smoke.mjs",
     "test:research-stream-parser": "node tests/research-stream-parser-smoke.mjs",
     "test:research-harness": "node tests/research-harness-smoke.mjs",
-    "test:research-files-context": "node tests/research-files-context-smoke.mjs",
+    "test:research-files-context": "node tests/research-files-context-smoke.mjs && node tests/research-message-order-smoke.mjs",
     "test:research-memory-v03": "node tests/research-memory-v03-smoke.mjs",
     "test:research-access-auth": "node tests/research-access-auth-smoke.mjs",
     "test:python:deps": "python tests/python-deps-smoke.py",

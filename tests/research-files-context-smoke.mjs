@@ -32,6 +32,19 @@ const questionnaire = buildProjectContext({ project: { title: "问卷测试" }, 
 assert.equal(questionnaire.context.direct_reply_only, true);
 assert.match(questionnaire.prompt, /完整、可编程的问卷/);
 assert.match(questionnaire.prompt, /skill、bash、write/);
+assert.doesNotMatch(questionnaire.prompt, /不得使用问卷式字母数字题号/);
+
+const interviewGuide = buildProjectContext({ project: { title: "访谈测试" }, userMessage: "设计访谈大纲", taskType: "interview_guide" });
+assert.equal(interviewGuide.context.direct_reply_only, true);
+assert.match(interviewGuide.prompt, /不得使用问卷式字母数字题号（如 A1、A2、B1）/);
+assert.match(interviewGuide.prompt, /必须使用章节或模块标题组织内容，并仅使用简单的分段标记/);
+
+const revisedInterviewGuide = buildProjectContext({ project: { title: "访谈测试" }, artifact: { id: "guide-v1", title: "访谈大纲", type: "interview_guide", version: 1, content: "旧版大纲" }, userMessage: "基于此版本派生", taskType: "artifact_revision" });
+assert.match(revisedInterviewGuide.prompt, /不得使用问卷式字母数字题号（如 A1、A2、B1）/);
+assert.match(revisedInterviewGuide.prompt, /必须使用章节或模块标题组织内容，并仅使用简单的分段标记/);
+
+const revisedResearchPlan = buildProjectContext({ project: { title: "方案测试" }, artifact: { id: "plan-v1", title: "调研方案", type: "research_plan", version: 1, content: "旧版方案" }, userMessage: "基于此版本派生", taskType: "artifact_revision" });
+assert.doesNotMatch(revisedResearchPlan.prompt, /不得使用问卷式字母数字题号/);
 
 const freeChat = buildProjectContext({ project: { title: "问答测试" }, userMessage: "解释样本量", taskType: "free_chat" });
 assert.equal(freeChat.context.direct_reply_only, false);
