@@ -13,6 +13,7 @@ import {requestDataExecutor} from '../lib/data-executor-transport.mjs';
 
 const db=new DatabaseSync(':memory:');
 for(const file of fs.readdirSync('migrations').filter(f=>f.endsWith('.sql')).sort())db.exec(fs.readFileSync('migrations/'+file,'utf8'));
+assert.ok(db.prepare("EXPLAIN QUERY PLAN SELECT * FROM research_project_files WHERE file_type IN ('csv','sav','xlsx') AND parse_status='pending' ORDER BY created_at LIMIT 1").all().some(row=>row.detail.includes('SEARCH')&&row.detail.includes('idx_research_files_executor_scan')));
 function prepared(sql,args=[]){const statement=db.prepare(sql);return {bind:(...values)=>prepared(sql,values),all:async()=>({results:statement.all(...args)}),first:async()=>statement.get(...args)||null,run:async()=>({meta:{changes:Number(statement.run(...args).changes)}})};}
 const d1={prepare:prepared,async batch(commands){db.exec('BEGIN');try{const results=[];for(const command of commands)results.push(await command.run());db.exec('COMMIT');return results;}catch(error){db.exec('ROLLBACK');throw error;}}};
 const objects=new Map();const secret='acceptance-only-'+crypto.randomUUID();

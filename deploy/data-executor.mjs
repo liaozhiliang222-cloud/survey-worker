@@ -30,5 +30,5 @@ const server=http.createServer(async(req,res)=>{
  catch{respond(503,{error:{code:'DATA_EXECUTOR_UNAVAILABLE',message:'数据任务执行中断，可稍后重试。'}});}finally{active--;}
 });
 server.listen(Number(process.env.DATA_EXECUTOR_PORT||8010),'127.0.0.1');
-async function sweep(){if(sweeping||active)return;sweeping=true;try{await run({operation:'sweep'},true);}catch(error){console.error(JSON.stringify({event:'data_sweep_error',code:error.message}));}finally{sweeping=false;}}
+async function sweep(){if(sweeping||active)return;sweeping=true;try{const result=await run({operation:'sweep'},true);if(result.error&&result.error.code!=='DATA_EXECUTOR_BUSY')console.error(JSON.stringify({event:'data_sweep_error',code:result.error.code}));}catch(error){console.error(JSON.stringify({event:'data_sweep_error',code:error.message}));}finally{sweeping=false;}}
 setInterval(sweep,30000);void sweep();
