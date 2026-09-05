@@ -46,7 +46,29 @@ rm -rf "${APP_DIR}/deploy" "${APP_DIR}/pptx_report"
 rm -f "${APP_DIR}/RELEASE.json"
 tar -xzf "${resolved_backup}" -C "${APP_DIR}"
 "${APP_DIR}/venv/bin/pip" install -r "${APP_DIR}/deploy/requirements.txt"
+python3 - <<'PY'
+import json
+import re
+from pathlib import Path
+metadata = json.loads(Path('/opt/surveykit-ppt/RELEASE.json').read_text())
+service = Path('/etc/systemd/system/surveykit-ppt.service')
+text = service.read_text()
+for name, key in [('SURVEYKIT_RELEASE', 'version'), ('SURVEYKIT_COMMIT', 'revision'), ('SURVEYKIT_DEPLOYED_AT', 'deployed_at')]:
+    value = str(metadata.get(key) or 'unknown')
+    if not re.fullmatch(r'[A-Za-z0-9._:+-]+', value):
+        raise ValueError('Invalid release metadata: ' + key)
+    text = re.sub(r'^Environment=' + name + r'=.*$', 'Environment=' + name + '=' + value, text, flags=re.MULTILINE)
+service.write_text(text)
+PY
+systemctl daemon-reload
 systemctl start "${SERVICE_NAME}"
-curl --fail --silent --show-error http://127.0.0.1:8000/healthz
-echo
-echo "Rollback completed."
+for attempt in $(seq 1 20); do
+  if curl --fail --silent --show-error http://127.0.0.1:8000/healthz; then
+    echo
+    echo "Rollback completed."
+    exit 0
+  fi
+  sleep 1
+done
+echo "Rollback health check failed."
+exit 1
