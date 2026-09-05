@@ -1,3 +1,4 @@
+import { requestDataExecutor } from "../../../lib/data-executor-transport.mjs";
 import { executeTool, listTools } from "../../../lib/tools/registry.mjs";
 import { executeAgentTool } from "../../../lib/agent-tools/adapter.mjs";
 import { verifyAgentToolCredential } from "../../../lib/agent-tools/auth.mjs";
@@ -56,7 +57,7 @@ export async function onRequest({ request, env }) {
       if (!env.RESEARCH_DB) return failure(toolId, "DATABASE_NOT_CONFIGURED", "专业工具项目存储尚未配置。", id, 503);
       if (["data_profile", "data_clean", "data_weight", "crosstab"].includes(toolId) && !env.RESEARCH_FILES) return failure(toolId, "DATA_STORAGE_NOT_CONFIGURED", "数据工具文件存储尚未配置。", id, 503);
       const payload = await readBody(request);
-      const executed = await executeAgentTool({ agentToolId: toolId, args: payload.arguments, harnessSessionId: payload.harness_session_id, callId: payload.call_id, requestId: id, store: createResearchStore(env.RESEARCH_DB), fileStorage: env.RESEARCH_FILES ? dataStorage(env) : null, logger: console });
+      const executed = await executeAgentTool({ agentToolId: toolId, args: payload.arguments, harnessSessionId: payload.harness_session_id, callId: payload.call_id, requestId: id, store: createResearchStore(env.RESEARCH_DB), fileStorage: env.RESEARCH_FILES ? dataStorage(env) : null, dataJobExecutor: env.DATA_EXECUTOR_URL ? job => requestDataExecutor(env,{operation:"job",userId:job.user_id,projectId:job.project_id,jobId:job.id}) : undefined, logger: console });
       return json({ success: true, tool: toolId, data: executed.data, meta: { deterministic: true, uses_ai: false, project_saved: true, replayed: executed.replayed } }, 200, id);
     }
     const userId = await resolveResearchIdentity(request, env);

@@ -33,7 +33,13 @@ Cloudflare Pages 从 `main` 构建。生产环境至少配置：
 
 提交完成后，将该提交的完整 SHA 通过 `wrangler pages secret put SURVEYKIT_COMMIT --project-name survey-worker` 的标准输入注入 Pages。该值虽非凭据，但使用独立绑定避免把提交自己的 SHA 写回同一提交。不要在 wrangler.toml 重复定义它。后端安装使用相同 SHA。发布后同时验证两个服务返回的 revision，不能只检查版本号。
 
-数据任务消费者使用 `wrangler deploy --config wrangler.data-jobs.jsonc --env production`。先完成生产 D1 迁移，再发布消费者，最后更新 Pages；默认环境的占位绑定不得用于生产。每分钟 Cron 负责恢复并消费持久任务，必须用真实 HTTP 入队并等待完成来验收，不能仅以 Worker 部署成功代替执行成功。
+生产数据任务使用现有阿里云执行器，**不要求 Workers Paid，不部署 wrangler.data-jobs.jsonc 的生产 Cron**。在服务端以 root-only 的 `/etc/surveykit-data.env` 配置 `DATA_STORAGE_BASE=https://surveykit.cc` 与随机 256 位以上 `DATA_EXECUTOR_SECRET`；通过 Pages secret put 将同一专用密钥配置到 Pages，不能复用用户凭据或交互式 Wrangler OAuth。Pages 配置 `DATA_EXECUTOR_URL=https://ppt-api.surveykit.cc/internal/data/execute`。
+
+从完整发布包运行 `SURVEYKIT_COMMIT=<sha> bash deploy/install_data_executor.sh`，再执行后端安装。完整发布包需包含 deploy、pptx_report、lib、src/shared、package.json 和 package-lock.json。安装器校验固定 Node 24.17.0 官方 SHA-256，服务限制 512MB / 0.8 核，与 PPT 共用 `/tmp/surveykit-heavy.lock`。任务每 30 秒扫描，租约心跳 15 秒，计算保留 10 分钟截止；HTTP 断开不结束持久任务。
+
+先核验备份、安装服务，再在 Pages 切换窗口补齐 D1 迁移。2026-09-05 曾回滚 0020，保留了兼容性 0021；以 migrations list 实际结果为准，不重复手工执行 0021。上线后必须真实 HTTP 入队并等待服务器消费，同时验证原始文件解析、来源检查、幂等和下载。Worker 配置仅保留作可选实验，不是生产依赖。
+
+若需要回滚整个版本，先 `systemctl stop surveykit-data`，避免消费者访问不兼容旧 schema，再恢复后端与 Pages。数据执行器的上一安装目录记录在 `/opt/surveykit-data/previous-release`，切换 current 链接后重启服务；数据库迁移独立核验，不自动倒灌备份。
 
 ## 后端发布
 

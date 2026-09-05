@@ -1,6 +1,8 @@
 """Renderer routing and quality policy for qualitative PowerPoint exports."""
 from __future__ import annotations
 
+from .resource_gate import serialized_heavy_task
+
 import base64
 import hashlib
 import json
@@ -167,6 +169,7 @@ class QualitativePptRenderService:
             if temp_path is not None:
                 temp_path.unlink(missing_ok=True)
 
+    @serialized_heavy_task
     def render_required_officecli(self, script: dict) -> dict:
         """Render the production deck without entering the Python fallback path."""
         if not self.officecli.is_installed():
@@ -215,6 +218,7 @@ class QualitativePptRenderService:
             "hint": str(page.get("density_hint") or status).strip(),
         }
 
+    @serialized_heavy_task
     def preview(self, script: dict, source_page_id: str = "") -> dict:
         """Temporarily render real OfficeCLI thumbnails without persisting an artifact."""
         if not isinstance(script, dict):
@@ -313,6 +317,7 @@ class QualitativePptRenderService:
             "render_llm_tokens": 0,
         }
 
+    @serialized_heavy_task
     def render(self, script: dict) -> dict:
         engine, fallback = self._select_engine()
         try:

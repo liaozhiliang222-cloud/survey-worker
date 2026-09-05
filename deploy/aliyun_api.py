@@ -73,6 +73,7 @@ from pptx_report.model_chart_export import (
     ModelChartExportError,
     render_model_chart_pptx,
 )
+from pptx_report.resource_gate import serialized_heavy_task
 from pptx_report.qualitative_service import (
     OfficeCliQualityError,
     OfficeCliUnavailableError,
@@ -982,6 +983,7 @@ async def insight_context(request: Request):
             pass
 
 
+@serialized_heavy_task
 def _generate_core(
     data: bytes,
     qs,
@@ -1487,7 +1489,14 @@ def _write_ai_job_state(job_id: str, payload: dict) -> dict:
         temporary = target.with_name(f"{job_id}.{uuid.uuid4().hex}.tmp")
         temporary.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
         try:
-            os.replace(temporary, target)
+            for attempt in range(20):
+                try:
+                    os.replace(temporary, target)
+                    return merged
+                except PermissionError:
+                    if attempt == 19:
+                        raise
+                    time.sleep(0.02)
         finally:
             temporary.unlink(missing_ok=True)
         return merged

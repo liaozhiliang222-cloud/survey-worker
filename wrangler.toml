@@ -6,8 +6,6 @@ compatibility_flags = ["nodejs_compat"]
 [placement]
 mode = "smart"
 
-[limits]
-cpu_ms = 300000
 
 [[env.production.d1_databases]]
 binding = "RESEARCH_DB"
@@ -20,9 +18,10 @@ bucket_name = "surveykit-research-files"
 
 [env.production.vars]
 PPTX_BACKEND_URL = "https://ppt-api.surveykit.cc"
+DATA_EXECUTOR_URL = "https://ppt-api.surveykit.cc/internal/data/execute"
 SURVEYKIT_AGENT_TOOL_URL = "https://surveykit.cc/api/tools/agent"
 SURVEYKIT_RELEASE = "v0.10.0-20260905.1"
-SURVEYKIT_DEPLOYED_AT = "2026-09-05T12:00:00Z"
+SURVEYKIT_DEPLOYED_AT = "2026-09-05T13:13:21.691Z"
 HARNESS_API_STYLE = "openai-chat"
 HARNESS_AGENT_PRESET = "surveykit-research"
 HARNESS_MODEL_PROVIDER = "volcengine-agent-plan"
