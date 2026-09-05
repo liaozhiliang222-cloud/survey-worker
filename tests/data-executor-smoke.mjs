@@ -9,6 +9,7 @@ import {createResearchStore} from '../functions/api/research/[[path]].js';
 import {enqueueDataJob} from '../lib/data-jobs.mjs';
 import {createJobStage} from '../lib/data-job-stage.mjs';
 import {remoteDataStorage} from '../lib/data-executor-client.mjs';
+import {requestDataExecutor} from '../lib/data-executor-transport.mjs';
 
 const db=new DatabaseSync(':memory:');
 for(const file of fs.readdirSync('migrations').filter(f=>f.endsWith('.sql')).sort())db.exec(fs.readFileSync('migrations/'+file,'utf8'));
@@ -21,6 +22,8 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port,store=createResearchStore(d1);
 async function child(payload){return new Promise((resolve,reject)=>{const processChild=spawn(process.execPath,['--max-old-space-size=320','deploy/data-executor-child.mjs'],{env:{...process.env,DATA_STORAGE_BASE:base,DATA_EXECUTOR_SECRET:secret},stdio:['pipe','pipe','pipe'],windowsHide:true});let output='',stderr='';processChild.stdout.on('data',data=>output+=data);processChild.stderr.on('data',data=>stderr+=data);processChild.on('error',reject);processChild.on('close',()=>{if(process.env.DATA_EXECUTOR_BENCH_ROWS)console.log(stderr.trim());try{resolve(JSON.parse(output));}catch{reject(Error(stderr));}});processChild.stdin.end(JSON.stringify(payload));});}
 try {
+ const originalFetch=globalThis.fetch;
+ try {globalThis.fetch=async(url,options)=>{assert.equal(options.redirect,'manual');return new Response(null,{status:302,headers:{Location:'https://untrusted.invalid'}});};await assert.rejects(()=>requestDataExecutor({DATA_EXECUTOR_URL:'https://executor.invalid',DATA_EXECUTOR_SECRET:secret},{}),{code:'DATA_EXECUTOR_REDIRECT'});}finally{globalThis.fetch=originalFetch;}
  const unauthorized=await fetch(base+'/api/internal/data');assert.equal(unauthorized.status,401);
  const forbidden=await fetch(base+'/api/internal/data',{method:'POST',headers:{Authorization:'Bearer '+secret},body:JSON.stringify({method:'constructor',args:[]})});assert.equal(forbidden.status,400);
  const sourceWrite=await fetch(base+'/api/internal/data?key='+encodeURIComponent('research/'+('a'.repeat(24))+'/source.csv'),{method:'PUT',headers:{Authorization:'Bearer '+secret},body:'x'});assert.equal(sourceWrite.status,403);
