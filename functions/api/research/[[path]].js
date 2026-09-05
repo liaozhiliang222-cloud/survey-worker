@@ -57,6 +57,7 @@ function qualitativeExcelSelection(files) {
   return { templateFile, template: parsedObject(templateFile.structured_data), interviews };
 }
 function streamError(error, requestId) {
+  if(error?.code==="QUALITATIVE_EVIDENCE_REQUIRED")return {message:error.message,type:"qualitative_evidence_required",request_id:requestId,retryable:true};
   if(error?.code==="REPORT_EVIDENCE_REQUIRED")return {message:"当前项目还没有可用于报告大纲的 Research Evidence。请先完成定量或定性分析。",type:"report_evidence_required",request_id:requestId,retryable:false};
   if(error?.code==="REPORT_STORYLINE_INVALID_JSON")return {message:"报告大纲结构生成不完整，请重试。",type:"report_storyline_invalid",request_id:requestId,retryable:true};
   if(error?.code==="PPT_SCRIPT_OUTLINE_REQUIRED")return {message:"请先选择或生成一份 Report Outline。",type:"ppt_script_outline_required",request_id:requestId,retryable:false};

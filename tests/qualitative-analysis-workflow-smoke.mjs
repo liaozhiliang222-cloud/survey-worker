@@ -64,6 +64,13 @@ try {
   assert.ok(filtered.matches.every((item) => item.respondent_metadata.city === "上海" && item.interview_type === "consumer"));
   assert.ok(filtered.matches.length <= 20);
   const candidate = filtered.matches[0];
+  const nestedScope = await transcriptSearch({ store, projectId: project.id, query: "服务 响应", filters: { transcript_ids: [candidate.transcript_id], city: "上海" }, limit: 20 });
+  const canonicalScope = await transcriptSearch({ store, projectId: project.id, query: "服务 响应", transcriptIds: [candidate.transcript_id], filters: { city: "上海" }, limit: 20 });
+  assert.ok(nestedScope.matches.length > 0, "model nested ID filters must not exclude every transcript");
+  assert.deepEqual(nestedScope.matches, canonicalScope.matches);
+  const disjointScope = await transcriptSearch({ store, projectId: project.id, query: "服务 响应", transcriptIds: [candidate.transcript_id], filters: { transcript_ids: ["outside-scope"] } });
+  assert.equal(disjointScope.transcript_count, 0, "nested IDs must not widen the explicit scope");
+  await assert.rejects(transcriptSearch({ store, projectId: project.id, query: "服务", filters: { transcript_ids: "invalid" } }), error => error.code === "TRANSCRIPT_FILTER_INVALID");
   const context = await transcriptRead({ store, projectId: project.id, transcriptId: candidate.transcript_id, segmentId: candidate.segment_id, contextBefore: 2, contextAfter: 2 });
   assert.ok(context.segments.some((item) => item.is_target));
   assert.ok(context.segments.length <= 5);
@@ -85,6 +92,11 @@ try {
 
   const quotedSegment = (await store.listTranscriptSegments(project.id, candidate.transcript_id)).find((item) => item.id === candidate.segment_id);
   const exactQuote = quotedSegment.content.split("\n")[0].slice(0, 120);
+  const artifactsBeforeEmpty = await store.listArtifacts(project.id);
+  for (const emptyReply of ["检索结果为空，无法完成正式分析。", `> “编造的原声” [segment:${quotedSegment.id}]`]) {
+    await assert.rejects(finalizeQualitativeAnalysis({ store, projectId: project.id, reply: emptyReply, transcripts }), error => error.code === "QUALITATIVE_EVIDENCE_REQUIRED");
+  }
+  assert.deepEqual(await store.listArtifacts(project.id), artifactsBeforeEmpty, "failed evidence gate must not create an empty artifact");
   const reply = `# 多访谈定性分析\n\n### 服务与信任\n多个受访者把响应速度和保障视为信任来源。\n\n> “${exactQuote}” [segment:${quotedSegment.id}]\n\n### 价格与学习成本的反例\n主流顾虑是价格，但低频用户中也存在“学习成本优先”的关键少数，不能把价格解释为唯一阻力。\n\n> “这条原声是模型编造的” [segment:${quotedSegment.id}]`;
   const first = await finalizeQualitativeAnalysis({ store, projectId: project.id, projectTitle: project.title, reply, transcripts, failedFiles: [failedFile] });
   assert.equal(first.artifact.type, "qualitative_analysis");
@@ -117,6 +129,7 @@ try {
     createSession: async () => "qualitative-handler-session",
     async sendMessage(options) {
       harnessCalls.push(options);
+      if (options.prompt.includes("NO_EVIDENCE_REGRESSION")) return "未找到证据，无法完成正式分析。";
       const ready = (await store.listTranscripts(handlerProject.id)).filter((item) => item.status === "ready");
       const segment = (await store.listTranscriptSegments(handlerProject.id, ready[0].id))[1] || (await store.listTranscriptSegments(handlerProject.id, ready[0].id))[0];
       options.onToolStatus?.({ tool_id: "transcript_search", status: "completed", label: "访谈原声检索", message: "访谈原声检索完成" });
@@ -171,6 +184,14 @@ try {
     response = await send({ message: "补充与项目目标的关联。", task_type: "artifact_revision", artifact_id: summaryV1.id, selected_file_ids: ["handler-file-0"], client_request_id: "qual-handler-single-v2" });
     assert.equal(response.payload.artifact_created.version, 2);
     assert.equal(response.payload.artifact_created.parent_artifact_id, summaryV1.id);
+    const beforeRejected = await store.listArtifacts(handlerProject.id);
+    response = await send({ message: "NO_EVIDENCE_REGRESSION", task_type: "qualitative_analysis", client_request_id: "qual-handler-no-evidence" });
+    assert.equal(response.response.status, 422);
+    assert.equal(response.payload.error.type, "qualitative_evidence_required");
+    assert.deepEqual(await store.listArtifacts(handlerProject.id), beforeRejected);
+    const rejectedWorkflow = (await store.listWorkflows(handlerProject.id)).find(item => item.client_request_id === "qual-handler-no-evidence");
+    assert.equal(rejectedWorkflow.status, "failed");
+    assert.equal(rejectedWorkflow.artifact_id, null);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
