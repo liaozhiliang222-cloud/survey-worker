@@ -680,6 +680,8 @@ export async function onRequest(context) {
             session = await repo.setSession(pid, await agent.create(project.title, rid)); recreated = true; built = buildPrompt(true); reply = wantsStream&&agent.streaming&&!qualitativeExcel?await agent.stream(session.harness_session_id,built.prompt,rid,{...sendOptions(),onDelta,onReset}):await agent.send(session.harness_session_id, built.prompt, rid, sendOptions());
           } else throw error;
         }
+        // Keep the model draft on a failed validation run for diagnosis/recovery.
+        if (formalQualitative) partial = String(reply || "").slice(0, 2097152);
         await partialWrites;
         const isInterviewGuide = input.task_type === "interview_guide" || (input.task_type === "artifact_revision" && artifact?.type === "interview_guide");
         if (isInterviewGuide) reply = normalizeInterviewGuideFormatting(reply);
