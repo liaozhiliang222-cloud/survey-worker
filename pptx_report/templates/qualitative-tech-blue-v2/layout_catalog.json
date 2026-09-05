@@ -1,0 +1,44 @@
+{
+  "template_id": "qualitative_tech_blue_v2",
+  "version": "2.0.0",
+  "aspect_ratio": "16:9",
+  "renderer": "officecli_native",
+  "editable": true,
+  "tokens": {
+    "navy": "#081A36",
+    "deep_blue": "#0A2A66",
+    "primary": "#176BFF",
+    "cyan": "#37BFF3",
+    "ice": "#F7FAFF",
+    "text": "#18263D",
+    "muted": "#6F7D93",
+    "border": "#D7E3F2",
+    "risk": "#E35D6A"
+  },
+  "constraints": {
+    "forbid_left_vertical_bar": true,
+    "forbid_title_underline": true,
+    "native_objects_only": true,
+    "minimum_margin_cm": 1.35,
+    "preferred_body_pt": "13-17",
+    "visible_source_required": true
+  },
+  "layouts": [
+    {"id": "cover_orbit", "page_types": ["navigation"], "density": ["low"], "slots": {"title": 32, "subtitle": 70, "key_message": 90}},
+    {"id": "chapter_field", "page_types": ["section_intro"], "density": ["low"], "slots": {"title": 24, "key_message": 70}},
+    {"id": "editorial_overview", "page_types": ["executive_summary", "qualitative_summary", "theme_summary"], "density": ["medium", "high"], "slots": {"key_message": 65, "blocks": 4, "items_per_block": 3}},
+    {"id": "method_rail", "page_types": ["research_framework", "framework"], "density": ["medium"], "slots": {"stages": 5, "items_per_stage": 4}},
+    {"id": "positioning_map", "page_types": ["segmentation_map"], "density": ["medium"], "slots": {"segments": 4, "axes": 2}},
+    {"id": "profile_evidence", "page_types": ["persona"], "density": ["medium", "high"], "slots": {"attributes": 5, "traits": 4, "behaviors": 4, "quotes": 1}},
+    {"id": "journey_curve", "page_types": ["journey"], "density": ["medium"], "slots": {"stages": 5, "items_per_stage": 3}},
+    {"id": "contrast_columns", "page_types": ["comparison", "segment_comparison", "competitor_comparison"], "density": ["medium", "high"], "slots": {"objects": 4, "items_per_object": 6}},
+    {"id": "hypothesis_balance", "page_types": ["evidence_diagnostic"], "density": ["medium"], "slots": {"sides": 2, "items_per_side": 5}},
+    {"id": "nested_definition", "page_types": ["concept_definition"], "density": ["medium"], "slots": {"layers": 3, "rules": 4}},
+    {"id": "evidence_pyramid", "page_types": ["needs_pyramid"], "density": ["medium"], "slots": {"levels": 4, "segment_mapping": 4}},
+    {"id": "impact_frequency", "page_types": ["priority_matrix"], "density": ["medium", "high"], "slots": {"points": 6, "decision_findings": 4}},
+    {"id": "voice_wall", "page_types": ["quote_evidence"], "density": ["medium"], "slots": {"quotes": 3, "interpretations": 4}},
+    {"id": "fishbone", "page_types": ["problem_reason"], "density": ["medium", "high"], "slots": {"cause_groups": 6, "items_per_group": 3, "outcome_label_chars": "8-18"}},
+    {"id": "action_roadmap", "page_types": ["recommendation"], "density": ["medium", "high"], "slots": {"phases": 5, "items_per_phase": 4}},
+    {"id": "case_chain", "page_types": ["case_study"], "density": ["medium"], "slots": {"steps": 4, "items_per_step": 5}}
+  ]
+}

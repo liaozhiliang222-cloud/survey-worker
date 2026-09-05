@@ -1,0 +1,223 @@
+{
+  "schema_version": "surveykit.ppt_script.v1",
+  "title": "年轻用户 AI 手机体验定性研究报告",
+  "status": "reviewed",
+  "source_report_outline_id": "outline_acceptance_v1",
+  "source_report_outline_version": 1,
+  "acceptance_project": {
+    "note": "脱敏业务验收样例；覆盖 12 份消费者/门店访谈的典型结构，不代表用户真实项目数据",
+    "transcript_ids": ["t01", "t02", "t03", "t04", "t05", "t06", "t07", "t08", "t09", "t10", "t11", "t12"]
+  },
+  "style_profile": {"id": "research_consulting", "aspect_ratio": "16:9", "background": "white", "primary_color": "blue", "body_color": "dark_gray", "decoration": "minimal", "icon_usage": "limited", "title_style": "conclusion", "preferred_font": "微软雅黑"},
+  "pages": [
+    {
+      "id": "p01", "page_number": 1, "chapter": "管理层摘要", "page_type": "executive_summary",
+      "title": "AI 手机的首要机会不是功能更多，而是让用户在关键时刻立即获得确定价值",
+      "subtitle": "12 份深访揭示：可感知、可控制、可复用决定 AI 能否进入日常习惯",
+      "purpose": "给管理层提供全篇结论与行动方向", "key_message": "年轻用户愿意尝鲜，但只有低学习成本且结果可控的能力才能留存。",
+      "supporting_findings": [
+        {"id": "f01", "text": "高频刚需集中在信息整理、影像优化和跨应用执行，而非开放式聊天。", "insight_id": "i01", "evidence_ids": ["e01", "e02"]},
+        {"id": "f02", "text": "用户对自动执行有兴趣，但会因权限边界不透明而回退到手动操作。", "insight_id": "i02", "evidence_ids": ["e03"]},
+        {"id": "f03", "text": "真正形成口碑的时刻，是 AI 在赶时间、信息复杂或表达困难时直接减负。", "insight_id": "i03", "evidence_ids": ["e04", "e05"]},
+        {"id": "f04", "text": "产品应先打透三个英雄场景，再以可见的控制权扩展任务范围。", "insight_id": "i04", "evidence_ids": ["e06"]}
+      ],
+      "quotes": [], "evidence_ids": ["e01", "e02", "e03", "e04", "e05", "e06"], "transcript_segment_ids": [],
+      "content_structure": [{"region": "grid", "title": "机会判断", "body": "", "items": ["可感知价值", "可控自动化", "可复用习惯", "英雄场景"]}],
+      "visual_spec": {"type": "framework", "description": "四张管理层摘要卡", "evidence_ids": ["e01", "e03", "e04", "e06"]}, "layout_spec": {"composition": "2×2 native cards", "regions": []},
+      "source_notes": "12 位 18–30 岁智能手机用户深度访谈", "transition": "先解释用户为什么尝试、又为什么放弃。"
+    },
+    {
+      "id": "p02", "page_number": 2, "chapter": "使用逻辑", "page_type": "section_intro",
+      "title": "从“尝鲜”到“习惯”：价值兑现速度决定 AI 功能能否留下",
+      "subtitle": "使用逻辑", "purpose": "开启核心洞察章节", "key_message": "本章聚焦触发、验证与留存。",
+      "supporting_findings": [], "quotes": [], "evidence_ids": [], "transcript_segment_ids": [], "content_structure": [],
+      "visual_spec": {"type": "none", "description": "章节过渡", "evidence_ids": []}, "layout_spec": {"composition": "native section divider", "regions": []}, "source_notes": "", "transition": "进入用户采用机制。"
+    },
+    {
+      "id": "p03", "page_number": 3, "chapter": "使用逻辑", "page_type": "qualitative_insight",
+      "title": "用户第一次尝试由新奇驱动，但第二次使用取决于是否立刻节省了具体步骤",
+      "subtitle": "采用机制｜首次尝试与复用形成不同决策", "purpose": "解释功能采用与留存的分水岭", "key_message": "演示吸引点击，步骤节省才创造复用。",
+      "insight_id": "i01", "theme_ids": ["theme_adoption"],
+      "supporting_findings": [
+        {"id": "f11", "text": "发布会演示和社交内容是最常见的首次触发。", "insight_id": "i01", "evidence_ids": ["e11"]},
+        {"id": "f12", "text": "当首次任务需要反复纠正，用户会迅速将其归类为玩具。", "insight_id": "i01", "evidence_ids": ["e12"]},
+        {"id": "f13", "text": "一次成功替代三到五步手动操作，会明显提高再次调用意愿。", "insight_id": "i01", "evidence_ids": ["e13"]}
+      ],
+      "quotes": [{"text": "第一次就是觉得挺新鲜，但后来发现开会后它能直接把待办列出来，我才真的开始常用。", "evidence_id": "e14", "source_label": "消费者深访", "respondent_label": "受访者 U03｜产品经理", "transcript_id": "t03", "segment_id": "s03_18", "metadata": {"city": "上海", "role": "产品经理"}}],
+      "evidence_ids": ["e11", "e12", "e13", "e14"], "transcript_segment_ids": ["s03_18"],
+      "content_structure": [], "visual_spec": {"type": "quote", "description": "左侧三条支撑发现，右侧原声", "evidence_ids": ["e11", "e12", "e13", "e14"]}, "layout_spec": {"composition": "65/35 insight + quote", "regions": []},
+      "source_notes": "12 位年轻智能手机用户深访", "transition": "进一步看用户如何判断一次 AI 结果是否可信。"
+    },
+    {
+      "id": "p04", "page_number": 4, "chapter": "使用逻辑", "page_type": "quote_evidence",
+      "title": "用户并不要求 AI 永不出错，但必须能快速看懂、撤回并修正结果",
+      "subtitle": "信任机制｜控制权比拟人化更重要", "purpose": "用逐字原声解释信任边界", "key_message": "可验证、可撤回、可修正是自动化被接受的前提。",
+      "insight_id": "i02", "theme_ids": ["theme_trust"],
+      "supporting_findings": [
+        {"id": "f21", "text": "用户会先用低风险任务测试系统边界。", "insight_id": "i02", "evidence_ids": ["e21"]},
+        {"id": "f22", "text": "当系统展示执行步骤时，用户更愿意授权下一步动作。", "insight_id": "i02", "evidence_ids": ["e22"]},
+        {"id": "f23", "text": "无法撤回的错误会被放大为对整个 AI 能力的不信任。", "insight_id": "i02", "evidence_ids": ["e23"]}
+      ],
+      "quotes": [
+        {"text": "它可以先帮我做，但最好每一步都让我看见，不然我不知道它到底发给谁了。", "evidence_id": "e24", "source_label": "消费者深访", "respondent_label": "受访者 U07｜研究生", "transcript_id": "t07", "segment_id": "s07_26", "metadata": {"city": "武汉", "role": "研究生"}},
+        {"text": "错一次没关系，最怕的是我找不到撤回，最后还得自己到处补救。", "evidence_id": "e25", "source_label": "消费者深访", "respondent_label": "受访者 U10｜内容运营", "transcript_id": "t10", "segment_id": "s10_31", "metadata": {"city": "广州", "role": "内容运营"}}
+      ],
+      "evidence_ids": ["e21", "e22", "e23", "e24", "e25"], "transcript_segment_ids": ["s07_26", "s10_31"],
+      "content_structure": [], "visual_spec": {"type": "quote", "description": "研究解读与双原声证据", "evidence_ids": ["e24", "e25"]}, "layout_spec": {"composition": "40/60 interpretation + quotes", "regions": []},
+      "source_notes": "消费者深访，原声逐字引用", "transition": "信任差异会进一步分化不同用户群。"
+    },
+    {
+      "id": "p05", "page_number": 5, "chapter": "主题归纳", "page_type": "theme_summary",
+      "title": "四类稳定需求共同指向“减少认知切换”，而不是简单替代点击",
+      "subtitle": "需求主题｜跨访谈编码归纳", "purpose": "归纳跨访谈共识主题", "key_message": "用户最看重的是上下文连续性与任务闭环。",
+      "supporting_findings": [], "quotes": [], "evidence_ids": ["e31", "e32", "e33", "e34"], "transcript_segment_ids": [],
+      "content_structure": [
+        {"region": "grid", "title": "信息整理", "body": "会议、长文与聊天记录被压缩成可执行要点。", "items": ["快速抓重点", "自动形成待办"]},
+        {"region": "grid", "title": "表达辅助", "body": "在需要得体、准确或跨语言时降低表达压力。", "items": ["语气改写", "结构补全"]},
+        {"region": "grid", "title": "影像成片", "body": "把选择、修图、排版串成一次完成。", "items": ["降低选择负担", "保证稳定出片"]},
+        {"region": "grid", "title": "跨应用执行", "body": "减少复制、切换、搜索与重复输入。", "items": ["保留上下文", "展示执行步骤"]}
+      ],
+      "visual_spec": {"type": "framework", "description": "四主题卡片", "evidence_ids": ["e31", "e32", "e33", "e34"]}, "layout_spec": {"composition": "2×2 theme cards", "regions": []},
+      "source_notes": "12 份访谈主题编码", "transition": "共识之下，不同使用成熟度呈现明显分化。"
+    },
+    {
+      "id": "p06", "page_number": 6, "chapter": "人群差异", "page_type": "segment_comparison",
+      "title": "效率型用户追求任务闭环，探索型用户追求可玩性，两者需要不同的首屏引导",
+      "subtitle": "用户分群｜按使用成熟度比较", "purpose": "揭示两类核心人群的采用差异", "key_message": "相同功能需要按动机提供不同入口和成功标准。",
+      "supporting_findings": [], "quotes": [], "evidence_ids": ["e41", "e42", "e43", "e44"], "transcript_segment_ids": [],
+      "content_structure": [
+        {"region": "left", "title": "效率型用户", "body": "", "items": ["从明确任务进入", "要求结果一次可用", "偏好快捷入口", "愿意为稳定性付费"]},
+        {"region": "right", "title": "探索型用户", "body": "", "items": ["从内容推荐进入", "容忍试错但容易流失", "偏好模板与玩法", "更看重分享效果"]}
+      ],
+      "visual_spec": {"type": "comparison", "description": "双人群按行为、需求、痛点、机会比较", "evidence_ids": ["e41", "e42", "e43", "e44"]}, "layout_spec": {"composition": "two-column comparison", "regions": []},
+      "source_notes": "按 AI 使用成熟度对 12 位受访者分群", "transition": "进一步把用户评价放进竞品坐标。"
+    },
+    {
+      "id": "p07", "page_number": 7, "chapter": "竞品认知", "page_type": "competitor_comparison",
+      "title": "竞品心智已从“谁更聪明”转向“谁能更稳定地完成跨应用任务”",
+      "subtitle": "竞品比较｜统一维度而非品牌故事罗列", "purpose": "明确品牌在用户认知中的差异位置", "key_message": "稳定闭环与权限透明是最有机会建立差异的两个维度。",
+      "supporting_findings": [], "quotes": [], "evidence_ids": ["e51", "e52", "e53", "e54"], "transcript_segment_ids": [],
+      "content_structure": [
+        {"region": "column", "title": "品牌 A", "body": "", "items": ["入口自然", "单点能力成熟", "跨应用执行偏弱", "结果稳定"]},
+        {"region": "column", "title": "品牌 B", "body": "", "items": ["能力覆盖广", "演示感强", "权限提示复杂", "偶发失败影响信任"]},
+        {"region": "column", "title": "品牌 C", "body": "", "items": ["影像优势突出", "表达辅助好用", "入口分散", "场景联动不足"]},
+        {"region": "column", "title": "本品牌机会", "body": "", "items": ["英雄场景直达", "步骤透明可撤回", "跨应用闭环", "持续强化稳定性"]}
+      ],
+      "visual_spec": {"type": "comparison", "description": "四列统一维度对比", "evidence_ids": ["e51", "e52", "e53", "e54"]}, "layout_spec": {"composition": "four-column competitor comparison", "regions": []},
+      "source_notes": "12 位用户竞品使用经验与门店观察", "transition": "一个成熟案例说明如何把能力转化为可见价值。"
+    },
+    {
+      "id": "p08", "page_number": 8, "chapter": "案例启示", "page_type": "case_study",
+      "title": "优秀案例通过“默认建议—过程可见—一键撤回”同时降低操作成本与风险感",
+      "subtitle": "Case Study｜会议纪要到任务执行", "purpose": "拆解可复用的场景机制", "key_message": "价值不来自单个模型能力，而来自端到端产品机制。",
+      "supporting_findings": [], "quotes": [], "evidence_ids": ["e61", "e62", "e63", "e64"], "transcript_segment_ids": [],
+      "content_structure": [
+        {"region": "step", "title": "做法", "body": "会后主动建议生成摘要与待办。", "items": ["无需寻找功能", "基于当前会议上下文"]},
+        {"region": "step", "title": "运行机制", "body": "展示识别对象、动作与目标应用。", "items": ["逐步确认", "权限按需申请"]},
+        {"region": "step", "title": "创造价值", "body": "从信息整理直接进入任务分发。", "items": ["减少复制切换", "避免遗漏负责人"]},
+        {"region": "step", "title": "差异与启示", "body": "把可靠性设计成可见的交互资产。", "items": ["默认建议", "可见过程", "一键撤回"]}
+      ],
+      "visual_spec": {"type": "process", "description": "四段案例机制链", "evidence_ids": ["e61", "e62", "e63", "e64"]}, "layout_spec": {"composition": "four-step case flow", "regions": []},
+      "source_notes": "消费者深访与门店演示观察", "transition": "把机制放回完整用户旅程，可定位关键断点。"
+    },
+    {
+      "id": "p09", "page_number": 9, "chapter": "体验旅程", "page_type": "journey",
+      "title": "最大流失发生在首次失败后的二次尝试：用户找不到失败原因，也看不到修复路径",
+      "subtitle": "AI 功能采用 Journey", "purpose": "定位从认知到习惯的关键断点", "key_message": "首次失败后的解释与恢复设计决定用户是否继续。",
+      "supporting_findings": [], "quotes": [], "evidence_ids": ["e71", "e72", "e73", "e74", "e75"], "transcript_segment_ids": [],
+      "content_structure": [
+        {"region": "stage", "title": "认知", "body": "", "items": ["发布会/短视频种草", "期待明显但理解模糊"]},
+        {"region": "stage", "title": "首次尝试", "body": "", "items": ["选择低风险任务", "需要示例降低表达成本"]},
+        {"region": "stage", "title": "结果验证", "body": "", "items": ["快速判断是否省步骤", "失败原因通常不可见"]},
+        {"region": "stage", "title": "二次尝试", "body": "", "items": ["缺少修复建议", "大量用户在此回退"]},
+        {"region": "stage", "title": "习惯形成", "body": "", "items": ["固定入口与模板", "在关键任务中稳定复用"]}
+      ],
+      "visual_spec": {"type": "journey", "description": "五阶段行为/痛点/机会旅程", "evidence_ids": ["e71", "e72", "e73", "e74", "e75"]}, "layout_spec": {"composition": "horizontal editable journey", "regions": []},
+      "source_notes": "12 位用户采用经历回溯", "transition": "旅程断点可归纳为三个产品能力支柱。"
+    },
+    {
+      "id": "p10", "page_number": 10, "chapter": "策略框架", "page_type": "framework",
+      "title": "“价值可见、过程可控、结果可复用”构成 AI 手机从功能到习惯的增长飞轮",
+      "subtitle": "三支柱策略框架", "purpose": "将洞察组织为产品决策框架", "key_message": "三项能力必须共同成立，任何单点缺失都会中断复用。",
+      "supporting_findings": [], "quotes": [], "evidence_ids": ["e81", "e82", "e83", "e84"], "transcript_segment_ids": [],
+      "content_structure": [
+        {"region": "node", "title": "价值可见", "body": "让用户在入口处知道能省什么。", "items": ["任务语言", "结果预览"]},
+        {"region": "node", "title": "过程可控", "body": "让权限、步骤、失败与撤回都可见。", "items": ["分步授权", "即时恢复"]},
+        {"region": "node", "title": "结果可复用", "body": "让成功经验沉淀为模板和捷径。", "items": ["保存偏好", "固定入口"]},
+        {"region": "node", "title": "学习闭环", "body": "以失败原因和复用频率持续优化。", "items": ["原因反馈", "场景指标"]}
+      ],
+      "visual_spec": {"type": "framework", "description": "中心结论与四个能力节点", "evidence_ids": ["e81", "e82", "e83", "e84"]}, "layout_spec": {"composition": "hub-and-spoke native framework", "regions": []},
+      "source_notes": "跨主题综合分析", "transition": "用二维优先级矩阵确定先做什么。"
+    },
+    {
+      "id": "p11", "page_number": 11, "chapter": "机会排序", "page_type": "matrix",
+      "title": "优先投入会议行动化与影像成片，跨应用全自动执行应先从有限白名单验证",
+      "subtitle": "机会优先级｜用户价值 × 实现可控性", "purpose": "把机会转化为优先级判断", "key_message": "先用高价值、高可控场景证明可靠性，再扩展自动化边界。",
+      "supporting_findings": [], "quotes": [], "evidence_ids": ["e91", "e92", "e93", "e94"], "transcript_segment_ids": [],
+      "content_structure": [
+        {"region": "q1", "title": "优先突破", "body": "", "items": ["会议摘要→待办", "照片选择→成片"]},
+        {"region": "q2", "title": "受控试点", "body": "", "items": ["跨应用预订", "复杂消息代发"]},
+        {"region": "q3", "title": "体验补强", "body": "", "items": ["语气改写", "长文摘要"]},
+        {"region": "q4", "title": "暂缓投入", "body": "", "items": ["开放式陪伴", "低频炫技玩法"]}
+      ],
+      "visual_spec": {"type": "matrix", "description": "2×2 editable matrix", "evidence_ids": ["e91", "e92", "e93", "e94"]}, "layout_spec": {"composition": "2x2 matrix", "regions": []},
+      "source_notes": "洞察价值与产品可控性综合评估", "transition": "优先级背后的核心问题来自入口、反馈与权限三处。"
+    },
+    {
+      "id": "p12", "page_number": 12, "chapter": "问题诊断", "page_type": "problem_reason",
+      "title": "当前低复用不是需求不足，而是入口、反馈与恢复机制共同抬高了失败成本",
+      "subtitle": "Problem → Reason → Impact", "purpose": "明确影响复用的根因链", "key_message": "需要修复产品机制，而不是继续堆叠功能清单。",
+      "supporting_findings": [], "quotes": [], "evidence_ids": ["e101", "e102", "e103"], "transcript_segment_ids": [],
+      "content_structure": [
+        {"region": "step", "title": "问题", "body": "功能尝试多、稳定复用少。", "items": ["入口分散", "成功标准模糊"]},
+        {"region": "step", "title": "原因", "body": "失败不可解释，权限与结果缺少确认。", "items": ["没有修复路径", "自动化边界不清"]},
+        {"region": "step", "title": "影响", "body": "用户回退手动并降低对其他能力的尝试意愿。", "items": ["信任外溢受损", "口碑难形成"]}
+      ],
+      "visual_spec": {"type": "process", "description": "问题—原因—影响链", "evidence_ids": ["e101", "e102", "e103"]}, "layout_spec": {"composition": "three-step causal chain", "regions": []},
+      "source_notes": "采用失败案例跨访谈归因", "transition": "根因链直接对应三个近期产品动作。"
+    },
+    {
+      "id": "p13", "page_number": 13, "chapter": "行动建议", "page_type": "recommendation",
+      "title": "先重构三个英雄场景的入口与恢复路径，再逐步扩大自动执行范围",
+      "subtitle": "近期行动｜问题—原因—动作闭环", "purpose": "给出可执行的产品建议", "key_message": "用可衡量的场景闭环替代泛化 AI 功能曝光。",
+      "recommendation_priority": "P0", "finding_refs": ["i01", "i02", "p09", "p12"],
+      "supporting_findings": [], "quotes": [], "evidence_ids": ["e111", "e112", "e113"], "transcript_segment_ids": [],
+      "content_structure": [
+        {"region": "step", "title": "问题", "body": "用户不知道何时调用，也不敢把任务交出去。", "items": ["入口分散", "权限焦虑"]},
+        {"region": "step", "title": "原因", "body": "产品以能力分类，而非以任务结果组织。", "items": ["成功路径不清", "失败后无恢复"]},
+        {"region": "step", "title": "行动", "body": "围绕会议、影像、表达建立默认建议与一键恢复。", "items": ["统一任务入口", "结果预览", "可撤回", "复用模板"]}
+      ],
+      "visual_spec": {"type": "process", "description": "问题—原因—行动链", "evidence_ids": ["e111", "e112", "e113"]}, "layout_spec": {"composition": "three-step action chain", "regions": []},
+      "source_notes": "基于核心洞察与旅程断点形成", "transition": "最后汇总实施原则与成功指标。"
+    },
+    {
+      "id": "p14", "page_number": 14, "chapter": "行动建议", "page_type": "qualitative_summary",
+      "title": "实施成败取决于是否同时改善发现、成功与恢复，而非单看功能调用量",
+      "subtitle": "实施原则与验证指标", "purpose": "总结落地原则", "key_message": "应以场景成功率、恢复率和四周复用率衡量真实进展。",
+      "supporting_findings": [
+        {"id": "f141", "text": "发现：用户能否在任务发生时自然看到入口。", "insight_id": "i11", "evidence_ids": ["e121"]},
+        {"id": "f142", "text": "成功：首次任务是否直接产出可用结果。", "insight_id": "i12", "evidence_ids": ["e122"]},
+        {"id": "f143", "text": "恢复：失败后是否能在原路径内理解并修复。", "insight_id": "i13", "evidence_ids": ["e123"]},
+        {"id": "f144", "text": "复用：四周内是否在同类任务中再次主动调用。", "insight_id": "i14", "evidence_ids": ["e124"]}
+      ],
+      "quotes": [], "evidence_ids": ["e121", "e122", "e123", "e124"], "transcript_segment_ids": [], "content_structure": [],
+      "visual_spec": {"type": "framework", "description": "四指标总结卡", "evidence_ids": ["e121", "e122", "e123", "e124"]}, "layout_spec": {"composition": "2×2 metric cards", "regions": []},
+      "source_notes": "综合研究结论", "transition": "以用户原声结束报告。"
+    },
+    {
+      "id": "p15", "page_number": 15, "chapter": "结语", "page_type": "qualitative_insight",
+      "title": "当 AI 真正替用户承担一次复杂切换，它才从“卖点”变成值得依赖的习惯",
+      "subtitle": "Closing Insight", "purpose": "用可信原声强化最终判断", "key_message": "用户要的不是更像人的 AI，而是更可靠地把事情做完。",
+      "insight_id": "i15", "theme_ids": ["theme_closing"],
+      "supporting_findings": [
+        {"id": "f151", "text": "可感知的任务闭环创造第一次信任。", "insight_id": "i15", "evidence_ids": ["e131"]},
+        {"id": "f152", "text": "可见控制权让信任扩展到更高风险任务。", "insight_id": "i15", "evidence_ids": ["e132"]}
+      ],
+      "quotes": [{"text": "我不需要它跟我聊得像朋友，我只想在我很忙的时候，它能把这件事稳稳地做完。", "evidence_id": "e133", "source_label": "消费者深访", "respondent_label": "受访者 U12｜创业者", "transcript_id": "t12", "segment_id": "s12_42", "metadata": {"city": "深圳", "role": "创业者"}}],
+      "evidence_ids": ["e131", "e132", "e133"], "transcript_segment_ids": ["s12_42"], "content_structure": [],
+      "visual_spec": {"type": "quote", "description": "结论与收束原声", "evidence_ids": ["e131", "e132", "e133"]}, "layout_spec": {"composition": "closing insight + quote", "regions": []},
+      "source_notes": "消费者深访，原声逐字引用", "transition": ""
+    }
+  ],
+  "evidence_gaps": []
+}

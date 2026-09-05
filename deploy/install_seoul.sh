@@ -87,6 +87,17 @@ NoNewPrivileges=true
 WantedBy=multi-user.target
 EOF
 
+# OfficeCLI's HTML screenshot path launches Chromium with a relatively large
+# thread/process tree.  The host's generic resource guard defaults to 128
+# tasks, which can deadlock Chromium before the first preview frame is saved.
+# Keep the existing memory/CPU and single-job guards, but provide enough task
+# slots for one bounded preview render.
+mkdir -p "/etc/systemd/system/${SERVICE_NAME}.service.d"
+cat > "/etc/systemd/system/${SERVICE_NAME}.service.d/zz-officecli-preview.conf" <<EOF
+[Service]
+TasksMax=512
+EOF
+
 CERT_DIR="/etc/letsencrypt/live/${SERVER_NAME}"
 if [[ -f "${CERT_DIR}/fullchain.pem" && -f "${CERT_DIR}/privkey.pem" ]]; then
 cat > "/etc/nginx/sites-available/${SERVICE_NAME}" <<EOF

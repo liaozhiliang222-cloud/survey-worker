@@ -1,0 +1,385 @@
+
+> release-main-521@1.0.0 test
+> npm run test:unit && npm run test:js
+
+
+> release-main-521@1.0.0 test:unit
+> vitest run --exclude "tests/e2e/**" --exclude ".data/**" --exclude "tmp*/**"
+
+
+ RUN  v4.1.10 D:/调研工具/codex-temp/sprint3-report-quality-loop
+
+
+ Test Files  5 passed (5)
+      Tests  85 passed (85)
+   Start at  17:00:39
+   Duration  385ms (transform 305ms, setup 0ms, import 405ms, tests 169ms, environment 1ms)
+
+
+> release-main-521@1.0.0 test:js
+> npm run check:syntax && npm run typecheck && npm run test:browser-module-runtime && npm run test:health-contract && npm run test:release-process && npm run test:research-theme && npm run test:ai-proxy && npm run test:local-ai-proxy && npm run test:ai-plan-template && npm run test:ai-plan-quality && npm run test:ai-plan-quality-eval && npm run test:ai-plan-quality-ui && npm run test:ai-questionnaire && npm run test:crosstab-header-template && npm run test:crosstab-export-style && npm run test:pptx-chapter-chart && npm run test:model-chart-pptx-ui && npm run test:research-model-excel-import && npm run test:core-research-module && npm run test:ppt-report-ai && npm run test:ai-report-quality-eval && npm run test:ai-report-quality-loop && npm run test:slide-brief-ui && npm run test:pptx-job-ui && npm run test:ai-job-ui && npm run test:pptx-template-profile-ui && npm run test:proposal-deck && npm run test:request-body && npm run test:pptx-proxy && npm run test:server-routes && npm run test:cloudflare-proxy && npm run test:cluster-analysis && npm run test:tool-gateway && npm run test:agent-tools && npm run test:agent-tool-acceptance && npm run test:harness-openai-chat && npm run test:harness-dsh-rpc && npm run test:cloudflare-harness-dsh && npm run test:research-streaming && npm run test:research-stream-parser && npm run test:research-harness && npm run test:research-files-context && npm run test:research-memory-v03 && npm run test:research-access-auth && npm run test:qualitative-excel && npm run test:research-plan-workflow && npm run test:data-analysis-workflow && npm run test:qualitative-analysis && npm run test:transcript-correction && npm run test:report-storyline && npm run test:ppt-script && npm run test:data-jobs && npm run test:sav-dataset && npm run test:r1 && npm run test:r2
+
+
+> release-main-521@1.0.0 check:syntax
+> node --check app.js && node --check research-theme.js && node --check ai-plan-quality.js && node --check ppt-report-ai.js && node --check server.js && node --check lib/request-body.js && node --check lib/http-response.js && node --check lib/pptx-proxy.js && node --check lib/ai-proxy.js && node --check lib/release-info.js && node --check lib/harness.js && node --check lib/project-file-parser.mjs && node --check lib/project-context.mjs && node --check lib/qualitative-analysis.mjs && node --check lib/transcript-correction.mjs && node --check lib/qualitative-excel.mjs && node --check lib/research-plan-workflow.mjs && node --check lib/data-analysis-workflow.mjs && node --check lib/report-storyline.mjs && node --check lib/ppt-script-workflow.mjs && node --check lib/crosstab-engine.mjs && node --check lib/data-excel.mjs && node --check lib/data-weighting.mjs && node --check lib/data-engine.mjs && node --check lib/project-memory.mjs && node --check lib/artifact-diff.mjs && node --check lib/project-ocr.mjs && node --check lib/research-file-storage.js && node --check lib/research-store.js && node --check lib/research-handler.js && node --check lib/tool-handler.js && node --check lib/agent-tools/adapter.mjs && node --check lib/agent-tools/auth.mjs && node --check lib/tools/errors.mjs && node --check lib/tools/sample-size.mjs && node --check lib/tools/quota.mjs && node --check lib/tools/questionnaire-check.mjs && node --check lib/tools/registry.mjs && node --check deploy/harness/dsh-surveykit-tools/lib/index.js && node --check proposal-deck.js && node --check cluster-core.js && node --check cluster-worker.js && node --check cluster-analysis.js && node --check functions/healthz.js && node --check functions/api/ai.js && node --check "functions/api/research/[[path]].js" && node --check "functions/api/tools/[[path]].js" && node --check functions/pptx-api/_proxy.js && node --check "functions/pptx-api/[[path]].js" && node --check lib/dataset-metadata.mjs && node --check lib/data-job-stage.mjs && node --check lib/data-jobs.mjs && node --check lib/data-jobs-d1.mjs && node --check lib/data-jobs-local.mjs && node --check lib/data-job-thread.mjs && node --check workers/data-jobs.mjs
+
+
+> release-main-521@1.0.0 typecheck
+> tsc -p tsconfig.data.json
+
+
+> release-main-521@1.0.0 test:browser-module-runtime
+> node tests/browser-module-runtime-smoke.mjs && node tests/docx-export-smoke.mjs
+
+Browser module runtime smoke passed: parser bridge is source-hosting compatible
+DOCX export smoke test passed: complete package, preset styles, lists, tables, and safe filename
+
+> release-main-521@1.0.0 test:health-contract
+> node tests/health-contract-smoke.mjs
+
+Health contract smoke passed: local and Cloudflare release metadata
+
+> release-main-521@1.0.0 test:release-process
+> node tests/release-process-smoke.mjs
+
+Release process smoke passed: backup, rollback and production verification
+
+> release-main-521@1.0.0 test:research-theme
+> node tests/research-theme-smoke.mjs
+
+Research Theme smoke passed: dynamic taxonomy, purpose classification and chapter correction
+
+> release-main-521@1.0.0 test:ai-proxy
+> node tests/ai-proxy-smoke.mjs
+
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":2,"rotation":"single","actual_source":"builtin-bailian","actual_model":"deepseek-v4-pro","fallback_used":false,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-pro","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"quality","status":200,"outcome":"success","duration_ms":0,"rotation":"single","actual_source":"builtin-volcengine-agent-plan","actual_model":"glm-5.3-flash","fallback_used":false,"attempts":[{"source":"builtin-volcengine-agent-plan","model":"glm-5.3-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"quality","status":200,"outcome":"success","duration_ms":0,"rotation":"deterministic:1","actual_source":"builtin-bailian","actual_model":"deepseek-v4-pro","fallback_used":false,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-pro","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"fast","status":200,"outcome":"success","duration_ms":0,"rotation":"deterministic:1","actual_source":"builtin-surveykit-gateway","actual_model":"deepseek-v4-flash","fallback_used":false,"attempts":[{"source":"builtin-surveykit-gateway","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"fast","status":200,"outcome":"success","duration_ms":1,"rotation":"deterministic:1","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":false,"attempts":[{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":1,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"storyline","status":200,"outcome":"success","duration_ms":0,"rotation":"deterministic:1","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":false,"attempts":[{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":1,"rotation":"deterministic:1","actual_source":"builtin-surveykit-gateway","actual_model":"deepseek-v4-flash","fallback_used":false,"attempts":[{"source":"builtin-surveykit-gateway","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"deterministic:1","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":true,"attempts":[{"source":"builtin-surveykit-gateway","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"quota"},{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":1,"rotation":"deterministic:1","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":true,"attempts":[{"source":"builtin-surveykit-gateway","model":"deepseek-v4-flash","status":429,"duration_ms":0,"outcome":"quota"},{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"fast","status":200,"outcome":"success","duration_ms":0,"rotation":"deterministic:1","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":true,"attempts":[{"source":"builtin-surveykit-gateway","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"quota"},{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"single","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":false,"attempts":[{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"structured","status":200,"outcome":"success","duration_ms":2,"rotation":"probe+deterministic:1","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":false,"attempts":[{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":1,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"structured","status":200,"outcome":"success","duration_ms":1,"rotation":"probe+single","actual_source":"builtin-bailian","actual_model":"qwen3.7-max","fallback_used":true,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-flash","status":200,"duration_ms":1,"outcome":"invalid_json"},{"source":"builtin-bailian","model":"qwen3.7-max","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"single","actual_source":"builtin-bailian","actual_model":"qwen3.7-max","fallback_used":true,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-pro","status":200,"duration_ms":0,"outcome":"invalid_json"},{"source":"builtin-bailian","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"invalid_json"},{"source":"builtin-bailian","model":"qwen3.7-max","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"single","actual_source":"builtin-bailian","actual_model":"deepseek-v4-flash","fallback_used":true,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-pro","status":403,"duration_ms":0,"outcome":"quota"},{"source":"builtin-bailian","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"single","actual_source":"builtin-bailian","actual_model":"deepseek-v4-flash","fallback_used":true,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-pro","duration_ms":0,"outcome":"network"},{"source":"builtin-bailian","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"single","actual_source":"builtin-bailian","actual_model":"deepseek-v4-pro","fallback_used":false,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-pro","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"user-key","attempts":[{"source":"user-key","model":"deepseek-v4-pro","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"structured","status":504,"outcome":"error","error_type":"timeout","duration_ms":0,"rotation":"none","attempts":[{"source":"user-key","model":"deepseek-v4-pro","duration_ms":0,"outcome":"timeout"}]}
+{"event":"ai_proxy_request","request_id":"test-request-id","task_tier":"balanced","status":503,"outcome":"error","error_type":"not_configured","duration_ms":0,"rotation":"none","attempts":[]}
+AI proxy tests passed: task tiers, deterministic rotation, fast failure skip, tracing, health and compatibility
+
+> release-main-521@1.0.0 test:local-ai-proxy
+> node tests/local-ai-proxy-smoke.mjs && node tests/vite-ai-runtime-smoke.mjs
+
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":3,"rotation":"single","actual_source":"builtin-bailian","actual_model":"deepseek-v4-pro","fallback_used":false,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-pro","status":200,"duration_ms":1,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"quality","status":200,"outcome":"success","duration_ms":1,"rotation":"deterministic:1","actual_source":"builtin-bailian","actual_model":"deepseek-v4-pro","fallback_used":false,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-pro","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"fast","status":200,"outcome":"success","duration_ms":0,"rotation":"deterministic:1","actual_source":"builtin-surveykit-gateway","actual_model":"deepseek-v4-flash","fallback_used":false,"attempts":[{"source":"builtin-surveykit-gateway","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"deterministic:1","actual_source":"builtin-surveykit-gateway","actual_model":"deepseek-v4-flash","fallback_used":false,"attempts":[{"source":"builtin-surveykit-gateway","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"fast","status":200,"outcome":"success","duration_ms":1,"rotation":"deterministic:1","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":false,"attempts":[{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":1,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":1,"rotation":"deterministic:1","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":true,"attempts":[{"source":"builtin-surveykit-gateway","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"quota"},{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":1,"rotation":"deterministic:1","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":true,"attempts":[{"source":"builtin-surveykit-gateway","model":"deepseek-v4-flash","status":429,"duration_ms":1,"outcome":"quota"},{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"single","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":false,"attempts":[{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"structured","status":200,"outcome":"success","duration_ms":2,"rotation":"probe+deterministic:1","actual_source":"builtin-sensenova","actual_model":"deepseek-v4-flash","fallback_used":false,"attempts":[{"source":"builtin-sensenova","model":"deepseek-v4-flash","status":200,"duration_ms":1,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"structured","status":200,"outcome":"success","duration_ms":1,"rotation":"probe+single","actual_source":"builtin-bailian","actual_model":"qwen3.7-max","fallback_used":true,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"invalid_json"},{"source":"builtin-bailian","model":"qwen3.7-max","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"single","actual_source":"builtin-bailian","actual_model":"qwen3.7-max","fallback_used":true,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-pro","status":200,"duration_ms":0,"outcome":"invalid_json"},{"source":"builtin-bailian","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"invalid_json"},{"source":"builtin-bailian","model":"qwen3.7-max","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"single","actual_source":"builtin-bailian","actual_model":"deepseek-v4-flash","fallback_used":true,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-pro","duration_ms":0,"outcome":"network"},{"source":"builtin-bailian","model":"deepseek-v4-flash","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":0,"rotation":"single","actual_source":"builtin-bailian","actual_model":"deepseek-v4-pro","fallback_used":false,"attempts":[{"source":"builtin-bailian","model":"deepseek-v4-pro","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":200,"outcome":"success","duration_ms":1,"rotation":"user-key","actual_source":"user-key","actual_model":"deepseek-v4-pro","fallback_used":false,"attempts":[{"source":"user-key","model":"deepseek-v4-pro","status":200,"duration_ms":0,"outcome":"success"}]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":400,"outcome":"error","error_type":"invalid_request","duration_ms":0,"rotation":"user-key","attempts":[]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":400,"outcome":"error","error_type":"invalid_request","duration_ms":0,"rotation":"user-key","attempts":[]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":400,"outcome":"error","error_type":"invalid_request","duration_ms":0,"rotation":"none","attempts":[]}
+{"event":"ai_proxy_request","request_id":"local-test-request-id","task_tier":"balanced","status":503,"outcome":"error","error_type":"not_configured","duration_ms":0,"rotation":"none","attempts":[]}
+{"event":"ai_proxy_request","request_id":"ff6f7c5b-8c23-4560-9ee7-385794e458f6","task_tier":"balanced","status":405,"outcome":"error","error_type":"invalid_request","duration_ms":0,"rotation":"none","attempts":[]}
+Local AI proxy module smoke passed: rotation, fast failure skip, tracing, health and compatibility
+{"event":"ai_proxy_request","request_id":"3fc38afc-4a0b-439b-bec7-2825901db0c0","task_tier":"balanced","status":503,"outcome":"error","error_type":"not_configured","duration_ms":0,"rotation":"none","attempts":[]}
+{"event":"ai_proxy_request","request_id":"634ec598-4334-486a-9679-d4133d29de69","task_tier":"balanced","status":400,"outcome":"error","error_type":"invalid_request","duration_ms":0,"rotation":"none","attempts":[]}
+{"event":"ai_proxy_request","request_id":"e261243f-7793-44a6-b324-80adb721bf87","task_tier":"balanced","status":413,"outcome":"error","error_type":"invalid_request","duration_ms":0,"rotation":"none","attempts":[]}
+Vite AI runtime passed: direct health handler, missing-key 503, invalid-request 400, size-limit 413; no separate backend or provider calls.
+
+> release-main-521@1.0.0 test:ai-plan-template
+> node tests/ai-plan-template-smoke.mjs
+
+AI plan template smoke test passed.
+
+> release-main-521@1.0.0 test:ai-plan-quality
+> node tests/ai-plan-quality-smoke.mjs
+
+AI plan quality smoke test passed: strong=100, weak=25
+
+> release-main-521@1.0.0 test:ai-plan-quality-eval
+> node tests/ai-plan-quality-eval.mjs
+
+AI plan quality golden eval passed: concept-decision-led=100, ua-behavior-led=95, nps-action-led=97, weak-module-catalog=33, weak-method-pile=37, weak-execution-only=40
+
+> release-main-521@1.0.0 test:ai-plan-quality-ui
+> node tests/ai-plan-quality-ui-smoke.mjs
+
+AI plan quality UI smoke test passed.
+
+> release-main-521@1.0.0 test:ai-questionnaire
+> node tests/ai-questionnaire-smoke.mjs
+
+AI questionnaire smoke test passed: professional prompt, objective screener, no duration field, styled Word title
+
+> release-main-521@1.0.0 test:crosstab-header-template
+> node tests/crosstab-header-template-smoke.mjs
+
+Crosstab header template smoke passed: download entry, valid XLSX, three-row banner examples
+
+> release-main-521@1.0.0 test:crosstab-export-style
+> node tests/crosstab-export-style-smoke.mjs
+
+crosstab export style smoke passed
+
+> release-main-521@1.0.0 test:pptx-chapter-chart
+> node tests/pptx-chapter-chart-smoke.mjs
+
+PPT chapter chart strategy smoke passed.
+
+> release-main-521@1.0.0 test:model-chart-pptx-ui
+> node tests/model-chart-pptx-ui-smoke.mjs
+
+editable model chart PPTX UI/API smoke: ok
+
+> release-main-521@1.0.0 test:research-model-excel-import
+> node tests/research-model-excel-import-smoke.mjs
+
+research model Excel import and raw KANO smoke: ok
+
+> release-main-521@1.0.0 test:core-research-module
+> node tests/core-research-module-smoke.mjs
+
+Core research module smoke passed.
+
+> release-main-521@1.0.0 test:ppt-report-ai
+> node tests/ppt-report-ai-smoke.mjs
+
+PPT staged AI narrative smoke passed.
+
+> release-main-521@1.0.0 test:ai-report-quality-eval
+> node tests/ai-report-quality-eval.mjs
+
+AI report quality eval passed: 4 blueprint cases, 2 copy cases.
+
+> release-main-521@1.0.0 test:ai-report-quality-loop
+> node tests/ai-report-quality-loop-smoke.mjs
+
+AI report quality loop smoke tests passed.
+
+> release-main-521@1.0.0 test:slide-brief-ui
+> node tests/slide-brief-ui-smoke.mjs
+
+slide brief UI/API smoke: ok
+
+> release-main-521@1.0.0 test:pptx-job-ui
+> node tests/pptx-job-ui-smoke.mjs
+
+PPT async job UI smoke passed: lifecycle, object QA, download and blueprint controls.
+
+> release-main-521@1.0.0 test:ai-job-ui
+> node tests/ai-job-ui-smoke.mjs
+
+AI durable job UI smoke passed: async routing, persistence, rotation retry and key isolation.
+
+> release-main-521@1.0.0 test:pptx-template-profile-ui
+> node tests/pptx-template-profile-ui-smoke.mjs
+
+PPT template Profile UI smoke passed: import, export, validation and API compatibility
+
+> release-main-521@1.0.0 test:proposal-deck
+> node tests/proposal-deck-smoke.mjs
+
+Proposal Deck frontend tests passed.
+
+> release-main-521@1.0.0 test:request-body
+> node tests/request-body-smoke.mjs
+
+Request body module smoke passed: limits, buffering and error shape
+
+> release-main-521@1.0.0 test:pptx-proxy
+> node tests/pptx-proxy-smoke.mjs
+
+PPTX proxy module smoke passed: mapping, streaming download, filename, 413 and timeout
+
+> release-main-521@1.0.0 test:server-routes
+> node tests/server-routes-smoke.mjs
+
+Server route smoke passed: health, proxy mappings and 413 body limits
+
+> release-main-521@1.0.0 test:cloudflare-proxy
+> node tests/cloudflare-proxy-smoke.mjs
+
+Cloudflare PPTX proxy smoke passed: config, CORS, streaming, filename, mapping and errors
+
+> release-main-521@1.0.0 test:cluster-analysis
+> node tests/cluster-analysis-smoke.mjs
+
+K-Means tests…
+K-Means OK
+TwoStep tests…
+TwoStep OK
+Hierarchical tests…
+Hierarchical OK
+Variable system tests…
+Variable system / profile / export OK
+UI static tests…
+UI static OK
+Privacy & interface tests…
+Privacy OK
+
+All cluster-analysis smoke tests passed.
+
+> release-main-521@1.0.0 test:tool-gateway
+> node tests/tool-gateway-smoke.mjs
+
+tool gateway smoke ok
+
+> release-main-521@1.0.0 test:agent-tools
+> node tests/agent-tool-calling-smoke.mjs
+
+agent-tool-calling-smoke: PASS
+
+> release-main-521@1.0.0 test:agent-tool-acceptance
+> node tests/agent-tool-acceptance-smoke.mjs
+
+agent-tool-acceptance-smoke: PASS (7/7)
+
+> release-main-521@1.0.0 test:harness-openai-chat
+> node tests/harness-openai-chat-smoke.mjs
+
+harness-openai-chat-smoke: PASS
+
+> release-main-521@1.0.0 test:harness-dsh-rpc
+> node tests/harness-dsh-rpc-smoke.mjs
+
+{"event":"research_harness_error","request_id":"dsh-timeout","error_type":"timeout"}
+harness-dsh-rpc-smoke: PASS
+
+> release-main-521@1.0.0 test:cloudflare-harness-dsh
+> node tests/cloudflare-harness-dsh-smoke.mjs
+
+cloudflare-harness-dsh-smoke: PASS
+
+> release-main-521@1.0.0 test:research-streaming
+> node tests/research-streaming-smoke.mjs
+
+research-streaming-smoke: PASS
+
+> release-main-521@1.0.0 test:research-stream-parser
+> node tests/research-stream-parser-smoke.mjs
+
+research-stream-parser-smoke: PASS
+
+> release-main-521@1.0.0 test:research-harness
+> node tests/research-harness-smoke.mjs
+
+research-harness-smoke: PASS
+
+> release-main-521@1.0.0 test:research-files-context
+> node tests/research-files-context-smoke.mjs && node tests/research-message-order-smoke.mjs
+
+research-files-context-smoke: PASS
+research-message-order-smoke: PASS
+
+> release-main-521@1.0.0 test:research-memory-v03
+> node tests/research-memory-v03-smoke.mjs
+
+research-memory-v03-smoke: PASS
+
+> release-main-521@1.0.0 test:research-access-auth
+> node tests/research-access-auth-smoke.mjs
+
+research-access-auth-smoke: PASS
+
+> release-main-521@1.0.0 test:qualitative-excel
+> node tests/qualitative-excel-smoke.mjs && node tests/qualitative-excel-handler-smoke.mjs && node tests/qualitative-excel-ui-smoke.mjs
+
+qualitative excel smoke passed
+qualitative excel handler smoke passed
+qualitative excel UI smoke passed
+
+> release-main-521@1.0.0 test:research-plan-workflow
+> node tests/research-plan-workflow-smoke.mjs && node tests/research-plan-workflow-ui-smoke.mjs
+
+research plan workflow smoke: PASS (9 acceptance scenarios)
+research plan workflow UI smoke: PASS
+
+> release-main-521@1.0.0 test:data-analysis-workflow
+> node tests/data-analysis-workflow-smoke.mjs && node tests/data-regressions-smoke.mjs
+
+data analysis workflow smoke passed: 11/11 scenarios
+Data regressions passed: missing values, valid bases, weighted cleaning guard, Sheet conflict, complete deletion and retry.
+
+> release-main-521@1.0.0 test:qualitative-analysis
+> node tests/qualitative-analysis-workflow-smoke.mjs && node tests/qualitative-analysis-ui-smoke.mjs
+
+qualitative-analysis-workflow-smoke: PASS (core evidence + handler workflow)
+qualitative-analysis-ui-smoke: PASS
+
+> release-main-521@1.0.0 test:transcript-correction
+> node tests/transcript-correction-workflow-smoke.mjs && node tests/transcript-correction-d1-smoke.mjs && node tests/transcript-correction-ui-smoke.mjs
+
+transcript correction workflow smoke: ok
+transcript correction D1 smoke: ok
+transcript correction ui smoke: ok
+
+> release-main-521@1.0.0 test:report-storyline
+> node tests/report-storyline-workflow-smoke.mjs && node tests/report-storyline-ui-smoke.mjs
+
+report-storyline-workflow-smoke: ok (Test 1-12)
+report-storyline-ui-smoke: ok
+
+> release-main-521@1.0.0 test:ppt-script
+> node tests/ppt-script-workflow-smoke.mjs && node tests/ppt-script-ui-smoke.mjs && node tests/qualitative-ppt-ui-smoke.mjs && node tests/qualitative-ppt-artifact-smoke.mjs
+
+ppt-script-workflow-smoke: ok (Test 1-13)
+ppt-script-ui-smoke: ok
+qualitative-ppt-ui-smoke: ok
+qualitative-ppt-artifact-smoke: ok
+
+> release-main-521@1.0.0 test:data-jobs
+> node tests/data-jobs-smoke.mjs
+
+data jobs smoke passed
+
+> release-main-521@1.0.0 test:sav-dataset
+> node tests/sav-dataset-smoke.mjs
+
+SAV dataset smoke passed: upload validation, SPSS metadata, value labels, missing values, Dataset registration and Harness profile
+
+> release-main-521@1.0.0 test:r1
+> node tests/r1-data-contract-smoke.mjs
+
+local/csv: raw + equal weights + bounded weights PASS
+local/xlsx: raw + equal weights + bounded weights PASS
+local/sav: raw + equal weights + bounded weights PASS
+d1-r2-contract/csv: raw + equal weights + bounded weights PASS
+d1-r2-contract/xlsx: raw + equal weights + bounded weights PASS
+d1-r2-contract/sav: raw + equal weights + bounded weights PASS
+Schema + synthetic ledger + SQLite backup/restore + local file byte comparison PASS; remote infrastructure NOT tested.
+
+> release-main-521@1.0.0 test:r2
+> node tests/r2-data-recovery-smoke.mjs && node tests/r2-process-recovery-smoke.mjs
+
+{
+  "test": "r2-recovery",
+  "results": [
+    {
+      "adapter": "local",
+      "passed": true,
+      "duration_ms": 393
+    },
+    {
+      "adapter": "d1-r2",
+      "passed": true,
+      "duration_ms": 47
+    }
+  ]
+}
+R2 process exit, restart sweep, retry and lost HTTP response: passed

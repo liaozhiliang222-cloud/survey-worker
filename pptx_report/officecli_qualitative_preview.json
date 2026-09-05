@@ -1,0 +1,2664 @@
+[
+  {
+    "command": "add",
+    "parent": "/",
+    "type": "slide",
+    "props": {
+      "layout": "blank",
+      "name": "Cover",
+      "background": "081A36-0B4CCB-15"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "shape",
+    "props": {
+      "name": "HaloBack",
+      "preset": "ellipse",
+      "fill": "37BFF3",
+      "opacity": "0.08",
+      "line": "none",
+      "x": "24.2cm",
+      "y": "-2.6cm",
+      "width": "13.4cm",
+      "height": "13.4cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "shape",
+    "props": {
+      "name": "OrbitOuter",
+      "preset": "ellipse",
+      "fill": "none",
+      "line": "37BFF3:1.2",
+      "lineOpacity": "0.28",
+      "x": "21.5cm",
+      "y": "2.0cm",
+      "width": "11.7cm",
+      "height": "11.7cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "shape",
+    "props": {
+      "name": "OrbitInner",
+      "preset": "ellipse",
+      "fill": "none",
+      "line": "8FD8FF:1",
+      "lineOpacity": "0.38",
+      "x": "23.1cm",
+      "y": "3.6cm",
+      "width": "8.5cm",
+      "height": "8.5cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "shape",
+    "props": {
+      "name": "Core",
+      "preset": "ellipse",
+      "gradient": "176BFF-37BFF3-45",
+      "line": "FFFFFF:1",
+      "lineOpacity": "0.45",
+      "shadow": "000000-8-45-4-28",
+      "x": "25.25cm",
+      "y": "5.75cm",
+      "width": "4.2cm",
+      "height": "4.2cm",
+      "text": "INSIGHT",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "37BFF3",
+      "line": "none",
+      "shadow": "37BFF3-5-0-0-40",
+      "x": "22.55cm",
+      "y": "6.2cm",
+      "width": "0.42cm",
+      "height": "0.42cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "8FD8FF",
+      "line": "none",
+      "x": "30.7cm",
+      "y": "9.55cm",
+      "width": "0.3cm",
+      "height": "0.3cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "shape",
+    "props": {
+      "name": "CoverTag",
+      "preset": "roundRect",
+      "fill": "FFFFFF",
+      "opacity": "0.18",
+      "line": "FFFFFF:1",
+      "lineOpacity": "0.25",
+      "x": "1.6cm",
+      "y": "1.35cm",
+      "width": "8.4cm",
+      "height": "0.9cm",
+      "text": "SURVEYKIT · QUALITATIVE RESEARCH",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "11pt",
+      "bold": "true",
+      "spacing": "0.6",
+      "color": "D8F3FF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "shape",
+    "props": {
+      "name": "CoverTitle",
+      "fill": "none",
+      "line": "none",
+      "x": "1.55cm",
+      "y": "4.25cm",
+      "width": "19.1cm",
+      "height": "4.2cm",
+      "text": "定性研究报告\n企业级样板预览",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "42pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "lineSpacing": "1.0x",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "1.6cm",
+      "y": "9.4cm",
+      "width": "16.8cm",
+      "height": "1.8cm",
+      "text": "从访谈证据到决策表达的统一视觉语言",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "20pt",
+      "color": "BDEBFF",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "1.6cm",
+      "y": "15.7cm",
+      "width": "16cm",
+      "height": "1.1cm",
+      "text": "STYLE PROOF · OFFICECLI NATIVE BUILD · 2026.09",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "11pt",
+      "color": "91B8E8",
+      "spacing": "0.4",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "shape",
+    "props": {
+      "gradient": "176BFF-37BFF3-0",
+      "line": "none",
+      "x": "0cm",
+      "y": "18.8cm",
+      "width": "33.87cm",
+      "height": "0.25cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[1]",
+    "type": "notes",
+    "props": {
+      "text": "本页用于展示 SurveyKit 定性研究报告的新一代科技蓝视觉方向。样板内容仅用于版式演示，不代表真实研究结论。"
+    }
+  },
+
+  {
+    "command": "add",
+    "parent": "/",
+    "type": "slide",
+    "props": {
+      "layout": "blank",
+      "name": "ExecutiveSummary",
+      "background": "F7FAFF"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "gradient": "0A2A66-176BFF-35",
+      "line": "none",
+      "shadow": "0A2A66-8-45-4-18",
+      "x": "1.45cm",
+      "y": "4.15cm",
+      "width": "12.15cm",
+      "height": "12.4cm",
+      "preset": "roundRect",
+      "adj": "adj:val 9000"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "37BFF3",
+      "opacity": "0.12",
+      "line": "none",
+      "x": "9.2cm",
+      "y": "11.0cm",
+      "width": "7.5cm",
+      "height": "7.5cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "FFFFFF",
+      "opacity": "0.13",
+      "line": "FFFFFF:1",
+      "lineOpacity": "0.22",
+      "x": "2.2cm",
+      "y": "5.0cm",
+      "width": "3.3cm",
+      "height": "0.9cm",
+      "text": "核心判断",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "12pt",
+      "bold": "true",
+      "color": "BDEBFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "2.2cm",
+      "y": "6.6cm",
+      "width": "9.9cm",
+      "height": "5.7cm",
+      "text": "用户并非缺少功能，\n而是缺少稳定完成任务的信心。",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "25pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "lineSpacing": "1.15x",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "37BFF3",
+      "line": "none",
+      "x": "2.2cm",
+      "y": "14.6cm",
+      "width": "5.5cm",
+      "height": "0.85cm",
+      "text": "TASK CONFIDENCE",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "11pt",
+      "bold": "true",
+      "color": "081A36",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "FFFFFF",
+      "line": "E1EBF8:1",
+      "shadow": "0A2A66-5-45-2-12",
+      "x": "14.9cm",
+      "y": "4.15cm",
+      "width": "17.45cm",
+      "height": "3.55cm",
+      "adj": "adj:val 8000"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "176BFF",
+      "line": "none",
+      "x": "15.6cm",
+      "y": "4.88cm",
+      "width": "1.8cm",
+      "height": "1.8cm",
+      "text": "01",
+      "font": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "18.1cm",
+      "y": "4.65cm",
+      "width": "13.2cm",
+      "height": "1.05cm",
+      "text": "关键步骤的失败成本被显著放大",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "19pt",
+      "bold": "true",
+      "color": "18263D",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "18.1cm",
+      "y": "5.92cm",
+      "width": "13.2cm",
+      "height": "1.15cm",
+      "text": "中断、误触与退出会直接破坏任务连续性。",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "color": "52637A",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "FFFFFF",
+      "line": "E1EBF8:1",
+      "shadow": "0A2A66-5-45-2-12",
+      "x": "14.9cm",
+      "y": "8.45cm",
+      "width": "17.45cm",
+      "height": "3.55cm",
+      "adj": "adj:val 8000"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "0A2A66",
+      "line": "none",
+      "x": "15.6cm",
+      "y": "9.18cm",
+      "width": "1.8cm",
+      "height": "1.8cm",
+      "text": "02",
+      "font": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "18.1cm",
+      "y": "8.95cm",
+      "width": "13.2cm",
+      "height": "1.05cm",
+      "text": "评价标准从“功能多少”转向“完成质量”",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "19pt",
+      "bold": "true",
+      "color": "18263D",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "18.1cm",
+      "y": "10.22cm",
+      "width": "13.2cm",
+      "height": "1.15cm",
+      "text": "稳定、可控、可预测比新增入口更有价值。",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "color": "52637A",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "FFFFFF",
+      "line": "E1EBF8:1",
+      "shadow": "0A2A66-5-45-2-12",
+      "x": "14.9cm",
+      "y": "12.75cm",
+      "width": "17.45cm",
+      "height": "3.55cm",
+      "adj": "adj:val 8000"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "37BFF3",
+      "line": "none",
+      "x": "15.6cm",
+      "y": "13.48cm",
+      "width": "1.8cm",
+      "height": "1.8cm",
+      "text": "03",
+      "font": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "081A36",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "18.1cm",
+      "y": "13.25cm",
+      "width": "13.2cm",
+      "height": "1.05cm",
+      "text": "设计机会集中在任务链的衔接处",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "19pt",
+      "bold": "true",
+      "color": "18263D",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "18.1cm",
+      "y": "14.52cm",
+      "width": "13.2cm",
+      "height": "1.15cm",
+      "text": "让下一步明确，比继续增加能力更重要。",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "color": "52637A",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "1.45cm",
+      "y": "0.78cm",
+      "width": "26.5cm",
+      "height": "2.25cm",
+      "text": "执行摘要｜从功能领先走向任务可信",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "36pt",
+      "bold": "true",
+      "color": "0A2A66",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "EAF3FF",
+      "line": "none",
+      "x": "1.45cm",
+      "y": "17.55cm",
+      "width": "7.0cm",
+      "height": "0.65cm",
+      "text": "样板演示 · 非真实研究结论",
+      "font": "Microsoft YaHei",
+      "size": "10pt",
+      "color": "52709A",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "31.1cm",
+      "y": "17.48cm",
+      "width": "1.2cm",
+      "height": "0.65cm",
+      "text": "02",
+      "font": "Microsoft YaHei",
+      "size": "10pt",
+      "bold": "true",
+      "color": "52709A",
+      "align": "right",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[2]",
+    "type": "notes",
+    "props": {
+      "text": "讲解顺序：先给出任务可信的核心判断，再依次说明失败成本、评价标准变化和设计机会。样板内容仅用于演示。"
+    }
+  },
+
+  {
+    "command": "add",
+    "parent": "/",
+    "type": "slide",
+    "props": {
+      "layout": "blank",
+      "name": "Persona",
+      "background": "F5F9FF"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "gradient": "081A36-0B4CCB-25",
+      "line": "none",
+      "shadow": "0A2A66-8-45-4-18",
+      "x": "1.45cm",
+      "y": "4.05cm",
+      "width": "9.15cm",
+      "height": "12.65cm",
+      "adj": "adj:val 8000"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "FFFFFF",
+      "opacity": "0.08",
+      "line": "8FD8FF:1",
+      "lineOpacity": "0.22",
+      "x": "2.0cm",
+      "y": "4.65cm",
+      "width": "7.9cm",
+      "height": "7.9cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "gradient": "176BFF-37BFF3-45",
+      "line": "FFFFFF:1",
+      "lineOpacity": "0.4",
+      "shadow": "000000-6-45-3-22",
+      "x": "4.02cm",
+      "y": "5.25cm",
+      "width": "3.9cm",
+      "height": "3.9cm",
+      "text": "P",
+      "font": "Microsoft YaHei",
+      "size": "34pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "2.25cm",
+      "y": "9.65cm",
+      "width": "7.55cm",
+      "height": "1.3cm",
+      "text": "林然 · 32岁",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "24pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "2.25cm",
+      "y": "11.0cm",
+      "width": "7.55cm",
+      "height": "1.0cm",
+      "text": "高频创作者 / 效率优先",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "17pt",
+      "color": "BDEBFF",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "FFFFFF",
+      "opacity": "0.12",
+      "line": "none",
+      "x": "2.15cm",
+      "y": "13.0cm",
+      "width": "3.4cm",
+      "height": "0.88cm",
+      "text": "移动办公",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "bold": "true",
+      "color": "D8F3FF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "FFFFFF",
+      "opacity": "0.12",
+      "line": "none",
+      "x": "5.8cm",
+      "y": "13.0cm",
+      "width": "3.4cm",
+      "height": "0.88cm",
+      "text": "结果导向",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "bold": "true",
+      "color": "D8F3FF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "37BFF3",
+      "line": "none",
+      "x": "3.25cm",
+      "y": "14.35cm",
+      "width": "5.6cm",
+      "height": "0.88cm",
+      "text": "核心诉求：一次完成",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "bold": "true",
+      "color": "081A36",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "gradient": "EAF3FF-FFFFFF-0",
+      "line": "D7E3F2:1",
+      "x": "11.55cm",
+      "y": "4.05cm",
+      "width": "20.8cm",
+      "height": "3.45cm",
+      "adj": "adj:val 7000"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "12.45cm",
+      "y": "4.65cm",
+      "width": "18.9cm",
+      "height": "2.2cm",
+      "text": "“我不怕步骤多，怕的是做到最后才发现前面错了。”",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "22pt",
+      "bold": "true",
+      "color": "0A2A66",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "176BFF",
+      "line": "none",
+      "x": "11.65cm",
+      "y": "8.45cm",
+      "width": "1.1cm",
+      "height": "1.1cm",
+      "text": "1",
+      "font": "Microsoft YaHei",
+      "size": "12pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "13.1cm",
+      "y": "8.28cm",
+      "width": "8.3cm",
+      "height": "1.0cm",
+      "text": "核心目标",
+      "font": "Microsoft YaHei",
+      "size": "19pt",
+      "bold": "true",
+      "color": "18263D",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "13.1cm",
+      "y": "9.45cm",
+      "width": "8.4cm",
+      "height": "1.8cm",
+      "text": "快速完成任务，并确信结果可直接交付。",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "color": "6F7D93",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "37BFF3",
+      "line": "none",
+      "x": "22.6cm",
+      "y": "8.45cm",
+      "width": "1.1cm",
+      "height": "1.1cm",
+      "text": "2",
+      "font": "Microsoft YaHei",
+      "size": "12pt",
+      "bold": "true",
+      "color": "081A36",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "24.05cm",
+      "y": "8.28cm",
+      "width": "7.4cm",
+      "height": "1.0cm",
+      "text": "典型行为",
+      "font": "Microsoft YaHei",
+      "size": "19pt",
+      "bold": "true",
+      "color": "18263D",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "24.05cm",
+      "y": "9.45cm",
+      "width": "7.4cm",
+      "height": "1.8cm",
+      "text": "先扫结果，再判断是否值得继续投入。",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "color": "6F7D93",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "0A2A66",
+      "line": "none",
+      "x": "11.65cm",
+      "y": "12.25cm",
+      "width": "1.1cm",
+      "height": "1.1cm",
+      "text": "3",
+      "font": "Microsoft YaHei",
+      "size": "12pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "13.1cm",
+      "y": "12.08cm",
+      "width": "8.3cm",
+      "height": "1.0cm",
+      "text": "触发条件",
+      "font": "Microsoft YaHei",
+      "size": "19pt",
+      "bold": "true",
+      "color": "18263D",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "13.1cm",
+      "y": "13.25cm",
+      "width": "8.4cm",
+      "height": "1.8cm",
+      "text": "时间受限、多人协作、结果需要复用。",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "color": "6F7D93",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "E35D6A",
+      "line": "none",
+      "x": "22.6cm",
+      "y": "12.25cm",
+      "width": "1.1cm",
+      "height": "1.1cm",
+      "text": "4",
+      "font": "Microsoft YaHei",
+      "size": "12pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "24.05cm",
+      "y": "12.08cm",
+      "width": "7.4cm",
+      "height": "1.0cm",
+      "text": "核心阻碍",
+      "font": "Microsoft YaHei",
+      "size": "19pt",
+      "bold": "true",
+      "color": "18263D",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "24.05cm",
+      "y": "13.25cm",
+      "width": "7.4cm",
+      "height": "1.8cm",
+      "text": "缺少状态反馈，无法确认当前结果。",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "color": "6F7D93",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "1.45cm",
+      "y": "0.78cm",
+      "width": "27.3cm",
+      "height": "2.25cm",
+      "text": "核心用户画像｜效率导向的高频创作者",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "36pt",
+      "bold": "true",
+      "color": "0A2A66",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "EAF3FF",
+      "line": "none",
+      "x": "1.45cm",
+      "y": "17.55cm",
+      "width": "7.0cm",
+      "height": "0.65cm",
+      "text": "样板演示 · 非真实研究结论",
+      "font": "Microsoft YaHei",
+      "size": "10pt",
+      "color": "52709A",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "31.1cm",
+      "y": "17.48cm",
+      "width": "1.2cm",
+      "height": "0.65cm",
+      "text": "03",
+      "font": "Microsoft YaHei",
+      "size": "10pt",
+      "bold": "true",
+      "color": "52709A",
+      "align": "right",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[3]",
+    "type": "notes",
+    "props": {
+      "text": "本页用人物卡、原话和四类行为信息构成完整画像。强调用户关注结果确定性，而不是单纯减少操作步骤。"
+    }
+  },
+
+  {
+    "command": "add",
+    "parent": "/",
+    "type": "slide",
+    "props": {
+      "layout": "blank",
+      "name": "Journey",
+      "background": "FFFFFF"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "EAF3FF",
+      "line": "none",
+      "x": "23.95cm",
+      "y": "2.65cm",
+      "width": "8.45cm",
+      "height": "0.9cm",
+      "text": "关键断点集中在执行与确认",
+      "font": "Microsoft YaHei",
+      "size": "12pt",
+      "bold": "true",
+      "color": "176BFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "connector",
+    "props": {
+      "name": "JourneyAxis",
+      "x": "3.2cm",
+      "y": "8.65cm",
+      "width": "27.6cm",
+      "height": "0cm",
+      "shape": "straight",
+      "color": "8CB8FF",
+      "lineWidth": "2pt",
+      "tailEnd": "triangle"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "F7FAFF",
+      "line": "D7E3F2:1",
+      "x": "2.1cm",
+      "y": "4.2cm",
+      "width": "5.0cm",
+      "height": "2.55cm",
+      "text": "发现需求\n目标被触发",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "17pt",
+      "bold": "true",
+      "color": "18263D",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0.2cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "F7FAFF",
+      "line": "D7E3F2:1",
+      "x": "8.3cm",
+      "y": "4.2cm",
+      "width": "5.0cm",
+      "height": "2.55cm",
+      "text": "评估方案\n比较可行性",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "17pt",
+      "bold": "true",
+      "color": "18263D",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0.2cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "gradient": "176BFF-0B4CCB-30",
+      "line": "none",
+      "shadow": "0A2A66-5-45-2-10",
+      "x": "14.5cm",
+      "y": "3.82cm",
+      "width": "5.0cm",
+      "height": "2.95cm",
+      "text": "开始执行\n需要状态反馈",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "17pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0.2cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "gradient": "0A2A66-176BFF-30",
+      "line": "none",
+      "shadow": "0A2A66-5-45-2-10",
+      "x": "20.7cm",
+      "y": "3.82cm",
+      "width": "5.0cm",
+      "height": "2.95cm",
+      "text": "确认结果\n判断是否完成",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "17pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0.2cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "F7FAFF",
+      "line": "D7E3F2:1",
+      "x": "26.9cm",
+      "y": "4.2cm",
+      "width": "5.0cm",
+      "height": "2.55cm",
+      "text": "复用分享\n进入下一任务",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "17pt",
+      "bold": "true",
+      "color": "18263D",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0.2cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "FFFFFF",
+      "line": "176BFF:2",
+      "x": "3.76cm",
+      "y": "7.95cm",
+      "width": "1.45cm",
+      "height": "1.45cm",
+      "text": "1",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "bold": "true",
+      "color": "176BFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "FFFFFF",
+      "line": "176BFF:2",
+      "x": "9.96cm",
+      "y": "7.95cm",
+      "width": "1.45cm",
+      "height": "1.45cm",
+      "text": "2",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "bold": "true",
+      "color": "176BFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "E35D6A",
+      "line": "FFFFFF:2",
+      "shadow": "E35D6A-5-0-0-30",
+      "x": "16.05cm",
+      "y": "7.72cm",
+      "width": "1.9cm",
+      "height": "1.9cm",
+      "text": "3",
+      "font": "Microsoft YaHei",
+      "size": "15pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "E35D6A",
+      "line": "FFFFFF:2",
+      "shadow": "E35D6A-5-0-0-30",
+      "x": "22.25cm",
+      "y": "7.72cm",
+      "width": "1.9cm",
+      "height": "1.9cm",
+      "text": "4",
+      "font": "Microsoft YaHei",
+      "size": "15pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "FFFFFF",
+      "line": "176BFF:2",
+      "x": "28.56cm",
+      "y": "7.95cm",
+      "width": "1.45cm",
+      "height": "1.45cm",
+      "text": "5",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "bold": "true",
+      "color": "176BFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "2.05cm",
+      "y": "10.65cm",
+      "width": "5.1cm",
+      "height": "1.8cm",
+      "text": "需求明确\n信心建立",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "16pt",
+      "color": "52709A",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "8.25cm",
+      "y": "10.65cm",
+      "width": "5.1cm",
+      "height": "1.8cm",
+      "text": "方案可选\n预期形成",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "16pt",
+      "color": "52709A",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "14.45cm",
+      "y": "10.65cm",
+      "width": "5.1cm",
+      "height": "1.8cm",
+      "text": "过程不可见\n容易犹豫",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "16pt",
+      "bold": "true",
+      "color": "E35D6A",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "20.65cm",
+      "y": "10.65cm",
+      "width": "5.1cm",
+      "height": "1.8cm",
+      "text": "结果不确定\n反复核验",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "16pt",
+      "bold": "true",
+      "color": "E35D6A",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "26.85cm",
+      "y": "10.65cm",
+      "width": "5.1cm",
+      "height": "1.8cm",
+      "text": "完成复用\n价值兑现",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "16pt",
+      "color": "52709A",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "FFF0F2",
+      "line": "E35D6A:1",
+      "lineOpacity": "0.35",
+      "x": "14.15cm",
+      "y": "14.15cm",
+      "width": "11.95cm",
+      "height": "1.55cm",
+      "text": "优先机会：让过程可见，让完成可确认",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "C84654",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "1.45cm",
+      "y": "0.78cm",
+      "width": "30.0cm",
+      "height": "2.25cm",
+      "text": "关键旅程｜信心在执行与确认阶段断裂",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "36pt",
+      "bold": "true",
+      "color": "0A2A66",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "EAF3FF",
+      "line": "none",
+      "x": "1.45cm",
+      "y": "17.55cm",
+      "width": "7.0cm",
+      "height": "0.65cm",
+      "text": "样板演示 · 非真实研究结论",
+      "font": "Microsoft YaHei",
+      "size": "10pt",
+      "color": "52709A",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "31.1cm",
+      "y": "17.48cm",
+      "width": "1.2cm",
+      "height": "0.65cm",
+      "text": "04",
+      "font": "Microsoft YaHei",
+      "size": "10pt",
+      "bold": "true",
+      "color": "52709A",
+      "align": "right",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[4]",
+    "type": "notes",
+    "props": {
+      "text": "沿五阶段旅程讲解。第三、第四阶段用珊瑚红标出风险，说明用户的信心在过程不可见和结果不确定时快速下降。"
+    }
+  },
+
+  {
+    "command": "add",
+    "parent": "/",
+    "type": "slide",
+    "props": {
+      "layout": "blank",
+      "name": "NeedsPyramid",
+      "background": "F7FAFF"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "176BFF",
+      "opacity": "0.06",
+      "line": "none",
+      "x": "0.2cm",
+      "y": "4.1cm",
+      "width": "16.8cm",
+      "height": "16.8cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "trapezoid",
+      "gradient": "0A2A66-0B4CCB-0",
+      "line": "FFFFFF:1",
+      "lineOpacity": "0.35",
+      "shadow": "0A2A66-5-90-2-10",
+      "x": "2.25cm",
+      "y": "13.5cm",
+      "width": "13.8cm",
+      "height": "2.85cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "trapezoid",
+      "gradient": "0B4CCB-176BFF-0",
+      "line": "FFFFFF:1",
+      "lineOpacity": "0.35",
+      "x": "3.7cm",
+      "y": "10.55cm",
+      "width": "10.9cm",
+      "height": "2.7cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "trapezoid",
+      "gradient": "176BFF-319BFF-0",
+      "line": "FFFFFF:1",
+      "lineOpacity": "0.35",
+      "x": "5.1cm",
+      "y": "7.75cm",
+      "width": "8.1cm",
+      "height": "2.55cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "trapezoid",
+      "gradient": "176BFF-319BFF-0",
+      "line": "FFFFFF:1",
+      "lineOpacity": "0.35",
+      "x": "6.5cm",
+      "y": "5.1cm",
+      "width": "5.3cm",
+      "height": "2.4cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "6.7cm",
+      "y": "5.64cm",
+      "width": "4.9cm",
+      "height": "1.1cm",
+      "text": "自我表达",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "5.25cm",
+      "y": "8.35cm",
+      "width": "7.8cm",
+      "height": "1.1cm",
+      "text": "结果优质",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "3.85cm",
+      "y": "11.1cm",
+      "width": "10.6cm",
+      "height": "1.1cm",
+      "text": "过程可控",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "2.45cm",
+      "y": "14.15cm",
+      "width": "13.4cm",
+      "height": "1.1cm",
+      "text": "基础可用 · 稳定完成",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "FFFFFF",
+      "line": "D7E3F2:1",
+      "x": "18.0cm",
+      "y": "4.25cm",
+      "width": "14.4cm",
+      "height": "2.45cm",
+      "shadow": "0A2A66-4-45-2-10"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "37BFF3",
+      "line": "none",
+      "x": "18.55cm",
+      "y": "4.84cm",
+      "width": "1.25cm",
+      "height": "1.25cm",
+      "text": "4",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "bold": "true",
+      "color": "081A36",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "20.3cm",
+      "y": "4.52cm",
+      "width": "11.4cm",
+      "height": "1.65cm",
+      "text": "自我表达｜形成可识别的个人风格",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "18263D",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "FFFFFF",
+      "line": "D7E3F2:1",
+      "x": "18.0cm",
+      "y": "7.35cm",
+      "width": "14.4cm",
+      "height": "2.45cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "319BFF",
+      "line": "none",
+      "x": "18.55cm",
+      "y": "7.94cm",
+      "width": "1.25cm",
+      "height": "1.25cm",
+      "text": "3",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "20.3cm",
+      "y": "7.62cm",
+      "width": "11.4cm",
+      "height": "1.65cm",
+      "text": "结果优质｜输出达到专业表达标准",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "18263D",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "FFFFFF",
+      "line": "D7E3F2:1",
+      "x": "18.0cm",
+      "y": "10.45cm",
+      "width": "14.4cm",
+      "height": "2.45cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "176BFF",
+      "line": "none",
+      "x": "18.55cm",
+      "y": "11.04cm",
+      "width": "1.25cm",
+      "height": "1.25cm",
+      "text": "2",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "20.3cm",
+      "y": "10.72cm",
+      "width": "11.4cm",
+      "height": "1.65cm",
+      "text": "过程可控｜随时知道进度与下一步",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "18263D",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "FFFFFF",
+      "line": "D7E3F2:1",
+      "x": "18.0cm",
+      "y": "13.55cm",
+      "width": "14.4cm",
+      "height": "2.45cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "0A2A66",
+      "line": "none",
+      "x": "18.55cm",
+      "y": "14.14cm",
+      "width": "1.25cm",
+      "height": "1.25cm",
+      "text": "1",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "20.3cm",
+      "y": "13.82cm",
+      "width": "11.4cm",
+      "height": "1.65cm",
+      "text": "基础可用｜稳定、准确、一次完成",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "18263D",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "1.45cm",
+      "y": "0.78cm",
+      "width": "25.7cm",
+      "height": "2.25cm",
+      "text": "需求金字塔｜任务确定性先于价值增益",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "36pt",
+      "bold": "true",
+      "color": "0A2A66",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "EAF3FF",
+      "line": "none",
+      "x": "1.45cm",
+      "y": "17.55cm",
+      "width": "7.0cm",
+      "height": "0.65cm",
+      "text": "样板演示 · 非真实研究结论",
+      "font": "Microsoft YaHei",
+      "size": "10pt",
+      "color": "52709A",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "31.1cm",
+      "y": "17.48cm",
+      "width": "1.2cm",
+      "height": "0.65cm",
+      "text": "05",
+      "font": "Microsoft YaHei",
+      "size": "10pt",
+      "bold": "true",
+      "color": "52709A",
+      "align": "right",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[5]",
+    "type": "notes",
+    "props": {
+      "text": "自下而上说明需求层级。基础可用和过程可控是前提，结果优质与自我表达建立在任务确定性之上。"
+    }
+  },
+
+  {
+    "command": "add",
+    "parent": "/",
+    "type": "slide",
+    "props": {
+      "layout": "blank",
+      "name": "PriorityMatrix",
+      "background": "F7FAFF"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "rect",
+      "fill": "EDF4FF",
+      "line": "none",
+      "x": "2.4cm",
+      "y": "4.25cm",
+      "width": "9.8cm",
+      "height": "5.4cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "rect",
+      "fill": "FFF0F2",
+      "line": "none",
+      "x": "12.2cm",
+      "y": "4.25cm",
+      "width": "9.8cm",
+      "height": "5.4cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "rect",
+      "fill": "F8FAFD",
+      "line": "none",
+      "x": "2.4cm",
+      "y": "9.65cm",
+      "width": "9.8cm",
+      "height": "5.4cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "rect",
+      "fill": "EAF3FF",
+      "line": "none",
+      "x": "12.2cm",
+      "y": "9.65cm",
+      "width": "9.8cm",
+      "height": "5.4cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "connector",
+    "props": {
+      "x": "2.4cm",
+      "y": "15.05cm",
+      "width": "20.0cm",
+      "height": "0cm",
+      "shape": "straight",
+      "color": "6F8DB7",
+      "lineWidth": "1.5pt",
+      "tailEnd": "triangle"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "connector",
+    "props": {
+      "x": "2.4cm",
+      "y": "3.85cm",
+      "width": "0cm",
+      "height": "11.2cm",
+      "shape": "straight",
+      "color": "6F8DB7",
+      "lineWidth": "1.5pt",
+      "headEnd": "triangle"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "8.3cm",
+      "y": "4.55cm",
+      "width": "3.2cm",
+      "height": "0.8cm",
+      "text": "重点观察",
+      "font": "Microsoft YaHei",
+      "size": "14pt",
+      "bold": "true",
+      "color": "365A8C",
+      "align": "right",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "17.7cm",
+      "y": "4.55cm",
+      "width": "3.4cm",
+      "height": "0.8cm",
+      "text": "立即优先",
+      "font": "Microsoft YaHei",
+      "size": "14pt",
+      "bold": "true",
+      "color": "C84654",
+      "align": "right",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "7.8cm",
+      "y": "14.05cm",
+      "width": "3.8cm",
+      "height": "0.8cm",
+      "text": "保持跟踪",
+      "font": "Microsoft YaHei",
+      "size": "14pt",
+      "bold": "true",
+      "color": "5F6F86",
+      "align": "right",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "17.2cm",
+      "y": "14.05cm",
+      "width": "4.0cm",
+      "height": "0.8cm",
+      "text": "体验优化",
+      "font": "Microsoft YaHei",
+      "size": "14pt",
+      "bold": "true",
+      "color": "365A8C",
+      "align": "right",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "E35D6A",
+      "line": "FFFFFF:2",
+      "shadow": "E35D6A-5-0-0-25",
+      "x": "16.7cm",
+      "y": "6.15cm",
+      "width": "3.15cm",
+      "height": "3.15cm",
+      "text": "切换\n中断",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "16pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "E97B86",
+      "line": "FFFFFF:2",
+      "shadow": "E35D6A-4-0-0-18",
+      "x": "13.65cm",
+      "y": "5.45cm",
+      "width": "2.55cm",
+      "height": "2.55cm",
+      "text": "误触\n退出",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "14pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "gradient": "176BFF-37BFF3-45",
+      "line": "FFFFFF:2",
+      "shadow": "176BFF-4-0-0-18",
+      "x": "9.25cm",
+      "y": "6.7cm",
+      "width": "2.7cm",
+      "height": "2.7cm",
+      "text": "入口\n分散",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "15pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "0A2A66",
+      "line": "FFFFFF:2",
+      "x": "14.4cm",
+      "y": "11.35cm",
+      "width": "2.35cm",
+      "height": "2.35cm",
+      "text": "学习\n成本",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "14pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "37BFF3",
+      "line": "FFFFFF:2",
+      "x": "7.1cm",
+      "y": "11.7cm",
+      "width": "2.15cm",
+      "height": "2.15cm",
+      "text": "自定义\n不足",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "13pt",
+      "bold": "true",
+      "color": "081A36",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "8.8cm",
+      "y": "15.55cm",
+      "width": "7.0cm",
+      "height": "0.8cm",
+      "text": "影响范围  低 → 高",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "color": "52709A",
+      "align": "center",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "0.75cm",
+      "y": "7.0cm",
+      "width": "1.1cm",
+      "height": "6.2cm",
+      "text": "任务阻断程度  低 → 高",
+      "font": "Microsoft YaHei",
+      "size": "13pt",
+      "color": "52709A",
+      "textDirection": "vertical270",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "gradient": "081A36-0B4CCB-25",
+      "line": "none",
+      "shadow": "0A2A66-8-45-4-18",
+      "x": "24.0cm",
+      "y": "4.25cm",
+      "width": "8.35cm",
+      "height": "10.8cm",
+      "adj": "adj:val 8000"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "24.75cm",
+      "y": "5.0cm",
+      "width": "6.8cm",
+      "height": "1.1cm",
+      "text": "优先行动",
+      "font": "Microsoft YaHei",
+      "size": "22pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "37BFF3",
+      "line": "none",
+      "x": "24.75cm",
+      "y": "6.8cm",
+      "width": "0.9cm",
+      "height": "0.9cm",
+      "text": "1",
+      "font": "Microsoft YaHei",
+      "size": "11pt",
+      "bold": "true",
+      "color": "081A36",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "26.0cm",
+      "y": "6.55cm",
+      "width": "5.6cm",
+      "height": "1.8cm",
+      "text": "先修复任务切换\n与退出保护",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "8FD8FF",
+      "line": "none",
+      "x": "24.75cm",
+      "y": "9.5cm",
+      "width": "0.9cm",
+      "height": "0.9cm",
+      "text": "2",
+      "font": "Microsoft YaHei",
+      "size": "11pt",
+      "bold": "true",
+      "color": "081A36",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "26.0cm",
+      "y": "9.25cm",
+      "width": "5.6cm",
+      "height": "1.8cm",
+      "text": "再统一入口逻辑\n与状态反馈",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "ellipse",
+      "fill": "176BFF",
+      "line": "FFFFFF:1",
+      "lineOpacity": "0.3",
+      "x": "24.75cm",
+      "y": "12.2cm",
+      "width": "0.9cm",
+      "height": "0.9cm",
+      "text": "3",
+      "font": "Microsoft YaHei",
+      "size": "11pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "26.0cm",
+      "y": "11.95cm",
+      "width": "5.6cm",
+      "height": "1.8cm",
+      "text": "最后优化学习\n与个性化体验",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "18pt",
+      "bold": "true",
+      "color": "FFFFFF",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "1.45cm",
+      "y": "0.78cm",
+      "width": "25.8cm",
+      "height": "2.25cm",
+      "text": "痛点优先级｜先解决高阻断、高覆盖的问题",
+      "font": "Microsoft YaHei",
+      "font.ea": "Microsoft YaHei",
+      "size": "36pt",
+      "bold": "true",
+      "color": "0A2A66",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "preset": "roundRect",
+      "fill": "EAF3FF",
+      "line": "none",
+      "x": "1.45cm",
+      "y": "17.55cm",
+      "width": "7.0cm",
+      "height": "0.65cm",
+      "text": "样板演示 · 非真实研究结论",
+      "font": "Microsoft YaHei",
+      "size": "10pt",
+      "color": "52709A",
+      "align": "center",
+      "valign": "middle",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "shape",
+    "props": {
+      "fill": "none",
+      "line": "none",
+      "x": "31.1cm",
+      "y": "17.48cm",
+      "width": "1.2cm",
+      "height": "0.65cm",
+      "text": "06",
+      "font": "Microsoft YaHei",
+      "size": "10pt",
+      "bold": "true",
+      "color": "52709A",
+      "align": "right",
+      "margin": "0cm"
+    }
+  },
+  {
+    "command": "add",
+    "parent": "/slide[6]",
+    "type": "notes",
+    "props": {
+      "text": "横轴为影响范围，纵轴为任务阻断程度。切换中断和误触退出位于立即优先区，行动顺序在右侧给出。"
+    }
+  }
+]

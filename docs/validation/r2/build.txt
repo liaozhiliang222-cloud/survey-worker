@@ -1,0 +1,22 @@
+
+> release-main-521@1.0.0 build
+> vite build
+
+vite v8.1.5 building client environment for production...
+[2K
+<script src="./research-theme.js?v=20260801-1"> in "/index.html" can't be bundled without type="module" attribute
+<script src="./ai-plan-quality.js?v=20260823-1"> in "/index.html" can't be bundled without type="module" attribute
+<script src="./ppt-report-ai.js?v=20260823-3"> in "/index.html" can't be bundled without type="module" attribute
+<script src="./app.js?v=20260826-3"> in "/index.html" can't be bundled without type="module" attribute
+<script src="./proposal-deck.js?v=20260719-2"> in "/index.html" can't be bundled without type="module" attribute
+<script src="./cluster-core.js?v=20260804-1"> in "/index.html" can't be bundled without type="module" attribute
+<script src="./cluster-analysis.js?v=20260804-1"> in "/index.html" can't be bundled without type="module" attribute
+transforming...✓ 36 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/assets/manifest.webmanifest    0.43 kB
+dist/index.html                   223.44 kB │ gzip: 47.28 kB
+dist/assets/index.css             150.05 kB │ gzip: 29.31 kB
+dist/assets/index.js              172.20 kB │ gzip: 56.09 kB
+
+✓ built in 159ms

@@ -1,4 +1,4 @@
-const CACHE_NAME = "research-toolbox-v77";
+const CACHE_NAME = "research-toolbox-v79";
 const ASSETS = [
   "./manifest.webmanifest",
   "./icon.svg",
@@ -30,7 +30,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("research-toolbox-") && key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });

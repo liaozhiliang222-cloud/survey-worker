@@ -1,0 +1,22 @@
+
+> release-main-521@1.0.0 test:r1
+> node tests/r1-data-contract-smoke.mjs
+
+local/csv: raw + equal weights + bounded weights PASS
+local/xlsx: raw + equal weights + bounded weights PASS
+local/sav: raw + equal weights + bounded weights PASS
+d1-r2-contract/csv: raw + equal weights + bounded weights PASS
+d1-r2-contract/xlsx: raw + equal weights + bounded weights PASS
+d1-r2-contract/sav: raw + equal weights + bounded weights PASS
+Schema + synthetic ledger + SQLite backup/restore + local file byte comparison PASS; remote infrastructure NOT tested.
+
+> release-main-521@1.0.0 test:sav-dataset
+> node tests/sav-dataset-smoke.mjs
+
+SAV dataset smoke passed: upload validation, SPSS metadata, value labels, missing values, Dataset registration and Harness profile
+
+> release-main-521@1.0.0 test:data-analysis-workflow
+> node tests/data-analysis-workflow-smoke.mjs && node tests/data-regressions-smoke.mjs
+
+data analysis workflow smoke passed: 11/11 scenarios
+Data regressions passed: missing values, valid bases, weighted cleaning guard, Sheet conflict, complete deletion and retry.

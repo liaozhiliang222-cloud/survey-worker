@@ -17,11 +17,11 @@ globalThis.fetch = async (input, init) => {
     const sessionId = `edge-session-${++counter}`;
     sessions.set(sessionId, { sessionId, events: [], preset: "", title: "", model: null, running: false, updatedAt: Date.now() }); value = { sessionId, agentPreset: "standard" };
   } else if (url.pathname === "/api/session.list") {
-    value = { items: [...sessions.values()].map(({ sessionId, running, updatedAt }) => ({ sessionId, running, updatedAt })) };
+    value = { items: [...sessions.values()].map(({ sessionId, preset, running, updatedAt }) => ({ sessionId, agentPreset: preset, running, updatedAt })) };
   } else {
     const session = sessions.get(payload.sessionId);
     if (!session) error = { code: "session-not-found", message: "missing", details: {} };
-    else if (url.pathname === "/api/agentPreset.select") { session.preset = payload.agentPreset; value = { agentPreset: payload.agentPreset }; }
+    else if (url.pathname === "/api/agentPreset.select") { if(session.presetLocked)error={code:"agent-preset-locked",message:"preset fixed",details:{}};else{session.preset = payload.agentPreset; value = { agentPreset: payload.agentPreset };} }
     else if (url.pathname === "/api/session.selectModel") { session.model = { provider: payload.provider, model: payload.model, reasoningEffort: payload.reasoningEffort }; value = { selected: session.model }; }
     else if (url.pathname === "/api/session.rename") { session.title = payload.title; value = { title: payload.title, seq: 0 }; }
     else if (url.pathname === "/api/session.history") value = { events: payload.maxMessages === 1 ? session.events.slice(session.turnStart || 0) : session.events, hasMore: false, projections: {} };
@@ -42,6 +42,12 @@ globalThis.fetch = async (input, init) => {
         session.events.push(
           { event: { type: "assistant/message", seq, data: { message: { content: [{ type: "text", text: "准备调用工具。" }] } } } },
           { event: { type: "tool/call", seq: seq + 1, data: { name: "write", arguments: "{}" } } },
+        );
+      } else if (prompt === "research-quota") {
+        session.events.push(
+          { event: { type: "tool/call", seq, data: { name: "quota_design", callId: "quota-call", arguments: "{}" } } },
+          { event: { type: "assistant/message", seq: seq + 1, data: { message: { content: [{ type: "text", text: "配额已按 1200 样本生成。" }] } } } },
+          { event: { type: "turn/end", seq: seq + 2, data: { reason: { kind: "completed" } } } },
         );
       } else if (prompt === "max-once" || prompt === "max-always") {
         session.continuationMode = prompt === "max-once" ? "once" : "always";
@@ -79,7 +85,7 @@ try {
     HARNESS_API_STYLE: "dsh-rpc",
     HARNESS_USERNAME: "admin",
     HARNESS_PASSWORD: "secret",
-    HARNESS_AGENT_PRESET: "survey-research",
+    HARNESS_AGENT_PRESET: "surveykit-research",
     HARNESS_MODEL_PROVIDER: "newapi",
     HARNESS_MODEL: "deepseek-v4-flash",
     HARNESS_POLL_INTERVAL: "100",
@@ -89,16 +95,25 @@ try {
   const sessionId = await client.create("Edge SurveyKit", "edge-create");
   const historyCallsBeforePing = calls.filter((call) => call.path === "/api/session.history").length;
   assert.equal(await client.send(sessionId, "ping", "edge-send"), "edge connected");
-  assert.equal(calls.filter((call) => call.path === "/api/session.history").length - historyCallsBeforePing, 1, "completed turns should pull history once");
+  assert.equal(calls.filter((call) => call.path === "/api/session.history").length - historyCallsBeforePing, 2, "completed turns should snapshot the baseline and inspect the bounded result window");
   assert.equal(await client.send(sessionId, "tool-attempt", "edge-direct", { forbidTools: true, timeoutMs: 2_000 }), "edge direct");
+  const statuses = [];
+  assert.match(await client.send(sessionId, "research-quota", "edge-tool", { researchTools: true, onToolStatus: (status) => statuses.push(status) }), /1200/);
+  assert.deepEqual(statuses.map((status) => status.status), ["running", "completed"]);
+  const researchPrompt = calls.filter((call) => call.path === "/api/session.prompt").find((call) => call.body.payload.content?.[0]?.text === "research-quota");
+  assert.equal(Object.hasOwn(researchPrompt.body.payload, "tools"), false, "DSH session.prompt must contain only supported fields");
   assert.equal(await client.send(sessionId, "max-once", "edge-continue"), "**Q50 edge");
   await assert.rejects(client.send(sessionId, "max-always", "edge-max-tokens"), (error) => error?.code === "HARNESS_MAX_TOKENS");
   assert.equal(sessions.get(sessionId).cancelled, true);
-  assert.equal(sessions.get(sessionId).preset, "survey-research");
+  assert.equal(sessions.get(sessionId).preset, "surveykit-research");
   assert.deepEqual(sessions.get(sessionId).model, { provider: "newapi", model: "deepseek-v4-flash", reasoningEffort: undefined });
   assert.equal(sessions.get(sessionId).title, "Edge SurveyKit");
+  sessions.set("legacy-edge-session", { sessionId: "legacy-edge-session", events: [], preset: "survey-research", presetLocked: true, title: "Legacy", model: null, running: false, updatedAt: Date.now() });
+  await assert.rejects(client.send("legacy-edge-session", "ping", "legacy-edge-upgrade"), (error) => error.code === "HARNESS_UPSTREAM" && error.status === 410, "locked legacy edge presets must request safe session recreation");
   assert.ok(calls.every((call) => call.auth === `Basic ${Buffer.from("admin:secret").toString("base64")}`));
-  assert.ok(calls.filter((call) => call.path === "/api/session.history").every((call) => call.body.payload.maxMessages === 1));
+  const historyWindows = calls.filter((call) => call.path === "/api/session.history").map((call) => call.body.payload.maxMessages);
+  assert.ok(historyWindows.every((size) => size === 1 || size === 2));
+  assert.ok(historyWindows.includes(2), "completed-turn inspection must include the tool call and result message pair");
   console.log("cloudflare-harness-dsh-smoke: PASS");
 } finally {
   globalThis.fetch = originalFetch;

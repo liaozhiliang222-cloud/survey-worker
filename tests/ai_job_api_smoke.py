@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import sys
+from contextlib import ExitStack
 
 from fastapi.testclient import TestClient
 
@@ -45,7 +46,24 @@ def main() -> None:
     original_call = api._call_ai_proxy
     original_semaphore = api.AI_JOB_SEMAPHORE
     original_attempts = api.AI_JOB_MAX_ATTEMPTS
-    with tempfile.TemporaryDirectory(prefix="surveykit-ai-jobs-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="surveykit-ai-jobs-") as temp_dir, ExitStack() as cleanup:
+        duplicate_release = threading.Event()
+        release = threading.Event()
+        existing_threads = set(threading.enumerate())
+
+        def restore_test_state():
+            duplicate_release.set()
+            release.set()
+            for worker in threading.enumerate():
+                if worker not in existing_threads and worker.name.startswith("ai-job-"):
+                    worker.join(timeout=10)
+                    assert not worker.is_alive(), "Test job must stop before removing its files"
+            api.AI_JOB_DIR = original_dir
+            api._call_ai_proxy = original_call
+            api.AI_JOB_SEMAPHORE = original_semaphore
+            api.AI_JOB_MAX_ATTEMPTS = original_attempts
+
+        cleanup.callback(restore_test_state)
         api.AI_JOB_DIR = Path(temp_dir)
         api.AI_JOB_SEMAPHORE = threading.BoundedSemaphore(1)
         api.AI_JOB_MAX_ATTEMPTS = 3
@@ -57,6 +75,7 @@ def main() -> None:
         calls = []
 
         def flaky_call(payload, request_id, timeout_seconds):
+            assert duplicate_release.wait(10), "Duplicate request was not checked"
             calls.append((payload, request_id, timeout_seconds))
             if len(calls) == 1:
                 error = RuntimeError("upstream 502")
@@ -83,6 +102,7 @@ def main() -> None:
         assert duplicate.status_code == 202
         assert duplicate.json()["job_id"] == job_id
         assert duplicate.json()["deduplicated"] is True
+        duplicate_release.set()
         ready = wait_for(client, job_id, {"ready"})
         assert ready["result"]["choices"][0]["message"]["content"] == '{"ok":true}'
         assert ready["diagnostics"]["source"] == "builtin-sensenova"
@@ -97,10 +117,8 @@ def main() -> None:
         assert rejected.status_code == 400
         assert not any("do-not-store" in path.read_text(encoding="utf-8") for path in api.AI_JOB_DIR.glob("*"))
 
-        release = threading.Event()
-
         def blocking_call(payload, request_id, timeout_seconds):
-            release.wait(2)
+            assert release.wait(10), "Cancellation request was not checked"
             return ({"choices": [{"message": {"content": "late"}}]}, {})
 
         api._call_ai_proxy = blocking_call
@@ -115,10 +133,6 @@ def main() -> None:
         assert cancelled["finished_at"]
         assert not api._ai_job_result_path(cancel_id).exists()
 
-    api.AI_JOB_DIR = original_dir
-    api._call_ai_proxy = original_call
-    api.AI_JOB_SEMAPHORE = original_semaphore
-    api.AI_JOB_MAX_ATTEMPTS = original_attempts
     print("AI durable job lifecycle smoke: ok")
 
 

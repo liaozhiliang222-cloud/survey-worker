@@ -55,10 +55,13 @@ export * as aiQuestionnaire from "./modules/ai-questionnaire/index.js";
 export * as aiReport from "./modules/ai-report/index.js";
 export * as pptxReport from "./modules/pptx-report/index.js";
 export * as aiResearcher from "./modules/ai-researcher/index.js";
+export * as tools from "./modules/tools/index.js";
 
 // AI 研究员：加载即自初始化（DOMContentLoaded 时绑定界面事件）
 import * as aiResearcherModule from "./modules/ai-researcher/index.js";
+import * as toolGatewayModule from "./modules/tools/index.js";
 window.SurveyKitAiResearcher = aiResearcherModule;
+window.SurveyKitToolGateway = toolGatewayModule.toolGatewayApi;
 
 // ─── Legacy app.js 兼容层 ───────────────────────────────────
 // 在过渡期，app.js 仍以全局函数方式运行（通过 <script> 标签加载）。
@@ -81,6 +84,7 @@ function initApp() {
   // 初始化错误监控
   initErrorMonitor({ enableConsole: true });
   aiResearcherModule.initAiResearcher();
+  toolGatewayModule.initToolGatewayUi();
 
   // 暴露 IndexedDB 持久化能力给 legacy app.js（过渡期桥接）
   window.SurveyKitIDB = {

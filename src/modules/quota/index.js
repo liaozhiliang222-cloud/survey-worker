@@ -3,28 +3,11 @@
  */
 
 import { escapeHtml } from "../../shared/export.js";
+import { allocateIntegers, normalizeQuota } from "../../../lib/tools/quota.mjs";
+
+export { allocateIntegers, calculateQuota, normalizeQuota, parseQuotaItems } from "../../../lib/tools/quota.mjs";
 
 // ─── 纯计算函数 ─────────────────────────────────────────────
-
-export function parseQuotaItems(value) {
-  return value
-    .split(/[,，\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => {
-      const [rawName, rawShare] = item.split(/[:：]/);
-      return {
-        name: (rawName || "").trim(),
-        share: Number(String(rawShare || "").replace("%", "").trim())
-      };
-    })
-    .filter((item) => item.name && Number.isFinite(item.share) && item.share > 0);
-}
-
-export function normalizeQuota(items) {
-  const total = items.reduce((sum, item) => sum + item.share, 0);
-  return total > 0 ? items.map((item) => ({ ...item, weight: item.share / total })) : [];
-}
 
 /**
  * 最大余数法整数分配
@@ -32,20 +15,6 @@ export function normalizeQuota(items) {
  * @param {number} total - 总配额
  * @returns {number[]} 整数分配结果
  */
-export function allocateIntegers(values, total) {
-  const floors = values.map((value) => Math.floor(value));
-  let remainder = total - floors.reduce((sum, value) => sum + value, 0);
-  const order = values
-    .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
-    .sort((a, b) => b.fraction - a.fraction);
-  order.forEach(({ index }) => {
-    if (remainder <= 0) return;
-    floors[index] += 1;
-    remainder -= 1;
-  });
-  return floors;
-}
-
 /**
  * 计算单维度配额分配
  * @param {Array<{name: string, share: number}>} items - 配额选项
@@ -55,8 +24,7 @@ export function allocateIntegers(values, total) {
 export function computeSingleQuota(items, totalSample) {
   const normalized = normalizeQuota(items);
   if (!normalized.length) return [];
-  const exactValues = normalized.map((item) => item.weight * totalSample);
-  const counts = allocateIntegers(exactValues, totalSample);
+  const counts = allocateIntegers(normalized.map((item) => item.weight * totalSample), totalSample);
   return normalized.map((item, index) => ({ ...item, count: counts[index] }));
 }
 

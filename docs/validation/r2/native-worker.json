@@ -1,0 +1,10 @@
+{
+  "runtime": "workerd-local",
+  "duplicate_same_job": true,
+  "clean_status": "completed",
+  "cancelled_status": "cancelled",
+  "dataset_count": 2,
+  "crosstab_status": "completed",
+  "crosstab_error": "",
+  "passed": true
+}

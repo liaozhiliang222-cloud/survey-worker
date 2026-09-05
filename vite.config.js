@@ -5,6 +5,9 @@ import { defineConfig, loadEnv } from "vite";
 
 const require = createRequire(import.meta.url);
 const { createResearchHandler } = require("./lib/research-handler");
+const { createToolHandler } = require("./lib/tool-handler");
+const { createAiProxyHandler } = require("./lib/ai-proxy");
+const { configuredBodyLimit } = require("./lib/request-body");
 
 const runtimeFiles = [
   "research-theme.js",
@@ -40,6 +43,20 @@ function copyRuntimeAssets() {
   };
 }
 
+function localAiApi(env) {
+  return {
+    name: "surveykit-local-ai-api",
+    configureServer(server) {
+      const handler = createAiProxyHandler({ env, maxBodyBytes: configuredBodyLimit(env.AI_PROXY_MAX_BODY_BYTES, 1024 * 1024, 10 * 1024 * 1024) });
+      server.middlewares.use((request, response, next) => {
+        const pathname = request.url?.split("?")[0];
+        if (pathname !== "/api/ai" && !pathname?.startsWith("/api/ai/")) return next();
+        Promise.resolve(handler(request, response)).catch(next);
+      });
+    },
+  };
+}
+
 function localResearchApi(env) {
   return {
     name: "surveykit-local-research-api",
@@ -58,10 +75,28 @@ function localResearchApi(env) {
   };
 }
 
+function localToolApi(env) {
+  return {
+    name: "surveykit-local-tool-gateway",
+    configureServer(server) {
+      const handler = createToolHandler({
+        env: {
+          ...env,
+          TOOL_DEV_USER_ID: env.TOOL_DEV_USER_ID || env.RESEARCH_DEV_USER_ID || "local-developer",
+        },
+      });
+      server.middlewares.use((request, response, next) => {
+        if (!request.url?.startsWith("/api/tools")) return next();
+        Promise.resolve(handler(request, response)).catch(next);
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = { ...process.env, ...loadEnv(mode, process.cwd(), "") };
   return {
-  plugins: [localResearchApi(env), copyRuntimeAssets()],
+  plugins: [localAiApi(env), localResearchApi(env), localToolApi(env), copyRuntimeAssets()],
   root: ".",
   build: {
     outDir: "dist",
@@ -82,10 +117,6 @@ export default defineConfig(({ mode }) => {
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/pptx-api/, "/api/pptx-report"),
-      },
-      "/api/ai": {
-        target: "http://127.0.0.1:4281",
-        changeOrigin: true,
       },
     },
   },

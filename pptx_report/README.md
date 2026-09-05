@@ -1,7 +1,7 @@
-# pptx_report —— 市场调研报告 PPT 生成模块（python-pptx）
+# pptx_report —— 市场调研报告 PPT 生成模块
 
-用 `python-pptx` + `pandas` + `openpyxl` 编写的生产级报告生成模块，
-为「定量调研工具箱」PWA 产品提供可扩展、健壮的 PPT 渲染能力。
+以 OfficeCLI 原生对象渲染为定性报告正式交付与真实预览链路；内部仍保留 `python-pptx` 兼容引擎用于历史测试，但生产定性接口不会进入该回退；
+定量报告继续使用 `python-pptx` + `pandas` + `openpyxl`。两条链路都以结构化内容合同驱动，输出可编辑 `.pptx`。
 
 > 旧版用 `PptxGenJS` 实现、功能基础；本模块不沿用其实现，而是基于
 > `python-pptx` 最佳实践重新设计，重点解决**中文渲染**、**图表/布局灵活组合**、
@@ -29,9 +29,21 @@ python -m venv .venv && .venv/Scripts/pip install python-pptx pandas openpyxl
 
 # 运行内置完整示例（生成 outputs/ 下的三份报告）
 python -m pptx_report.demo
+
+# 生成定性研究企业样板（科技蓝、无左侧贯穿竖条）
+python -m pptx_report.demo_qualitative_enterprise
 ```
 
 依赖：`python-pptx>=1.0`、`pandas`、`openpyxl`。
+
+定性企业样板使用 `qualitative_tech_blue_v2`：科技蓝、无左侧贯穿竖条、16 种语义版式。正式输出与逐页预览均强制由 OfficeCLI 原生渲染，并使用同一工具执行必需质量门禁；
+`python-pptx` 兼容引擎不进入生产定性接口。详细视觉规范见
+[`docs/QUALITATIVE_PPT_DESIGN_SYSTEM.md`](../docs/QUALITATIVE_PPT_DESIGN_SYSTEM.md)。
+
+定性报告接口：
+
+- `POST /api/pptx-report/qualitative-preview`：临时渲染全部 Script 页面，或通过 `source_page_id` 仅重渲染一个源页面及其续页；返回真实 PNG 缩略图、页型、布局、密度、Evidence 与校验问题，不创建 `qualitative_ppt` Artifact。
+- `POST /api/pptx-report/qualitative-report`：重新执行 OfficeCLI 质量门禁并返回正式可编辑 PPTX。
 
 ---
 
@@ -45,6 +57,9 @@ pptx_report/
 ├── utils.py          # 字体 / 填充 / 背景等底层助手
 ├── charts.py         # 8 种图表渲染 + 统一样式
 ├── layouts.py        # 4 种布局的矩形计算
+├── qualitative_layouts.py # 定性 V2 模板注册表与路由
+├── officecli_qualitative_renderer.py # OfficeCLI 原生对象定性渲染器
+├── templates/qualitative-tech-blue-v2/ # V2 设计规范与机器可读版式目录
 ├── pages.py          # 各页面（封面/目录/摘要/图表页/附录）绘制
 ├── renderer.py       # ReportRenderer 编排 + 模板支持
 ├── loaders.py       # 从 Excel 读取数据生成图表规格

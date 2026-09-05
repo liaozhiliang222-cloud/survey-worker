@@ -1,5 +1,5 @@
 /** AI Researcher V0.3.1 流式响应工具。SSE 是可选能力；现有 JSON 契约保持兼容。 */
-export const RESEARCH_RUN_RECOVERY_TIMEOUT_MS = 210_000;
+export const RESEARCH_RUN_RECOVERY_TIMEOUT_MS = 330_000;
 export function latestStreamSnapshot(events = []) {
   let snapshot = "";
   for (const item of events) {
@@ -63,7 +63,7 @@ export function parseSseBuffer(buffer, { flush = false } = {}) {
   return { events, remainder: buffer.slice(offset) };
 }
 
-export async function readSseResponse(response, { onDelta, onResult, onProgress } = {}) {
+export async function readSseResponse(response, { onDelta, onResult, onProgress, onToolStatus, onWorkflowStatus } = {}) {
   if (!response.body?.getReader) throw new Error("当前浏览器不支持流式响应读取。");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -72,6 +72,8 @@ export async function readSseResponse(response, { onDelta, onResult, onProgress 
   const events = [];
   const consume = (event) => {
     events.push(event);
+    if (String(event.event || "").toLowerCase() === "tool_status") { onToolStatus?.(event.payload, event); return; }
+    if (String(event.event || "").toLowerCase() === "workflow_status") { onWorkflowStatus?.(event.payload, event); return; }
     const normalized = normalizeStreamPayload(event.payload);
     if (String(event.event || "").toLowerCase() === "progress" && typeof event.payload?.partial_content === "string") onProgress?.(event.payload.partial_content, event);
     else if (normalized.kind === "delta") onDelta?.(normalized.text, event);
@@ -94,6 +96,13 @@ export async function readSseResponse(response, { onDelta, onResult, onProgress 
     throw error;
   } finally {
     reader.releaseLock?.();
+  }
+  if (!result) {
+    const error = new Error("流式连接在最终结果返回前结束，正在同步后台任务。");
+    error.retryable = true;
+    error.runId = events.find((item) => item.event === "start")?.payload?.run_id || "";
+    error.partialContent = latestStreamSnapshot(events);
+    throw error;
   }
   return { result, partialContent: latestStreamSnapshot(events), events };
 }

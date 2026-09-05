@@ -19,6 +19,7 @@
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -72,6 +73,12 @@ from pptx_report.model_chart_export import (
     ModelChartExportError,
     render_model_chart_pptx,
 )
+from pptx_report.qualitative_service import (
+    OfficeCliQualityError,
+    OfficeCliUnavailableError,
+    QualitativePptRenderService,
+)
+from pptx_report.qualitative_layouts import TEMPLATE_ID, qualitative_template_catalog
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 REQUEST_ENVELOPE_MAGIC = b"SKPPTX1\n"
@@ -97,6 +104,7 @@ TEMPLATE_DIR = Path(tempfile.gettempdir()) / "surveykit-ppt-templates"
 TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATE_TTL_SECONDS = 24 * 60 * 60
 REPORT_BLUEPRINT_STORE = ReportBlueprintStore()
+QUALITATIVE_PPT_SERVICE = QualitativePptRenderService()
 
 
 def _release_info() -> dict:
@@ -461,6 +469,7 @@ async def update_template_profile(template_id: str, request: Request):
 @app.get("/healthz")
 def healthz():
     release = _release_info()
+    qualitative_renderer = QUALITATIVE_PPT_SERVICE.capabilities()
     return JSONResponse({
         "ok": True,
         "service": "pptx-report",
@@ -469,6 +478,10 @@ def healthz():
         "capabilities": {
             "pptx_jobs": True,
             "ai_jobs": True,
+            "qualitative_ppt": True,
+            "qualitative_preview": True,
+            "qualitative_ppt_render_llm_tokens": 0,
+            "officecli": qualitative_renderer["officecli_installed"],
             "ai_job_max_attempts": AI_JOB_MAX_ATTEMPTS,
             "ai_job_timeout_seconds": AI_JOB_TIMEOUT_SECONDS,
         },
@@ -476,11 +489,137 @@ def healthz():
             "max_upload_bytes": MAX_UPLOAD_BYTES,
             "max_concurrent_pptx_jobs": MAX_CONCURRENT_JOBS,
         },
+        "renderers": {
+            "qualitative_ppt": qualitative_renderer,
+        },
     }, headers={
         "Cache-Control": "no-store",
         "X-SurveyKit-Service": "pptx-report",
         "X-SurveyKit-Release": release["version"],
     })
+
+
+def _qualitative_script_for_template(script: dict, template_id: str) -> dict:
+    style_profile = script.get("style_profile") if isinstance(script.get("style_profile"), dict) else {}
+    return {
+        **script,
+        "style_profile": {
+            **style_profile,
+            "id": template_id,
+        },
+    }
+
+
+@app.post("/api/pptx-report/qualitative-preview")
+async def preview_qualitative_report(request: Request):
+    """Render disposable OfficeCLI thumbnails for all pages or one source page."""
+    body = await request.body()
+    if len(body) > 2 * MAX_METADATA_BYTES:
+        return JSONResponse({"error": {"message": "定性 PPT Script 不能超过 2MB。"}}, status_code=413)
+    try:
+        payload = json.loads(body.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("request body must be an object")
+        project_id = str(payload.get("project_id") or "").strip()
+        header_project = str(request.headers.get("X-Project-Id") or "").strip()
+        if not project_id or project_id != header_project:
+            return JSONResponse({"error": {"message": "无权访问该项目的定性 PPT 预览。"}}, status_code=403)
+        script = payload.get("script")
+        if not isinstance(script, dict):
+            raise ValueError("缺少有效的 qualitative PPT script")
+        template_id = str(payload.get("template_id") or TEMPLATE_ID).strip()
+        if template_id != TEMPLATE_ID:
+            raise ValueError(f"不支持的定性 PPT 模板：{template_id}")
+        rendered = QUALITATIVE_PPT_SERVICE.preview(
+            _qualitative_script_for_template(script, template_id),
+            source_page_id=str(payload.get("source_page_id") or "").strip(),
+        )
+        return JSONResponse(
+            {**rendered, "template_id": template_id},
+            headers={
+                "Cache-Control": "no-store",
+                "X-SurveyKit-Preview-Temporary": "true",
+            },
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        return JSONResponse({"error": {"message": str(exc)}}, status_code=400)
+    except OfficeCliUnavailableError as exc:
+        return JSONResponse(
+            {"error": {"code": exc.code, "message": str(exc)}}, status_code=503
+        )
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": {"message": f"定性 PPT 预览失败：{exc}"}}, status_code=500)
+
+
+@app.post("/api/pptx-report/qualitative-report")
+async def generate_qualitative_report(request: Request):
+    """Render a persisted qualitative PPT script into an editable native PPTX."""
+    body = await request.body()
+    if len(body) > 2 * MAX_METADATA_BYTES:
+        return JSONResponse({"error": {"message": "定性 PPT Script 不能超过 2MB。"}}, status_code=413)
+    try:
+        payload = json.loads(body.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("request body must be an object")
+        project_id = str(payload.get("project_id") or "").strip()
+        header_project = str(request.headers.get("X-Project-Id") or "").strip()
+        if not project_id or project_id != header_project:
+            return JSONResponse({"error": {"message": "无权访问该项目的定性 PPT。"}}, status_code=403)
+        script = payload.get("script")
+        if not isinstance(script, dict):
+            raise ValueError("缺少有效的 qualitative PPT script")
+        # The request-level template selection is authoritative. Legacy scripts
+        # may carry an older style-profile id and must upgrade cleanly to V2.
+        template_id = str(payload.get("template_id") or TEMPLATE_ID).strip()
+        if template_id != TEMPLATE_ID:
+            raise ValueError(f"不支持的定性 PPT 模板：{template_id}")
+        require_officecli = payload.get("require_officecli", True) is not False
+        if not require_officecli:
+            raise ValueError("定性报告正式渲染只支持 OfficeCLI。")
+        capabilities = QUALITATIVE_PPT_SERVICE.capabilities()
+        if require_officecli and not capabilities["officecli_installed"]:
+            raise OfficeCliUnavailableError("Tech Blue V2 需要服务器 OfficeCLI 就绪后再生成。")
+        script = _qualitative_script_for_template(script, template_id)
+        rendered = QUALITATIVE_PPT_SERVICE.render_required_officecli(script)
+        filename = _safe_title(str(script.get("title") or "定性研究报告")) + ".pptx"
+        return JSONResponse({
+            "filename": filename,
+            "template_id": template_id,
+            "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "content_base64": base64.b64encode(rendered["content"]).decode("ascii"),
+            "slide_count": rendered["slide_count"],
+            "validation": rendered["validation"],
+            "object_counts": rendered["object_counts"],
+            "llm_tokens": rendered["render_llm_tokens"],
+            "renderer": rendered["renderer"],
+            "quality_gate": rendered["quality_gate"],
+            "layout_adaptations": rendered["layout_adaptations"],
+        }, headers={"Cache-Control": "no-store", "X-SurveyKit-Editable-PPTX": "true"})
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        return JSONResponse({"error": {"message": str(exc)}}, status_code=400)
+    except OfficeCliUnavailableError as exc:
+        return JSONResponse(
+            {"error": {"code": exc.code, "message": str(exc)}}, status_code=503
+        )
+    except OfficeCliQualityError as exc:
+        return JSONResponse(
+            {"error": {"code": exc.code, "message": str(exc)}}, status_code=422
+        )
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": {"message": f"定性 PPT 导出失败：{exc}"}}, status_code=500)
+
+
+@app.get("/api/pptx-report/qualitative-templates")
+def list_qualitative_templates():
+    """Expose the production template and renderer readiness for UI preflight."""
+    return JSONResponse(
+        {
+            "default_template_id": TEMPLATE_ID,
+            "templates": [qualitative_template_catalog()],
+            "renderer": QUALITATIVE_PPT_SERVICE.capabilities(),
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.post("/api/pptx-report/model-chart")

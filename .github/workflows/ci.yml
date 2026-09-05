@@ -24,7 +24,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version-file: ".node-version"
 
       - name: Install dependencies
         run: npm ci
@@ -33,7 +33,7 @@ jobs:
         run: npx vite build
 
       - name: Vitest unit tests
-        run: npx vitest run
+        run: npm run test:unit
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -44,6 +44,10 @@ jobs:
 
       - name: Install Python test dependencies
         run: python -m pip install -r tests/requirements.txt
+
+      - name: Install browser for R3 Service Worker test
+        # R3 exercises a real Service Worker upgrade, not a mocked registration.
+        run: npx playwright install --with-deps chromium
 
       - name: Run Node.js regression suite
         run: npm run test:js

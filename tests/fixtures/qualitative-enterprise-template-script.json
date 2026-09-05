@@ -1,0 +1,313 @@
+{
+  "schema_version": "surveykit.qualitative_ppt.v1",
+  "project_id": "template-preview",
+  "title": "SurveyKit 定性研究报告企业样板",
+  "style_profile": {
+    "id": "qualitative_tech_blue_v2",
+    "aspect_ratio": "16:9",
+    "background": "ice_white",
+    "primary_color": "technology_blue",
+    "body_color": "deep_text",
+    "decoration": "minimal",
+    "icon_usage": "limited",
+    "title_style": "conclusion",
+    "preferred_font": "微软雅黑",
+    "forbid_left_vertical_bar": true
+  },
+  "pages": [
+    {
+      "id": "tpl01",
+      "page_type": "navigation",
+      "layout_variant": "cover_orbit",
+      "title": "AI 影像体验定性研究",
+      "subtitle": "SurveyKit 企业级定性报告样板 · 科技蓝视觉系统",
+      "purpose": "展示统一视觉母版与核心页型。",
+      "key_message": "从用户语言到产品决策：让洞察、证据和行动出现在同一条叙事链上",
+      "source_notes": "样板演示内容，不代表真实研究结论",
+      "transition": "首先概览本次研究最重要的结论。"
+    },
+    {
+      "id": "tpl02",
+      "page_type": "executive_summary",
+      "layout_variant": "editorial_overview",
+      "density_hint": "high",
+      "title": "影像功能的首要机会不是堆叠参数，而是缩短从拍摄到成片的距离",
+      "purpose": "用四条结论建立整份报告的阅读框架。",
+      "key_message": "用户真正评价的是能否稳定得到可分享结果。",
+      "evidence_label": "多源互证",
+      "content_structure": [
+        {"title": "结果优先", "items": ["用户先判断是否出片，再判断参数是否先进。"]},
+        {"title": "分群明显", "items": ["创作者关注控制权，轻社交人群关注即时可用。"]},
+        {"title": "失败可恢复", "items": ["看懂原因、快速撤回，比一次成功更能建立信任。"]},
+        {"title": "行动聚焦", "items": ["优先重构夜景、人像与抓拍三个高频场景。"]}
+      ],
+      "evidence_ids": ["demo_ev_01", "demo_ev_02"],
+      "source_notes": "样板演示：消费者访谈与产品体验任务",
+      "transition": "下一页说明结论来自怎样的研究设计。"
+    },
+    {
+      "id": "tpl03",
+      "page_type": "research_framework",
+      "layout_variant": "method_rail",
+      "title": "研究设计围绕真实任务展开，并用复盘访谈解释每次选择",
+      "purpose": "说明研究方法如何支撑后续判断。",
+      "key_message": "任务观察与深度追问共同还原真实决策。",
+      "evidence_label": "研究设计",
+      "content_structure": [
+        {"title": "任务前", "items": ["回顾近期拍摄习惯", "明确高频场景"]},
+        {"title": "任务中", "items": ["完成夜景、人像、抓拍任务", "记录操作与犹豫"]},
+        {"title": "任务后", "items": ["解释满意与失望", "追问分享意愿"]},
+        {"title": "综合判断", "items": ["编码共性与差异", "绑定原声证据"]}
+      ],
+      "evidence_ids": ["demo_method_01"],
+      "source_notes": "样板演示：研究执行计划",
+      "transition": "研究首先识别出四类具有稳定差异的用户。"
+    },
+    {
+      "id": "tpl04",
+      "page_type": "segmentation_map",
+      "layout_variant": "hierarchy_tree",
+      "variant": "hierarchy_tree",
+      "title": "四类影像用户的差异来自创作投入与分享目的，而非单纯年龄",
+      "purpose": "展示层级分群结构。",
+      "key_message": "影像用户分群",
+      "evidence_label": "分群归纳",
+      "segments": [
+        {"title": "专业创作者", "parent": "持续创作", "summary": "追求控制、效率与稳定输出"},
+        {"title": "摄影学习者", "parent": "持续创作", "summary": "希望系统帮助提升技巧"},
+        {"title": "公开分享者", "parent": "轻量分享", "summary": "在意氛围、出片与互动"},
+        {"title": "私域记录者", "parent": "轻量分享", "summary": "重视自然、便捷与真实"}
+      ],
+      "evidence_ids": ["demo_seg_01", "demo_seg_02"],
+      "source_notes": "样板演示：12 位用户行为编码",
+      "transition": "将四类用户放入双轴后，可以看到机会区域。"
+    },
+    {
+      "id": "tpl05",
+      "page_type": "segmentation_map",
+      "layout_variant": "positioning_map",
+      "variant": "positioning_map",
+      "title": "专业创作者与私域记录者位于需求两端，中间人群最需要智能引导",
+      "purpose": "展示双轴定位与人群解释。",
+      "key_message": "控制权与即时分享共同决定产品期待。",
+      "evidence_label": "分群定位",
+      "axes": {"x_low": "记录导向", "x_high": "分享导向", "y_low": "轻量操作", "y_high": "专业控制"},
+      "quadrant_labels": ["专业记录", "专业分享", "轻量记录", "轻量分享"],
+      "segments": [
+        {"title": "专业创作者", "x": 42, "y": 88, "summary": "专业控制与稳定输出"},
+        {"title": "摄影学习者", "x": 56, "y": 65, "summary": "技巧成长与智能建议"},
+        {"title": "公开分享者", "x": 82, "y": 42, "summary": "氛围出片与社交反馈"},
+        {"title": "私域记录者", "x": 25, "y": 28, "summary": "轻操作与自然记录"}
+      ],
+      "evidence_ids": ["demo_seg_03"],
+      "source_notes": "样板演示：分群工作坊",
+      "transition": "下面以专业创作者为例，展示人物画像。"
+    },
+    {
+      "id": "tpl06",
+      "page_type": "persona",
+      "layout_variant": "profile_evidence",
+      "title": "专业创作者把手机视为随身工作台，容错与控制比滤镜数量更重要",
+      "purpose": "展示静态画像与关键行为。",
+      "key_message": "他需要的是可预测的创作工具。",
+      "evidence_label": "典型画像",
+      "profile": {
+        "name": "林舟",
+        "archetype": "专业创作者型",
+        "attributes": {"年龄": "31 岁", "职业": "自由摄影师", "设备": "旗舰手机 + 相机", "分享": "公开平台", "频率": "每周 4–5 次"},
+        "motto": "效果可以有风格，但过程必须可控"
+      },
+      "traits": ["以项目和作品驱动拍摄", "愿意学习参数但厌恶隐藏逻辑", "会反复比较成片细节"],
+      "behaviors": ["拍摄前预判光线", "同一场景保留多个版本", "成片后进行二次编辑"],
+      "quotes": [
+        {"text": "我不怕多调一步，但要知道系统为什么这样处理。", "respondent_label": "31岁 / 专业创作者型", "evidence_id": "demo_quote_01", "segment_id": "demo_segment_01"}
+      ],
+      "evidence_ids": ["demo_persona_01", "demo_quote_01"],
+      "source_notes": "样板演示：深度访谈",
+      "transition": "画像只有进入具体旅程，才能暴露真正的摩擦。"
+    },
+    {
+      "id": "tpl07",
+      "page_type": "journey",
+      "layout_variant": "journey_curve",
+      "title": "从举机到分享共有五个关键时刻，失败主要集中在拍摄确认与成片选择",
+      "purpose": "展示画像旅程与痛点位置。",
+      "key_message": "减少确认成本比增加入口更重要。",
+      "evidence_label": "行为旅程",
+      "content_structure": [
+        {"title": "触发", "items": ["发现值得记录的瞬间", "快速判断是否举机"]},
+        {"title": "准备", "items": ["选择焦段与模式", "确认主体与光线"]},
+        {"title": "拍摄", "items": ["连续抓拍", "观察系统反馈"]},
+        {"title": "选片", "items": ["比较细节与表情", "删除失败版本"]},
+        {"title": "分享", "items": ["轻度编辑", "选择平台与文案"]}
+      ],
+      "focus_stages": [3, 4],
+      "evidence_ids": ["demo_journey_01"],
+      "source_notes": "样板演示：任务观察与回溯访谈",
+      "transition": "不同人群在同一旅程中的成功标准并不相同。"
+    },
+    {
+      "id": "tpl08",
+      "page_type": "comparison",
+      "layout_variant": "contrast_columns",
+      "title": "创作者要求保留控制权，分享者则把即时可用视为核心价值",
+      "purpose": "展示双人群差异和共同底线。",
+      "key_message": "默认方案应分层，而不是用同一套自动化覆盖所有用户。",
+      "evidence_label": "差异比较",
+      "content_structure": [
+        {"title": "专业创作者", "items": ["需要透明参数", "接受多一步确认", "重视版本保留", "失败后愿意重试"]},
+        {"title": "轻社交分享者", "items": ["需要直接出片", "不愿理解复杂参数", "重视肤色和氛围", "失败后容易放弃"]}
+      ],
+      "evidence_ids": ["demo_compare_01", "demo_compare_02"],
+      "source_notes": "样板演示：分群对比",
+      "transition": "这一差异决定了自动增强功能的定位边界。"
+    },
+    {
+      "id": "tpl09",
+      "page_type": "evidence_diagnostic",
+      "layout_variant": "hypothesis_balance",
+      "title": "自动增强可以提高首次出片率，但不能替代用户对结果的最终控制",
+      "purpose": "展示支持证据、反例和综合判断。",
+      "hypothesis": "默认开启自动增强，能否代表整体影像体验升级？",
+      "key_message": "自动增强是加速器，不是唯一交互层。",
+      "verdict": "默认提供建议，同时保留结果解释、撤回和版本选择",
+      "evidence_label": "假设验证",
+      "content_structure": [
+        {"title": "支持证据", "items": ["轻社交人群更快得到可分享结果", "弱光场景的首次成功率更高", "减少后期编辑步骤"]},
+        {"title": "反例与边界", "items": ["复杂光线下可能过度处理", "专业用户担心细节被改变", "失败原因不透明会放大不信任"]}
+      ],
+      "evidence_ids": ["demo_hypothesis_01", "demo_hypothesis_02"],
+      "source_notes": "样板演示：概念测试",
+      "transition": "在讨论产品方案前，需要先统一核心概念的边界。"
+    },
+    {
+      "id": "tpl10",
+      "page_type": "concept_definition",
+      "layout_variant": "nested_definition",
+      "title": "用户理解的“好照片”由技术达标、氛围真实与故事表达三层共同构成",
+      "purpose": "展示概念定义与边界规则。",
+      "key_message": "定义越靠内层，越接近不可替代的体验价值。",
+      "evidence_label": "概念定义",
+      "definition_layers": [
+        {"title": "广义｜技术达标", "body": "清晰、曝光稳定、主体可辨", "short": "清晰 · 曝光 · 主体"},
+        {"title": "中义｜氛围真实", "body": "色彩自然、光影符合记忆", "short": "色彩 · 光影 · 记忆"},
+        {"title": "狭义｜故事表达", "body": "画面能传达关系与情绪", "short": "关系与情绪"}
+      ],
+      "boundary_rules": [
+        {"title": "主体", "body": "不是越清晰越好，而是重点是否被看见。"},
+        {"title": "处理", "body": "增强不能改变用户对现场的记忆。"},
+        {"title": "表达", "body": "技术正确但没有情绪，仍可能被判定为普通。"},
+        {"title": "用途", "body": "公开分享与私域记录的成功标准不同。"}
+      ],
+      "evidence_ids": ["demo_definition_01"],
+      "source_notes": "样板演示：概念编码",
+      "transition": "概念定义进一步揭示了需求之间的层级关系。"
+    },
+    {
+      "id": "tpl11",
+      "page_type": "needs_pyramid",
+      "layout_variant": "evidence_pyramid",
+      "title": "影像需求从拍得到、拍得稳，逐步升级到表达自我与建立认同",
+      "purpose": "展示三层需求金字塔与人群映射。",
+      "key_message": "底层稳定性是所有高阶价值成立的前提。",
+      "evidence_label": "需求层级",
+      "levels": [
+        {"title": "基础需求｜拍得到", "body": "快速启动、清晰成像、稳定保存"},
+        {"title": "关系需求｜拍得像", "body": "保留现场氛围，获得他人认同"},
+        {"title": "成长需求｜拍出我", "body": "形成风格、表达观点、积累作品"}
+      ],
+      "segment_mapping": [
+        {"segment": "私域记录者", "level": "基础"},
+        {"segment": "公开分享者", "level": "关系"},
+        {"segment": "摄影学习者", "level": "关系→成长"},
+        {"segment": "专业创作者", "level": "成长"}
+      ],
+      "evidence_ids": ["demo_needs_01"],
+      "source_notes": "样板演示：需求归纳",
+      "transition": "产品投入需要同时考虑问题影响和发生频率。"
+    },
+    {
+      "id": "tpl12",
+      "page_type": "priority_matrix",
+      "layout_variant": "impact_frequency",
+      "title": "拍摄反馈与失败恢复应优先解决，滤镜扩充暂不构成核心机会",
+      "purpose": "展示显式坐标驱动的痛点优先级矩阵。",
+      "key_message": "优先级来自频率与影响，而不是讨论热度。",
+      "recommendation": "先完成反馈、恢复和选片，再扩充低频玩法",
+      "evidence_label": "优先矩阵",
+      "axes": {"x": "发生频率 →", "y": "体验影响 ↑"},
+      "quadrant_labels": ["高影响低频", "重点投入", "体验维护", "低优先级"],
+      "items": [
+        {"label": "拍摄反馈不清", "x": 82, "y": 88, "priority": "high", "weight": 55},
+        {"label": "失败难恢复", "x": 72, "y": 80, "priority": "high", "weight": 50},
+        {"label": "选片成本高", "x": 66, "y": 63, "priority": "medium", "weight": 35},
+        {"label": "夜景等待长", "x": 48, "y": 56, "priority": "medium", "weight": 30},
+        {"label": "滤镜不够多", "x": 31, "y": 24, "priority": "low", "weight": 20}
+      ],
+      "supporting_findings": ["高频失败首先损害信任", "恢复能力影响二次尝试", "新增玩法不应挤占基础体验资源"],
+      "evidence_ids": ["demo_priority_01", "demo_priority_02"],
+      "source_notes": "样板演示：痛点编码与优先级工作坊",
+      "transition": "矩阵结论需要回到用户原声，确认问题的真实含义。"
+    },
+    {
+      "id": "tpl13",
+      "page_type": "quote_evidence",
+      "layout_variant": "voice_wall",
+      "title": "用户并不拒绝系统介入，但希望每次改变都能被看懂和撤回",
+      "purpose": "展示原声与研究解读的组合。",
+      "key_message": "可解释与可恢复共同决定自动化信任。",
+      "evidence_label": "用户原声",
+      "supporting_findings": ["用户接受系统建议，不接受不可逆替代。", "失败说明需要落到具体变化。", "版本保留能降低尝试成本。"],
+      "quotes": [
+        {"text": "系统可以先帮我处理，但最好让我知道改了哪里。", "respondent_label": "27岁 / 摄影学习者", "evidence_id": "demo_quote_02", "segment_id": "demo_segment_02"},
+        {"text": "如果效果不对，我希望一键回到刚拍完的版本。", "respondent_label": "24岁 / 公开分享者", "evidence_id": "demo_quote_03", "segment_id": "demo_segment_03"}
+      ],
+      "evidence_ids": ["demo_quote_02", "demo_quote_03"],
+      "source_notes": "样板演示：深度访谈",
+      "transition": "最终行动应围绕确定结果、保留控制和降低恢复成本展开。"
+    },
+    {
+      "id": "tpl14",
+      "page_type": "problem_reason",
+      "layout_variant": "fishbone",
+      "density_hint": "high",
+      "title": "夜景失败之所以持续损害信任，是因为反馈、解释和恢复同时缺位",
+      "purpose": "用鱼骨结构展示高优先级体验问题的根因。",
+      "key_message": "用户不是不能接受失败，而是无法判断发生了什么以及下一步怎么办。",
+      "outcome_label": "反馈、解释与恢复同时缺位",
+      "verdict": "把失败恢复设计成完整链路，而不是继续增加孤立提示",
+      "evidence_label": "根因诊断",
+      "content_structure": [
+        {"title": "场景条件", "items": ["弱光与运动主体叠加", "高频任务缺少预判"]},
+        {"title": "拍摄反馈", "items": ["处理中状态不明确", "完成时机缺少确认"]},
+        {"title": "结果解释", "items": ["无法定位失败原因", "增强变化难以看懂"]},
+        {"title": "恢复路径", "items": ["撤回入口不稳定", "原片与版本关系模糊"]},
+        {"title": "默认策略", "items": ["同一增强覆盖多类人群", "专业控制开放过晚"]},
+        {"title": "用户心智", "items": ["一次失败被归因于系统", "后续尝试意愿快速下降"]}
+      ],
+      "evidence_ids": ["demo_problem_01", "demo_problem_02"],
+      "source_notes": "样板演示：任务观察、失败复盘与原声编码",
+      "transition": "根因明确后，行动需要按节奏逐步重建结果确定性。"
+    },
+    {
+      "id": "tpl15",
+      "page_type": "recommendation",
+      "layout_variant": "action_roadmap",
+      "density_hint": "high",
+      "title": "产品定义应以结果确定性为主轴，并分层提供自动化与专业控制",
+      "purpose": "展示产品定义型行动建议。",
+      "key_message": "先建立三层一致体验，再扩展功能范围。",
+      "evidence_label": "行动建议",
+      "recommendation_priority": "P1",
+      "content_structure": [
+        {"title": "0–30 天｜反馈统一", "items": ["统一拍摄状态语言", "明确完成与失败时机", "补齐撤回入口"]},
+        {"title": "30–60 天｜恢复闭环", "items": ["保留原片与关键版本", "解释主要处理变化", "建立失败重试路径"]},
+        {"title": "60–90 天｜分层默认", "items": ["按分群提供默认方案", "从三个英雄场景起步", "逐步开放专业控制"]},
+        {"title": "持续｜证据回流", "items": ["跟踪任务成功率", "复盘失败原因", "按证据调整优先级"]}
+      ],
+      "evidence_ids": ["demo_action_01", "demo_action_02"],
+      "source_notes": "样板演示：综合研究建议",
+      "transition": "样板到此结束；正式报告将按项目证据选择页型。"
+    }
+  ]
+}

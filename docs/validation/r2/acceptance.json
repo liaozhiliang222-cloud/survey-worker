@@ -1,0 +1,79 @@
+{
+  "iteration": "R2",
+  "status": "development-and-local-acceptance-complete",
+  "recorded_at": "2026-09-05T09:10:30.802914+00:00",
+  "production_deployed": false,
+  "production_migration_applied": false,
+  "validation": {
+    "unit_tests": 85,
+    "javascript_full_regression": "passed",
+    "browser": {
+      "passed": 21,
+      "skipped": 1,
+      "r2_final_recheck": "passed"
+    },
+    "fault_injection": "passed",
+    "native_workerd_d1_r2": "passed",
+    "build": "passed",
+    "worker_dry_run": "passed",
+    "migration_count": 20,
+    "python": "unchanged; not rerun"
+  },
+  "production_inventory": {
+    "read_only": true,
+    "references": 23,
+    "objects": 23,
+    "missing": 0,
+    "unreferenced": 0
+  },
+  "limitations": [
+    "Production Cron and remote HTTP execution not deployed or exercised",
+    "Local JSON store is single-service-process",
+    "Orphan staged objects retained for read-only inventory; no automatic deletion",
+    "Existing derived datasets lacking metadata require a new version/recalculation"
+  ],
+  "evidence": [
+    "npm-test.txt",
+    "browser-all.txt",
+    "browser-final.txt",
+    "build.txt",
+    "worker-build.txt",
+    "final-contracts.txt",
+    "final-agent-and-recovery.txt",
+    "recovery.txt",
+    "native-worker.json",
+    "timings.json",
+    "storage-audit-local.json",
+    "storage-audit-cloud.json",
+    "migrations.txt"
+  ],
+  "source_sha256": {
+    "lib/dataset-metadata.mjs": "ffcc8e38098614c307805f7e35abe7099f5c1dd257bc3093192e367815e67dfa",
+    "lib/data-engine.mjs": "fe7e20e1a15ada088381de545d018f29c78485372ab80f25fb80b1edabdbe0df",
+    "lib/project-file-parser.mjs": "4bf9225fd880632ee73e5dc26d26745225c81569d6cc377eb2abdc42de769cde",
+    "lib/data-job-stage.mjs": "949cc7104e0a1ccc6655c91ec4cad91a23047ae16771f50089de2537aea34e4f",
+    "lib/data-jobs.mjs": "b8ef9783afe7ec0e746e7a4d492f09169200f0ac1f3a4b63ff702cae638d88e1",
+    "lib/data-jobs-d1.mjs": "1d25e67591229dacc17dc5dd714f430474095c2673e6e3680102db97e46dd9f1",
+    "lib/data-jobs-local.mjs": "c7e87441d115fd7514508073c0d51612574cb5d482f7a2eafdf357a10b8279d1",
+    "lib/data-job-thread.mjs": "8131c6cb526ef88e976f3044c4a13d33950ab8eec71ad48e6844243b91339324",
+    "lib/research-store.js": "dd249aefd499343f0c92c47f14071621bfbba13fe610979b9e70d85f5908bc89",
+    "lib/research-handler.js": "b630bd4cd3ad7a010d2bfed88fbaad8b465466470c2cc92e4f5b062128ac8294",
+    "lib/research-file-storage.js": "bd66303e8245429769f7e83ae8e5b973212615e3b8760466224bff1c78ae9204",
+    "lib/agent-tools/adapter.mjs": "745ce4aaeb4b9b24a36f1eaa2a09a470a1df50f74051fbcb5edee7646074a805",
+    "lib/tool-handler.js": "ea2f1d2262c9a5e531144f93b4f3bf26a517cae76562b3df825e894d1374616c",
+    "functions/api/research/[[path]].js": "33361e8d418ebf6396051887bdf2e4ca1236e559fdbece37a98e70f47eeabe3f",
+    "src/modules/ai-researcher/index.js": "5303ad7d7bf7edc3b9084ac1190b446a44f78a7cb153192f7d92c9a9570873ca",
+    "migrations/0020_durable_data_jobs.sql": "a971c025365fb0700558e6fc4a006fcd44f9ab963b201a9069ca81adbd812202",
+    "workers/data-jobs.mjs": "36883b5f672f943f64c05a547d76118daa692cb02db10afc86bb6d961c0e5059",
+    "wrangler.data-jobs.jsonc": "321ba6814f20cf0f49586af14a32f4699d088509706189e4489414c8a1c32f97",
+    "package.json": "c2a19d613e12bf5d661a32739c110bd5fa2b5c8512bae0204605190247667673",
+    "tests/r2-data-recovery-smoke.mjs": "125a2cb2c905a348d61014e7bbaa359e22772e43f31d92a1011c2a0745429643",
+    "tests/r2-process-recovery-smoke.mjs": "eb667fc43c3260ef3ccd1e5c895a5e56cd541e4b66b6f582edbe701bfeaa7e3c",
+    "tests/e2e/r2-data-jobs.spec.js": "7d5340f9d5197520998311e122d97b3b7e3099afcf3879c1a867a0ed3ef29f7e",
+    "tests/fixtures/r2/native-worker.mjs": "e20448b4eb77540869659314c9839e6cbc78a093cf578e6ca4b50b4d91502617",
+    "scripts/validate-r2-native.mjs": "c5ee0024859311c2bf9c613fe189515005192edd5cda598babdc3ea9b8a071ee",
+    "scripts/audit-research-storage.mjs": "432487fd2c7c718352b3e891e0ccfaf335262eaa6fcfe81b7a033cfa369d3b0b",
+    "scripts/audit-research-storage-cloud.mjs": "907c7ea3d3c72fffb7e2b3a954449aed85be05d095668a1d5026ff3a99883719",
+    "scripts/measure-r2-data.mjs": "a922b5c5dde716a8b55d69e5220628317a1d5be7175069da3f0361e4b2f90c63"
+  }
+}

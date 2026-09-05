@@ -1,0 +1,57 @@
+{
+  "synthetic": true,
+  "cases": [
+    {
+      "id": "quantitative",
+      "materials": [
+        "quantitative.csv"
+      ],
+      "expected": {
+        "nps": 84.6,
+        "mean": 6,
+        "valid_base": 13
+      },
+      "deliverables": [
+        "analysis_result",
+        "editable_excel",
+        "evidence",
+        "report_outline",
+        "ppt_script"
+      ],
+      "ppt_boundary": "quantitative chart PPT is not supported by qualitative renderer"
+    },
+    {
+      "id": "qualitative",
+      "materials": [
+        "interview-a.txt",
+        "interview-b.txt"
+      ],
+      "deliverables": [
+        "transcripts",
+        "verified_quotes",
+        "evidence",
+        "report_outline",
+        "ppt_script",
+        "editable_qualitative_ppt"
+      ]
+    },
+    {
+      "id": "mixed",
+      "materials": [
+        "quantitative.csv",
+        "interview-a.txt",
+        "interview-b.txt"
+      ],
+      "deliverables": [
+        "analysis_result",
+        "editable_excel",
+        "verified_quotes",
+        "evidence",
+        "report_outline",
+        "ppt_script",
+        "qualitative_ppt_with_cited_numeric_text"
+      ],
+      "ppt_boundary": "native quantitative charts excluded; quantitative values retained as cited text and Excel"
+    }
+  ]
+}

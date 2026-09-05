@@ -1,23 +1,27 @@
 {
   "scripts": {
+    "acceptance:qualitative-ppt": "node scripts/real-qualitative-ppt-acceptance.mjs",
+    "acceptance:seed-real-qualitative-analysis": "node scripts/seed-real-qualitative-analysis.mjs",
     "dev": "vite",
     "dev:legacy": "node server.js",
     "build": "vite build",
+    "typecheck": "tsc -p tsconfig.data.json",
+    "audit:d1-schema": "node scripts/audit-d1-migrations.mjs",
     "preview": "vite preview",
-    "check:syntax": "node --check app.js && node --check research-theme.js && node --check ai-plan-quality.js && node --check ppt-report-ai.js && node --check server.js && node --check lib/request-body.js && node --check lib/http-response.js && node --check lib/pptx-proxy.js && node --check lib/ai-proxy.js && node --check lib/release-info.js && node --check lib/harness.js && node --check lib/project-file-parser.mjs && node --check lib/project-context.mjs && node --check lib/project-memory.mjs && node --check lib/artifact-diff.mjs && node --check lib/project-ocr.mjs && node --check lib/research-file-storage.js && node --check lib/research-store.js && node --check lib/research-handler.js && node --check proposal-deck.js && node --check cluster-core.js && node --check cluster-worker.js && node --check cluster-analysis.js && node --check functions/healthz.js && node --check functions/api/ai.js && node --check \"functions/api/research/[[path]].js\" && node --check functions/pptx-api/_proxy.js && node --check \"functions/pptx-api/[[path]].js\"",
+    "check:syntax": "node --check app.js && node --check research-theme.js && node --check ai-plan-quality.js && node --check ppt-report-ai.js && node --check server.js && node --check lib/request-body.js && node --check lib/http-response.js && node --check lib/pptx-proxy.js && node --check lib/ai-proxy.js && node --check lib/release-info.js && node --check lib/harness.js && node --check lib/project-file-parser.mjs && node --check lib/project-context.mjs && node --check lib/qualitative-analysis.mjs && node --check lib/transcript-correction.mjs && node --check lib/qualitative-excel.mjs && node --check lib/research-plan-workflow.mjs && node --check lib/data-analysis-workflow.mjs && node --check lib/report-storyline.mjs && node --check lib/ppt-script-workflow.mjs && node --check lib/crosstab-engine.mjs && node --check lib/data-excel.mjs && node --check lib/data-weighting.mjs && node --check lib/data-engine.mjs && node --check lib/project-memory.mjs && node --check lib/artifact-diff.mjs && node --check lib/project-ocr.mjs && node --check lib/research-file-storage.js && node --check lib/research-store.js && node --check lib/research-handler.js && node --check lib/tool-handler.js && node --check lib/agent-tools/adapter.mjs && node --check lib/agent-tools/auth.mjs && node --check lib/tools/errors.mjs && node --check lib/tools/sample-size.mjs && node --check lib/tools/quota.mjs && node --check lib/tools/questionnaire-check.mjs && node --check lib/tools/registry.mjs && node --check deploy/harness/dsh-surveykit-tools/lib/index.js && node --check proposal-deck.js && node --check cluster-core.js && node --check cluster-worker.js && node --check cluster-analysis.js && node --check functions/healthz.js && node --check functions/api/ai.js && node --check \"functions/api/research/[[path]].js\" && node --check \"functions/api/tools/[[path]].js\" && node --check functions/pptx-api/_proxy.js && node --check \"functions/pptx-api/[[path]].js\" && node --check lib/dataset-metadata.mjs && node --check lib/data-job-stage.mjs && node --check lib/data-jobs.mjs && node --check lib/data-jobs-d1.mjs && node --check lib/data-jobs-local.mjs && node --check lib/data-job-thread.mjs && node --check workers/data-jobs.mjs",
     "test": "npm run test:unit && npm run test:js",
-    "test:unit": "vitest run --exclude \"tests/e2e/**\"",
+    "test:unit": "vitest run --exclude \"tests/e2e/**\" --exclude \".data/**\" --exclude \"tmp*/**\"",
     "test:e2e": "playwright test",
     "test:sprint3": "npm run test:unit && npm run test:e2e",
     "test:watch": "vitest",
-    "test:js": "npm run check:syntax && npm run test:browser-module-runtime && npm run test:health-contract && npm run test:release-process && npm run test:research-theme && npm run test:ai-proxy && npm run test:local-ai-proxy && npm run test:ai-plan-template && npm run test:ai-plan-quality && npm run test:ai-plan-quality-eval && npm run test:ai-plan-quality-ui && npm run test:ai-questionnaire && npm run test:crosstab-header-template && npm run test:crosstab-export-style && npm run test:pptx-chapter-chart && npm run test:model-chart-pptx-ui && npm run test:research-model-excel-import && npm run test:core-research-module && npm run test:ppt-report-ai && npm run test:ai-report-quality-eval && npm run test:ai-report-quality-loop && npm run test:slide-brief-ui && npm run test:pptx-job-ui && npm run test:ai-job-ui && npm run test:pptx-template-profile-ui && npm run test:proposal-deck && npm run test:request-body && npm run test:pptx-proxy && npm run test:server-routes && npm run test:cloudflare-proxy && npm run test:cluster-analysis && npm run test:harness-dsh-rpc && npm run test:cloudflare-harness-dsh && npm run test:research-streaming && npm run test:research-stream-parser && npm run test:research-harness && npm run test:research-files-context && npm run test:research-memory-v03 && npm run test:research-access-auth",
+    "test:js": "npm run check:syntax && npm run typecheck && npm run test:browser-module-runtime && npm run test:health-contract && npm run test:release-process && npm run test:research-theme && npm run test:ai-proxy && npm run test:local-ai-proxy && npm run test:ai-plan-template && npm run test:ai-plan-quality && npm run test:ai-plan-quality-eval && npm run test:ai-plan-quality-ui && npm run test:ai-questionnaire && npm run test:crosstab-header-template && npm run test:crosstab-export-style && npm run test:pptx-chapter-chart && npm run test:model-chart-pptx-ui && npm run test:research-model-excel-import && npm run test:core-research-module && npm run test:ppt-report-ai && npm run test:ai-report-quality-eval && npm run test:ai-report-quality-loop && npm run test:slide-brief-ui && npm run test:pptx-job-ui && npm run test:ai-job-ui && npm run test:pptx-template-profile-ui && npm run test:proposal-deck && npm run test:request-body && npm run test:pptx-proxy && npm run test:server-routes && npm run test:cloudflare-proxy && npm run test:cluster-analysis && npm run test:tool-gateway && npm run test:agent-tools && npm run test:agent-tool-acceptance && npm run test:harness-openai-chat && npm run test:harness-dsh-rpc && npm run test:cloudflare-harness-dsh && npm run test:research-streaming && npm run test:research-stream-parser && npm run test:research-harness && npm run test:research-files-context && npm run test:research-memory-v03 && npm run test:research-access-auth && npm run test:qualitative-excel && npm run test:research-plan-workflow && npm run test:data-analysis-workflow && npm run test:qualitative-analysis && npm run test:transcript-correction && npm run test:report-storyline && npm run test:ppt-script && npm run test:data-jobs && npm run test:sav-dataset && npm run test:r1 && npm run test:r2 && npm run test:r3 && npm run test:r4",
     "test:health-contract": "node tests/health-contract-smoke.mjs",
     "test:browser-module-runtime": "node tests/browser-module-runtime-smoke.mjs && node tests/docx-export-smoke.mjs",
     "test:docx-export": "node tests/docx-export-smoke.mjs",
     "test:release-process": "node tests/release-process-smoke.mjs",
     "test:research-theme": "node tests/research-theme-smoke.mjs",
     "test:ai-proxy": "node tests/ai-proxy-smoke.mjs",
-    "test:local-ai-proxy": "node tests/local-ai-proxy-smoke.mjs",
+    "test:local-ai-proxy": "node tests/local-ai-proxy-smoke.mjs && node tests/vite-ai-runtime-smoke.mjs",
     "test:ai-plan-template": "node tests/ai-plan-template-smoke.mjs",
     "test:ai-plan-quality": "node tests/ai-plan-quality-smoke.mjs",
     "test:ai-plan-quality-eval": "node tests/ai-plan-quality-eval.mjs",
@@ -42,6 +46,10 @@
     "test:server-routes": "node tests/server-routes-smoke.mjs",
     "test:cloudflare-proxy": "node tests/cloudflare-proxy-smoke.mjs",
     "test:cluster-analysis": "node tests/cluster-analysis-smoke.mjs",
+    "test:tool-gateway": "node tests/tool-gateway-smoke.mjs",
+    "test:agent-tools": "node tests/agent-tool-calling-smoke.mjs",
+    "test:agent-tool-acceptance": "node tests/agent-tool-acceptance-smoke.mjs",
+    "test:harness-openai-chat": "node tests/harness-openai-chat-smoke.mjs",
     "test:harness-dsh-rpc": "node tests/harness-dsh-rpc-smoke.mjs",
     "test:cloudflare-harness-dsh": "node tests/cloudflare-harness-dsh-smoke.mjs",
     "test:research-streaming": "node tests/research-streaming-smoke.mjs",
@@ -50,17 +58,36 @@
     "test:research-files-context": "node tests/research-files-context-smoke.mjs && node tests/research-message-order-smoke.mjs",
     "test:research-memory-v03": "node tests/research-memory-v03-smoke.mjs",
     "test:research-access-auth": "node tests/research-access-auth-smoke.mjs",
+    "test:qualitative-excel": "node tests/qualitative-excel-smoke.mjs && node tests/qualitative-excel-handler-smoke.mjs && node tests/qualitative-excel-ui-smoke.mjs",
+    "test:research-plan-workflow": "node tests/research-plan-workflow-smoke.mjs && node tests/research-plan-workflow-ui-smoke.mjs",
+    "test:data-analysis-workflow": "node tests/data-analysis-workflow-smoke.mjs && node tests/data-regressions-smoke.mjs",
+    "test:qualitative-analysis": "node tests/qualitative-analysis-workflow-smoke.mjs && node tests/qualitative-analysis-ui-smoke.mjs",
+    "test:transcript-correction": "node tests/transcript-correction-workflow-smoke.mjs && node tests/transcript-correction-d1-smoke.mjs && node tests/transcript-correction-ui-smoke.mjs",
+    "test:report-storyline": "node tests/report-storyline-workflow-smoke.mjs && node tests/report-storyline-ui-smoke.mjs",
+    "test:ppt-script": "node tests/ppt-script-workflow-smoke.mjs && node tests/ppt-script-ui-smoke.mjs && node tests/qualitative-ppt-ui-smoke.mjs && node tests/qualitative-ppt-artifact-smoke.mjs",
+    "test:data-jobs": "node tests/data-jobs-smoke.mjs",
+    "test:sav-dataset": "node tests/sav-dataset-smoke.mjs",
     "test:python:deps": "python tests/python-deps-smoke.py",
-    "test:python": "npm run test:python:deps && python tests/health_contract_smoke.py && python tests/crosstab_parser_smoke.py && python tests/template_geometry_smoke.py && python tests/template_report_structure_smoke.py && python tests/proposal_templates_smoke.py && python tests/proposal_deck_smoke.py && python tests/report_semantics_smoke.py && python tests/report_narrative_smoke.py && python tests/research_theme_smoke.py && python tests/slide_brief_edit_smoke.py && python tests/model_chart_pptx_smoke.py && python tests/preview_profile_api_smoke.py && python tests/object_qa_smoke.py && python tests/job_api_smoke.py && python tests/ai_job_api_smoke.py",
+    "test:python": "npm run test:python:deps && python tests/health_contract_smoke.py && python tests/crosstab_parser_smoke.py && python tests/template_geometry_smoke.py && python tests/template_report_structure_smoke.py && python tests/proposal_templates_smoke.py && python tests/proposal_deck_smoke.py && python tests/report_semantics_smoke.py && python tests/report_narrative_smoke.py && python tests/research_theme_smoke.py && python tests/slide_brief_edit_smoke.py && python tests/model_chart_pptx_smoke.py && python tests/preview_profile_api_smoke.py && python tests/object_qa_smoke.py && python tests/job_api_smoke.py && python tests/ai_job_api_smoke.py && python tests/qualitative_ppt_smoke.py",
     "test:python:crosstab-parser": "python tests/crosstab_parser_smoke.py",
     "test:python:proposal-templates": "python tests/proposal_templates_smoke.py",
     "start": "node server.js",
     "probe:ai": "node scripts/ai-channel-probe.mjs",
     "release:check": "node scripts/release-check.mjs",
-    "verify:production": "node scripts/release-check.mjs --base-url=https://surveykit.cc"
+    "verify:production": "node scripts/release-check.mjs --base-url=https://surveykit.cc",
+    "test:r1": "node tests/r1-data-contract-smoke.mjs",
+    "acceptance:r1:cloud": "node scripts/r1-cloud-acceptance.mjs",
+    "acceptance:r1:rebuild": "node scripts/rebuild-r1-candidate.mjs",
+    "test:r2": "node tests/r2-data-recovery-smoke.mjs && node tests/r2-process-recovery-smoke.mjs",
+    "test:r2:native": "node scripts/validate-r2-native.mjs",
+    "test:r3": "node tests/r3-delivery-smoke.mjs && node tests/r3-http-recovery-smoke.mjs && node tests/r3-service-worker-smoke.mjs",
+    "acceptance:r3:render": "python scripts/validate-r3-render.py && node scripts/bind-r3-outputs.mjs",
+    "test:r4": "node tests/r4-readiness-smoke.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "savfilewriter": "1.0.0",
+    "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"
   },
@@ -84,5 +111,11 @@
   "bugs": {
     "url": "https://github.com/liaozhiliang222-cloud/survey-worker/issues"
   },
-  "homepage": "https://github.com/liaozhiliang222-cloud/survey-worker#readme"
+  "homepage": "https://github.com/liaozhiliang222-cloud/survey-worker#readme",
+  "dependencies": {
+    "datareader-spss": "0.2.1"
+  },
+  "engines": {
+    "node": ">=24.17.0 <25"
+  }
 }

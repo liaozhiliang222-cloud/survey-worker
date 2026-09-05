@@ -16,7 +16,8 @@ export async function onRequestGet({ env }) {
     dependencies: {
       pptx_backend_configured: Boolean(String(env?.PPTX_BACKEND_URL || "").trim()),
       ai_proxy_configured: Boolean(
-        String(env?.SURVEYKIT_API_KEY || "").trim()
+        String(env?.VOLCENGINE_AGENT_PLAN_API_KEY || env?.ARK_AGENT_PLAN_API_KEY || env?.ARK_API_KEY || "").trim()
+        || String(env?.SURVEYKIT_API_KEY || "").trim()
         || String(env?.SENSENOVA_API_KEY || "").trim()
         || String(env?.DASHSCOPE_API_KEY || env?.BAILIAN_API_KEY || "").trim()
       ),

@@ -1,21 +1,6 @@
 const views = document.querySelectorAll(".view");
 const navItems = document.querySelectorAll(".nav-item");
 
-const typoRules = [
-  ["请选则", "疑似错字：请选则", "建议改为“请选择”。"],
-  ["瓶牌", "疑似错字：瓶牌", "如果这里指品牌名称或品牌选择，建议改为“品牌”。"],
-  ["牌品", "疑似错字：牌品", "如果这里指品牌名称或品牌选择，建议改为“品牌”。"],
-  ["品脾", "疑似错字：品脾", "如果这里指品牌名称或品牌选择，建议改为“品牌”。"],
-  ["产牌", "疑似错字：产牌", "如果这里指产品或品牌，请确认是否应改为“品牌”或“产品”。"],
-  ["登陆", "用词不统一：登陆", "如指账号操作，建议统一为“登录”。"],
-  ["帐号", "用词不统一：帐号", "建议与项目标准统一，常见写法为“账号”。"],
-  ["价钱", "口语化表述：价钱", "价格研究中建议统一为“价格”。"],
-  ["非常满", "疑似漏字：非常满", "请确认是否应为“非常满意”。"],
-  ["比交", "疑似错字：比交", "请确认是否应为“比较”。"],
-  ["添写", "疑似错字：添写", "请确认是否应为“填写”。"],
-  ["是否愿意购买吗", "句式重复", "建议改为“您是否愿意购买？”或“您愿意购买吗？”。"]
-];
-
 const exampleQuestionnaire = `Q1. 您的性别是？
 A. 男
 B. 女
@@ -2876,35 +2861,54 @@ function handleCrosstabImport(file) {
   }
 }
 
-function calculateSample() {
-  const z = Number(document.querySelector("#confidence").value);
-  const margin = Number(document.querySelector("#margin").value) / 100;
-  const population = Number(document.querySelector("#population").value);
-  const segments = Math.max(1, Number(document.querySelector("#segments").value));
-  const responseRate = Math.max(1, Number(document.querySelector("#responseRate").value)) / 100;
-  const p = 0.5;
+async function callToolGateway(toolId, input) {
+  const response = await fetch(`/api/tools/${encodeURIComponent(toolId)}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ input })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success === false) throw new Error(payload?.error?.message || "专业工具请求未完成。");
+  return payload;
+}
 
-  const infiniteSample = (z * z * p * (1 - p)) / (margin * margin);
-  const adjustedSample =
-    population > 0
-      ? infiniteSample / (1 + (infiniteSample - 1) / population)
-      : infiniteSample;
+let sampleRequestVersion = 0;
+let sampleCalculationTimer = null;
+function sampleToolInput() {
+  return {
+    z: Number(document.querySelector("#confidence").value),
+    marginPercent: Number(document.querySelector("#margin").value),
+    population: Number(document.querySelector("#population").value),
+    segments: Number(document.querySelector("#segments").value),
+    responseRatePercent: Number(document.querySelector("#responseRate").value)
+  };
+}
 
-  const base = Math.ceil(adjustedSample);
-  const segment = Math.ceil(base / segments);
-  const gross = Math.ceil(base / responseRate);
+async function calculateSample() {
+  const version = ++sampleRequestVersion;
+  const input = sampleToolInput();
+  try {
+    const payload = await callToolGateway("sample-size", input);
+    if (version !== sampleRequestVersion) return;
+    const { base, gross, segment, advice } = payload.data;
+    document.querySelector("#baseSample").textContent = base.toLocaleString("zh-CN");
+    document.querySelector("#grossSample").textContent = gross.toLocaleString("zh-CN");
+    document.querySelector("#segmentSample").textContent = segment.toLocaleString("zh-CN");
+    document.querySelector("#sampleAdvice").textContent = advice;
+    window.SurveyKitToolGateway?.rememberExecution?.("sample-size", input, payload.data);
+  } catch (error) {
+    if (version === sampleRequestVersion) document.querySelector("#sampleAdvice").textContent = error.message;
+  }
+}
 
-  document.querySelector("#baseSample").textContent = base.toLocaleString("zh-CN");
-  document.querySelector("#grossSample").textContent = gross.toLocaleString("zh-CN");
-  document.querySelector("#segmentSample").textContent = segment.toLocaleString("zh-CN");
-
-  const populationText = population > 0 ? `用户规模 ${population.toLocaleString("zh-CN")}、` : "用户规模不设上限、";
-  document.querySelector("#sampleAdvice").textContent =
-    `${populationText}允许误差 ${Math.round(margin * 100)}% 时，建议至少回收 ${base.toLocaleString("zh-CN")} 个有效样本；按当前回收率预估需发放 ${gross.toLocaleString("zh-CN")} 份。`;
+function scheduleSampleCalculation() {
+  clearTimeout(sampleCalculationTimer);
+  sampleCalculationTimer = setTimeout(calculateSample, 120);
 }
 
 document.querySelectorAll("#sampleForm input, #sampleForm select").forEach((field) => {
-  field.addEventListener("input", calculateSample);
+  field.addEventListener("input", scheduleSampleCalculation);
 });
 
 function parseQuotaItems(value) {
@@ -2920,27 +2924,6 @@ function parseQuotaItems(value) {
       };
     })
     .filter((item) => item.name && Number.isFinite(item.share) && item.share > 0);
-}
-
-function normalizeQuota(items) {
-  const total = items.reduce((sum, item) => sum + item.share, 0);
-  return total > 0 ? items.map((item) => ({ ...item, weight: item.share / total })) : [];
-}
-
-function allocateIntegers(values, total) {
-  const floors = values.map((value) => Math.floor(value));
-  let remainder = total - floors.reduce((sum, value) => sum + value, 0);
-  const order = values
-    .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
-    .sort((a, b) => b.fraction - a.fraction);
-
-  order.forEach(({ index }) => {
-    if (remainder <= 0) return;
-    floors[index] += 1;
-    remainder -= 1;
-  });
-
-  return floors;
 }
 
 let quotaMode = "single";
@@ -3092,121 +3075,63 @@ function updateCrossQuotaValidation(dimensions) {
   });
 }
 
-function renderSingleDimensionRows(total, dimension) {
-  const normalized = normalizeQuota(dimension.items);
-  const counts = allocateIntegers(normalized.map((item) => total * item.weight), total);
-  return normalized
-    .map((item, index) => `
-      <tr>
-        <td>${escapeHtml(dimension.name)}</td>
-        <td>${escapeHtml(item.name)}</td>
-        <td>${item.share}%</td>
-        <td>${counts[index]}</td>
-      </tr>
-    `)
-    .join("");
-}
+let quotaRequestVersion = 0;
 
-function renderSingleQuota(total, dimensions) {
-  const table = document.querySelector("#quotaTable");
-  updateSingleQuotaValidation(dimensions);
-
-  if (!dimensions.length) {
-    table.innerHTML = `<tbody><tr><td>请添加至少一个有效配额维度和配额选项。</td></tr></tbody>`;
-    document.querySelector("#quotaSummary").textContent = "等待生成";
-    return;
-  }
-
-  const rows = dimensions.map((dimension) => renderSingleDimensionRows(total, dimension)).join("");
-
-  table.innerHTML = `
-    <thead><tr><th>配额维度</th><th>配额选项</th><th>目标比例</th><th>目标样本量</th></tr></thead>
-    <tbody>${rows}</tbody>
-  `;
-  const invalidCount = dimensions.filter((dimension) => Math.abs(dimension.shareTotal - 100) >= 0.001).length;
-  document.querySelector("#quotaSummary").textContent = invalidCount
-    ? `${invalidCount} 个维度比例未合计 100%，当前按比例自动归一`
-    : `${dimensions.length} 个单一维度，目标样本量 ${total.toLocaleString("zh-CN")}`;
-}
-
-function cartesianQuotaCombinations(dimensions) {
-  return dimensions.reduce((combinations, dimension) => {
-    const normalized = normalizeQuota(dimension.items);
-    return combinations.flatMap((combo) =>
-      normalized.map((item) => ({
-        labels: [...combo.labels, item.name],
-        shares: [...combo.shares, item.share],
-        weight: combo.weight * item.weight
-      }))
-    );
-  }, [{ labels: [], shares: [], weight: 1 }]);
-}
-
-function renderCrossQuota(total, dimensions) {
-  const table = document.querySelector("#quotaTable");
-  updateCrossQuotaValidation(dimensions);
-
-  if (dimensions.length < 2) {
-    table.innerHTML = `<tbody><tr><td>请至少添加两个有效交叉维度。</td></tr></tbody>`;
-    document.querySelector("#quotaSummary").textContent = "等待生成";
-    return;
-  }
-
-  if (dimensions.length === 2) {
-    const rows = normalizeQuota(dimensions[0].items);
-    const cols = normalizeQuota(dimensions[1].items);
-    const rawCells = rows.flatMap((row) => cols.map((col) => total * row.weight * col.weight));
-    const allocatedCells = allocateIntegers(rawCells, total);
-    const matrix = rows.map((_, rowIndex) =>
-      cols.map((__, colIndex) => allocatedCells[rowIndex * cols.length + colIndex])
-    );
-
-    const header = `<thead><tr><th>${escapeHtml(dimensions[0].name)} \\ ${escapeHtml(dimensions[1].name)}</th>${cols.map((col) => `<th>${escapeHtml(col.name)}</th>`).join("")}<th>小计</th></tr></thead>`;
-    const bodyRows = rows
-      .map((row, rowIndex) => {
-        const cells = matrix[rowIndex];
-        const rowTotal = cells.reduce((sum, value) => sum + value, 0);
-        return `<tr><td>${escapeHtml(row.name)}</td>${cells.map((cell) => `<td>${cell}</td>`).join("")}<td>${rowTotal}</td></tr>`;
-      })
-      .join("");
-    const colTotals = cols.map((_, colIndex) => matrix.reduce((sum, row) => sum + row[colIndex], 0));
-    const colTotalSum = colTotals.reduce((sum, value) => sum + value, 0);
-    const footer = `<tfoot><tr><td>小计</td>${colTotals.map((cell) => `<td>${cell}</td>`).join("")}<td>${colTotalSum}</td></tr></tfoot>`;
-    table.innerHTML = `${header}<tbody>${bodyRows}</tbody>${footer}`;
-  } else {
-    const combinations = cartesianQuotaCombinations(dimensions);
-    const counts = allocateIntegers(combinations.map((combo) => total * combo.weight), total);
-    const header = `<thead><tr>${dimensions.map((dimension) => `<th>${escapeHtml(dimension.name)}</th>`).join("")}<th>组合比例</th><th>目标样本量</th></tr></thead>`;
-    const bodyRows = combinations
-      .map((combo, index) => {
-        const comboShare = combo.shares.map((share) => `${share}%`).join(" × ");
-        return `<tr>${combo.labels.map((label) => `<td>${escapeHtml(label)}</td>`).join("")}<td>${escapeHtml(comboShare)}</td><td>${counts[index]}</td></tr>`;
-      })
-      .join("");
-    const footer = `<tfoot><tr><td colspan="${dimensions.length + 1}">合计</td><td>${counts.reduce((sum, value) => sum + value, 0)}</td></tr></tfoot>`;
-    table.innerHTML = `${header}<tbody>${bodyRows}</tbody>${footer}`;
-  }
-
-  const invalidCount = dimensions.filter((dimension) => Math.abs(dimension.shareTotal - 100) >= 0.001).length;
-  const comboCount = dimensions.reduce((count, dimension) => count * normalizeQuota(dimension.items).length, 1);
-  document.querySelector("#quotaSummary").textContent = invalidCount
-    ? `${dimensions.length} 个交叉维度，${comboCount} 个组合；${invalidCount} 个维度比例未合计 100%，已自动归一`
-    : `${dimensions.length} 个交叉维度，${comboCount} 个组合，目标样本量 ${total.toLocaleString("zh-CN")}`;
-}
-
-function calculateQuota() {
+function renderQuotaGatewayResult(result, inputDimensions) {
   const total = Math.max(1, Number(document.querySelector("#quotaTotal").value));
   const table = document.querySelector("#quotaTable");
-
   document.querySelector("#quotaTitle").textContent = quotaMode === "single" ? "单一配额表" : "交叉配额表";
-
   if (quotaMode === "single") {
-    renderSingleQuota(total, getSingleQuotaDimensions());
+    updateSingleQuotaValidation(inputDimensions);
+    const rows = result.dimensions.flatMap((dimension) => dimension.groups.map((group) => `
+      <tr><td>${escapeHtml(dimension.name)}</td><td>${escapeHtml(group.label)}</td><td>${group.share}%</td><td>${group.sample}</td></tr>
+    `)).join("");
+    table.innerHTML = `<thead><tr><th>配额维度</th><th>配额选项</th><th>目标比例</th><th>目标样本量</th></tr></thead><tbody>${rows}</tbody>`;
+    document.querySelector("#quotaSummary").textContent = result.invalid_dimensions.length
+      ? `${result.invalid_dimensions.length} 个维度比例未合计 100%，当前按比例自动归一`
+      : `${result.dimensions.length} 个单一维度，目标样本量 ${total.toLocaleString("zh-CN")}`;
     return;
   }
+  updateCrossQuotaValidation(inputDimensions);
+  if (result.matrix) {
+    const matrix = result.matrix;
+    const header = `<thead><tr><th>${escapeHtml(matrix.row_dimension)} \\ ${escapeHtml(matrix.column_dimension)}</th>${matrix.columns.map((label) => `<th>${escapeHtml(label)}</th>`).join("")}<th>小计</th></tr></thead>`;
+    const body = matrix.rows.map((label, rowIndex) => `<tr><td>${escapeHtml(label)}</td>${matrix.cells[rowIndex].map((cell) => `<td>${cell}</td>`).join("")}<td>${matrix.row_totals[rowIndex]}</td></tr>`).join("");
+    const footer = `<tfoot><tr><td>小计</td>${matrix.column_totals.map((cell) => `<td>${cell}</td>`).join("")}<td>${matrix.column_totals.reduce((sum, value) => sum + value, 0)}</td></tr></tfoot>`;
+    table.innerHTML = `${header}<tbody>${body}</tbody>${footer}`;
+  } else {
+    const dimensions = result.dimensions.map((dimension) => dimension.name);
+    const header = `<thead><tr>${dimensions.map((name) => `<th>${escapeHtml(name)}</th>`).join("")}<th>组合比例</th><th>目标样本量</th></tr></thead>`;
+    const body = result.flat.map((combination) => `<tr>${dimensions.map((name) => `<td>${escapeHtml(combination.labels[name])}</td>`).join("")}<td>${combination.shares.map((share) => `${share}%`).join(" × ")}</td><td>${combination.sample}</td></tr>`).join("");
+    table.innerHTML = `${header}<tbody>${body}</tbody><tfoot><tr><td colspan="${dimensions.length + 1}">合计</td><td>${result.flat.reduce((sum, item) => sum + item.sample, 0)}</td></tr></tfoot>`;
+  }
+  document.querySelector("#quotaSummary").textContent = result.invalid_dimensions.length
+    ? `${result.dimensions.length} 个交叉维度，${result.combination_count} 个组合；${result.invalid_dimensions.length} 个维度比例未合计 100%，已自动归一`
+    : `${result.dimensions.length} 个交叉维度，${result.combination_count} 个组合，目标样本量 ${total.toLocaleString("zh-CN")}`;
+}
 
-  renderCrossQuota(total, getCrossQuotaDimensions());
-  return;
+async function calculateQuota() {
+  const version = ++quotaRequestVersion;
+  const total = Math.max(1, Number(document.querySelector("#quotaTotal").value));
+  const sourceDimensions = quotaMode === "single" ? getSingleQuotaDimensions() : getCrossQuotaDimensions();
+  const input = {
+    mode: quotaMode,
+    total_sample: total,
+    dimensions: sourceDimensions.map((dimension) => ({
+      name: dimension.name,
+      groups: dimension.items.map((item) => ({ label: item.name, share: item.share }))
+    }))
+  };
+  try {
+    const payload = await callToolGateway("quota", input);
+    if (version !== quotaRequestVersion) return;
+    renderQuotaGatewayResult(payload.data, sourceDimensions);
+    window.SurveyKitToolGateway?.rememberExecution?.("quota", input, payload.data);
+  } catch (error) {
+    if (version !== quotaRequestVersion) return;
+    document.querySelector("#quotaSummary").textContent = error.message;
+    document.querySelector("#quotaTable").innerHTML = `<tbody><tr><td>${escapeHtml(error.message)}</td></tr></tbody>`;
+  }
 }
 
 document.querySelectorAll("#quotaForm input").forEach((field) => {
@@ -3366,10 +3291,6 @@ function parseQuestions(text) {
   return questions;
 }
 
-function addIssue(issues, severity, title, detail, evidence = "") {
-  issues.push({ severity, title, detail, evidence });
-}
-
 const auditScenarioLabels = {
   general: "通用上线质检",
   concept: "概念测试",
@@ -3468,210 +3389,10 @@ function renderMarkdownPreview(markdown) {
   return html.join("");
 }
 
-function addScenarioTemplateIssues(issues, questions, text, scenario) {
-  if (!scenario || scenario === "general" || !text.trim()) return;
-  const fullText = text.replace(/\s+/g, "");
-  const hasAny = (patterns) => patterns.some((pattern) => pattern.test(fullText));
-  const addTemplateIssue = (severity, title, detail, evidence = auditScenarioLabels[scenario]) => {
-    addIssue(issues, severity, `场景模板：${title}`, detail, evidence);
-  };
-
-  if (scenario === "concept") {
-    if (!hasAny([/概念|方案|创意|产品介绍|刺激物|图片|视频|文案/])) {
-      addTemplateIssue("low", "概念材料呈现需确认", "概念测试通常需要明确概念材料、展示顺序和受访者阅读/观看要求。");
-    }
-    if (!hasAny([/喜欢|吸引|独特|相关|可信|理解|清晰|购买意愿|尝试意愿/])) {
-      addTemplateIssue("medium", "缺少概念评价维度", "建议覆盖吸引力、独特性、相关性、可信度、理解度或购买/尝试意愿等核心指标。");
-    }
-    if (!hasAny([/为什么|原因|请说明|开放|改进|不喜欢/])) {
-      addTemplateIssue("low", "缺少原因追问", "概念测试建议为核心评价题配置原因追问，方便解释高低分。");
-    }
-  }
-
-  if (scenario === "ua") {
-    if (!hasAny([/使用频率|多久|每周|每月|频次|最近一次/])) {
-      addTemplateIssue("medium", "缺少使用频率题", "U&A 研究通常需要识别品类或产品使用频率，用于区分轻中重度用户。");
-    }
-    if (!hasAny([/使用场景|场合|什么时候|地点|用途|需求|动机/])) {
-      addTemplateIssue("low", "缺少使用场景或需求题", "建议补充使用场景、需求动机或任务场景，方便后续人群和机会点分析。");
-    }
-    if (!hasAny([/品牌|竞品|常用|购买过|使用过|知晓|考虑/])) {
-      addTemplateIssue("medium", "缺少品牌/竞品使用题", "U&A 通常需要覆盖品牌知晓、使用、常用或购买关系，便于识别竞争格局。");
-    }
-  }
-
-  if (scenario === "satisfaction") {
-    if (!hasAny([/满意度|满意|NPS|推荐|推荐意愿|净推荐/])) {
-      addTemplateIssue("medium", "缺少总体满意度或 NPS", "满意度/NPS 项目建议至少包含总体满意度、推荐意愿或核心评价指标。");
-    }
-    if (!hasAny([/原因|为什么|请说明|开放|不满意|改进/])) {
-      addTemplateIssue("low", "缺少低分原因追问", "建议对低满意或低推荐人群设置原因追问，方便定位问题来源。");
-    }
-    if (!hasAny([/服务|价格|质量|体验|配送|售后|功能|包装|门店|客服/])) {
-      addTemplateIssue("low", "缺少细分维度评价", "建议加入产品、服务、价格、体验等细分维度，便于做驱动分析和改进排序。");
-    }
-  }
-
-  if (scenario === "psm") {
-    const hasCheap = /太便宜|便宜到怀疑|担心质量|质量问题/.test(fullText);
-    const hasBargain = /便宜|划算|乐意购买|物超所值/.test(fullText);
-    const hasExpensive = /贵但|比较贵|可以接受|还能接受/.test(fullText);
-    const hasTooExpensive = /太贵|不会买|不考虑购买/.test(fullText);
-    if (!(hasCheap && hasBargain && hasExpensive && hasTooExpensive)) {
-      addTemplateIssue("medium", "PSM 四类价格题不完整", "价格敏感度研究建议同时包含“太便宜、比较便宜、比较贵、太贵”四类价格问题。");
-    }
-    if (!questions.some((question) => /价格|金额|元|预算/.test(question.lines.join("")))) {
-      addTemplateIssue("low", "价格题单位需确认", "建议明确价格单位、区间或填写格式，例如“元/件”或“请输入整数”。");
-    }
-  }
-
-  if (scenario === "kanoMaxdiff") {
-    const hasKano = /KANO|正向|反向|如果具备|如果不具备|满意|不满意/.test(fullText);
-    const hasMaxdiff = /MaxDiff|best.?worst|最想|最不想|最重要|最不重要|最佳|最差/.test(fullText);
-    if (!hasKano && !hasMaxdiff) {
-      addTemplateIssue("medium", "未识别到 KANO 或 MaxDiff 结构", "KANO 需成对正反向题，MaxDiff 需出现最佳/最差或最想/最不想选择任务。");
-      return;
-    }
-    if (hasKano && !(/正向|如果具备|满意/.test(fullText) && /反向|如果不具备|不满意/.test(fullText))) {
-      addTemplateIssue("medium", "KANO 正反向题需成对", "每个属性建议同时配置具备时和不具备时的反应题，避免无法分类属性。");
-    }
-    if (hasMaxdiff && !/(最想|最佳|最重要|best)/i.test(fullText)) {
-      addTemplateIssue("low", "MaxDiff 缺少 Best 选择说明", "MaxDiff 题组建议明确要求选择最偏好/最重要的一项。");
-    }
-    if (hasMaxdiff && !/(最不想|最差|最不重要|worst)/i.test(fullText)) {
-      addTemplateIssue("low", "MaxDiff 缺少 Worst 选择说明", "MaxDiff 题组建议明确要求选择最不偏好/最不重要的一项。");
-    }
-  }
-}
-
 function auditQuestionnaire(text, scenario = "general") {
-  const issues = [];
-  const questions = parseQuestions(text);
-  const questionIds = questions.map((question) => question.id);
-  const questionSet = new Set(questionIds);
-
-  if (!text.trim()) {
-    addIssue(issues, "high", "缺少问卷稿", "请先粘贴问卷题目、选项和跳题说明，再运行质检。");
-    return issues;
-  }
-
-  if (questions.length === 0) {
-    addIssue(issues, "high", "未识别到题号", "建议使用 Q1、S1、A1、1. 或“题1”这类明确题号，方便检查跳题引用和题号连续性。");
-  }
-
-  const duplicates = questionIds.filter((id, index) => questionIds.indexOf(id) !== index);
-  [...new Set(duplicates)].forEach((id) => {
-    addIssue(issues, "high", `题号重复：${id}`, "重复题号会导致跳题配置和数据字段混乱。", id);
-  });
-
-  const groupedQuestions = questions.reduce((groups, question) => {
-    const key = question.prefix || "纯数字";
-    groups[key] = groups[key] || [];
-    groups[key].push(question);
-    return groups;
-  }, {});
-
-  Object.values(groupedQuestions).forEach((group) => {
-    if (group.length <= 1) return;
-    const sorted = [...new Set(group.map((question) => question.number))].sort((a, b) => a - b);
-    const prefix = group[0].prefix;
-    for (let number = sorted[0]; number <= sorted[sorted.length - 1]; number += 1) {
-      const id = `${prefix}${number}`;
-      if (!questionSet.has(id)) {
-        addIssue(issues, "medium", `题号缺失：${prefix ? `${prefix}${number}` : number}`, "请确认是故意跳过，还是问卷稿漏题。", `${prefix ? `${prefix}${number}` : number}`);
-      }
-    }
-  });
-
-  const jumpPattern = /(?:跳至|跳到|转至|进入|goto)\s*(Q|S|A|B|C|D|题)?\s*(\d+)/gi;
-  [...text.matchAll(jumpPattern)].forEach((match) => {
-    const rawPrefix = match[1] ? match[1].toUpperCase() : "";
-    const prefix = rawPrefix === "题" ? "Q" : rawPrefix;
-    const targetNumber = Number(match[2]);
-    const target = `${prefix}${targetNumber}`;
-    const sameNumberQuestions = questions.filter((question) => question.number === targetNumber);
-    const inferredTargetExists =
-      !prefix && !questionSet.has(target) && sameNumberQuestions.length === 1;
-    const targetExists = questionSet.has(target) || inferredTargetExists;
-    const display = prefix ? target : targetNumber;
-
-    if (!targetExists) {
-      addIssue(issues, "high", `跳题目标不存在：${display}`, "跳题引用的目标题号没有在问卷稿中出现，上线后可能中断路径。", match[0]);
-    }
-  });
-
-  const conditionalJumpPattern = /如果\s*(Q|S|A|B|C|D|题)?\s*(\d+)\s*选择\s*([A-Z0-9]+)[，,、\s]*(?:则)?\s*(?:跳至|跳到|转至|进入)\s*(Q|S|A|B|C|D|题)?\s*(\d+)/gi;
-  [...text.matchAll(conditionalJumpPattern)].forEach((match) => {
-    const rawSourcePrefix = match[1] ? match[1].toUpperCase() : "";
-    const sourcePrefix = rawSourcePrefix === "题" ? "Q" : rawSourcePrefix;
-    const sourceNumber = Number(match[2]);
-    const optionKey = match[3].toUpperCase();
-    const rawTargetPrefix = match[4] ? match[4].toUpperCase() : "";
-    const targetPrefix = rawTargetPrefix === "题" ? "Q" : rawTargetPrefix;
-    const targetNumber = Number(match[5]);
-    const sourceCandidates = questions.filter((question) =>
-      question.number === sourceNumber && (!sourcePrefix || question.prefix === sourcePrefix)
-    );
-    const targetCandidates = questions.filter((question) =>
-      question.number === targetNumber && (!targetPrefix || question.prefix === targetPrefix)
-    );
-    const sourceQuestion = sourceCandidates.length === 1 ? sourceCandidates[0] : null;
-    const sourceDisplay = sourcePrefix ? `${sourcePrefix}${sourceNumber}` : sourceNumber;
-    const targetDisplay = targetPrefix ? `${targetPrefix}${targetNumber}` : targetNumber;
-
-    if (!sourceQuestion) {
-      addIssue(issues, "high", `条件跳题来源不存在：${sourceDisplay}`, "条件跳题引用的来源题没有在问卷稿中唯一识别到，请确认题号。", match[0]);
-      return;
-    }
-
-    if (!sourceQuestion.options.some((option) => option.key.toUpperCase() === optionKey)) {
-      addIssue(issues, "high", `${sourceQuestion.display} 条件选项不存在：${optionKey}`, "条件跳题引用的选项没有在该题选项中出现，上线后可能导致路径配置错误。", match[0]);
-    }
-
-    if (!targetCandidates.length) {
-      addIssue(issues, "high", `条件跳题目标不存在：${targetDisplay}`, "条件跳题的目标题号没有在问卷稿中出现。", match[0]);
-    }
-
-    if (targetCandidates.length && targetNumber <= sourceQuestion.number) {
-      addIssue(issues, "low", `${sourceQuestion.display} 条件跳题方向需确认`, "跳题目标不在来源题之后，可能是回跳、循环或题号引用错误。", match[0]);
-    }
-  });
-
-  questions.forEach((question) => {
-    const optionTexts = question.options.map((option) => option.text.replace(/\s+/g, ""));
-    const duplicateOptions = optionTexts.filter((option, index) => optionTexts.indexOf(option) !== index);
-    [...new Set(duplicateOptions)].forEach((option) => {
-      addIssue(issues, "medium", `${question.display} 选项重复`, "重复选项会影响受访者理解和后续数据编码。", option);
-    });
-
-    question.options.forEach((option) => {
-      if (/其他/.test(option.text) && !/(请注明|注明|填空|填写|开放|____|：|:)/.test(option.text)) {
-        addIssue(issues, "medium", `${question.display} “其他”缺少说明`, "如果需要收集开放答案，建议写明“其他，请注明”；如果不收集，请确认平台配置。", option.text);
-      }
-
-      if (/(以上都没有|以上均无|都没有|无|没有)/.test(option.text) && !/(互斥|排他|单独显示|固定)/.test(question.lines.join(""))) {
-        addIssue(issues, "medium", `${question.display} 排他选项需确认`, "“以上都没有/无”等选项通常需要设置为互斥或固定位置。", option.text);
-      }
-    });
-
-    if (/(随机|轮换|random|rotate)/i.test(question.lines.join("")) && /(其他|以上|无|不知道|拒答)/.test(question.lines.join(""))) {
-      addIssue(issues, "low", `${question.display} 随机/轮换规则需确认`, "含“其他/以上都没有/不知道”等特殊选项时，建议明确哪些选项不参与随机或固定在末尾。", question.lines.join("\n"));
-    }
-  });
-
-  typoRules.forEach(([needle, title, detail]) => {
-    if (text.includes(needle)) {
-      addIssue(issues, "low", title, detail, needle);
-    }
-  });
-
-  if (/1\s*[=＝]\s*非常满意/.test(text) && /5\s*[=＝]\s*非常满意/.test(text)) {
-    addIssue(issues, "medium", "量表方向可能不一致", "同一份问卷中出现了不同的满意度端点定义，建议统一量表方向。", "1=非常满意 / 5=非常满意");
-  }
-
-  addScenarioTemplateIssues(issues, questions, text, scenario);
-
-  return issues;
+  const checker = window.SurveyKitToolGateway?.checkQuestionnaireLocally;
+  if (!checker) return [];
+  return checker({ text, scenario }).issues;
 }
 
 function renderAuditResults(issues) {
@@ -12967,10 +12688,22 @@ function clearAiSettings() {
   showButtonSaved(document.querySelector("#clearAiSettings"), "已清空");
 }
 
-function runAudit() {
+let auditRequestVersion = 0;
+async function runAudit() {
   const text = document.querySelector("#questionnaireText").value;
   const scenario = document.querySelector("#auditScenario").value;
-  const issues = auditQuestionnaire(text, scenario);
+  const version = ++auditRequestVersion;
+  let payload;
+  try {
+    payload = await callToolGateway("questionnaire-check", { text, scenario });
+  } catch (error) {
+    if (version === auditRequestVersion) {
+      document.querySelector("#auditResults").innerHTML = `<div class="empty-state"><strong>质检未完成</strong><span>${escapeHtml(error.message)}</span></div>`;
+    }
+    return [];
+  }
+  if (version !== auditRequestVersion) return [];
+  const issues = payload.data.issues;
   renderAuditResults(issues);
   lastAuditReport = {
     projectName: document.querySelector("#projectName").value.trim() || "未命名项目",
@@ -12985,6 +12718,7 @@ function runAudit() {
   document.querySelector("#exportAuditHtml").disabled = false;
   syncAuditToWorkspaceDraft();
   markWorkspaceStatus("audit");
+  window.SurveyKitToolGateway?.rememberExecution?.("questionnaire-check", { text, scenario }, payload.data);
   return issues;
 }
 
@@ -13142,8 +12876,8 @@ function exportAuditHtmlReport() {
   downloadTextFile("问卷上线质检报告.html", html, "text/html;charset=utf-8");
 }
 
-function saveTestRecord() {
-  const issues = runAudit();
+async function saveTestRecord() {
+  const issues = await runAudit();
   const record = {
     projectName: document.querySelector("#projectName").value.trim(),
     scenario: document.querySelector("#auditScenario").value,
@@ -13610,11 +13344,10 @@ document.querySelector("#loadExample").addEventListener("click", () => {
   runAudit();
 });
 document.querySelector("#saveTest").addEventListener("click", saveTestRecord);
-document.querySelector("#saveQuotaProgress").addEventListener("click", (event) => {
-  markWorkspaceStatus("quota");
-  showButtonSaved(event.currentTarget, "已保存到项目");
+window.addEventListener("surveykit:tool-project-opened", (event) => {
+  if (event.detail?.tool_id === "sample-size") calculateSample();
+  if (event.detail?.tool_id === "quota") calculateQuota();
 });
-
 document.querySelector("#estimateTime").addEventListener("click", renderTimeEstimate);
 document.querySelector("#loadTimeExample").addEventListener("click", () => {
   document.querySelector("#timeText").value = exampleQuestionnaire;

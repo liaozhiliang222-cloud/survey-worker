@@ -5,15 +5,18 @@ const PROVIDER_HOSTS = {
   qwen: ["dashscope.aliyuncs.com"],
   sensenova: ["token.sensenova.cn", "api.sensenova.cn"],
   surveykit_gateway: ["api.surveykit.cc"],
+  volcengine_agent_plan: ["ark.cn-beijing.volces.com"],
   openai: ["api.openai.com"],
 };
 
 const MAX_BODY_BYTES = 1024 * 1024;
+const BUILTIN_VOLCENGINE_AGENT_PLAN_URL = "https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions";
 const BUILTIN_BAILIAN_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
 const BUILTIN_SENSENOVA_URL = "https://token.sensenova.cn/v1/chat/completions";
 const BUILTIN_SURVEYKIT_GATEWAY_URL = "http://api.surveykit.cc/v1/chat/completions";
 const DEFAULT_SENSENOVA_MODELS = ["deepseek-v4-flash"];
 const DEFAULT_SURVEYKIT_GATEWAY_MODELS = ["deepseek-v4-flash"];
+const DEFAULT_VOLCENGINE_AGENT_PLAN_MODELS = ["glm-5.3-flash"];
 const DEFAULT_BUILTIN_MODELS = [
   "deepseek-v4-pro",
   "deepseek-v4-flash",
@@ -36,10 +39,10 @@ function releaseInfo(env = {}) {
   };
 }
 const TASK_TIER_MODEL_PRIORITY = {
-  fast: ["deepseek-v4-flash", "qwen3.6-plus"],
-  storyline: ["deepseek-v4-flash"],
-  quality: ["deepseek-v4-pro", "qwen3.7-max", "qwen3.7-plus", "deepseek-v4-flash"],
-  structured: ["deepseek-v4-flash", "qwen3.7-max", "qwen3.7-plus"],
+  fast: ["glm-5.3-flash", "deepseek-v4-flash", "qwen3.6-plus"],
+  storyline: ["glm-5.3-flash", "deepseek-v4-flash"],
+  quality: ["glm-5.3-flash", "deepseek-v4-pro", "qwen3.7-max", "qwen3.7-plus", "deepseek-v4-flash"],
+  structured: ["glm-5.3-flash", "deepseek-v4-flash", "qwen3.7-max", "qwen3.7-plus"],
 };
 const TASK_TIER_REQUEST_BUDGET_MS = {
   fast: 54_000,
@@ -181,6 +184,28 @@ function configuredModels(env, pluralKey, singularKey, defaults) {
 
 function getBuiltinConfigs(env) {
   const configs = [];
+  const volcengineAgentPlanKey = String(
+    env?.VOLCENGINE_AGENT_PLAN_API_KEY
+    || env?.ARK_AGENT_PLAN_API_KEY
+    || env?.ARK_API_KEY
+    || "",
+  ).trim();
+  if (volcengineAgentPlanKey) {
+    configs.push({
+      apiKey: volcengineAgentPlanKey,
+      models: configuredModels(
+        env,
+        "VOLCENGINE_AGENT_PLAN_MODELS",
+        "VOLCENGINE_AGENT_PLAN_MODEL",
+        DEFAULT_VOLCENGINE_AGENT_PLAN_MODELS,
+      ),
+      url: String(env?.VOLCENGINE_AGENT_PLAN_API_URL || BUILTIN_VOLCENGINE_AGENT_PLAN_URL).trim(),
+      provider: "volcengine_agent_plan",
+      source: "builtin-volcengine-agent-plan",
+      timeoutMs: 240_000,
+      attemptsPerModel: 1,
+    });
+  }
   const surveykitGatewayKey = String(env?.SURVEYKIT_GATEWAY_API_KEY || "").trim();
   if (surveykitGatewayKey) {
     configs.push({

@@ -1,6 +1,8 @@
-/**
- * 样本量计算模块
- */
+/** 样本量计算模块。核心算法由 Tool Service 统一提供。 */
+
+import { calculateSampleSize } from "../../../lib/tools/sample-size.mjs";
+
+export { calculateSampleSize };
 
 /**
  * 计算所需样本量
@@ -12,27 +14,6 @@
  * @param {number} params.responseRatePercent - 预估回收率百分比
  * @returns {{ base: number, gross: number, segment: number, advice: string }}
  */
-export function calculateSampleSize({ z = 1.96, marginPercent = 5, population = 0, segments = 1, responseRatePercent = 80 }) {
-  const margin = marginPercent / 100;
-  const responseRate = Math.max(1, responseRatePercent) / 100;
-  const segs = Math.max(1, segments);
-  const p = 0.5;
-
-  const infiniteSample = (z * z * p * (1 - p)) / (margin * margin);
-  const adjustedSample = population > 0
-    ? infiniteSample / (1 + (infiniteSample - 1) / population)
-    : infiniteSample;
-
-  const base = Math.ceil(adjustedSample);
-  const segment = Math.ceil(base / segs);
-  const gross = Math.ceil(base / responseRate);
-
-  const populationText = population > 0 ? `用户规模 ${population.toLocaleString("zh-CN")}、` : "用户规模不设上限、";
-  const advice = `${populationText}允许误差 ${Math.round(margin * 100)}% 时，建议至少回收 ${base.toLocaleString("zh-CN")} 个有效样本；按当前回收率预估需发放 ${gross.toLocaleString("zh-CN")} 份。`;
-
-  return { base, gross, segment, advice };
-}
-
 /**
  * 绑定样本量表单事件（DOM 初始化后调用）
  */

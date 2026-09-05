@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import {datasetExplanation,artifactPreflight,projectReadiness,readProjectReadiness} from '../lib/research-readiness.mjs';
+const weighted={id:'d',type:'weighted',row_count:100,metadata:JSON.stringify({schema_version:1,sheet_name:'Sheet 2',parent_version:'raw',weighting:{diagnostics:{converged:false,effective_n:72.4}}})};
+const info=datasetExplanation(weighted,[{dataset_id:'d',result:JSON.stringify({results:[{variable:'NPS',metric:'nps',base:87}]})}]);
+assert.equal(info.weighted,true);assert.equal(info.convergence,'not_converged');assert.equal(info.effective_n,72.4);assert.equal(info.bases[0].base,87);assert.equal(info.sheet_name,'Sheet 2');assert.equal(info.needs_review,true);
+assert.match(datasetExplanation({metadata:'{}'}).weight_label,/待复核/);
+assert.equal(datasetExplanation({...weighted,metadata:{schema_version:1,weighting:{diagnostics:{converged:true}}}}).convergence,'converged');
+const evidence=[{id:'e',excluded:false}],script={type:'ppt_script',content:{pages:[{id:'p',page_type:'quote_evidence',evidence_ids:['e']}]}};
+assert.equal(artifactPreflight(script,evidence).status,'ready');
+assert.equal(artifactPreflight(script,[{id:'e',excluded:1}]).status,'blocked');
+assert.equal(artifactPreflight({...script,freshness:{status:'stale'}},evidence).status,'needs_review');
+assert.equal(artifactPreflight({...script,content:{pages:[{page_type:'data_insight',evidence_ids:['e']}] }},evidence).can_generate,false);
+assert.equal(projectReadiness().stage,'materials');
+assert.equal(projectReadiness({evidence}).stage,'outline');
+assert.equal(projectReadiness({jobs:[{status:'failed'}]}).label,'数据任务失败');
+assert.equal(projectReadiness({artifacts:[{freshness:{status:'stale'}}]}).counts.stale_artifacts,1);
+const scoped=[];const rows={Files:[],Datasets:[weighted],Evidence:evidence,Artifacts:[script],DataJobs:[],AnalysisResults:[],Workflows:[]};
+const store=Object.fromEntries(Object.entries(rows).map(([name,value])=>['list'+name,async id=>{scoped.push(id);return value;} ]));
+const result=await readProjectReadiness(store,'only-this-project');assert.equal(result.reports[0].status,'ready');assert.deepEqual(new Set(scoped),new Set(['only-this-project']));
+console.log('R4 explanation, convergence, evidence exclusions, stale states and scoped shared contract passed.');
+
+assert.equal(projectReadiness({workflows:[{task_type:'ppt_script',status:'failed'}]}).label,'成果生成失败');

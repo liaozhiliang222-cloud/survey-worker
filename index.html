@@ -415,6 +415,10 @@
                 核心研究目标
                 <textarea id="researchCreateGoal" name="research_goal" rows="3" placeholder="希望通过本项目回答哪些决策问题"></textarea>
               </label>
+              <div class="research-constraint-grid compact">
+                <label>预算约束<input id="researchCreateBudget" maxlength="200" placeholder="例如：15万元以内" /></label>
+                <label>时间约束<input id="researchCreateTimeline" maxlength="200" placeholder="例如：6周内完成" /></label>
+              </div>
               <div class="button-row">
                 <button class="primary-btn" id="researchCreateSubmit" type="submit">创建并进入项目</button>
                 <button class="secondary-btn" id="researchCreateCancel" type="button">取消</button>
@@ -448,16 +452,56 @@
                   <label>客户<input id="researchProjectClient" name="client_name" maxlength="120" /></label>
                   <label>项目背景 / Brief<textarea id="researchProjectBrief" name="brief" rows="5"></textarea></label>
                   <label>研究目标<textarea id="researchProjectGoal" name="research_goal" rows="4"></textarea></label>
+                  <details class="research-constraints" open>
+                    <summary>项目约束</summary>
+                    <div class="research-constraint-grid">
+                      <label>预算<input id="researchProjectBudget" maxlength="300" placeholder="例如：15万元以内" /></label>
+                      <label>周期<input id="researchProjectTimeline" maxlength="300" placeholder="例如：4周" /></label>
+                      <label>目标样本<input id="researchProjectTargetSample" maxlength="300" placeholder="例如：有效样本约800" /></label>
+                      <label>方法偏好<input id="researchProjectMethod" maxlength="300" placeholder="例如：定量+定性" /></label>
+                      <label>地域范围<input id="researchProjectRegion" maxlength="300" placeholder="例如：全国一至三线城市" /></label>
+                      <label class="wide">其他约束<textarea id="researchProjectOtherConstraints" rows="2" placeholder="招募、客户要求或其他边界"></textarea></label>
+                    </div>
+                  </details>
                   <button class="secondary-btn" id="researchSaveProject" type="submit">保存项目信息</button>
                 </form>
                 <div class="research-files-section" aria-label="项目文件">
                   <div class="research-files-head">
                     <div><strong>项目文件</strong><small id="researchFileCount">0 个文件</small></div>
                     <button class="secondary-btn" id="researchUploadFile" type="button">＋ 上传文件</button>
-                    <input id="researchFileInput" type="file" accept=".docx,.pdf,.txt,.md,.xlsx,.pptx" multiple hidden />
+                    <input id="researchFileInput" type="file" accept=".docx,.pdf,.txt,.md,.csv,.xlsx,.pptx" multiple hidden />
                   </div>
-                  <p class="research-files-help">支持 DOCX、PDF、TXT、MD、XLSX、PPTX；单文件默认不超过 10MB。</p>
+                  <p class="research-files-help">支持 DOCX、PDF、TXT、MD、CSV、XLSX、PPTX；单文件默认不超过 10MB。</p>
                   <div class="research-file-list" id="researchFileList" aria-live="polite"></div>
+                </div>
+                <div class="research-transcripts-section" aria-label="访谈材料">
+                  <div class="research-files-head"><div><strong>访谈材料</strong><small id="researchTranscriptCount">0 份访谈</small></div><button class="secondary-btn" id="researchGenerateTranscriptSummaries" type="button">生成缺失摘要</button></div>
+                  <p class="research-files-help">两层缓存：结构摘要负责导航，低成本模型生成深度单访谈摘要；正式结论与引语仍回查原始 Segment。</p>
+                  <div class="research-transcript-list" id="researchTranscriptList" aria-live="polite"></div>
+                </div>
+                <div class="research-datasets-section" aria-label="项目数据集">
+                  <div class="research-files-head">
+                    <div><strong>数据集</strong><small id="researchDatasetCount">0 个版本</small></div>
+                    <button class="secondary-btn" id="researchUploadDataset" type="button">＋ 上传数据</button>
+                    <input id="researchDatasetInput" type="file" accept=".sav,.csv,.xlsx" hidden />
+                  </div>
+                  <p class="research-files-help">支持 SAV / XLSX / CSV；保留 SPSS 变量标签和值标签。Raw → Clean → Weighted 版本独立保存，原始数据不进入 AI 上下文。</p>
+                  <div class="research-dataset-list" id="researchDatasetList" aria-live="polite"></div>
+                  <div class="research-dataset-actions">
+                    <button type="button" id="researchProfileDataset">检查数据结构</button>
+                    <button type="button" id="researchWeightDataset">评估加权</button>
+                    <button type="button" id="researchAnalyzeDataset">用 AI 分析</button>
+                    <button type="button" id="researchExportCrosstabs">导出交叉表</button>
+                  </div>
+                </div>
+                <div class="research-tools-section" aria-label="专业工具">
+                  <div class="research-tools-head"><div><strong>专业工具</strong><small>确定性计算，不消耗 AI Token</small></div></div>
+                  <div class="research-tool-actions" id="researchToolActions">
+                    <button type="button" data-research-tool="sample-size">样本量计算</button>
+                    <button type="button" data-research-tool="quota">配额设计</button>
+                    <button type="button" data-research-tool="questionnaire-check">问卷质检</button>
+                  </div>
+                  <div class="research-tool-result-list" id="researchToolResultList" aria-live="polite"></div>
                 </div>
               </aside>
 
@@ -470,11 +514,27 @@
                   <div class="research-current-context-head"><strong>当前 AI 上下文</strong><button class="secondary-btn" id="researchAddContext" type="button">＋ 添加上下文</button></div>
                   <div class="research-context-chips" id="researchContextChips"><span class="research-context-empty">仅使用项目基础信息</span></div>
                 </div>
+                <section class="research-workflow-panel" id="researchWorkflowPanel" hidden aria-live="polite">
+                  <div class="research-workflow-head">
+                    <div><span>Research Workflow</span><strong id="researchWorkflowTitle">调研方案工作流</strong></div>
+                    <span class="research-workflow-status" id="researchWorkflowStatus">准备中</span>
+                  </div>
+                  <p class="research-current-artifact" id="researchCurrentArtifact" hidden></p>
+                  <ol class="research-workflow-steps" id="researchWorkflowSteps"></ol>
+                </section>
                 <div class="research-message-list" id="researchMessageList" aria-live="polite" aria-label="研究对话消息"></div>
                 <div class="research-quick-tasks" id="researchQuickTasks" aria-label="快捷任务">
                   <button type="button" data-research-task-type="research_plan" data-research-prompt="请基于当前项目背景，为我设计一份完整的调研方案。">设计调研方案</button>
                   <button type="button" data-research-task-type="questionnaire" data-research-prompt="请基于当前项目目标，设计一份可编程的定量问卷。">设计定量问卷</button>
                   <button type="button" data-research-task-type="interview_guide" data-research-prompt="请基于当前项目，设计一份半结构化深度访谈大纲。">设计访谈大纲</button>
+                  <button type="button" data-research-task-type="qualitative_summary" data-research-prompt="请基于选中的访谈笔录生成一份证据可追溯的定性小结，呈现核心主题、共识与分歧、痛点需求、代表性原话、研究启示及证据边界。">生成定性小结</button>
+                  <button type="button" data-research-task-type="qualitative_excel_summary" data-research-prompt="请按照选中的 Excel 小结模板，将选中的访谈笔录逐题归纳并生成客户访谈小结 Excel。">生成 Excel 小结</button>
+                  <button type="button" data-research-task-type="transcript_correction" data-research-prompt="校正选中的访谈笔录，不改变受访者原意。">笔录校正</button>
+                  <button type="button" data-research-task-type="qualitative_analysis" data-research-prompt="请围绕当前研究问题分析全部可用访谈，识别共识、分群差异、关键少数与反例，并用可回溯原声支持核心洞察。">分析多份访谈</button>
+                  <button type="button" data-research-task-type="interview_summary" data-research-prompt="请对选中的单份访谈生成结构化小结，保留核心观点、关键事实、典型案例、代表性原声及与本项目的关联。">生成单篇小结</button>
+                  <button type="button" data-research-task-type="find_quotes" data-research-prompt="请寻找与当前研究问题最相关的 3～5 条访谈原声，并回查前后文。">找原声</button>
+                  <button type="button" data-research-task-type="data_analysis" data-research-prompt="请先检查当前数据集质量，再围绕项目目标设计最小必要的交叉分析并形成有证据的分析成果。">分析调研数据</button>
+                  <button type="button" data-research-task-type="report_storyline" data-research-prompt="根据目前这个项目已经完成的定量和定性分析，帮我梳理整份报告的核心结论和故事线，并生成页面级报告大纲。">报告大纲</button>
                   <button type="button" data-research-task-type="free_chat" data-research-prompt="请先梳理这个项目最需要澄清的研究问题。">自由提问</button>
                 </div>
                 <form class="research-composer" id="researchChatForm">
@@ -502,8 +562,41 @@
             <form method="dialog" id="researchSaveArtifactForm">
               <div class="section-heading compact"><div><h3>保存为项目成果</h3><p>同类型成果再次保存会自动生成新版本。</p></div></div>
               <label>成果名称<input id="researchArtifactTitle" required maxlength="120" /></label>
-              <label>成果类型<select id="researchArtifactType"><option value="research_plan">调研方案</option><option value="questionnaire">定量问卷</option><option value="interview_guide">访谈大纲</option><option value="other">其他</option></select></label>
+              <label>成果类型<select id="researchArtifactType"><option value="research_plan">调研方案</option><option value="questionnaire">定量问卷</option><option value="interview_guide">访谈大纲</option><option value="qualitative_summary">定性小结</option><option value="qualitative_analysis">多访谈定性分析</option><option value="interview_summary">单访谈小结</option><option value="analysis">数据分析</option><option value="report_outline">报告大纲</option><option value="ppt_script">PPT 脚本</option><option value="other">其他</option></select></label>
               <div class="button-row"><button class="primary-btn" id="researchArtifactSave" type="submit">保存成果</button><button class="secondary-btn" id="researchArtifactCancel" type="button">取消</button></div>
+            </form>
+          </dialog>
+
+          <dialog class="research-save-dialog research-ppt-preview-dialog" id="researchQualitativePptPreviewDialog">
+            <form method="dialog" id="researchQualitativePptPreviewForm">
+              <header class="research-ppt-preview-head">
+                <div><span>QUALITATIVE REPORT</span><h3>真实内容逐页预览</h3><p>逐页检查当前 PPT Script 的真实排版、证据与校验问题，再交给 OfficeCLI 输出可编辑成品。</p></div>
+                <code id="researchPptTemplateId">qualitative_tech_blue_v2</code>
+              </header>
+              <section class="research-ppt-template-hero">
+                <div class="research-ppt-template-copy">
+                  <small>当前模板</small>
+                  <strong id="researchPptTemplateName">Tech Blue V2 · 2.0.0</strong>
+                  <p id="researchPptTemplateDescription">企业级定性研究报告：科技蓝、原生可编辑、无左侧贯穿竖条。</p>
+                  <div class="research-ppt-template-palette" id="researchPptTemplatePalette" aria-label="模板色板"></div>
+                </div>
+                <ul>
+                  <li><strong>16:9</strong><span>宽屏报告</span></li>
+                  <li><strong>科技蓝</strong><span>统一主色</span></li>
+                  <li><strong>无竖条</strong><span>克制页眉</span></li>
+                  <li><strong>可编辑</strong><span>原生对象</span></li>
+                </ul>
+              </section>
+              <section class="research-ppt-preview-section">
+                <div class="section-heading compact"><div><h3>当前脚本真实页面</h3><p id="researchPptPreviewSummary">OfficeCLI 正在临时渲染当前 PPT Script；此过程不会创建正式 PPT Artifact。</p></div></div>
+                <div class="research-ppt-layout-previews" id="researchPptLayoutPreviews"></div>
+              </section>
+              <section class="research-ppt-preview-section">
+                <div class="section-heading compact"><div><h3>生成前检查</h3><p>确保输入链路、证据绑定、可编辑性与服务端渲染器均满足交付条件。</p></div></div>
+                <div class="research-ppt-preflight-metrics" id="researchPptPreflightMetrics"></div>
+                <div class="research-ppt-renderer-state" id="researchPptRendererState" aria-live="polite"></div>
+              </section>
+              <footer class="button-row research-ppt-preview-actions"><button class="primary-btn" id="researchPptPreviewConfirm" type="submit">确认并生成可编辑 PPTX</button><button class="secondary-btn" id="researchPptPreviewCancel" type="button">返回脚本</button></footer>
             </form>
           </dialog>
 
@@ -528,8 +621,37 @@
             <div class="research-file-summary"><strong>摘要</strong><pre id="researchFileSummary"></pre></div>
             <div class="research-file-structure" id="researchFileStructure" hidden><strong>XLSX 结构化上下文</strong><pre id="researchFileStructurePreview"></pre></div>
             <div class="research-file-preview"><strong>解析内容预览</strong><pre id="researchFilePreview"></pre></div>
+            <form class="research-transcript-editor" id="researchTranscriptEditor" hidden>
+              <strong>访谈信息</strong>
+              <label>访谈类型<select id="researchTranscriptType"><option value="consumer">消费者</option><option value="expert">专家</option><option value="internal">内部人员</option><option value="other">其他</option></select></label>
+              <label>受访者标签<input id="researchTranscriptLabel" maxlength="300" placeholder="例如：一线城市高频用户 A" /></label>
+              <label>受访者 Metadata（JSON）<textarea id="researchTranscriptMetadata" rows="3" placeholder='{"city":"上海","segment":"高频用户"}'></textarea></label>
+              <div class="research-transcript-summary-cache">
+                <div><strong>单访谈深度摘要</strong><span id="researchTranscriptSummaryState">待生成</span></div>
+                <p>摘要用于跨访谈导航与理解，不替代原始 Segment 证据。</p>
+                <pre id="researchTranscriptDeepSummary">尚未生成</pre>
+                <button class="secondary-btn" id="researchGenerateTranscriptSummary" type="button">生成深度摘要</button>
+              </div>
+              <button class="secondary-btn" id="researchTranscriptSave" type="submit">保存访谈信息</button>
+            </form>
             <p class="research-ocr-state" id="researchFileOcrState"></p>
-            <div class="button-row"><button class="secondary-btn" id="researchFileReparse" type="button">重新解析</button><button class="secondary-btn" id="researchFileOcr" type="button" hidden>按需 OCR</button><button class="danger-btn" id="researchFileDelete" type="button">删除文件</button><button class="secondary-btn" id="researchFileClose" type="button">关闭</button></div>
+            <div class="button-row"><button class="primary-btn" id="researchFileCorrectTranscript" type="button" hidden>笔录校正</button><button class="secondary-btn" id="researchFileReviewTranscript" type="button" hidden>查看校正版</button><button class="secondary-btn" id="researchFileDownload" type="button">下载文件</button><button class="secondary-btn" id="researchFileReparse" type="button">重新解析</button><button class="secondary-btn" id="researchFileOcr" type="button" hidden>按需 OCR</button><button class="danger-btn" id="researchFileDelete" type="button">删除文件</button><button class="secondary-btn" id="researchFileClose" type="button">关闭</button></div>
+          </dialog>
+
+          <dialog class="research-save-dialog research-correction-dialog" id="researchTranscriptCorrectionDialog">
+            <form method="dialog" id="researchTranscriptCorrectionForm">
+              <div class="section-heading compact"><div><h3>笔录校正</h3><p>只修正明确的转写错误；口语、观点、矛盾、负面表达与强调式重复保持不变。</p></div></div>
+              <fieldset><legend>选择访谈笔录</legend><div class="research-context-picker-list" id="researchCorrectionTranscriptOptions"></div></fieldset>
+              <fieldset><legend>校正范围</legend><div class="research-correction-categories"><span>错别字与 ASR/同音错误</span><span>证据明确的品牌/产品名</span><span>标点与断句</span><span>机械重复</span><span>明显的说话人标签错误</span></div></fieldset>
+              <p class="research-correction-guardrail">低/中置信建议不会自动改入正文，需在复核页逐条接受或拒绝。再次校正会从 Raw 生成新的 Corrected 版本。</p>
+              <div class="button-row"><button class="primary-btn" id="researchTranscriptCorrectionStart" type="submit">开始校正</button><button class="secondary-btn" id="researchTranscriptCorrectionCancel" type="button">取消</button></div>
+            </form>
+          </dialog>
+
+          <dialog class="research-save-dialog research-correction-review-dialog" id="researchTranscriptCorrectionReviewDialog">
+            <div class="section-heading compact"><div><h3 id="researchCorrectionReviewTitle">校正版复核</h3><p id="researchCorrectionReviewSummary"></p></div></div>
+            <div class="research-correction-review-list" id="researchCorrectionReviewList"></div>
+            <div class="button-row"><button class="primary-btn" id="researchCorrectionExport" type="button">导出校正版 DOCX</button><button class="secondary-btn" id="researchCorrectionReviewClose" type="button">关闭</button></div>
           </dialog>
         </section>
 
@@ -589,6 +711,7 @@
             </form>
 
             <div class="result-panel">
+              <p class="tool-project-context" data-tool-project-context hidden></p>
               <div>
                 <span>建议有效样本量</span>
                 <strong id="baseSample">385</strong>
@@ -602,6 +725,7 @@
                 <strong id="segmentSample">385</strong>
               </div>
               <p id="sampleAdvice">95% 置信水平、5% 误差下，常规无限总体项目建议有效样本量约 385。</p>
+              <button class="secondary-btn" type="button" data-save-tool-result="sample-size" hidden>保存到项目</button>
             </div>
           </div>
         </section>
@@ -661,12 +785,13 @@
             </form>
 
             <div class="quota-output">
+              <p class="tool-project-context" data-tool-project-context hidden></p>
               <div class="section-heading compact">
                 <div>
                   <h3 id="quotaTitle">单一配额表</h3>
                   <p id="quotaSummary">目标有效样本量 400</p>
                 </div>
-                <button class="secondary-btn" id="saveQuotaProgress" type="button">保存到项目进度</button>
+                <button class="secondary-btn" id="saveQuotaProgress" data-save-tool-result="quota" type="button" hidden>保存到项目</button>
               </div>
               <div class="table-wrap">
                 <table id="quotaTable"></table>
@@ -766,12 +891,19 @@
               <p class="panel-note">第三方问卷链接可作为人工复核对象；深层逻辑检查建议基于问卷稿或平台导出的题目表。</p>
             </div>
 
-            <div class="audit-results" id="auditResults" aria-live="polite">
+            <div>
+              <p class="tool-project-context" data-tool-project-context hidden></p>
+              <div class="audit-results" id="auditResults" aria-live="polite">
               <div class="empty-state">
                 <strong>等待质检</strong>
                 <span>粘贴问卷稿后点击“开始质检”，这里会显示阻塞问题、重要问题和建议优化。</span>
               </div>
+              </div>
             </div>
+          </div>
+
+          <div class="button-row tool-project-save-row">
+            <button class="secondary-btn" type="button" data-save-tool-result="questionnaire-check" hidden>保存质检结果到项目</button>
           </div>
 
           <div class="report-strip">

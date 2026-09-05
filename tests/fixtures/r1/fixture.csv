@@ -1,0 +1,17 @@
+GROUP,NPS,VALUE,CHOICE
+A,0,0,0
+A,10,1,yes
+A,10,2,yes
+A,10,3,yes
+A,10,4,yes
+A,10,5,yes
+A,10,6,yes
+A,10,7,yes
+A,10,8,yes
+B,10,9,yes
+B,10,10,yes
+B,10,11,yes
+B,10,12,yes
+A,,,
+A,,,  
+,,,yes

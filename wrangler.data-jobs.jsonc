@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "surveykit-data-jobs",
+  "main": "workers/data-jobs.mjs",
+  "compatibility_date": "2026-09-05",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "observability": { "enabled": true },
+  "limits": { "cpu_ms": 300000 },
+  "triggers": { "crons": ["* * * * *"] },
+  // Bind these to the same environment as Pages only at deployment time.
+  // Placeholders deliberately prevent accidentally deploying to production.
+  "d1_databases": [{ "binding": "RESEARCH_DB", "database_name": "surveykit-r2-test", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "RESEARCH_FILES", "bucket_name": "surveykit-r2-test" }]
+,
+  "env": {
+    "production": {
+      "name": "surveykit-data-jobs",
+      "d1_databases": [{ "binding": "RESEARCH_DB", "database_name": "surveykit-research", "database_id": "060a28fc-72da-4ee1-940c-cea4ccca8583", "migrations_dir": "migrations" }],
+      "r2_buckets": [{ "binding": "RESEARCH_FILES", "bucket_name": "surveykit-research-files" }],
+      "triggers": { "crons": ["* * * * *"] }
+    }
+  }
+}

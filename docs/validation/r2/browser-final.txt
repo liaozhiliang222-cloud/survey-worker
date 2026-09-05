@@ -1,0 +1,14 @@
+[WebServer] (node:34500) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:29548) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 17:07:40 [vite] (client) [console.warn] Service Worker registration blocked by Playwright
+[WebServer] 17:07:40 [vite] (client) [console.warn] Service Worker registration blocked by Playwright
+[WebServer] 17:07:55 [vite] (client) [console.warn] Service Worker registration blocked by Playwright
+[WebServer] 17:07:55 [vite] (client) [console.warn] Service Worker registration blocked by Playwright
+  ok 1 tests\e2e\r2-data-jobs.spec.js:3:1 › 数据任务刷新恢复、断网重连、重试和取消 (27.1s)
+
+  1 passed (29.8s)

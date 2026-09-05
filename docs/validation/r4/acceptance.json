@@ -1,0 +1,128 @@
+{
+  "release": "v0.10.0-20260905.1",
+  "checked_at": "2026-09-05T12:03:51.547Z",
+  "candidate_validation": {
+    "npm_ci": true,
+    "npm_test": true,
+    "python_smoke": true,
+    "pytest_passed": 29,
+    "browser_passed": 23,
+    "browser_skipped": 1,
+    "build": true,
+    "worker_dryrun": true
+  },
+  "real_model": {
+    "attempts": [
+      {
+        "stage": "analysis",
+        "started_at": "2026-09-05T11:35:57.751Z",
+        "max_tokens": 8000,
+        "reasoning_effort": "low",
+        "http_status": 200,
+        "usage": {
+          "completion_tokens": 402,
+          "prompt_tokens": 911,
+          "total_tokens": 1313,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 0
+          }
+        },
+        "finish_reason": "stop"
+      },
+      {
+        "stage": "outline",
+        "started_at": "2026-09-05T11:36:07.049Z",
+        "max_tokens": 8000,
+        "reasoning_effort": "low",
+        "http_status": 200,
+        "usage": {
+          "completion_tokens": 2219,
+          "prompt_tokens": 2760,
+          "total_tokens": 4979,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 22
+          }
+        },
+        "finish_reason": "stop"
+      },
+      {
+        "stage": "script",
+        "started_at": "2026-09-05T11:36:53.673Z",
+        "max_tokens": 8000,
+        "reasoning_effort": "low",
+        "http_status": 200,
+        "usage": {
+          "completion_tokens": 5367,
+          "prompt_tokens": 5301,
+          "total_tokens": 10668,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 58
+          }
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "project_id": "be0f34f2-40f7-4a18-ac6d-515718f9aec1",
+    "analysis": {
+      "passed": true,
+      "transcript_count": 2,
+      "failed_file_count": 0,
+      "verified_quote_count": 4,
+      "invalid_quote_count": 0,
+      "insight_count": 3,
+      "raw_transcript_chars_in_prompt": 0
+    },
+    "outline": {
+      "passed": true,
+      "core_insight_count": 3,
+      "traced_core_insight_count": 3,
+      "chapter_count": 3,
+      "page_count": 4,
+      "sufficient_page_count": 2,
+      "limited_page_count": 2,
+      "evidence_gap_page_count": 0,
+      "conflict_count": 0,
+      "evidence_gap_count": 2,
+      "raw_transcript_chars_in_prompt": 0,
+      "raw_dataset_rows_in_prompt": 0
+    },
+    "script": {
+      "passed": true,
+      "page_count": 5,
+      "evidence_sufficient_count": 2,
+      "evidence_limited_count": 2,
+      "evidence_gap_count": 0,
+      "overloaded_page_count": 3,
+      "dense_page_count": 2,
+      "duplicate_page_count": 0,
+      "continuity_issue_count": 0,
+      "invalid_data_count": 0,
+      "unverified_quote_count": 0,
+      "raw_transcript_chars_in_prompt": 0,
+      "raw_dataset_rows_in_prompt": 0
+    },
+    "artifact_id": "778c743b-da85-410b-8ead-634baac91514",
+    "passed": true
+  },
+  "report": {
+    "slides": 6,
+    "sha256": "0bfbbbbfc01c98c76078b000948796c7345d04e377b99fcc9e2fb146d5604a5b",
+    "script_sha256": "04622cddd12bbdad87d7b8aac6890c987047d3ff912b8eda8485893b9fefac30",
+    "visual_review": "passed after correcting slides 2 and 6"
+  },
+  "production_backup": {
+    "d1_restore_check": true,
+    "migration_rehearsal": true,
+    "r2_objects": 23
+  },
+  "production_deployed": false
+}

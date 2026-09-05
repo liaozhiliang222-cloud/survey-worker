@@ -200,7 +200,7 @@ function excelXlsxSheetXml(sheet) {
       const value = cell.value ?? "";
       const numeric = cell.type === "number"
         || typeof value === "number"
-        || (String(value) !== "" && Number.isFinite(Number(value)) && !/%$/.test(String(value)));
+        || (String(value).trim() !== "" && Number.isFinite(Number(value)) && !/%$/.test(String(value)));
       const xml = numeric
         ? `<c r="${ref}"${style ? ` s="${style}"` : ""}><v>${Number(value) || 0}</v></c>`
         : `<c r="${ref}" t="inlineStr"${style ? ` s="${style}"` : ""}><is><t xml:space="preserve">${escapeHtml(value)}</t></is></c>`;

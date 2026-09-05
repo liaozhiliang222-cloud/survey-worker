@@ -1,0 +1,11 @@
+{
+  "name": "dsh-surveykit-tools",
+  "version": "1.0.0",
+  "description": "SurveyKit Tool Gateway bridge for DeepSeek Harness",
+  "type": "module",
+  "main": "lib/index.js",
+  "files": [
+    "lib"
+  ],
+  "license": "UNLICENSED"
+}

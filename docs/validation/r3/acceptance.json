@@ -1,0 +1,1571 @@
+{
+  "date": "2026-09-05",
+  "status": "development-and-local-acceptance-complete; real-model end-to-end acceptance partial",
+  "production_deployed": false,
+  "storage": "Local JSON/files and actual SQLite with D1 API adapter, plus native workerd/D1/R2 regression",
+  "delivery": {
+    "run": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-delivery\\run-1788601827977",
+    "results": [
+      {
+        "adapter": "local",
+        "case": "quantitative",
+        "project_id": "790f8d9c-65f6-4eb9-a185-ade4e3ac6d78",
+        "script_path": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-delivery\\run-1788601827977\\local-quantitative.json",
+        "evidence_count": 4,
+        "verified_quotes": 0,
+        "source_script_id": "da0260d8-706e-4590-977e-56036cdf98ad",
+        "source_outline_id": "9830247b-451b-4b21-af03-957d7167d831",
+        "duration_ms": 168,
+        "passed": true
+      },
+      {
+        "adapter": "local",
+        "case": "qualitative",
+        "project_id": "c46ed0c0-4336-4721-8ead-1c1ebce313af",
+        "script_path": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-delivery\\run-1788601827977\\local-qualitative.json",
+        "evidence_count": 2,
+        "verified_quotes": 2,
+        "source_script_id": "4bbb3a08-cf8c-4950-b966-ebe59915aef6",
+        "source_outline_id": "bf7705aa-41c8-4821-b8d8-6db74d17c325",
+        "duration_ms": 151,
+        "passed": true
+      },
+      {
+        "adapter": "local",
+        "case": "mixed",
+        "project_id": "9d92dc6d-b746-40e4-862f-9c6bc2e9b08f",
+        "script_path": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-delivery\\run-1788601827977\\local-mixed.json",
+        "evidence_count": 6,
+        "verified_quotes": 2,
+        "source_script_id": "a0ae3c33-e059-4c9b-9199-77595dd0631e",
+        "source_outline_id": "540fa3e0-748e-4e73-a0c8-2cf126d6c98c",
+        "duration_ms": 460,
+        "passed": true
+      },
+      {
+        "adapter": "d1",
+        "case": "quantitative",
+        "project_id": "b48c90e5-100d-470d-befb-c9a98f042645",
+        "script_path": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-delivery\\run-1788601827977\\d1-quantitative.json",
+        "evidence_count": 4,
+        "verified_quotes": 0,
+        "source_script_id": "ab80eb69-6e04-463f-99e0-37985e5b0cb8",
+        "source_outline_id": "fc9d4c98-6759-4829-ab3f-ac782085fb4f",
+        "duration_ms": 760,
+        "passed": true
+      },
+      {
+        "adapter": "d1",
+        "case": "qualitative",
+        "project_id": "750d222a-d566-40b8-9e8e-728a1a247331",
+        "script_path": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-delivery\\run-1788601827977\\d1-qualitative.json",
+        "evidence_count": 2,
+        "verified_quotes": 2,
+        "source_script_id": "2d85ed48-d1a0-4b36-a310-2dcec43c79dd",
+        "source_outline_id": "99a492fb-f867-4257-9f1d-4e3cc6d88d8e",
+        "duration_ms": 533,
+        "passed": true
+      },
+      {
+        "adapter": "d1",
+        "case": "mixed",
+        "project_id": "14523877-5a2b-4122-950b-14d58a6b9ecd",
+        "script_path": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-delivery\\run-1788601827977\\d1-mixed.json",
+        "evidence_count": 6,
+        "verified_quotes": 2,
+        "source_script_id": "6a7f95c7-a86f-44d5-8902-29fdb10a7186",
+        "source_outline_id": "816a8424-9e71-46a2-8b46-b520ae520933",
+        "duration_ms": 1038,
+        "passed": true
+      }
+    ]
+  },
+  "render": [
+    {
+      "case": "qualitative",
+      "adapter": "local",
+      "engine": "python-pptx",
+      "file": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-render\\qualitative-python-pptx.pptx",
+      "slide_count": 9,
+      "validation": {
+        "passed": true,
+        "issue_count": 2,
+        "error_count": 0,
+        "issues": [
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "quotes",
+            "message": "页面已按 quotes 拆分为 5 页，未改写原文。"
+          },
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "dense",
+            "message": "页面已按 supporting_findings, supporting_points 拆分为 2 页，未改写原文。"
+          }
+        ],
+        "checks": [
+          "title_length",
+          "text_density",
+          "quote_length",
+          "quote_count",
+          "module_count",
+          "evidence_binding",
+          "source_note",
+          "native_editability",
+          "rendered_bounds",
+          "container_overlap",
+          "text_overflow_risk"
+        ]
+      },
+      "object_counts": {
+        "slides": 9,
+        "shapes": 133,
+        "text_shapes": 133,
+        "tables": 0,
+        "pictures": 0,
+        "connectors": 0,
+        "full_slide_images": 0,
+        "editable_native": true
+      }
+    },
+    {
+      "case": "qualitative",
+      "adapter": "local",
+      "engine": "officecli",
+      "file": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-render\\qualitative-officecli.pptx",
+      "slide_count": 9,
+      "validation": {
+        "passed": true,
+        "issue_count": 2,
+        "error_count": 0,
+        "issues": [
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "quotes",
+            "message": "页面已按 quotes 拆分为 5 页，未改写原文。"
+          },
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "dense",
+            "message": "页面已按 supporting_findings, supporting_points 拆分为 2 页，未改写原文。"
+          }
+        ],
+        "checks": [
+          "title_length",
+          "text_density",
+          "quote_length",
+          "quote_count",
+          "module_count",
+          "evidence_binding",
+          "source_note",
+          "native_editability",
+          "officecli_validate",
+          "officecli_issue_scan",
+          "officecli_native_objects"
+        ]
+      },
+      "object_counts": {
+        "slides": 9,
+        "shapes": 119,
+        "text_shapes": 119,
+        "tables": 0,
+        "pictures": 0,
+        "connectors": 0,
+        "full_slide_images": 0,
+        "editable_native": true
+      }
+    },
+    {
+      "case": "mixed",
+      "adapter": "local",
+      "engine": "python-pptx",
+      "file": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-render\\mixed-python-pptx.pptx",
+      "slide_count": 10,
+      "validation": {
+        "passed": true,
+        "issue_count": 2,
+        "error_count": 0,
+        "issues": [
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "quotes",
+            "message": "页面已按 quotes 拆分为 5 页，未改写原文。"
+          },
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "dense",
+            "message": "页面已按 supporting_findings, supporting_points 拆分为 2 页，未改写原文。"
+          }
+        ],
+        "checks": [
+          "title_length",
+          "text_density",
+          "quote_length",
+          "quote_count",
+          "module_count",
+          "evidence_binding",
+          "source_note",
+          "native_editability",
+          "rendered_bounds",
+          "container_overlap",
+          "text_overflow_risk"
+        ]
+      },
+      "object_counts": {
+        "slides": 10,
+        "shapes": 145,
+        "text_shapes": 145,
+        "tables": 0,
+        "pictures": 0,
+        "connectors": 0,
+        "full_slide_images": 0,
+        "editable_native": true
+      }
+    },
+    {
+      "case": "mixed",
+      "adapter": "local",
+      "engine": "officecli",
+      "file": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-render\\mixed-officecli.pptx",
+      "slide_count": 10,
+      "validation": {
+        "passed": true,
+        "issue_count": 2,
+        "error_count": 0,
+        "issues": [
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "quotes",
+            "message": "页面已按 quotes 拆分为 5 页，未改写原文。"
+          },
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "dense",
+            "message": "页面已按 supporting_findings, supporting_points 拆分为 2 页，未改写原文。"
+          }
+        ],
+        "checks": [
+          "title_length",
+          "text_density",
+          "quote_length",
+          "quote_count",
+          "module_count",
+          "evidence_binding",
+          "source_note",
+          "native_editability",
+          "officecli_validate",
+          "officecli_issue_scan",
+          "officecli_native_objects"
+        ]
+      },
+      "object_counts": {
+        "slides": 10,
+        "shapes": 130,
+        "text_shapes": 130,
+        "tables": 0,
+        "pictures": 0,
+        "connectors": 0,
+        "full_slide_images": 0,
+        "editable_native": true
+      }
+    },
+    {
+      "case": "qualitative",
+      "adapter": "d1",
+      "engine": "python-pptx",
+      "file": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-render\\d1-qualitative-python-pptx.pptx",
+      "slide_count": 9,
+      "validation": {
+        "passed": true,
+        "issue_count": 2,
+        "error_count": 0,
+        "issues": [
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "quotes",
+            "message": "页面已按 quotes 拆分为 5 页，未改写原文。"
+          },
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "dense",
+            "message": "页面已按 supporting_findings, supporting_points 拆分为 2 页，未改写原文。"
+          }
+        ],
+        "checks": [
+          "title_length",
+          "text_density",
+          "quote_length",
+          "quote_count",
+          "module_count",
+          "evidence_binding",
+          "source_note",
+          "native_editability",
+          "rendered_bounds",
+          "container_overlap",
+          "text_overflow_risk"
+        ]
+      },
+      "object_counts": {
+        "slides": 9,
+        "shapes": 133,
+        "text_shapes": 133,
+        "tables": 0,
+        "pictures": 0,
+        "connectors": 0,
+        "full_slide_images": 0,
+        "editable_native": true
+      }
+    },
+    {
+      "case": "mixed",
+      "adapter": "d1",
+      "engine": "python-pptx",
+      "file": "D:\\调研工具\\codex-temp\\sprint3-report-quality-loop\\.data\\r3-render\\d1-mixed-python-pptx.pptx",
+      "slide_count": 10,
+      "validation": {
+        "passed": true,
+        "issue_count": 2,
+        "error_count": 0,
+        "issues": [
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "quotes",
+            "message": "页面已按 quotes 拆分为 5 页，未改写原文。"
+          },
+          {
+            "code": "PAGE_TOO_DENSE",
+            "severity": "fixed",
+            "page_id": "dense",
+            "message": "页面已按 supporting_findings, supporting_points 拆分为 2 页，未改写原文。"
+          }
+        ],
+        "checks": [
+          "title_length",
+          "text_density",
+          "quote_length",
+          "quote_count",
+          "module_count",
+          "evidence_binding",
+          "source_note",
+          "native_editability",
+          "rendered_bounds",
+          "container_overlap",
+          "text_overflow_risk"
+        ]
+      },
+      "object_counts": {
+        "slides": 10,
+        "shapes": 145,
+        "text_shapes": 145,
+        "tables": 0,
+        "pictures": 0,
+        "connectors": 0,
+        "full_slide_images": 0,
+        "editable_native": true
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "adapter": "local",
+      "case": "qualitative",
+      "file_id": "9b70b705-3132-4820-9a8d-87481057d545",
+      "artifact_id": "80bc3a20-1e6a-4359-ba63-7e1359ae502c",
+      "source_script_id": "4bbb3a08-cf8c-4950-b966-ebe59915aef6",
+      "freshness": "current",
+      "bytes": 59987
+    },
+    {
+      "adapter": "local",
+      "case": "qualitative",
+      "file_id": "ff45b9b7-1f44-40b1-8d9e-9527863d23fe",
+      "artifact_id": "ed2df194-c6cb-491a-94ec-65cd15abbb20",
+      "source_script_id": "4bbb3a08-cf8c-4950-b966-ebe59915aef6",
+      "freshness": "current",
+      "bytes": 46157
+    },
+    {
+      "adapter": "local",
+      "case": "mixed",
+      "file_id": "3498b5ac-fb3b-43c4-b1fa-21f624093bba",
+      "artifact_id": "5899e0b4-e8e0-4ea6-80c4-21cd0a463cfb",
+      "source_script_id": "a0ae3c33-e059-4c9b-9199-77595dd0631e",
+      "freshness": "stale",
+      "bytes": 64197
+    },
+    {
+      "adapter": "local",
+      "case": "mixed",
+      "file_id": "db9e9c10-1213-40d5-a6ce-57478f32e2a1",
+      "artifact_id": "9fdb0dc5-a48e-4e62-831f-4847d6bda4da",
+      "source_script_id": "a0ae3c33-e059-4c9b-9199-77595dd0631e",
+      "freshness": "stale",
+      "bytes": 50598
+    },
+    {
+      "adapter": "d1",
+      "case": "qualitative",
+      "file_id": "fd1aeee0-837d-45b1-99b7-41da758f5727",
+      "artifact_id": "2474e69d-7368-44bc-b2ba-4837c016b62e",
+      "source_script_id": "2d85ed48-d1a0-4b36-a310-2dcec43c79dd",
+      "freshness": "current",
+      "bytes": 59994
+    },
+    {
+      "adapter": "d1",
+      "case": "mixed",
+      "file_id": "7fdfb47b-26c4-4fbf-9053-2a9f19debad4",
+      "artifact_id": "5d1baaa3-483d-4079-bfbe-f8bef784d809",
+      "source_script_id": "6a7f95c7-a86f-44d5-8902-29fdb10a7186",
+      "freshness": "stale",
+      "bytes": 64197
+    },
+    {
+      "adapter": "local",
+      "case": "qualitative",
+      "file_id": "12025df8-a1de-4800-9e8f-d93050a25faa",
+      "artifact_id": "b51fcced-614e-4fb3-b13f-356f8aa19c65",
+      "source_script_id": "e4ec12c3-54ad-4dfa-9827-0fe1a29bb776",
+      "freshness": "current",
+      "bytes": 34850
+    }
+  ],
+  "real_model": {
+    "max_requests": 3,
+    "actual_requests": 3,
+    "max_output_tokens_per_request": 6000,
+    "total_tokens": 18528,
+    "attempts": [
+      {
+        "stage": "qualitative",
+        "model": "glm-5.3-flash",
+        "max_tokens": 6000,
+        "input_bytes": 4012,
+        "started_at": "2026-09-05T10:02:03.733Z",
+        "http_status": 200,
+        "usage": {
+          "completion_tokens": 6000,
+          "prompt_tokens": 907,
+          "total_tokens": 6907,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 5673
+          }
+        },
+        "finish_reason": "length",
+        "passed": false,
+        "failure": "max_tokens reached; full qualitative output unavailable"
+      },
+      {
+        "stage": "outline",
+        "model": "glm-5.3-flash",
+        "max_tokens": 6000,
+        "input_bytes": 4444,
+        "started_at": "2026-09-05T10:06:14.640Z",
+        "http_status": 200,
+        "usage": {
+          "completion_tokens": 1667,
+          "prompt_tokens": 1184,
+          "total_tokens": 2851,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 12
+          }
+        },
+        "finish_reason": "stop",
+        "quality": {
+          "passed": false,
+          "core_insight_count": 2,
+          "traced_core_insight_count": 2,
+          "chapter_count": 3,
+          "page_count": 3,
+          "sufficient_page_count": 1,
+          "limited_page_count": 2,
+          "evidence_gap_page_count": 0,
+          "conflict_count": 0,
+          "evidence_gap_count": 2,
+          "raw_transcript_chars_in_prompt": 0,
+          "raw_dataset_rows_in_prompt": 0
+        },
+        "passed": false,
+        "failure": "2 core insights, minimum 3; acceptance prompt omitted existing analysis insights/artifact summaries"
+      },
+      {
+        "stage": "script",
+        "model": "glm-5.3-flash",
+        "max_tokens": 6000,
+        "input_bytes": 14455,
+        "started_at": "2026-09-05T10:09:28.475Z",
+        "http_status": 200,
+        "usage": {
+          "completion_tokens": 5101,
+          "prompt_tokens": 3669,
+          "total_tokens": 8770,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 166
+          }
+        },
+        "finish_reason": "stop",
+        "quality": {
+          "passed": true,
+          "page_count": 6,
+          "evidence_sufficient_count": 3,
+          "evidence_limited_count": 2,
+          "evidence_gap_count": 0,
+          "overloaded_page_count": 3,
+          "dense_page_count": 1,
+          "duplicate_page_count": 0,
+          "continuity_issue_count": 0,
+          "invalid_data_count": 0,
+          "unverified_quote_count": 0,
+          "raw_transcript_chars_in_prompt": 0,
+          "raw_dataset_rows_in_prompt": 0
+        },
+        "artifact_id": "e4ec12c3-54ad-4dfa-9827-0fe1a29bb776",
+        "replay_after_fix": true,
+        "initial_validation_failure": "contiguous verbatim excerpts rejected by whole-quote equality",
+        "passed": true,
+        "scope": "saved real response replay after excerpt-validation fix, based on fixed validated outline"
+      }
+    ],
+    "render": {
+      "slide_count": 6,
+      "validation": {
+        "passed": true,
+        "issue_count": 0,
+        "error_count": 0,
+        "issues": [],
+        "checks": [
+          "title_length",
+          "text_density",
+          "quote_length",
+          "quote_count",
+          "module_count",
+          "evidence_binding",
+          "source_note",
+          "native_editability",
+          "officecli_validate",
+          "officecli_issue_scan",
+          "officecli_native_objects"
+        ]
+      },
+      "object_counts": {
+        "slides": 6,
+        "shapes": 109,
+        "text_shapes": 108,
+        "tables": 0,
+        "pictures": 0,
+        "connectors": 1,
+        "full_slide_images": 0,
+        "editable_native": true
+      },
+      "render_llm_tokens": 0,
+      "prepared_pages": [
+        {
+          "id": "page_44b10a4c-0af2-453f-85ef-6ee792c7fcb8",
+          "page_number": 1,
+          "chapter": "发现与行动",
+          "page_type": "navigation",
+          "layout_variant": "cover_navigation",
+          "density_hint": "low",
+          "title": "人工验收 qualitative：来源到交付的一致性验证",
+          "subtitle": "基于访谈逐字原声的定性研究报告",
+          "purpose": "建立报告框架，说明本次定性研究的目标与结构",
+          "key_message": "本报告通过两位受访者的逐字原声，验证从来源到交付的一致性",
+          "outcome_label": "",
+          "insight_id": "",
+          "theme_ids": [],
+          "supporting_points": [
+            "研究素材为 interview-a 与 interview-b 两份访谈逐字稿"
+          ],
+          "supporting_findings": [
+            {
+              "id": "f-nav-1",
+              "text": "研究素材为 interview-a 与 interview-b 两份访谈逐字稿",
+              "insight_id": "",
+              "evidence_ids": [
+                "8b6a88bc-9772-4731-bc85-cff1a7b014d3",
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            }
+          ],
+          "content_structure": [
+            {
+              "region": "top",
+              "width": "100%",
+              "title": "报告结构",
+              "body": "三条核心发现与一组行动建议",
+              "items": [
+                "发现一：对外发送仍需由使用者最终确认",
+                "发现二：断网恢复必须保留已完成步骤",
+                "发现三：版本记录是复查结果的基础",
+                "行动建议：绑定问题、原因与动作的改进清单"
+              ]
+            }
+          ],
+          "data_points": [],
+          "quotes": [],
+          "visual_spec": {
+            "type": "text_summary",
+            "description": "封面式导航页，列出三条发现与建议的目录结构，无图表",
+            "evidence_ids": [
+              "8b6a88bc-9772-4731-bc85-cff1a7b014d3",
+              "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+            ],
+            "data_source_ids": []
+          },
+          "layout_spec": {
+            "composition": "native editable shape/text composition",
+            "variant": "cover_navigation",
+            "regions": [
+              "标题区",
+              "目录列表区"
+            ]
+          },
+          "evidence_label": "访谈逐字稿 interview-a / interview-b",
+          "hypothesis": "",
+          "verdict": "",
+          "recommendation": "",
+          "profile": {
+            "name": "",
+            "archetype": "",
+            "attributes": {},
+            "motto": ""
+          },
+          "traits": [],
+          "behaviors": [],
+          "segments": [],
+          "axes": {
+            "x": "",
+            "y": "",
+            "x_low": "",
+            "x_high": "",
+            "y_low": "",
+            "y_high": ""
+          },
+          "quadrant_labels": [],
+          "focus_stages": [],
+          "definition_layers": [],
+          "boundary_rules": [],
+          "levels": [],
+          "segment_mapping": [],
+          "items": [],
+          "evidence_ids": [
+            "8b6a88bc-9772-4731-bc85-cff1a7b014d3",
+            "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+          ],
+          "transcript_segment_ids": [],
+          "source_notes": "消费者访谈逐字稿",
+          "transition_from_previous": "",
+          "transition_to_next": "先看三条发现的整体结论，再逐条呈现原声证据",
+          "transition": "先看三条发现的整体结论，再逐条呈现原声证据",
+          "finding_refs": [],
+          "recommendation_priority": "",
+          "created_at": "2026-09-05T10:15:16.064Z",
+          "updated_at": "2026-09-05T10:15:16.064Z",
+          "evidence_status": "not_required",
+          "evidence_coverage": {
+            "evidence_count": 2,
+            "quantitative": false,
+            "qualitative": true,
+            "transcript_quote": true,
+            "tool_result": false,
+            "types": [
+              "transcript_quote"
+            ]
+          },
+          "density": {
+            "character_count": 191,
+            "module_count": 2,
+            "title_length": 28,
+            "status": "balanced",
+            "recommendation": ""
+          }
+        },
+        {
+          "id": "page_db564b46-43d4-4e08-b7be-7ed4519c64ff",
+          "page_number": 2,
+          "chapter": "发现与行动",
+          "page_type": "executive_summary",
+          "layout_variant": "editorial_overview",
+          "density_hint": "medium",
+          "title": "三条发现指向同一要求：结果可追溯、责任可确认",
+          "subtitle": "来源到交付一致性的定性验证结论",
+          "purpose": "汇总三条核心发现，让读者在进入细节前掌握全貌",
+          "key_message": "使用者接受系统辅助，但要求每一步结果都能追溯到来源并由本人确认",
+          "outcome_label": "",
+          "insight_id": "",
+          "theme_ids": [],
+          "supporting_points": [
+            "对外发送场景中，收件人、日期和附件仍由使用者逐项确认",
+            "任务中断后，使用者需要知道哪些步骤已完成并从明确位置继续",
+            "修改可保留上一版并标出变化，是使用者敢把工作交给工具的前提"
+          ],
+          "supporting_findings": [
+            {
+              "id": "f-sum-1",
+              "text": "对外发送场景中，收件人、日期和附件仍由使用者逐项确认",
+              "insight_id": "9749f7bb-303f-42bb-a964-7e2afde5e057",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            },
+            {
+              "id": "f-sum-2",
+              "text": "任务中断后，使用者需要知道哪些步骤已完成并从明确位置继续",
+              "insight_id": "6f01f1b0-3c7b-4030-b966-87168d5938a2",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            },
+            {
+              "id": "f-sum-3",
+              "text": "修改可保留上一版并标出变化，是使用者敢把工作交给工具的前提",
+              "insight_id": "b6bc076a-6cce-45e8-9a83-114127b3eed6",
+              "evidence_ids": [
+                "8b6a88bc-9772-4731-bc85-cff1a7b014d3"
+              ]
+            }
+          ],
+          "content_structure": [
+            {
+              "region": "left",
+              "width": "55%",
+              "title": "三条核心发现",
+              "body": "均来自访谈逐字原声，覆盖发送、中断、复查三类场景",
+              "items": [
+                "对外发送仍需由使用者最终确认",
+                "断网恢复必须保留已完成步骤",
+                "版本记录是复查结果的基础"
+              ]
+            },
+            {
+              "region": "right",
+              "width": "45%",
+              "title": "共同主线",
+              "body": "效率提升不意味着可以省略责任判断",
+              "items": [
+                "结果来源可跳回原文",
+                "过程状态可保留可恢复",
+                "版本差异可对比可修正"
+              ]
+            }
+          ],
+          "data_points": [],
+          "quotes": [],
+          "visual_spec": {
+            "type": "text_summary",
+            "description": "编辑式三栏要点排版，右侧用一条主线句收束，无图表",
+            "evidence_ids": [
+              "8b6a88bc-9772-4731-bc85-cff1a7b014d3",
+              "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+            ],
+            "data_source_ids": []
+          },
+          "layout_spec": {
+            "composition": "native editable shape/text composition",
+            "variant": "editorial_overview",
+            "regions": [
+              "左栏发现列表",
+              "右栏主线总结"
+            ]
+          },
+          "evidence_label": "访谈逐字稿 interview-a / interview-b",
+          "hypothesis": "",
+          "verdict": "",
+          "recommendation": "",
+          "profile": {
+            "name": "",
+            "archetype": "",
+            "attributes": {},
+            "motto": ""
+          },
+          "traits": [],
+          "behaviors": [],
+          "segments": [],
+          "axes": {
+            "x": "",
+            "y": "",
+            "x_low": "",
+            "x_high": "",
+            "y_low": "",
+            "y_high": ""
+          },
+          "quadrant_labels": [],
+          "focus_stages": [],
+          "definition_layers": [],
+          "boundary_rules": [],
+          "levels": [],
+          "segment_mapping": [],
+          "items": [],
+          "evidence_ids": [
+            "8b6a88bc-9772-4731-bc85-cff1a7b014d3",
+            "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+          ],
+          "transcript_segment_ids": [],
+          "source_notes": "消费者访谈逐字稿",
+          "transition_from_previous": "承接封面结构，进入发现总览",
+          "transition_to_next": "逐条查看原声证据，先看对外发送场景",
+          "transition": "逐条查看原声证据，先看对外发送场景",
+          "finding_refs": [],
+          "recommendation_priority": "",
+          "created_at": "2026-09-05T10:15:16.066Z",
+          "updated_at": "2026-09-05T10:15:16.066Z",
+          "evidence_status": "sufficient",
+          "evidence_coverage": {
+            "evidence_count": 2,
+            "quantitative": false,
+            "qualitative": true,
+            "transcript_quote": true,
+            "tool_result": false,
+            "types": [
+              "transcript_quote"
+            ]
+          },
+          "density": {
+            "character_count": 269,
+            "module_count": 5,
+            "title_length": 22,
+            "status": "dense",
+            "recommendation": ""
+          }
+        },
+        {
+          "id": "page_60a6322a-ccad-4cd1-89e0-4f2b6560ab17",
+          "page_number": 3,
+          "chapter": "发现与行动",
+          "page_type": "quote_evidence",
+          "layout_variant": "quote_focus",
+          "density_hint": "medium",
+          "title": "对外发送仍需由使用者最终确认",
+          "subtitle": "场景：会后待办交给系统发送前的核验",
+          "purpose": "用逐字原声证明发送环节的责任确认不可替代",
+          "key_message": "系统可以列出建议，但收件人、日期和附件的确认权在使用者手中",
+          "outcome_label": "",
+          "insight_id": "9749f7bb-303f-42bb-a964-7e2afde5e057",
+          "theme_ids": [],
+          "supporting_points": [
+            "使用者先人工核对会后待办，再决定是否交给系统发送",
+            "涉及客户、报价和对外承诺时，熟练用户也坚持确认",
+            "使用者明确表示效率提升不能省略责任判断"
+          ],
+          "supporting_findings": [
+            {
+              "id": "f-send-1",
+              "text": "使用者先人工核对会后待办，再决定是否交给系统发送",
+              "insight_id": "9749f7bb-303f-42bb-a964-7e2afde5e057",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            },
+            {
+              "id": "f-send-2",
+              "text": "涉及客户、报价和对外承诺时，熟练用户也坚持确认",
+              "insight_id": "9749f7bb-303f-42bb-a964-7e2afde5e057",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            },
+            {
+              "id": "f-send-3",
+              "text": "使用者明确表示效率提升不能省略责任判断",
+              "insight_id": "9749f7bb-303f-42bb-a964-7e2afde5e057",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            }
+          ],
+          "content_structure": [
+            {
+              "region": "left",
+              "width": "60%",
+              "title": "原声证据",
+              "body": "interview-a 关于发送前确认的完整表述",
+              "items": []
+            },
+            {
+              "region": "right",
+              "width": "40%",
+              "title": "发现解读",
+              "body": "确认不是流程负担，而是使用者承担对外责任的方式",
+              "items": [
+                "核对对象：收件人、日期、附件",
+                "确认边界：客户、报价、对外承诺",
+                "设计含义：发送前必须保留人工确认步骤"
+              ]
+            }
+          ],
+          "data_points": [],
+          "quotes": [
+            {
+              "text": "我会先把会后待办核对一遍，再决定是否交给系统发送。系统能列出建议，但收件人、日期和附件仍要由我确认。",
+              "quote_start": 5,
+              "quote_end": 55,
+              "evidence_id": "2ffcea9d-ae7e-4507-b13f-62888c65bf7d",
+              "source_label": "interview-a.txt",
+              "respondent_label": "interview-a",
+              "transcript_id": "d463ec81-66e9-4401-955a-789e1ba671e5",
+              "segment_id": "e272ea4a-5735-41ac-a60e-0a6ac6dd0803",
+              "metadata": {}
+            }
+          ],
+          "visual_spec": {
+            "type": "quote",
+            "description": "左侧大字号原声引用块，标注受访者与访谈文件；右侧三条解读要点",
+            "evidence_ids": [
+              "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+            ],
+            "data_source_ids": []
+          },
+          "layout_spec": {
+            "composition": "native editable shape/text composition",
+            "variant": "quote_focus",
+            "regions": [
+              "左侧引用区",
+              "右侧解读区"
+            ]
+          },
+          "evidence_label": "interview-a 逐字原声",
+          "hypothesis": "",
+          "verdict": "",
+          "recommendation": "",
+          "profile": {
+            "name": "",
+            "archetype": "",
+            "attributes": {},
+            "motto": ""
+          },
+          "traits": [],
+          "behaviors": [],
+          "segments": [],
+          "axes": {
+            "x": "",
+            "y": "",
+            "x_low": "",
+            "x_high": "",
+            "y_low": "",
+            "y_high": ""
+          },
+          "quadrant_labels": [],
+          "focus_stages": [],
+          "definition_layers": [],
+          "boundary_rules": [],
+          "levels": [],
+          "segment_mapping": [],
+          "items": [],
+          "evidence_ids": [
+            "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+          ],
+          "transcript_segment_ids": [
+            "e272ea4a-5735-41ac-a60e-0a6ac6dd0803"
+          ],
+          "source_notes": "消费者访谈逐字稿",
+          "transition_from_previous": "从总览进入第一条发现的证据",
+          "transition_to_next": "发送之外，中断场景同样要求过程可追溯",
+          "transition": "发送之外，中断场景同样要求过程可追溯",
+          "finding_refs": [
+            "f-sum-1"
+          ],
+          "recommendation_priority": "",
+          "created_at": "2026-09-05T10:15:16.066Z",
+          "updated_at": "2026-09-05T10:15:16.066Z",
+          "evidence_status": "limited",
+          "evidence_coverage": {
+            "evidence_count": 1,
+            "quantitative": false,
+            "qualitative": true,
+            "transcript_quote": true,
+            "tool_result": false,
+            "types": [
+              "transcript_quote"
+            ]
+          },
+          "density": {
+            "character_count": 234,
+            "module_count": 6,
+            "title_length": 14,
+            "status": "overloaded",
+            "recommendation": "建议拆页或压缩到 1 个结论与 2～4 个支撑信息。"
+          }
+        },
+        {
+          "id": "page_e40021de-7c0f-4971-84e8-a4c99fd35e34",
+          "page_number": 4,
+          "chapter": "发现与行动",
+          "page_type": "quote_evidence",
+          "layout_variant": "quote_focus",
+          "density_hint": "medium",
+          "title": "断网恢复必须保留已完成步骤",
+          "subtitle": "场景：任务执行到一半网络断开",
+          "purpose": "用逐字原声证明中断恢复对过程记录的依赖",
+          "key_message": "中断后使用者需要知道哪些步骤已完成，并从明确位置继续",
+          "outcome_label": "",
+          "insight_id": "6f01f1b0-3c7b-4030-b966-87168d5938a2",
+          "theme_ids": [],
+          "supporting_points": [
+            "断网时使用者首先想知道哪些步骤已经完成",
+            "页面应保留记录，并允许从明确的位置继续",
+            "撤销操作需说明邮件是否已发送、附件是否已上传及后续人工处理事项"
+          ],
+          "supporting_findings": [
+            {
+              "id": "f-net-1",
+              "text": "断网时使用者首先想知道哪些步骤已经完成",
+              "insight_id": "6f01f1b0-3c7b-4030-b966-87168d5938a2",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            },
+            {
+              "id": "f-net-2",
+              "text": "页面应保留记录，并允许从明确的位置继续",
+              "insight_id": "6f01f1b0-3c7b-4030-b966-87168d5938a2",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            },
+            {
+              "id": "f-net-3",
+              "text": "撤销操作需说明邮件是否已发送、附件是否已上传及后续人工处理事项",
+              "insight_id": "6f01f1b0-3c7b-4030-b966-87168d5938a2",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            }
+          ],
+          "content_structure": [
+            {
+              "region": "left",
+              "width": "60%",
+              "title": "原声证据",
+              "body": "interview-a 关于中断与撤销的完整表述",
+              "items": []
+            },
+            {
+              "region": "right",
+              "width": "40%",
+              "title": "发现解读",
+              "body": "恢复设计的关键是状态可见，而非简单回到起点",
+              "items": [
+                "中断时：展示已完成步骤清单",
+                "恢复时：从明确位置继续",
+                "撤销时：说明外部动作的真实状态"
+              ]
+            }
+          ],
+          "data_points": [],
+          "quotes": [
+            {
+              "text": "如果任务执行到一半网络断开，我需要知道哪些步骤已经完成。页面应保留记录，并允许从明确的位置继续。",
+              "quote_start": 155,
+              "quote_end": 203,
+              "evidence_id": "2ffcea9d-ae7e-4507-b13f-62888c65bf7d",
+              "source_label": "interview-a.txt",
+              "respondent_label": "interview-a",
+              "transcript_id": "d463ec81-66e9-4401-955a-789e1ba671e5",
+              "segment_id": "e272ea4a-5735-41ac-a60e-0a6ac6dd0803",
+              "metadata": {}
+            }
+          ],
+          "visual_spec": {
+            "type": "quote",
+            "description": "左侧原声引用块，右侧三条恢复设计要点，与上一页保持同构",
+            "evidence_ids": [
+              "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+            ],
+            "data_source_ids": []
+          },
+          "layout_spec": {
+            "composition": "native editable shape/text composition",
+            "variant": "quote_focus",
+            "regions": [
+              "左侧引用区",
+              "右侧解读区"
+            ]
+          },
+          "evidence_label": "interview-a 逐字原声",
+          "hypothesis": "",
+          "verdict": "",
+          "recommendation": "",
+          "profile": {
+            "name": "",
+            "archetype": "",
+            "attributes": {},
+            "motto": ""
+          },
+          "traits": [],
+          "behaviors": [],
+          "segments": [],
+          "axes": {
+            "x": "",
+            "y": "",
+            "x_low": "",
+            "x_high": "",
+            "y_low": "",
+            "y_high": ""
+          },
+          "quadrant_labels": [],
+          "focus_stages": [],
+          "definition_layers": [],
+          "boundary_rules": [],
+          "levels": [],
+          "segment_mapping": [],
+          "items": [],
+          "evidence_ids": [
+            "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+          ],
+          "transcript_segment_ids": [
+            "e272ea4a-5735-41ac-a60e-0a6ac6dd0803"
+          ],
+          "source_notes": "消费者访谈逐字稿",
+          "transition_from_previous": "从发送确认转向中断恢复场景",
+          "transition_to_next": "过程可追溯的最终保障是版本记录",
+          "transition": "过程可追溯的最终保障是版本记录",
+          "finding_refs": [
+            "f-sum-2"
+          ],
+          "recommendation_priority": "",
+          "created_at": "2026-09-05T10:15:16.066Z",
+          "updated_at": "2026-09-05T10:15:16.066Z",
+          "evidence_status": "limited",
+          "evidence_coverage": {
+            "evidence_count": 1,
+            "quantitative": false,
+            "qualitative": true,
+            "transcript_quote": true,
+            "tool_result": false,
+            "types": [
+              "transcript_quote"
+            ]
+          },
+          "density": {
+            "character_count": 220,
+            "module_count": 6,
+            "title_length": 13,
+            "status": "overloaded",
+            "recommendation": "建议拆页或压缩到 1 个结论与 2～4 个支撑信息。"
+          }
+        },
+        {
+          "id": "page_1a522293-97cc-4db9-aeec-ebda6a42e0a7",
+          "page_number": 5,
+          "chapter": "发现与行动",
+          "page_type": "qualitative_insight",
+          "layout_variant": "insight_with_quote",
+          "density_hint": "medium",
+          "title": "版本记录是复查结果的基础",
+          "subtitle": "场景：把整理工作交给工具前的信任判断",
+          "purpose": "用 interview-b 原声说明版本记录如何建立对工具的信任",
+          "key_message": "修改能保留上一版并清楚标出变化，使用者才敢把工作交给工具",
+          "outcome_label": "",
+          "insight_id": "b6bc076a-6cce-45e8-9a83-114127b3eed6",
+          "theme_ids": [],
+          "supporting_points": [
+            "保留上一版并标出变化，是使用者交付信任的直接条件",
+            "数据重算后旧报告应保留，但需醒目标注其已非当前结论，避免误发客户",
+            "使用者要求系统能解释差异、保留原始材料，并用新版本修正结果"
+          ],
+          "supporting_findings": [
+            {
+              "id": "f-ver-1",
+              "text": "保留上一版并标出变化，是使用者交付信任的直接条件",
+              "insight_id": "b6bc076a-6cce-45e8-9a83-114127b3eed6",
+              "evidence_ids": [
+                "8b6a88bc-9772-4731-bc85-cff1a7b014d3"
+              ]
+            },
+            {
+              "id": "f-ver-2",
+              "text": "数据重算后旧报告应保留，但需醒目标注其已非当前结论，避免误发客户",
+              "insight_id": "b6bc076a-6cce-45e8-9a83-114127b3eed6",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            },
+            {
+              "id": "f-ver-3",
+              "text": "使用者要求系统能解释差异、保留原始材料，并用新版本修正结果",
+              "insight_id": "b6bc076a-6cce-45e8-9a83-114127b3eed6",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            }
+          ],
+          "content_structure": [
+            {
+              "region": "left",
+              "width": "60%",
+              "title": "原声证据",
+              "body": "interview-b 关于版本记录的完整表述",
+              "items": []
+            },
+            {
+              "region": "right",
+              "width": "40%",
+              "title": "发现解读",
+              "body": "版本记录同时服务信任建立与错误兜底",
+              "items": [
+                "信任建立：变化可见才敢交付",
+                "风险防范：旧版本醒目降级标注",
+                "修正路径：解释差异并保留原始材料"
+              ]
+            }
+          ],
+          "data_points": [],
+          "quotes": [
+            {
+              "text": "每次修改都能保留上一版，并清楚标出变化，我才敢把整理工作交给工具。",
+              "quote_start": 5,
+              "quote_end": 38,
+              "evidence_id": "8b6a88bc-9772-4731-bc85-cff1a7b014d3",
+              "source_label": "interview-b.txt",
+              "respondent_label": "interview-b",
+              "transcript_id": "93c1921b-b159-43f1-acf3-27d1eac14f0b",
+              "segment_id": "07dbc92d-ec70-4a37-bfc6-46a756b4aed7",
+              "metadata": {}
+            }
+          ],
+          "visual_spec": {
+            "type": "quote",
+            "description": "左侧原声引用块标注受访者B，右侧三条版本机制要点",
+            "evidence_ids": [
+              "8b6a88bc-9772-4731-bc85-cff1a7b014d3",
+              "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+            ],
+            "data_source_ids": []
+          },
+          "layout_spec": {
+            "composition": "native editable shape/text composition",
+            "variant": "insight_with_quote",
+            "regions": [
+              "左侧引用区",
+              "右侧解读区"
+            ]
+          },
+          "evidence_label": "interview-b / interview-a 逐字原声",
+          "hypothesis": "",
+          "verdict": "",
+          "recommendation": "",
+          "profile": {
+            "name": "",
+            "archetype": "",
+            "attributes": {},
+            "motto": ""
+          },
+          "traits": [],
+          "behaviors": [],
+          "segments": [],
+          "axes": {
+            "x": "",
+            "y": "",
+            "x_low": "",
+            "x_high": "",
+            "y_low": "",
+            "y_high": ""
+          },
+          "quadrant_labels": [],
+          "focus_stages": [],
+          "definition_layers": [],
+          "boundary_rules": [],
+          "levels": [],
+          "segment_mapping": [],
+          "items": [],
+          "evidence_ids": [
+            "8b6a88bc-9772-4731-bc85-cff1a7b014d3",
+            "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+          ],
+          "transcript_segment_ids": [
+            "07dbc92d-ec70-4a37-bfc6-46a756b4aed7"
+          ],
+          "source_notes": "消费者访谈逐字稿",
+          "transition_from_previous": "中断恢复之后，版本记录是追溯链条的最后一环",
+          "transition_to_next": "三条发现收敛为一组可执行的行动建议",
+          "transition": "三条发现收敛为一组可执行的行动建议",
+          "finding_refs": [
+            "f-sum-3"
+          ],
+          "recommendation_priority": "",
+          "created_at": "2026-09-05T10:15:16.066Z",
+          "updated_at": "2026-09-05T10:15:16.066Z",
+          "evidence_status": "sufficient",
+          "evidence_coverage": {
+            "evidence_count": 2,
+            "quantitative": false,
+            "qualitative": true,
+            "transcript_quote": true,
+            "tool_result": false,
+            "types": [
+              "transcript_quote"
+            ]
+          },
+          "density": {
+            "character_count": 254,
+            "module_count": 6,
+            "title_length": 12,
+            "status": "overloaded",
+            "recommendation": "建议拆页或压缩到 1 个结论与 2～4 个支撑信息。"
+          }
+        },
+        {
+          "id": "page_9ef6dfdf-0313-4787-90f9-c5aa452094c0",
+          "page_number": 6,
+          "chapter": "发现与行动",
+          "page_type": "recommendation",
+          "layout_variant": "action_roadmap",
+          "density_hint": "medium",
+          "title": "把确认权、过程记录和版本机制落进产品设计",
+          "subtitle": "问题—原因—动作对应的改进清单",
+          "purpose": "将三条发现转化为可执行的产品改进动作",
+          "key_message": "三项改进分别绑定发送确认、中断恢复与版本记录三个已验证问题",
+          "outcome_label": "",
+          "insight_id": "",
+          "theme_ids": [],
+          "supporting_points": [
+            "问题一：发送环节缺少强制确认步骤，源于系统建议与责任判断边界不清",
+            "问题二：中断后已完成步骤不可见，源于过程状态未持久化",
+            "问题三：版本变化不醒目，源于旧结论与新结论缺少差异化标注"
+          ],
+          "supporting_findings": [
+            {
+              "id": "f-rec-1",
+              "text": "问题一：发送环节缺少强制确认步骤，源于系统建议与责任判断边界不清",
+              "insight_id": "9749f7bb-303f-42bb-a964-7e2afde5e057",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            },
+            {
+              "id": "f-rec-2",
+              "text": "问题二：中断后已完成步骤不可见，源于过程状态未持久化",
+              "insight_id": "6f01f1b0-3c7b-4030-b966-87168d5938a2",
+              "evidence_ids": [
+                "2ffcea9d-ae7e-4507-b13f-62888c65bf7d"
+              ]
+            },
+            {
+              "id": "f-rec-3",
+              "text": "问题三：版本变化不醒目，源于旧结论与新结论缺少差异化标注",
+              "insight_id": "b6bc076a-6cce-45e8-9a83-114127b3eed6",
+              "evidence_ids": [
+                "8b6a88bc-9772-4731-bc85-cff1a7b014d3"
+              ]
+            }
+          ],
+          "content_structure": [
+            {
+              "region": "top",
+              "width": "100%",
+              "title": "问题—原因—动作对应表",
+              "body": "每条建议绑定已验证的发现",
+              "items": [
+                "P0 发送确认：对外发送前强制展示收件人、日期、附件核对页，使用者逐项确认后方可发送（对应发现一）",
+                "P1 中断恢复：持久化记录每步完成状态，断网恢复后展示已完成步骤清单并支持从明确位置继续（对应发现二）",
+                "P1 版本机制：每次修改保留上一版并标出变化；数据重算后旧报告醒目标注已非当前结论（对应发现三）"
+              ]
+            }
+          ],
+          "data_points": [],
+          "quotes": [],
+          "visual_spec": {
+            "type": "process",
+            "description": "三行路线图，每行展示问题、原因、动作与优先级标签，无定量图表",
+            "evidence_ids": [
+              "2ffcea9d-ae7e-4507-b13f-62888c65bf7d",
+              "8b6a88bc-9772-4731-bc85-cff1a7b014d3"
+            ],
+            "data_source_ids": []
+          },
+          "layout_spec": {
+            "composition": "native editable shape/text composition",
+            "variant": "action_roadmap",
+            "regions": [
+              "三行问题-原因-动作路线区",
+              "优先级标签区"
+            ]
+          },
+          "evidence_label": "interview-a / interview-b 逐字原声",
+          "hypothesis": "",
+          "verdict": "三项动作均直接对应访谈原声验证的发现，无超出证据范围的推断",
+          "recommendation": "按 P0 发送确认、P1 中断恢复、P1 版本机制的顺序排期落地",
+          "profile": {
+            "name": "",
+            "archetype": "",
+            "attributes": {},
+            "motto": ""
+          },
+          "traits": [],
+          "behaviors": [],
+          "segments": [],
+          "axes": {
+            "x": "",
+            "y": "",
+            "x_low": "",
+            "x_high": "",
+            "y_low": "",
+            "y_high": ""
+          },
+          "quadrant_labels": [],
+          "focus_stages": [],
+          "definition_layers": [],
+          "boundary_rules": [],
+          "levels": [],
+          "segment_mapping": [],
+          "items": [],
+          "evidence_ids": [
+            "2ffcea9d-ae7e-4507-b13f-62888c65bf7d",
+            "8b6a88bc-9772-4731-bc85-cff1a7b014d3"
+          ],
+          "transcript_segment_ids": [],
+          "source_notes": "消费者访谈逐字稿",
+          "transition_from_previous": "三条发现已逐条验证，收敛为行动清单",
+          "transition_to_next": "",
+          "transition": "",
+          "finding_refs": [
+            "f-send-1",
+            "f-net-1",
+            "f-ver-1"
+          ],
+          "recommendation_priority": "P0",
+          "created_at": "2026-09-05T10:15:16.066Z",
+          "updated_at": "2026-09-05T10:15:16.066Z",
+          "evidence_status": "sufficient",
+          "evidence_coverage": {
+            "evidence_count": 2,
+            "quantitative": false,
+            "qualitative": true,
+            "transcript_quote": true,
+            "tool_result": false,
+            "types": [
+              "transcript_quote"
+            ]
+          },
+          "density": {
+            "character_count": 319,
+            "module_count": 4,
+            "title_length": 20,
+            "status": "balanced",
+            "recommendation": ""
+          }
+        }
+      ],
+      "layout_adaptations": {
+        "profile": "qualitative_tech_blue_v2",
+        "input_page_count": 6,
+        "output_page_count": 6,
+        "continuation_page_count": 0,
+        "adapted_source_page_count": 0,
+        "fixed_issue_count": 0,
+        "verbatim_quotes_preserved": true,
+        "template_id": "qualitative_tech_blue_v2",
+        "variant_usage": {
+          "cover_orbit": 1,
+          "editorial_overview": 1,
+          "voice_wall": 2,
+          "insight_evidence": 1,
+          "action_roadmap": 1
+        }
+      },
+      "officecli_operation_count": 121,
+      "renderer": {
+        "engine": "officecli",
+        "preferred_engine": "officecli",
+        "mode": "officecli_native",
+        "editable_native": true
+      },
+      "quality_gate": {
+        "engine": "officecli",
+        "version": "1.0.147",
+        "status": "passed",
+        "passed": true,
+        "validation": {
+          "success": true,
+          "data": {
+            "count": 0,
+            "errors": []
+          }
+        },
+        "issues": {
+          "success": true,
+          "data": {
+            "count": 0,
+            "issues": []
+          }
+        },
+        "stats": {
+          "success": true,
+          "data": {
+            "slides": 6,
+            "totalShapes": 108,
+            "textBoxes": 108,
+            "pictures": 0,
+            "charts": 0,
+            "oleObjects": 0,
+            "words": 138,
+            "slidesWithoutTitle": 6,
+            "picturesWithoutAlt": 0,
+            "fontUsage": {
+              "Microsoft YaHei": 90
+            }
+          }
+        },
+        "mode": "required"
+      }
+    }
+  },
+  "verification": {
+    "js": "85 unit tests plus full JS smoke suite passed",
+    "browser": "21 passed, 1 skipped; additional stale badge test passed",
+    "service_worker": "Real Chrome v77 to v78, unrelated cache retained, API no-store",
+    "sse": "Real HTTP socket disconnected; DSH upstream simulated; persisted prefix and idempotent completion passed",
+    "native": "workerd/D1/R2 passed",
+    "python": "qualitative PPT smoke passed",
+    "visual": {
+      "passed": true,
+      "unique_pages_reviewed": 44,
+      "scope": "19 OfficeCLI fixed-response pages, 19 Python fallback pages, 6 real-model-response pages; D1 fixture deck content matched by text",
+      "critical_findings_fixed": 20,
+      "fixes": [
+        "Remove inherited date/slide-number footer placeholders",
+        "Separate executive summary label and headline",
+        "Increase source label chip width/height"
+      ],
+      "final_review": "Independent visual recheck: no remaining critical clipping or overlap"
+    }
+  },
+  "source_sha256": {
+    "lib/artifact-provenance.js": "4b769c9f1ff93eeffbc8129c74cc54e09fcc13d37c7577995044471a98702b1e",
+    "lib/research-store.js": "8310d361f49450d14676d6758959cb776b69b40657ffd8ba168984bdcc53c411",
+    "functions/api/research/[[path]].js": "56eefaafba1121d5e6fb646ca0f148b53d6da9095a2ed211e6e8b8bcafeb6c9e",
+    "lib/qualitative-analysis.mjs": "3833996e5eea6f203772a67a60bd876d1ddba484b789d92009de08c7f4c8a620",
+    "lib/ppt-script-workflow.mjs": "3a57a79667bf4670d12194f2f0cd8d2c4834dfdeb8b8aa6710d2cecaad914114",
+    "lib/data-engine.mjs": "e8d3cff26a588a5b8512ce59640be2618d2968cee3707fc347ed89f4282865df",
+    "migrations/0021_artifact_provenance.sql": "961dfd8887900fbce98a3e63aa1c5f2f496d21e5c61bf2ffe4094dfca978f256",
+    "pptx_report/qualitative_renderer.py": "ba938c38bf9a198217a97f8842c7325e425b6956da3a6696b9e447317042f152",
+    "src/modules/ai-researcher/index.js": "0d291b1ddb06b18aea66c8944f8b692541599c2ea667618a65e952ac789f617f",
+    "sw.js": "8f61d5c9704e349d90295d6a2e919746ef4c48432424d4af21443f0b2161f249",
+    "pptx_report/officecli_qualitative_renderer.py": "29a7426e66aa5a0d94aa9ab98e9ec9559c619eb8528ffb6192a6ef4cd875e67a",
+    "package.json": "47e232e1a1ab8c84e5f9a78dd29d0222c850fbe27d8d20a891b3fd850ae6de74",
+    ".github/workflows/ci.yml": "53627f87e32f6fbeeb80c6a5bc54eb4dc338cf8a770de1eb50d87220871b0e35",
+    "tests/r3-delivery-smoke.mjs": "aa0192ae9d8af726201091c85ee29c90be4ed3536f2375a63cd1981383ccebf1",
+    "tests/r3-http-recovery-smoke.mjs": "5e8fa21a4a5bdc93cfaa5d80052d7cd5ddad8099c86d849012279c4d3c541246",
+    "tests/r3-service-worker-smoke.mjs": "2aa9c4c376a1ac66f3c8bb90acc506af1b6961ce1e490515e4c7087be1a3be84"
+  }
+}

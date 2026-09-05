@@ -1,0 +1,170 @@
+{
+  "schema_version": "surveykit.ppt_script.v1",
+  "title": "SurveyKit 定性研究 PPT 自适应排版压力验收",
+  "status": "reviewed",
+  "source_report_outline_id": "outline_adaptive_stress_v1",
+  "source_report_outline_version": 1,
+  "acceptance_project": {
+    "note": "脱敏合成压力样例，仅用于排版与内容完整性验收，不代表真实研究结论"
+  },
+  "style_profile": {
+    "id": "technology_blue_enterprise",
+    "aspect_ratio": "16:9",
+    "primary_color": "technology_blue",
+    "preferred_font": "微软雅黑",
+    "forbid_left_vertical_bar": true
+  },
+  "pages": [
+    {
+      "id": "stress_quote",
+      "page_type": "quote_evidence",
+      "title": "当自动化从单步建议走向跨应用执行时，用户真正需要的不是更多确认弹窗，而是在关键节点看得懂、改得动并且能够安全撤回",
+      "purpose": "验证长结论标题、高密度发现和超长逐字原声的拆页能力。",
+      "key_message": "信任来自可理解、可干预、可恢复的完整控制链。",
+      "supporting_findings": [
+        {"text": "用户愿意把低风险整理任务交给系统。"},
+        {"text": "涉及外发信息时会主动寻找确认节点。"},
+        {"text": "步骤可见会提高继续授权的意愿。"},
+        {"text": "撤回入口比重复询问更能降低焦虑。"},
+        {"text": "失败原因不透明会放大对能力边界的不信任。"},
+        {"text": "历史版本让用户敢于尝试更复杂的任务。"},
+        {"text": "权限说明需要出现在动作发生之前。"},
+        {"text": "稳定完成一次闭环比展示十个入口更重要。"}
+      ],
+      "quotes": [
+        {
+          "text": "我可以接受它先帮我把会议内容整理好，甚至把后续要发给不同同事的消息都准备出来，但真正点发送之前，我一定要知道它准备发给谁、用了什么语气、有没有漏掉我刚才特别强调的限制。如果哪里不对，我希望直接在这一页修改，而不是退出去重新说一遍；万一已经执行了，也要让我马上找到撤回和恢复的办法。这样我才敢把更复杂的事情交给它，而不是每次都只让它做一个无关紧要的小步骤。",
+          "respondent_label": "受访者 A07｜产品运营",
+          "source_label": "脱敏深访",
+          "evidence_id": "stress_ev_quote_01",
+          "segment_id": "stress_seg_quote_01"
+        },
+        {
+          "text": "只要我能看见下一步会发生什么，也能随时停下来，我就愿意让它多做一点。",
+          "respondent_label": "受访者 A11｜研究生",
+          "source_label": "脱敏深访",
+          "evidence_id": "stress_ev_quote_02",
+          "segment_id": "stress_seg_quote_02"
+        }
+      ],
+      "evidence_ids": ["stress_ev_quote_01", "stress_ev_quote_02"],
+      "source_notes": "脱敏合成压力样例",
+      "transition": "进一步检验多分群页面的容量边界。"
+    },
+    {
+      "id": "stress_segments",
+      "page_type": "segmentation_map",
+      "variant": "positioning_map",
+      "title": "八类用户分布在控制投入与分享目的构成的连续坐标上，产品需要按任务成熟度提供不同层级的默认方案",
+      "purpose": "验证多分群定位图自动续页。",
+      "key_message": "分群不是标签堆叠，而是不同成功标准的组合。",
+      "axes": {"x_low": "私人记录", "x_high": "公开分享", "y_low": "轻量完成", "y_high": "专业控制"},
+      "quadrant_labels": ["专业记录", "专业分享", "轻量记录", "轻量分享"],
+      "segments": [
+        {"title": "专业创作者", "x": 42, "y": 90, "summary": "稳定输出与完整控制"},
+        {"title": "摄影学习者", "x": 58, "y": 72, "summary": "技巧成长与智能建议"},
+        {"title": "公开分享者", "x": 86, "y": 48, "summary": "氛围出片与社交反馈"},
+        {"title": "私域记录者", "x": 20, "y": 26, "summary": "自然记录与低操作"},
+        {"title": "亲子记录者", "x": 32, "y": 45, "summary": "抓拍成功与隐私安全"},
+        {"title": "旅行叙事者", "x": 72, "y": 60, "summary": "快速成片与故事连贯"},
+        {"title": "参数研究者", "x": 35, "y": 82, "summary": "透明参数与可重复验证"},
+        {"title": "模板尝鲜者", "x": 92, "y": 22, "summary": "低门槛玩法与即时传播"}
+      ],
+      "evidence_ids": ["stress_ev_seg_01"],
+      "source_notes": "脱敏合成压力样例"
+    },
+    {
+      "id": "stress_priority",
+      "page_type": "priority_matrix",
+      "title": "十二项体验问题需要同时依据发生频率与业务影响排序，避免仅凭讨论热度决定资源投入",
+      "purpose": "验证优先级矩阵点位过多时自动拆页。",
+      "key_message": "先处理高频且高影响的问题，再验证低频战略机会。",
+      "axes": {"x": "发生频率 →", "y": "业务影响 ↑"},
+      "quadrant_labels": ["战略观察", "重点投入", "持续维护", "低优先级"],
+      "items": [
+        {"label": "夜景肤色漂移", "x": 84, "y": 92, "priority": "high", "weight": 40},
+        {"label": "抓拍延迟", "x": 76, "y": 86, "priority": "high", "weight": 36},
+        {"label": "撤回入口隐蔽", "x": 68, "y": 78, "priority": "high", "weight": 30},
+        {"label": "权限解释滞后", "x": 58, "y": 82, "priority": "high", "weight": 28},
+        {"label": "版本对比困难", "x": 64, "y": 62, "priority": "medium", "weight": 22},
+        {"label": "推荐理由模糊", "x": 55, "y": 58, "priority": "medium", "weight": 18},
+        {"label": "模板入口分散", "x": 72, "y": 42, "priority": "medium", "weight": 16},
+        {"label": "焦段切换学习", "x": 46, "y": 52, "priority": "medium", "weight": 14},
+        {"label": "导出命名混乱", "x": 44, "y": 36, "priority": "low", "weight": 12},
+        {"label": "动效提示偏弱", "x": 28, "y": 32, "priority": "low", "weight": 10},
+        {"label": "教程篇幅偏长", "x": 36, "y": 24, "priority": "low", "weight": 8},
+        {"label": "个性标签不足", "x": 18, "y": 44, "priority": "low", "weight": 8}
+      ],
+      "supporting_findings": [
+        {"text": "高频高影响问题直接破坏任务闭环。"},
+        {"text": "低频高影响事项需要通过灰度验证。"},
+        {"text": "同一问题在人群之间存在显著权重差异。"},
+        {"text": "矩阵排序必须保留原始证据回链。"}
+      ],
+      "recommendation": "先修复可恢复性与核心成片问题。",
+      "evidence_ids": ["stress_ev_priority_01"],
+      "source_notes": "脱敏合成压力样例"
+    },
+    {
+      "id": "stress_persona",
+      "page_type": "persona",
+      "title": "重度创作者的画像不能只停留在人口属性，而要同时呈现价值观、工作方式、失败反应和可验证的逐字原声",
+      "purpose": "验证画像页多特征、多行为和多原声的自动续页。",
+      "key_message": "画像由行为模式和决策标准定义。",
+      "profile": {
+        "name": "林舟",
+        "archetype": "专业创作者型",
+        "attributes": {"年龄": "31 岁", "职业": "自由摄影师", "城市": "成都", "设备": "旗舰手机 + 相机", "频率": "每周 4–5 次"},
+        "motto": "风格可以探索，过程必须可控"
+      },
+      "traits": ["以项目目标驱动拍摄", "愿意学习参数", "厌恶隐藏处理逻辑", "会比较多个版本", "重视可重复结果", "主动记录失败条件", "关注素材归档", "愿意为稳定性付费"],
+      "behaviors": ["拍摄前预判光线", "同场景保留多个版本", "拍后进行局部编辑", "发布前跨设备复核", "失败后寻找原因", "长期维护个人预设"],
+      "quotes": [
+        {"text": "我不怕多调一步，但必须知道系统为什么这样处理。", "respondent_label": "31岁｜专业创作者", "evidence_id": "stress_ev_persona_01", "segment_id": "stress_seg_persona_01"},
+        {"text": "如果这次结果不能复现，下次我就不会把它放进正式工作流。", "respondent_label": "29岁｜视频创作者", "evidence_id": "stress_ev_persona_02", "segment_id": "stress_seg_persona_02"}
+      ],
+      "evidence_ids": ["stress_ev_persona_01", "stress_ev_persona_02"],
+      "source_notes": "脱敏合成压力样例"
+    },
+    {
+      "id": "stress_comparison",
+      "page_type": "comparison",
+      "title": "五类用户在同一自动增强能力上的评价标准完全不同，统一入口必须通过渐进式控制层兼顾效率与专业表达",
+      "purpose": "验证多比较对象与单卡多条内容的两级拆分。",
+      "key_message": "共同底线是结果透明，差异在于控制深度。",
+      "content_structure": [
+        {"title": "专业创作者", "items": ["透明参数", "版本保留", "局部控制", "批量一致", "失败解释", "跨设备复核", "自定义预设"]},
+        {"title": "摄影学习者", "items": ["步骤指导", "原因解释", "前后对比", "能力成长"]},
+        {"title": "公开分享者", "items": ["即时出片", "氛围稳定", "模板推荐", "一键发布"]},
+        {"title": "私域记录者", "items": ["自然肤色", "低操作", "隐私明确", "快速归档"]},
+        {"title": "模板尝鲜者", "items": ["玩法更新", "低学习成本", "效果可预览", "分享有辨识度"]}
+      ],
+      "evidence_ids": ["stress_ev_compare_01"],
+      "source_notes": "脱敏合成压力样例"
+    },
+    {
+      "id": "stress_needs",
+      "page_type": "needs_pyramid",
+      "title": "基础可用、过程可控与表达成长构成稳定的需求层级，但八类人群会从不同层级进入产品价值判断",
+      "purpose": "验证需求金字塔与多人群映射自动续页。",
+      "key_message": "先满足基础可靠，再用控制与成长建立差异。",
+      "levels": [
+        {"title": "基础可用", "body": "清晰、稳定、快速完成"},
+        {"title": "过程可控", "body": "看得懂、改得动、能撤回"},
+        {"title": "表达成长", "body": "形成风格并持续提升"}
+      ],
+      "segment_mapping": [
+        {"segment": "专业创作者", "level": "表达成长"},
+        {"segment": "摄影学习者", "level": "表达成长"},
+        {"segment": "公开分享者", "level": "过程可控"},
+        {"segment": "私域记录者", "level": "基础可用"},
+        {"segment": "亲子记录者", "level": "基础可用"},
+        {"segment": "旅行叙事者", "level": "过程可控"},
+        {"segment": "参数研究者", "level": "表达成长"},
+        {"segment": "模板尝鲜者", "level": "基础可用"}
+      ],
+      "evidence_ids": ["stress_ev_needs_01"],
+      "source_notes": "脱敏合成压力样例"
+    }
+  ]
+}

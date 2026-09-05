@@ -1,0 +1,30 @@
+
+> release-main-521@1.0.0 test:agent-tools
+> node tests/agent-tool-calling-smoke.mjs
+
+agent-tool-calling-smoke: PASS
+
+> release-main-521@1.0.0 test:agent-tool-acceptance
+> node tests/agent-tool-acceptance-smoke.mjs
+
+agent-tool-acceptance-smoke: PASS (7/7)
+
+> release-main-521@1.0.0 test:r2
+> node tests/r2-data-recovery-smoke.mjs && node tests/r2-process-recovery-smoke.mjs
+
+{
+  "test": "r2-recovery",
+  "results": [
+    {
+      "adapter": "local",
+      "passed": true,
+      "duration_ms": 346
+    },
+    {
+      "adapter": "d1-r2",
+      "passed": true,
+      "duration_ms": 33
+    }
+  ]
+}
+R2 process exit, restart sweep, retry and lost HTTP response: passed

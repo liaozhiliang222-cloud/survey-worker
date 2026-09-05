@@ -6,6 +6,7 @@ const { sendJson } = require("./lib/http-response");
 const { createPptxProxyHandler } = require("./lib/pptx-proxy");
 const { createAiProxyHandler } = require("./lib/ai-proxy");
 const { createResearchHandler } = require("./lib/research-handler");
+const { createToolHandler } = require("./lib/tool-handler");
 const { releaseInfo } = require("./lib/release-info");
 
 const root = __dirname;
@@ -28,6 +29,7 @@ const handlePptxProxy = createPptxProxyHandler({
   maxBodyBytes: maxPptxBodyBytes,
 });
 const handleResearch = createResearchHandler({ env: process.env });
+const handleTools = createToolHandler({ env: process.env });
 const types = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -48,7 +50,10 @@ http
         dependencies: {
           pptx_backend_configured: Boolean(process.env.PPTX_BACKEND_URL),
           ai_proxy_configured: Boolean(
-            process.env.SURVEYKIT_API_KEY
+            process.env.VOLCENGINE_AGENT_PLAN_API_KEY
+            || process.env.ARK_AGENT_PLAN_API_KEY
+            || process.env.ARK_API_KEY
+            || process.env.SURVEYKIT_API_KEY
             || process.env.SENSENOVA_API_KEY
             || process.env.DASHSCOPE_API_KEY
             || process.env.BAILIAN_API_KEY
@@ -74,6 +79,14 @@ http
           return;
         }
         sendJson(res, 500, { error: { message: "AI 研究员服务暂时不可用，请稍后重试。", type: "internal_error", retryable: true } });
+      });
+      return;
+    }
+    if (req.url.startsWith("/api/tools")) {
+      Promise.resolve(handleTools(req, res)).catch((error) => {
+        console.error(JSON.stringify({ event: "tool_gateway_unhandled_error", error_type: error?.code || error?.name || "unknown" }));
+        if (res.headersSent) { res.destroy(); return; }
+        sendJson(res, 500, { success: false, tool: "unknown", error: { code: "INTERNAL_ERROR", message: "专业工具暂时不可用，请稍后重试。" } });
       });
       return;
     }

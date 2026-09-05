@@ -99,6 +99,20 @@ if (calls[0].body.model !== "deepseek-v4-pro") throw new Error("DeepSeek Pro is 
 if (calls[0].options.headers.Authorization !== "Bearer server-secret") throw new Error("wrong builtin auth");
 if (response.headers.get("X-Actual-Model") !== "deepseek-v4-pro") throw new Error("wrong primary model header");
 
+// Agent Plan is the preferred built-in route whenever its dedicated key is configured.
+calls = [];
+response = await mod.onRequest({
+  request: makeRequest({ taskTier: "quality" }),
+  env: {
+    VOLCENGINE_AGENT_PLAN_API_KEY: "ark-plan-secret",
+    DASHSCOPE_API_KEY: "server-secret",
+  },
+});
+if (calls[0].url !== "https://ark.cn-beijing.volces.com/api/plan/v3/chat/completions") throw new Error("wrong Agent Plan URL");
+if (calls[0].body.model !== "glm-5.3-flash") throw new Error("GLM 5.3 Flash is not the Agent Plan default");
+if (calls[0].options.headers.Authorization !== "Bearer ark-plan-secret") throw new Error("wrong Agent Plan auth");
+if (response.headers.get("X-AI-Source") !== "builtin-volcengine-agent-plan") throw new Error("Agent Plan was not selected first");
+
 // Quality tasks skip Flash-only providers and reach DeepSeek Pro first.
 calls = [];
 response = await mod.onRequest({

@@ -4,13 +4,15 @@ import { extractDshReply } from "../lib/harness.js";
 import { createHarnessClient } from "../functions/api/research/[[path]].js";
 
 const productionConfig = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
-assert.match(productionConfig, /HARNESS_TIMEOUT\s*=\s*"80000"/, "ordinary AI requests must keep the 80 second deadline");
-assert.match(productionConfig, /HARNESS_LONG_TASK_TIMEOUT\s*=\s*"180000"/, "structured deliverables must allow 180 seconds");
+assert.match(productionConfig, /HARNESS_TIMEOUT\s*=\s*"300000"/, "multi-tool AI requests must have enough time to produce a final answer after tool execution");
+assert.match(productionConfig, /HARNESS_LONG_TASK_TIMEOUT\s*=\s*"300000"/, "structured deliverables must allow 300 seconds");
+assert.match(productionConfig, /HARNESS_MAX_TOOL_CALLS\s*=\s*"5"/, "a bounded turn must allow three sample-size scenarios plus quota design");
 
 assert.equal(extractDshReply([
-  { event: { type: "assistant/chunk", data: { chunk: { type: "reasoning", text: "增量" } } } },
+  { event: { type: "assistant/chunk", data: { chunk: { type: "reasoning-delta", text: "增量" } } } },
+  { event: { type: "assistant/chunk", data: { chunk: { type: "analysis-delta", text: "分析" } } } },
   { event: { type: "assistant/chunk", data: { chunk: { text: "正文" } } } },
-]), "增量正文", "chunk.text must be accepted regardless of chunk.type");
+]), "正文", "reasoning chunks must never be exposed as answer text");
 
 class FakeSocket extends EventTarget {
   accept() {}
@@ -26,6 +28,7 @@ let toolAttemptCount = 0;
 let upstreamError = false;
 let promptCount = 0;
 let maxTokenMode = null;
+let currentPreset = "survey-research";
 globalThis.fetch = async (input, init = {}) => {
   const url = new URL(input);
   calls.push({ url, init });
@@ -33,6 +36,8 @@ globalThis.fetch = async (input, init = {}) => {
   const body = JSON.parse(init.body);
   const method = body.method;
   let value = {};
+  if (method === "session.list") value = { items: [{ sessionId: "session-safe", agentPreset: currentPreset, running: false, updatedAt: Date.now() }] };
+  if (method === "agentPreset.select") { currentPreset = body.payload?.agentPreset; value = { agentPreset: currentPreset }; }
   if (method === "session.selectModel") value = { selected: true };
   if (method === "session.prompt") {
     value = { accepted: true };
@@ -66,7 +71,7 @@ globalThis.fetch = async (input, init = {}) => {
         socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "turn/end", data: { reason: { kind: "error", error: { status: 429, code: "quota" } } } } } });
         return;
       }
-      socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "assistant/chunk", data: { chunk: { type: "reasoning", text: "第一段" } } } } });
+      socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "assistant/chunk", data: { chunk: { type: "reasoning-delta", text: "第一段" } } } } });
       socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "other-session", event: { type: "assistant/chunk", data: { chunk: { text: "不能泄漏" } } } } });
       socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "assistant/chunk", data: { chunk: { text: "第二段" } } } } });
       socket.message({ type: "server-request", payload: { type: "session/event", sessionId: "session-safe", event: { type: "turn/end", data: { reason: { kind: "completed" } } } } });
@@ -81,14 +86,17 @@ try {
     HARNESS_API_STYLE: "dsh-rpc",
     HARNESS_USERNAME: "user",
     HARNESS_PASSWORD: "secret",
+    HARNESS_AGENT_PRESET: "surveykit-research",
     HARNESS_MODEL: "deepseek",
     HARNESS_TIMEOUT: "2000",
     HARNESS_MAX_CONTINUATIONS: "1",
   });
   const deltas = [];
   const reply = await client.stream("session-safe", "prompt", "public-request", { onDelta: (text) => deltas.push(text) });
-  assert.equal(reply, "第一段第二段");
-  assert.deepEqual(deltas, ["第一段", "第二段"]);
+  assert.equal(reply, "第二段");
+  assert.deepEqual(deltas, ["第二段"]);
+  const presetSelection = calls.find((call) => call.init.body && JSON.parse(call.init.body).method === "agentPreset.select");
+  assert.deepEqual(JSON.parse(presetSelection.init.body).payload, { sessionId: "session-safe", agentPreset: "surveykit-research" }, "existing sessions must be upgraded to the configured preset before prompting");
   const mux = calls.find((call) => call.url.pathname === "/api/events.mux");
   assert.equal(mux.url.protocol, "https:");
   assert.equal(mux.init.headers.Upgrade, "websocket");

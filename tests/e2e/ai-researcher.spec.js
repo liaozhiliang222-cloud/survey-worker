@@ -15,6 +15,7 @@ async function mockResearchApi(page) {
   const messages = [];
   const artifacts = [];
   const files = [];
+  const workflows = [];
   let lastMessagePayload = null;
   await page.route("**/api/research/**", async (route) => {
     const request = route.request();
@@ -33,10 +34,15 @@ async function mockResearchApi(page) {
     if (path === "/projects/project-1/messages" && method === "POST") {
       lastMessagePayload = payload;
       const user = { id: "user-message-1", role: "user", content: payload.message };
-      const assistant = { id: "assistant-message-1", role: "assistant", content: "# NPS 调研方案\n采用定量问卷与深访组合。" };
+      const artifact = { id: `artifact-${artifacts.length + 1}`, project_id: project.id, type: "research_plan", title: `${project.title}——调研方案`, freshness: { status: "stale", label: "待更新", reasons: [{ type: "evidence_excluded" }] }, version: artifacts.length + 1, content: "# NPS 调研方案\n采用定量问卷与深访组合。" };
+      artifacts.push(artifact);
+      const workflow = { id: "workflow-1", project_id: project.id, task_type: "research_plan", status: "completed", artifact_id: artifact.id, stages: [{ id: "understanding", label: "正在理解项目需求", status: "completed" }, { id: "artifact", label: "调研方案已生成", status: "completed" }] };
+      workflows.unshift(workflow);
+      const assistant = { id: "assistant-message-1", role: "assistant", content: "调研方案已经完成并保存为项目成果。" };
       messages.splice(0, messages.length, user, assistant);
-      return fulfill({ message: assistant, user_message: user, reply: assistant.content, applied_context: { selected_files: payload.selected_file_ids || [], retrieved_chunks: payload.auto_retrieve === false ? [] : [{ file_id: "file-memory", chunk_index: 0 }] } });
+      return fulfill({ message: assistant, user_message: user, reply: assistant.content, artifact_created: artifact, workflow, applied_context: { selected_files: payload.selected_file_ids || [], retrieved_chunks: payload.auto_retrieve === false ? [] : [{ file_id: "file-memory", chunk_index: 0 }] } });
     }
+    if (path === "/projects/project-1/workflows" && method === "GET") return fulfill({ workflows });
     if (path === "/projects/project-1/artifacts" && method === "GET") return fulfill({ artifacts });
     if (path === "/projects/project-1/artifacts" && method === "POST") {
       const artifact = { id: `artifact-${artifacts.length + 1}`, project_id: project.id, version: artifacts.length + 1, ...payload };
@@ -87,6 +93,7 @@ async function mockStreamingResearchApi(page, { failFirstStream = false, failRet
     if (path === "/projects" && method === "GET") return fulfill({ projects: [project] });
     if (path === "/projects/project-1" && method === "GET") return fulfill({ project });
     if (path === "/projects/project-1/messages" && method === "GET") return fulfill({ messages });
+    if (path === "/projects/project-1/workflows" && method === "GET") return fulfill({ workflows: [] });
     if (path === "/projects/project-1/artifacts" && method === "GET") return fulfill({ artifacts: [] });
     if (path === "/projects/project-1/files" && method === "GET") return fulfill({ files: [] });
     if (path === "/projects/project-1/runs/run-1" && method === "GET") return fulfill({ run: { id: "run-1", status: "failed", partial_content: "已接收的第一段", error: { message: "模拟流式中断", retryable: true } } });
@@ -107,11 +114,11 @@ async function mockStreamingResearchApi(page, { failFirstStream = false, failRet
       const user = existing || { id: `user-${payload.client_request_id}`, role: "user", content: payload.message, client_request_id: payload.client_request_id };
       const assistant = { id: `assistant-${payload.client_request_id}`, role: "assistant", content: "已接收的第一段\n\n完整第二段" };
       messages.splice(0, messages.length, user, assistant);
-      const done = { message: assistant, user_message: user, reply: assistant.content, client_request_id: payload.client_request_id, idempotent_replay: Boolean(existing), applied_context: { selected_files: payload.selected_file_ids || [], retrieved_chunks: [] } };
+      const done = { message: assistant, user_message: user, reply: assistant.content, client_request_id: payload.client_request_id, idempotent_replay: Boolean(existing), applied_context: { selected_files: payload.selected_file_ids || [], retrieved_chunks: [] }, tool_calls: [{ tool_id: "sample_size", label: "样本量计算", status: "completed", message: "已完成样本量计算" }] };
       return route.fulfill({
         status: 200,
         headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store" },
-        body: frame("start", { run_id: "run-1", request_id: "request-1" }) + frame("delta", { run_id: "run-1", text: "已接收的第一段" }) + frame("delta", { run_id: "run-1", text: "\n\n完整第二段" }) + frame("done", done),
+        body: frame("start", { run_id: "run-1", request_id: "request-1" }) + frame("tool_status", { run_id: "run-1", tool_id: "sample_size", label: "样本量计算", status: "running", message: "正在计算样本量…" }) + frame("delta", { run_id: "run-1", text: "已接收的第一段" }) + frame("tool_status", { run_id: "run-1", tool_id: "sample_size", label: "样本量计算", status: "completed", message: "已完成样本量计算" }) + frame("delta", { run_id: "run-1", text: "\n\n完整第二段" }) + frame("done", done),
       });
     }
     return fulfill({ error: { message: `${method} ${path}` } }, 404);
@@ -145,28 +152,25 @@ test("AI 研究员完成项目、对话、成果和继续修改闭环", async ({
   await expect(page.locator("#researchContextChips")).toContainText("客户Brief.txt");
 
   await page.locator('[data-research-prompt*="完整的调研方案"]').click();
-  await expect(page.locator("#researchChatInput")).toHaveValue(/完整的调研方案/);
-  await page.locator("#researchSendMessage").click();
+  await expect.poll(() => mock.getLastMessagePayload()).not.toBeNull();
   expect(mock.getLastMessagePayload().selected_file_ids).toEqual(["file-1"]);
   expect(mock.getLastMessagePayload().auto_retrieve).toBe(true);
   expect(mock.getLastMessagePayload().task_type).toBe("research_plan");
   await expect(page.locator("#researchConnectionState")).toContainText("检索 1 个片段");
-  await expect(page.locator(".research-message.assistant")).toContainText("NPS 调研方案");
+  await expect(page.locator(".research-message.assistant")).toContainText("调研方案已经完成");
+  await expect(page.locator("#researchWorkflowPanel")).toBeVisible();
+  await expect(page.locator("#researchWorkflowStatus")).toContainText("已完成");
   const downloadPromise = page.waitForEvent("download");
   await page.locator(".research-message.assistant .ghost-btn", { hasText: "导出 Word" }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe("荣耀年轻用户 NPS 研究.docx");
-  await page.locator(".research-message.assistant .secondary-btn").click();
-  await page.locator("#researchArtifactCancel").click();
-  await expect(page.locator("#researchSaveArtifactDialog")).not.toBeVisible();
-  await expect(page.locator(".research-artifact-card")).toHaveCount(0);
-  await page.locator(".research-message.assistant .secondary-btn").click();
-  await page.locator("#researchArtifactType").selectOption("research_plan");
-  await page.locator("#researchArtifactSave").click();
+  expect(download.suggestedFilename()).toContain("调研方案.docx");
   await expect(page.locator(".research-artifact-card")).toContainText("V1");
+  await expect(page.locator(".research-artifact-freshness")).toContainText("待更新");
   await expect(page.locator(".research-artifact-card")).toContainText("基于此版本派生");
-  await page.locator(".research-artifact-card .secondary-btn").click();
-  await expect(page.locator("#researchContextChips")).toContainText("NPS 调研方案");
+  await page.locator(".research-message.assistant .primary-btn", { hasText: "查看完整方案" }).click();
+  await expect(page.locator("#researchArtifactDetail")).toContainText("NPS 调研方案");
+  await page.locator("#researchArtifactDetail .secondary-btn", { hasText: "基于此版本派生" }).click();
+  await expect(page.locator("#researchContextChips")).toContainText("调研方案 V1");
   await expect(page.locator("#researchChatInput")).toHaveValue(/继续修改/);
 });
 
@@ -198,6 +202,8 @@ test("AI 研究员 SSE 增量显示且完成后不重复", async ({ page }) => {
   await expect(page.locator("#researchConnectionState")).toHaveAttribute("data-state", "ready");
   await expect(page.locator(".research-message.assistant")).toHaveCount(1);
   await expect(page.locator(".research-message.assistant")).toContainText("完整第二段");
+  await expect(page.locator(".research-message-tool.completed")).toContainText("已完成样本量计算");
+  await expect(page.locator(".research-message.assistant")).not.toContainText("FunctionCall");
   expect(mock.requests).toHaveLength(1);
 });
 

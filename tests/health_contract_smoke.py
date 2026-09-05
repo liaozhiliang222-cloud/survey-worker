@@ -34,6 +34,14 @@ assert payload["release"] == {
 }
 assert payload["capabilities"]["pptx_jobs"] is True
 assert payload["capabilities"]["ai_jobs"] is True
+assert isinstance(payload["capabilities"]["officecli"], bool)
+qualitative_renderer = payload["renderers"]["qualitative_ppt"]
+assert qualitative_renderer["preferred_generation_engine"] == "officecli"
+assert qualitative_renderer["fallback_generation_engine"] == "python-pptx"
+assert qualitative_renderer["generation_engine"] == (
+    "officecli" if payload["capabilities"]["officecli"] else "python-pptx"
+)
+assert qualitative_renderer["officecli_role"] == "primary_enterprise_renderer_and_quality_gate"
 assert payload["limits"]["max_upload_bytes"] > 0
 assert payload["instance_id"]
 

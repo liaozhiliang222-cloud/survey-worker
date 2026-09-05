@@ -4,11 +4,13 @@
 
 ## 本地启动
 
-要求 Node.js 18+：
+开发与测试使用 `.node-version` 固定的 Node.js 24.17.0（测试脚本包含 `node:sqlite`，CI 使用相同版本）：
 
 ```powershell
 npm run dev
 ```
+
+该命令启动 Vite，并直接提供 `/api/ai`、`/api/research` 和 `/api/tools` 的本地处理接口，无需另开 `server.js`。内置 AI 未配置密钥时，`POST /api/ai` 返回明确的 503；`GET /api/ai` 可检查服务状态。PPT 导出仍需要单独启动 Python 后端。仅使用传统静态服务时可运行 `npm run dev:legacy`。
 
 默认访问 `http://localhost:4281`。常用环境变量：
 

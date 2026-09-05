@@ -1,0 +1,53 @@
+{
+  "synthetic": true,
+  "runtime": "v24.17.0",
+  "measured_at": "2026-09-05T09:02:33.342Z",
+  "results": [
+    {
+      "format": "csv",
+      "rows": 1000,
+      "columns": 20,
+      "cells": 20000,
+      "bytes": 41781,
+      "parse_ms": 5,
+      "profile_ms": 14,
+      "weight_ms": 3
+    },
+    {
+      "format": "csv",
+      "rows": 50000,
+      "columns": 20,
+      "cells": 1000000,
+      "bytes": 2086426,
+      "parse_ms": 123,
+      "profile_ms": 45,
+      "weight_ms": 22
+    },
+    {
+      "format": "csv",
+      "rows": 100000,
+      "columns": 20,
+      "cells": 2000000,
+      "bytes": 4172781,
+      "parse_ms": 199,
+      "profile_ms": 88,
+      "weight_ms": 50
+    },
+    {
+      "format": "sav",
+      "rows": 50000,
+      "columns": 20,
+      "cells": 1000000,
+      "bytes": 8000949,
+      "parse_ms": 131
+    },
+    {
+      "format": "xlsx",
+      "rows": 50000,
+      "columns": 20,
+      "cells": 1000000,
+      "bytes": 29113675,
+      "parse_ms": 1678
+    }
+  ]
+}
