@@ -98,6 +98,52 @@ cat > "/etc/systemd/system/${SERVICE_NAME}.service.d/zz-officecli-preview.conf" 
 TasksMax=512
 EOF
 
+# Separate process: original parse/preview contracts, no render queue or lifespan.
+cat > "/etc/systemd/system/${SERVICE_NAME}-planning.service" <<EOF
+[Unit]
+Description=SurveyKit PPTX parsing and structure preview
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=${APP_DIR}/deploy
+Environment=PYTHONUTF8=1
+Environment=PYTHONUNBUFFERED=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=OMP_NUM_THREADS=1
+Environment=SURVEYKIT_RELEASE=${RELEASE_ID}
+Environment=SURVEYKIT_COMMIT=${SOURCE_REVISION}
+Environment=SURVEYKIT_DEPLOYED_AT=${DEPLOYED_AT}
+ExecStart=${APP_DIR}/venv/bin/python -m uvicorn pptx_planning_api:app --host 127.0.0.1 --port 8002 --workers 1 --limit-concurrency 4 --timeout-keep-alive 5
+Restart=always
+RestartSec=3
+CPUQuota=100%
+CPUWeight=200
+MemoryMax=512M
+TasksMax=64
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable "${SERVICE_NAME}-planning"
+systemctl restart "${SERVICE_NAME}-planning"
+planning_ready=false
+for attempt in $(seq 1 20); do
+  if curl --fail --silent http://127.0.0.1:8002/healthz >/dev/null; then
+    planning_ready=true
+    break
+  fi
+  sleep 1
+done
+if [[ "${planning_ready}" != "true" ]]; then
+  echo "PPT parsing/preview service did not become ready."
+  exit 1
+fi
+
 CERT_DIR="/etc/letsencrypt/live/${SERVER_NAME}"
 if [[ -f "${CERT_DIR}/fullchain.pem" && -f "${CERT_DIR}/privkey.pem" ]]; then
 cat > "/etc/nginx/sites-available/${SERVICE_NAME}" <<EOF
@@ -122,6 +168,17 @@ server {
     proxy_connect_timeout 30s;
     proxy_send_timeout 180s;
     proxy_read_timeout 180s;
+
+    location = /api/pptx-report/parse {
+        proxy_pass http://127.0.0.1:8002;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+    }
+    location = /api/pptx-report/preview {
+        proxy_pass http://127.0.0.1:8002;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+    }
 
     location /internal/data/ {
         proxy_pass http://127.0.0.1:8010/;
@@ -152,6 +209,17 @@ server {
     proxy_connect_timeout 30s;
     proxy_send_timeout 180s;
     proxy_read_timeout 180s;
+
+    location = /api/pptx-report/parse {
+        proxy_pass http://127.0.0.1:8002;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+    }
+    location = /api/pptx-report/preview {
+        proxy_pass http://127.0.0.1:8002;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+    }
 
     location /internal/data/ {
         proxy_pass http://127.0.0.1:8010/;

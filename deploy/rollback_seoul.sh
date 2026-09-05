@@ -41,6 +41,7 @@ if ! grep -q '^pptx_report/' <<<"${archive_listing}"; then
 fi
 
 echo "Rolling back from ${resolved_backup}"
+systemctl disable --now "${SERVICE_NAME}-planning" 2>/dev/null || true
 systemctl stop "${SERVICE_NAME}"
 rm -rf "${APP_DIR}/deploy" "${APP_DIR}/pptx_report"
 rm -f "${APP_DIR}/RELEASE.json"
@@ -59,11 +60,16 @@ for name, key in [('SURVEYKIT_RELEASE', 'version'), ('SURVEYKIT_COMMIT', 'revisi
         raise ValueError('Invalid release metadata: ' + key)
     text = re.sub(r'^Environment=' + name + r'=.*$', 'Environment=' + name + '=' + value, text, flags=re.MULTILINE)
 service.write_text(text)
+nginx = Path('/etc/nginx/sites-available/surveykit-ppt')
+if nginx.exists():
+    nginx.write_text(nginx.read_text().replace('http://127.0.0.1:8002', 'http://127.0.0.1:8000'))
 PY
 systemctl daemon-reload
 systemctl start "${SERVICE_NAME}"
 for attempt in $(seq 1 20); do
   if curl --fail --silent --show-error http://127.0.0.1:8000/healthz; then
+    nginx -t
+    systemctl reload nginx
     echo
     echo "Rollback completed."
     exit 0
