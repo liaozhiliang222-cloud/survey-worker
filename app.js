@@ -2341,7 +2341,7 @@ function forwardFillRow(row) {
 }
 
 function isHeaderConditionCell(value) {
-  return /[A-Za-z]+\d+(?:[-_]\d+)?\s*(?:=|＝)\s*R?\d+/i.test(String(value || ""));
+  return /^[A-Za-z_][A-Za-z0-9_-]*\s*(?:=|＝|≠)\s*\S/i.test(String(value || ""));
 }
 
 function cleanCrosstabGroupCell(value) {
@@ -2351,6 +2351,7 @@ function cleanCrosstabGroupCell(value) {
 
 function cleanCrosstabConditionCell(value) {
   const text = String(value || "").trim();
+  if (/[=＝≠]/.test(text) && !isHeaderConditionCell(text)) throw new Error(`无法识别表头筛选条件：${text}，请使用“变量名=编码”。`);
   return isHeaderConditionCell(text) ? text : "";
 }
 
@@ -2392,7 +2393,7 @@ function findCrosstabHeaderRows(rows) {
 
   return {
     groupRow: rows[groupIndex] || [],
-    labelRow: rows[labelIndex] || [],
+    labelRow: labelIndex === groupIndex ? [] : rows[labelIndex] || [],
     conditionRow: rows[finalConditionIndex] || []
   };
 }
@@ -2417,10 +2418,10 @@ function parseCrosstabHeaderRows(rows) {
     if (!group && !label && !condition) continue;
     definitions.push({
       group: String(groups[index] || group).trim(),
-      label: label || group || `表头${definitions.length + 1}`,
+      label: label || condition || group || `表头${definitions.length + 1}`,
       condition,
       parts: parseHeaderCondition(condition),
-      title: [String(groups[index] || group).trim(), label || "总体"].filter(Boolean).join(" / ")
+      title: [String(groups[index] || group).trim(), label || condition || "总体"].filter(Boolean).join(" / ")
     });
   }
 

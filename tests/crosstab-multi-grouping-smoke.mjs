@@ -38,3 +38,12 @@ console.log('SAV MRSETS passed: Chinese byte lengths, D/E metadata, generic vari
 
 context.lastCrosstabDataContext.headerInfos.push({sourceHeader:'V476_A',title:'V476_A',longName:'Q49_2_4__8__open'});
 assert.equal(context.inferSingleColumnType('V476_A',['其他回答/含斜杠']), 'open');
+
+for (const name of ['forwardFillRow','isHeaderConditionCell','cleanCrosstabGroupCell','cleanCrosstabConditionCell','rowNonEmptyCount','rowConditionCount','isMostlyNumericHeaderRow','findCrosstabHeaderRows','parseCrosstabHeaderRows','normalizeConditionVariable','parseHeaderCondition']) {
+ const start=source.indexOf(`function ${name}(`);const rest=source.slice(start);const boundary=rest.slice(1).search(/\n(?:async )?function /);vm.runInContext(boundary<0?rest:rest.slice(0,boundary+1),context);
+}
+const twoRows=context.parseCrosstabHeaderRows([['总体','四类','',''],['','QCL_3=1','QCL_3=2','QCL_3=3']]);
+assert.equal(twoRows[1].condition,'QCL_3=1');assert.equal(twoRows[2].label,'QCL_3=2');assert.equal(twoRows[3].parts[0].variable,'QCL_3');assert.equal(twoRows[0].condition,'');
+const threeRows=context.parseCrosstabHeaderRows([['总体','品牌',''],['总体','品牌甲','品牌乙'],['','Q5_1=R1','Q5_1=R2']]);assert.equal(threeRows[1].label,'品牌甲');assert.equal(threeRows[2].condition,'Q5_1=R2');
+assert.throws(()=>context.cleanCrosstabConditionCell('错误变量=1'));
+console.log('Banner import passed: two-row cluster headers, named columns, legacy three-row headers, invalid conditions');
