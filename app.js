@@ -5827,7 +5827,17 @@ function renderQuestionPivotItem(item) {
 }
 
 function nextUiTick() {
-  return new Promise((resolve) => window.setTimeout(resolve, 0));
+  // Yield a task without chaining timers, which background tabs throttle.
+  if (typeof globalThis.scheduler?.yield === "function") return globalThis.scheduler.yield();
+  return new Promise(resolve => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      channel.port2.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
 }
 
 function renderCrosstabProgressCard(status, percent = 0, detail = "") {
@@ -5898,7 +5908,7 @@ async function generateQuestionPivot() {
 
 function renderQuestionPivot() {
   renderCrosstabProgressCard("正在识别题型、计算频数并排除开放题，请稍候...", 3, "页面会分阶段刷新进度，导出完成后自动下载 Excel。");
-  window.setTimeout(generateQuestionPivot, 100);
+  void nextUiTick().then(generateQuestionPivot);
 }
 
 function questionBannerRows(questionTitle) {
