@@ -8217,3 +8217,15 @@ tbody tr.warn td {
   .research-outline-reader-content { padding: 0 12px 16px; }
   .research-outline-reader-content .research-outline-chapter { padding: 12px; }
 }
+
+/* Full-width document reading for outlines and page scripts. */
+.research-outline-reader-content { min-width: 0; overflow-wrap: anywhere; }
+.research-outline-reader-content .research-ppt-script-pages,
+.research-outline-reader-content .research-ppt-script-page,
+.research-outline-reader-content .research-ppt-script-content > section { min-width: 0; }
+.research-outline-reader-content .research-ppt-script-page { padding: 20px; }
+.research-outline-reader-content .research-artifact-detail-actions { margin-top: 16px; }
+.research-outline-reader-content pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .research-outline-reader-content .research-ppt-script-page { padding: 12px; }
+}
