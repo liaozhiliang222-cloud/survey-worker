@@ -143,3 +143,10 @@ assert.equal(variantInspection.metrics.question_count, 1);
 assert.notEqual(variantInspection.status, "error");
 
 console.log("crosstab export style smoke passed");
+
+const borderStyles = zipEntry(xlsxBytes, "xl/styles.xml");
+for (const side of ["left", "right", "top", "bottom"]) {
+  assert.ok(borderStyles.includes(`<${side} style="thin"><color rgb="FF526A82"/></${side}>`));
+}
+const headerSheet = zipEntry(xlsxBytes, "xl/worksheets/sheet2.xml");
+for (const ref of ["B2", "D2", "E2"]) assert.ok(headerSheet.includes(`<c r="${ref}" s="8"/>`));
