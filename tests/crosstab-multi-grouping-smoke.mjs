@@ -47,3 +47,10 @@ assert.equal(twoRows[1].condition,'QCL_3=1');assert.equal(twoRows[2].label,'QCL_
 const threeRows=context.parseCrosstabHeaderRows([['总体','品牌',''],['总体','品牌甲','品牌乙'],['','Q5_1=R1','Q5_1=R2']]);assert.equal(threeRows[1].label,'品牌甲');assert.equal(threeRows[2].condition,'Q5_1=R2');
 assert.throws(()=>context.cleanCrosstabConditionCell('错误变量=1'));
 console.log('Banner import passed: two-row cluster headers, named columns, legacy three-row headers, invalid conditions');
+
+// Closed attitude statements must not exclude an entire matrix question.
+assert.equal(context.isOpenEndedHeader('A7__5 5.我对各类智能家居产品持开放态度，愿意尝试'), false);
+for (const label of ['A8 开放题', 'A8 开放式问题', 'A8 开放性问题', 'A8 其他请注明']) {
+  assert.equal(context.isOpenEndedHeader(label), true, label);
+}
+console.log('Open-ended detection passed: open attitude is retained, explicit free-text questions excluded');
