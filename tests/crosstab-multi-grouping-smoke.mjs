@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const source=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
+const names=['questionPrefix','getHeaderInfo','groupQuestionHeaders','isBinaryMentionValue','isBinaryOptionColumn','normalizeConditionValue','rawValueMatches','pivotKey','crosstabQuestionKeyCandidates'];
+const context=vm.createContext({lastCrosstabDataContext:null,questionDisplayTitle:(_key,title)=>title});
+for(const name of names){const start=source.indexOf(`function ${name}(`);const end=source.indexOf('\nfunction ',start+1);vm.runInContext(source.slice(start,end),context);}
+const headers=['Q7__1 咨询店员','Q7__2 购买产品','Q7_1A 影响程度','Q7_1B__1 原因甲','Q7_1B__2 原因乙','Q7_1C__1 因素甲','Q7_1C__2 因素乙'];
+const rows=[Object.fromEntries(headers.map(h=>[h,'是'])),Object.fromEntries(headers.map(h=>[h,'否']))];
+const groups=context.groupQuestionHeaders(headers,rows);
+assert.equal(groups.length,4);
+assert.deepEqual(Array.from(groups,g=>g.key),['Q7','Q7_1A 影响程度','Q7_1B','Q7_1C']);
+const used=Array.from(groups).flatMap(g=>Array.from(g.headers));assert.equal(new Set(used).size,headers.length);assert.equal(used.length,headers.length);
+assert.equal(context.questionPrefix('Q27_2__1__open'),'Q27_2');
+assert.equal(context.questionPrefix('Q7_1D 平台'),'Q7_1D');
+assert.ok(context.crosstabQuestionKeyCandidates('Q7_1B__2').includes('Q7_1B'));
+for(const code of ['1','2','3','4','5','6'])assert.equal(context.rawValueMatches(code,'1/R2/R3/R4/R5/R6'),true);
+for(const code of ['','7','11'])assert.equal(context.rawValueMatches(code,'1/R2/R3/R4/R5/R6'),false);
+assert.notEqual(context.pivotKey({sourceKey:'Q7',title:'相同题干',type:'多选题'}),context.pivotKey({sourceKey:'Q7_1B',title:'相同题干',type:'多选题'}));
+console.log('Crosstab grouping passed: letter suffixes, no reused fields, stable keys, OR banner codes');

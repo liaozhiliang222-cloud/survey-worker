@@ -2574,7 +2574,7 @@ function crosstabQuestionKeyCandidates(variableName) {
   add(text);
   const normalizedText = text.replace(/^FZ[_-]/i, "").replace(/^FZ(?=Q\d)/i, "");
   add(normalizedText);
-  const tokenMatch = normalizedText.match(/([A-Za-z]+\d+(?:_\d+)?)(?:__\d+)?/);
+  const tokenMatch = normalizedText.match(/([A-Za-z]+\d+(?:_\d+[A-Za-z]*)?)(?:__\d+)?/);
   if (tokenMatch) {
     const token = tokenMatch[1];
     add(token);
@@ -5141,7 +5141,7 @@ function questionPrefix(header) {
   const matrixMatch = text.match(/^([A-Za-z]+\d+)__\d+(?:[^A-Za-z0-9]|$)/);
   if (matrixMatch) return matrixMatch[1];
   // 单下划线通常是另一道派生题/追问题：Q27_2__1__open → Q27_2，不能并入 Q27
-  const subQuestionMatch = text.match(/^([A-Za-z]+\d+_\d+)(?:__\d+)?(?:[^A-Za-z0-9]|$)/);
+  const subQuestionMatch = text.match(/^([A-Za-z]+\d+_\d+[A-Za-z]*)(?:__\d+)?(?:[^A-Za-z0-9]|$)/);
   if (subQuestionMatch) return subQuestionMatch[1];
   const match = text.match(/^([A-Za-z]+\d+)(?:[^A-Za-z0-9]|$)/);
   return match ? match[1] : "";
@@ -5167,16 +5167,16 @@ function groupQuestionHeaders(headers, rows = []) {
       return;
     }
     const prefix = questionPrefix(header);
-    const multiPrefix = String(header).match(/^([A-Za-z]+\d+(?:_\d+)?)__\d+/)?.[1];
+    const multiPrefix = String(header).match(/^([A-Za-z]+\d+(?:_\d+[A-Za-z]*)?)__\d+/)?.[1];
     if (multiPrefix) {
-      const related = headers.filter((candidate) => String(candidate).startsWith(`${multiPrefix}__`));
-      if (rows.length > 0 && related.every((candidate) => isBinaryOptionColumn(candidate, rows))) {
+      const related = headers.filter((candidate) => !used.has(candidate) && new RegExp(`^${multiPrefix}__\\d+(?:\\s|$)`).test(String(candidate)));
+      if (related.length > 0 && rows.length > 0 && related.every((candidate) => isBinaryOptionColumn(candidate, rows))) {
         related.forEach((candidate) => used.add(candidate));
         groups.push({ key: multiPrefix, title: questionDisplayTitle(multiPrefix, multiPrefix), headers: related, multiResponse: true });
         return;
       }
       // 仅当所有相关字段的值看起来是二元值（0/1/选中/未选/是/否）时才判定为多选题
-      const isMultiResponse = rows.length > 0 && related.every((candidate) => {
+      const isMultiResponse = related.length > 0 && rows.length > 0 && related.every((candidate) => {
         const allValues = rows.map((row) => row[candidate]).filter((v) => v !== undefined && v !== "");
         return allValues.length > 0 && allValues.every((value) => /^(0|1|选中|未选|是|否)$/i.test(String(value).trim()));
       });
@@ -5191,7 +5191,7 @@ function groupQuestionHeaders(headers, rows = []) {
       used.add(header);
       return;
     }
-    const related = headers.filter((candidate) => questionPrefix(candidate) === prefix);
+    const related = headers.filter((candidate) => !used.has(candidate) && questionPrefix(candidate) === prefix);
     if (related.length > 1) {
       related.forEach((candidate) => used.add(candidate));
       const firstInfo = getHeaderInfo(related[0]);
@@ -5384,6 +5384,7 @@ function buildSingleQuestionPivot(parsed, options = {}) {
   const total = parsed.rows.length;
   if (resetExcluded) excludedPivotItems = [];
   return groupQuestionHeaders(parsed.headers, parsed.rows).flatMap((group) => {
+    const results = (() => {
     if (group.headers.length > 1) {
       const otherSpecifyHeaders = group.headers.filter((header) => isOtherSpecifyField(header, parsed.rows));
       const activeHeaders = group.headers.filter((header) => !isOtherSpecifyField(header, parsed.rows));
@@ -5488,7 +5489,7 @@ function buildSingleQuestionPivot(parsed, options = {}) {
       const rows = activeGroup.headers.map((header) => {
         const values = parsed.rows.map((row) => row[header]).filter(Boolean);
         return {
-          label: questionDisplayTitle(header, header),
+          label: getHeaderInfo(header)?.optionLabel || header,
           validBase: values.length,
           frequencies: frequencyRows(values, values.length, values.length)
         };
@@ -5578,6 +5579,8 @@ function buildSingleQuestionPivot(parsed, options = {}) {
     }
     const validValues = values.filter(Boolean);
     return [{ title: questionDisplayTitle(header, header), type: "单选题", total, validBase: validValues.length, rows: frequencyRows(values, validValues.length, validValues.length) }];
+    })();
+    return results.map((item, index) => ({ ...item, sourceKey: group.key + (results.length > 1 ? `::${index}` : "") }));
   });
 }
 
@@ -5634,9 +5637,9 @@ function parseHeaderCondition(condition) {
 }
 
 function rawValueMatches(actual, expected) {
-  const actualText = String(actual ?? "").trim();
-  const expectedText = String(expected ?? "").trim();
-  return actualText === expectedText || actualText === `R${expectedText}` || actualText.split(/[;,，、|/]/).map((item) => normalizeConditionValue(item)).includes(expectedText);
+  const tokens = (value) => String(value ?? "").split(/[;,，、|/]/).map(normalizeConditionValue).filter(Boolean);
+  const actualValues = tokens(actual);
+  return tokens(expected).some(value => actualValues.includes(value));
 }
 
 function conditionPartMatches(rawRow, rawHeaders, part) {
@@ -5680,7 +5683,7 @@ function findPivotItem(items, sourceItem) {
 }
 
 function pivotKey(item) {
-  return `${item.type}::${item.title}`;
+  return `${item.type}::${item.sourceKey || item.title}`;
 }
 
 function indexPivotItems(items) {
