@@ -1,6 +1,6 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { defineConfig, loadEnv } from "vite";
 
 const require = createRequire(import.meta.url);
@@ -10,6 +10,9 @@ const { createAiProxyHandler } = require("./lib/ai-proxy");
 const { configuredBodyLimit } = require("./lib/request-body");
 
 const runtimeFiles = [
+  // Classic app.js imports these by source URL outside Vite's module graph.
+  "src/shared/export.js",
+  "src/shared/file-parser.js",
   "research-theme.js",
   "ai-plan-quality.js",
   "app.js",
@@ -34,7 +37,11 @@ function copyRuntimeAssets() {
       mkdirSync(outputDir, { recursive: true });
       runtimeFiles.forEach((file) => {
         const source = resolve(file);
-        if (existsSync(source)) copyFileSync(source, resolve(outputDir, file));
+        if (existsSync(source)) {
+          const target = resolve(outputDir, file);
+          mkdirSync(dirname(target), { recursive: true });
+          copyFileSync(source, target);
+        }
       });
       cpSync(resolve("templates"), resolve(outputDir, "templates"), { recursive: true });
       mkdirSync(resolve(outputDir, "assets"), { recursive: true });
