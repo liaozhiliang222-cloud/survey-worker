@@ -8229,3 +8229,43 @@ tbody tr.warn td {
 @media (max-width: 600px) {
   .research-outline-reader-content .research-ppt-script-page { padding: 12px; }
 }
+
+/* Progressive configuration for user segmentation. */
+#cluster-analysis .step-body { min-width: 0; }
+.cluster-import-summary { display:flex; flex-wrap:wrap; gap:12px 24px; padding:14px; align-items:center; }
+.cluster-import-summary strong { overflow-wrap:anywhere; }
+.cluster-variable-find { display:grid; grid-template-columns:minmax(0,1fr) 160px; gap:12px; margin:12px 0; }
+.cluster-variable-pagination { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:12px 0; }
+.cluster-toggle, .cluster-auto-method { display:flex; align-items:center; gap:8px; }
+.cluster-toggle input, .cluster-auto-method input { width:auto; }
+.cluster-auto-method { margin:12px 0; }
+.cluster-variable-table:not(.show-advanced) tr > :nth-child(3),
+.cluster-variable-table:not(.show-advanced) tr > :nth-child(4),
+.cluster-variable-table:not(.show-advanced) tr > :nth-child(5),
+.cluster-variable-table:not(.show-advanced) tr > :nth-child(7),
+.cluster-variable-table:not(.show-advanced) tr > :nth-child(8) { display:none; }
+.cluster-variable-table { width:100%; table-layout:fixed; }
+.cluster-variable-table:not(.show-advanced) th:first-child { width:60%; }
+.cluster-variable-table:not(.show-advanced) th:nth-child(2) { width:25%; }
+.cluster-variable-table .cluster-var-name { white-space:normal; overflow-wrap:anywhere; }
+.cluster-variable-table.show-advanced { min-width:1000px; }
+.cluster-method-choice, .cluster-model-advanced { margin:14px 0; }
+.cluster-model-advanced { grid-column:1/-1; width:100%; }
+.cluster-model-advanced > .field { margin-top:14px; }
+.cluster-advanced > summary { cursor:pointer; padding:10px 0; font-weight:600; }
+#clusterDropzone { min-height:100px; padding:16px; }
+@media(max-width:640px) { .cluster-variable-find { grid-template-columns:1fr; } .cluster-variable-pagination { font-size:12px; } }
+
+@media(max-width:640px) {
+  .cluster-variable-table:not(.show-advanced), .cluster-variable-table:not(.show-advanced) tbody { display:block; min-width:0; }
+  .cluster-variable-table:not(.show-advanced) thead { display:none; }
+  .cluster-variable-table:not(.show-advanced) tr { display:block; padding:10px; border-bottom:1px solid #dbe5f1; }
+  .cluster-variable-table:not(.show-advanced) tr > td:first-child,
+  .cluster-variable-table:not(.show-advanced) tr > td:nth-child(2),
+  .cluster-variable-table:not(.show-advanced) tr > td:nth-child(6) { display:block; max-width:none; width:100%; padding:5px 0; border:0; }
+  .cluster-variable-table:not(.show-advanced) select { width:100%; }
+  .cluster-variable-table:not(.show-advanced) td:nth-child(6)::before { content:"缺失样本："; }
+  .cluster-variable-pagination { display:grid; grid-template-columns:auto 1fr auto; }
+  .cluster-variable-pagination button { padding:8px; min-width:0; }
+  .cluster-variable-pagination span { text-align:center; }
+}

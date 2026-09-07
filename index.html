@@ -2547,18 +2547,24 @@
             <div class="cluster-step panel">
               <div class="step-badge">2</div>
               <div class="step-body">
-                <h3>定义变量</h3>
-                <p class="panel-note">为每个字段指定角色（ID / 聚类 / 描述 / 权重 / 排除）与测量类型。系统已按数据自动识别，可手动修正；多选变量组可整组加入。</p>
+                <h3>选择分群变量</h3>
+                <p class="panel-note">选择用来区分人群的需求、态度或行为题目；“用于画像”的变量仅用于解释群体特征。系统已给出初始建议，可搜索题号并调整。</p>
                 <div class="cluster-variable-toolbar">
                   <button class="ghost-btn" id="clusterRoleSuggest" type="button">应用角色建议</button>
-                  <button class="ghost-btn" id="clusterExpandMissing" type="button">批量设置缺失码</button>
+                  <button class="ghost-btn" id="clusterClearSelection" type="button">清空分群选择</button>
+                  <label class="cluster-toggle"><input id="clusterVariableAdvanced" type="checkbox"> 显示高级变量设置</label>
                 </div>
+                <div class="cluster-variable-find">
+                  <input id="clusterVariableSearch" type="search" placeholder="搜索题号或题目，例如 A7、需求" aria-label="搜索变量" />
+                  <select id="clusterVariableFilter" aria-label="筛选变量用途"><option value="all">全部变量</option><option value="cluster">用于分群</option><option value="profile">用于画像</option><option value="excluded">已排除</option><option value="id">样本 ID</option><option value="weight">权重</option></select>
+                </div>
+                <p class="panel-note" id="clusterVariableSummary" aria-live="polite">导入数据后选择变量。</p>
                 <div class="table-wrap cluster-variable-table-wrap">
                   <table class="cluster-variable-table" id="clusterVariableTable">
                     <thead>
                       <tr>
                         <th>字段</th>
-                        <th>角色</th>
+                        <th>用途</th>
                         <th>测量类型</th>
                         <th>识别为</th>
                         <th>唯一值</th>
@@ -2570,7 +2576,8 @@
                     <tbody></tbody>
                   </table>
                 </div>
-                <div id="clusterMultiGroups" class="cluster-multi-groups"></div>
+                <div class="cluster-variable-pagination"><button class="ghost-btn" id="clusterVariablePrev" type="button" disabled>上一页</button><span id="clusterVariablePageInfo" aria-live="polite"></span><button class="ghost-btn" id="clusterVariableNext" type="button" disabled>下一页</button></div>
+                <details class="cluster-advanced"><summary>多选题整组配置</summary><div id="clusterMultiGroups" class="cluster-multi-groups"></div></details>
               </div>
             </div>
 
@@ -2593,7 +2600,7 @@
 
                 <div class="cluster-options" id="clusterKmeansOptions">
                   <label class="span-row field">
-                    <span class="field-heading">分群数量 K</span>
+                    <span class="field-heading">分成几群</span>
                     <input id="kmK" type="number" min="2" value="3" />
                     <small class="field-note">范围 2 ≤ K &lt; 有效样本量；默认 3。可通过下方诊断比较辅助选择。</small>
                   </label>
@@ -2633,8 +2640,8 @@
                   <label class="span-row field">
                     <span class="field-heading">缺失值处理</span>
                     <select id="kmMissing">
-                      <option value="listwise" selected>Listwise（任一聚类变量缺失则排除该样本，默认）</option>
-                      <option value="pairwise">Pairwise（按样本实际非缺失变量计算距离，按有效维度归一化）</option>
+                      <option value="listwise" selected>仅分析所选变量完整的样本（默认）</option>
+                      <option value="pairwise">允许部分缺失，按已回答的变量计算</option>
                     </select>
                   </label>
                   <label class="span-row field">
@@ -2678,7 +2685,7 @@
                   <label class="span-row field">
                     <span class="field-heading">群数选择</span>
                     <select id="tsAutoSelect">
-                      <option value="auto" selected>自动选择（BIC / AIC）</option>
+                      <option value="auto" selected>自动比较并选择群数（默认）</option>
                       <option value="fixed">固定群数</option>
                     </select>
                   </label>
@@ -2856,7 +2863,7 @@
             <div class="audit-results" id="clusterResults" aria-live="polite">
               <div class="empty-state">
                 <strong>等待分析</strong>
-                <span>导入数据 → 定义变量 → 配置模型后点击“开始分析”，这里会显示模型概览、群体规模、特征矩阵、画像卡与样本归属。</span>
+                <span>导入数据 → 选择分群变量 → 设置并运行后点击“开始分析”，这里会显示模型概览、群体规模、特征矩阵、画像卡与样本归属。</span>
               </div>
             </div>
 

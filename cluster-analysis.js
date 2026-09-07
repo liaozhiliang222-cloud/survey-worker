@@ -15,6 +15,7 @@
   // ─── 状态 ─────────────────────────────────────────────────
 
   const state = {
+    variablePage: 0,
     method: "kmeans",          // kmeans | twostep | hierarchical
     parsed: null,              // { headers, rows, fileName, sheetNames, sheetIndex }
     definitions: [],           // 变量定义
@@ -37,11 +38,11 @@
   };
 
   const ROLE_LABELS = {
-    id: "ID 变量",
-    cluster: "聚类变量",
-    profile: "描述变量",
-    weight: "权重变量",
-    excluded: "排除"
+    id: "样本 ID",
+    cluster: "用于分群",
+    profile: "用于画像",
+    weight: "样本权重",
+    excluded: "不使用"
   };
 
   const MEASUREMENT_LABELS = {
@@ -156,6 +157,10 @@
     }
     const clusterDefs = state.definitions.filter((definition) => definition.role === "cluster");
     const advice = core().recommendMethod(clusterDefs, state.parsed.rows.length);
+    if ($("clusterAutoMethod")?.checked && clusterDefs.length && advice.recommendedMethod !== state.method) {
+      switchMethod(advice.recommendedMethod);
+      return;
+    }
     const lines = [];
     advice.reasons.forEach((reason) => { lines.push(`<li>${escapeHtml(reason)}</li>`); });
     advice.warnings.forEach((warning) => { lines.push(`<li class="warning-text">⚠ ${escapeHtml(warning)}</li>`); });
@@ -167,7 +172,7 @@
         ${highlighted ? '<span class="advice-tag">当前方法</span>' : ""}
       </div>
       <ul class="advice-list">${lines.join("") || "<li>暂无可建议内容。</li>"}</ul>
-      <p class="panel-note">方法建议仅作为提示，你可以忽略并手动选择其他可兼容算法。</p>`;
+      <p class="panel-note">${$("clusterAutoMethod")?.checked ? "已按变量类型自动选择方法，可在下方手动切换。" : "当前使用手动选择的方法。"}</p>`;
   }
 
   // ─── 数据导入 ─────────────────────────────────────────────
@@ -245,6 +250,8 @@
 
   function loadParsed({ headers, rows, fileName, sheetNames = [], sheetIndex = 0 }) {
     state.parsed = { headers, rows, fileName, sheetNames, sheetIndex };
+    state.variablePage = 0;
+    if ($("clusterVariableSearch")) $("clusterVariableSearch").value = "";
     state.definitions = core().detectVariableTypes(rows, headers);
     state.multiGroups = core().detectMultiSelectGroups(headers);
     state.results = {};
@@ -297,45 +304,8 @@
     const preview = $("clusterDataPreview");
     if (!preview || !state.parsed) return;
     const { headers, rows, fileName } = state.parsed;
-    const numericFields = headers.filter((header) =>
-      rows.some((row) => row[header] !== "" && Number.isFinite(Number(row[header]))));
-    const categoricalFields = headers.filter((header) => {
-      const uniq = new Set(rows.map((row) => String(row[header] ?? "").trim()).filter(Boolean));
-      return uniq.size > 1 && uniq.size <= 20;
-    });
-    let missingCells = 0;
-    const duplicateIds = new Map();
-    const idCandidate = state.definitions.find((definition) => definition.role === "id");
-    rows.forEach((row, index) => {
-      headers.forEach((header) => {
-        if (String(row[header] ?? "").trim() === "") missingCells += 1;
-      });
-      if (idCandidate) {
-        const key = String(row[idCandidate.name] ?? "").trim();
-        if (key) duplicateIds.set(key, (duplicateIds.get(key) || 0) + 1);
-      }
-    });
-    const duplicateCount = Array.from(duplicateIds.values()).filter((count) => count > 1).length;
-    const headRows = rows.slice(0, 10);
     preview.classList.remove("hidden");
-    preview.innerHTML = `
-      <div class="data-stats-grid">
-        <div><strong>${escapeHtml(fileName)}</strong><span>文件名</span></div>
-        <div><strong>${rows.length}</strong><span>样本量</span></div>
-        <div><strong>${headers.length}</strong><span>字段数</span></div>
-        <div><strong>${numericFields.length}</strong><span>数值字段</span></div>
-        <div><strong>${categoricalFields.length}</strong><span>分类字段</span></div>
-        <div><strong>${missingCells}</strong><span>缺失单元格</span></div>
-        <div><strong>${duplicateCount}</strong><span>重复 ID 数</span></div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
-          <tbody>${headRows.map((row) =>
-            `<tr>${headers.map((header) => `<td>${escapeHtml(String(row[header] ?? "").slice(0, 40))}</td>`).join("")}</tr>`).join("")}</tbody>
-        </table>
-      </div>
-      <p class="panel-note">前 10 行预览；原始受访者数据仅保存在浏览器本地。</p>`;
+    preview.innerHTML = `<div class="cluster-import-summary"><strong>${escapeHtml(fileName)}</strong><span>${rows.length} 条样本 · ${headers.length} 个字段</span><span>已导入，可以选择分群变量</span></div>`;
   }
 
   // ─── 变量定义 ─────────────────────────────────────────────
@@ -381,7 +351,16 @@
     const table = $("clusterVariableTable");
     if (!table) return;
     const body = table.querySelector("tbody");
-    body.innerHTML = state.definitions.map(definitionRow).join("");
+    const query = $("clusterVariableSearch")?.value.trim().toLowerCase() || "";
+    const role = $("clusterVariableFilter")?.value || "all";
+    const filtered = state.definitions.filter(d => d.name.toLowerCase().includes(query) && (role === "all" || d.role === role));
+    const pages = Math.max(1, Math.ceil(filtered.length / 30));
+    state.variablePage = Math.min(state.variablePage, pages - 1);
+    body.innerHTML = filtered.slice(state.variablePage * 30, (state.variablePage + 1) * 30).map(definitionRow).join("") || '<tr><td colspan="8">没有匹配的变量，请更换关键词或筛选条件。</td></tr>';
+    $("clusterVariablePageInfo").textContent = `第 ${state.variablePage + 1} / ${pages} 页 · 匹配 ${filtered.length} 个字段`;
+    $("clusterVariablePrev").disabled = state.variablePage === 0;
+    $("clusterVariableNext").disabled = state.variablePage >= pages - 1;
+    updateVariableSummary();
     body.querySelectorAll("select[data-role='role']").forEach((select) => {
       select.addEventListener("change", () => {
         const definition = findDefinition(select.closest("tr").dataset.variable);
@@ -389,6 +368,7 @@
           definition.role = select.value;
           definition.userConfirmed = true;
         }
+        updateVariableSummary();
         refreshMethodAdvice();
         updateRunButtonState();
       });
@@ -895,7 +875,7 @@
     container.innerHTML = `
       <div class="empty-state">
         <strong>等待分析</strong>
-        <span>导入数据 → 定义变量 → 配置模型后点击“开始分析”。</span>
+        <span>导入数据 → 选择分群变量 → 设置并运行后点击“开始分析”。</span>
       </div>`;
   }
 
@@ -1557,6 +1537,7 @@
       if (params.get("view") !== "cluster-analysis") return;
       const method = params.get("method");
       if (["kmeans", "twostep", "hierarchical"].includes(method)) {
+        $("clusterAutoMethod").checked = false;
         switchMethod(method);
       }
       if (typeof root.showView === "function") {
@@ -1678,6 +1659,48 @@
 
   // ─── 初始化 ───────────────────────────────────────────────
 
+
+  function updateVariableSummary() {
+    const n = state.definitions.filter(d => d.role === "cluster").length;
+    $("clusterVariableSummary").textContent = `用于分群 ${n} 个 · 用于画像 ${state.definitions.filter(d => d.role === "profile").length} 个` + (n > 50 ? "。变量较多，建议先筛选与研究目标相关的题目。" : "");
+  }
+
+  function setupSimpleWorkflow() {
+    const model = $("clusterKmeansOptions").closest(".step-body");
+    const advice = $("clusterMethodAdvice");
+    const oldStep = advice.closest(".cluster-step");
+    model.insertBefore(advice, model.querySelector(".cluster-options"));
+    oldStep.remove();
+    model.querySelector("h3").textContent = "设置并运行";
+    model.closest(".cluster-step").querySelector(".step-badge").textContent = "3";
+    const methodDetails = document.createElement("details");
+    methodDetails.className = "cluster-advanced cluster-method-choice";
+    methodDetails.innerHTML = '<summary>手动选择算法</summary>';
+    methodDetails.append(document.querySelector(".cluster-method-tabs"), $("clusterMethodNote"));
+    advice.after(methodDetails);
+    const automatic = document.createElement("label");
+    automatic.className = "cluster-auto-method";
+    automatic.innerHTML = '<input id="clusterAutoMethod" type="checkbox" checked> 自动选择适合当前变量的方法';
+    advice.before(automatic);
+    $("clusterAutoMethod").addEventListener("change", refreshMethodAdvice);
+    for (const [id, basic] of [["clusterKmeansOptions", ["kmK", "kmMissing"]], ["clusterTwostepOptions", ["tsAutoSelect", "tsFixedK", "tsMissing"]], ["clusterHierarchicalOptions", ["hiObject", "hiSelectedK", "hiSampleLimitNote"]]]) {
+      const container = $(id), advanced = document.createElement("details");
+      advanced.className = "cluster-advanced cluster-model-advanced";
+      advanced.innerHTML = '<summary>高级设置 · 按需调整</summary><p class="panel-note">已设置默认参数；展开后可调整标准化、距离、计算与诊断选项。</p>';
+      Array.from(container.children).forEach(child => {
+        if (!basic.some(name => child.id === name || child.querySelector(`[id="${name}"]`))) advanced.append(child);
+      });
+      container.append(advanced);
+    }
+    for (const id of ["clusterVariableSearch", "clusterVariableFilter"]) $(id).addEventListener(id.endsWith("Search") ? "input" : "change", () => { state.variablePage = 0; renderVariableTable(); });
+    $("clusterVariablePrev").addEventListener("click", () => { state.variablePage--; renderVariableTable(); });
+    $("clusterVariableNext").addEventListener("click", () => { state.variablePage++; renderVariableTable(); });
+    $("clusterVariableAdvanced").addEventListener("change", event => $("clusterVariableTable").classList.toggle("show-advanced", event.target.checked));
+    $("clusterClearSelection").addEventListener("click", () => {
+      state.definitions.forEach(d => { if (d.role === "cluster") d.role = "excluded"; });
+      renderVariableTable(); renderMultiGroups(); refreshMethodAdvice(); updateRunButtonState();
+    });
+  }
   function init() {
     if (!core()) {
       // 算法核心缺失时保持页面可用但提示
@@ -1687,14 +1710,17 @@
       return;
     }
     document.querySelectorAll("[data-cluster-method]").forEach((tab) => {
-      tab.addEventListener("click", () => switchMethod(tab.dataset.clusterMethod));
+      tab.addEventListener("click", () => { $("clusterAutoMethod").checked = false; switchMethod(tab.dataset.clusterMethod); });
     });
+    setupSimpleWorkflow();
     setupDropzone();
     $("clusterUseProjectData")?.addEventListener("click", useProjectData);
     $("clusterLoadExample")?.addEventListener("click", loadExampleData);
     $("clusterClearData")?.addEventListener("click", () => {
       state.parsed = null;
       state.definitions = [];
+      state.multiGroups = [];
+      state.variablePage = 0;
       state.results = {};
       state.diagnostics = null;
       renderDataPreview();
