@@ -70,7 +70,7 @@ function streamError(error, requestId) {
   if(error?.code==="HARNESS_TOOL_LIMIT")return {message:"本轮专业工具调用次数超过安全上限，请缩小任务范围后重试。",type:"harness_tool_limit",request_id:requestId,retryable:false};
   if(error?.code==="HARNESS_UPSTREAM"&&error?.status===429)return {message:"AI 研究员模型额度不足，请充值或稍后重试。",type:"harness_quota",request_id:requestId,retryable:true};
   if(error?.code==="HARNESS_UPSTREAM"&&[401,403].includes(error?.status))return {message:"AI 研究员服务认证失败，请联系管理员。",type:"harness_auth",request_id:requestId,retryable:false};
-  if(String(error?.code||"").startsWith("HARNESS_"))return {message:"AI 研究员暂时无法连接，请稍后重试。",type:"harness_unavailable",request_id:requestId,retryable:true};
+  if(String(error?.code||"").startsWith("HARNESS_")){const code=/^HARNESS_[A-Z_]+$/.test(error.code)?error.code:"HARNESS_UNKNOWN",status=Number(error.status)||0;return {message:code==="HARNESS_BAD_RESPONSE"?"模型服务返回了空内容或无效响应，请重试。":status?`模型服务请求失败（HTTP ${status}），请稍后重试。`:"AI 研究员暂时无法连接，请稍后重试。",type:"harness_unavailable",cause_code:code,...(status>=400&&status<=599?{upstream_status:status}:{}),request_id:requestId,retryable:true};}
   return {message:"AI 研究员服务暂时不可用，请稍后重试。",type:"internal_error",request_id:requestId,retryable:true};
 }
 function sseFrame(event, payload) { return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`; }
