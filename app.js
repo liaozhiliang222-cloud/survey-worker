@@ -2087,6 +2087,37 @@ function savUniqueHeader(headers, title) {
   return candidate;
 }
 
+// SAV MRSETS uses byte lengths, not JavaScript character counts (Chinese labels).
+function parseSavMultipleResponseSets(bytes) {
+  const sets = [];
+  let offset = 0;
+  const spaces = () => { while (bytes[offset] === 32) offset++; };
+  const number = () => { const start = offset; while (bytes[offset] >= 48 && bytes[offset] <= 57) offset++; if (start === offset) throw new Error("SAV 多选集长度无效"); return Number(new TextDecoder().decode(bytes.slice(start, offset))); };
+  const field = () => { const length = number(); if (bytes[offset++] !== 32 || offset + length > bytes.length) throw new Error("SAV 多选集内容不完整"); const value = decodeSavText(bytes.slice(offset, offset + length)); offset += length; return value; };
+  while (offset < bytes.length) {
+    while ([10, 13, 32].includes(bytes[offset])) offset++;
+    if (offset >= bytes.length) break;
+    const start = offset;
+    while (offset < bytes.length && bytes[offset] !== 61 && bytes[offset] !== 10) offset++;
+    if (bytes[offset] !== 61) throw new Error("SAV 多选集定义无效");
+    const name = decodeSavText(bytes.slice(start, offset)).replace(/^\$/, "");
+    offset++;
+    const type = String.fromCharCode(bytes[offset++]);
+    if (!["C", "D", "E"].includes(type)) throw new Error("SAV 多选集类型不支持");
+    spaces();
+    if (type === "E") { number(); spaces(); }
+    const countedValue = type === "C" ? null : field();
+    spaces();
+    const label = field();
+    spaces();
+    const variablesStart = offset;
+    while (offset < bytes.length && ![10, 13].includes(bytes[offset])) offset++;
+    const variables = decodeSavText(bytes.slice(variablesStart, offset)).split(/\s+/).filter(Boolean);
+    sets.push({ name, type, countedValue, label, variables });
+  }
+  return sets;
+}
+
 function savToDelimitedTableText(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
   const view = new DataView(arrayBuffer);
@@ -2100,6 +2131,8 @@ function savToDelimitedTableText(arrayBuffer) {
   const bias = view.getFloat64(84, littleEndian) || 100;
   let offset = 176;
   const records = [];
+  const multipleResponseSets = [];
+  const longVariableNames = new Map();
   let pendingLabels = null;
 
   const readInt = () => {
@@ -2161,9 +2194,16 @@ function savToDelimitedTableText(arrayBuffer) {
       const lineCount = readInt();
       offset += lineCount * 80;
     } else if (recordType === 7) {
-      readInt();
+      const subtype = readInt();
       const size = readInt();
       const count = readInt();
+      if ([7, 19].includes(subtype) && size === 1) multipleResponseSets.push(...parseSavMultipleResponseSets(bytes.slice(offset, offset + count)));
+      if (subtype === 13 && size === 1) {
+        decodeSavText(bytes.slice(offset, offset + count)).split("\t").forEach(pair => {
+          const equal = pair.indexOf("=");
+          if (equal > 0) longVariableNames.set(pair.slice(0, equal).toLowerCase(), pair.slice(equal + 1));
+        });
+      }
       offset += size * count;
     } else if (recordType === 999) {
       offset += 4;
@@ -2223,6 +2263,8 @@ function savToDelimitedTableText(arrayBuffer) {
     const optionLabel = optionMatch ? optionMatch[1].trim() : null;
     headerInfos.push({
       sourceHeader: variable.name,
+      longName: longVariableNames.get(variable.name.toLowerCase()) || variable.name,
+      variableLabel: resolvedLabel,
       source: variable.name,
       title,
       parentTitle,
@@ -2275,6 +2317,7 @@ function savToDelimitedTableText(arrayBuffer) {
   }
 
   lastCrosstabDataContext = {
+    multipleResponseSets,
     rawHeaders: activeVariables.map((variable) => variable.name),
     displayHeaders,
     headerInfos,
@@ -5154,6 +5197,14 @@ function getHeaderInfo(header) {
 function groupQuestionHeaders(headers, rows = []) {
   const groups = [];
   const used = new Set();
+  // Explicit SAV membership takes precedence over inferred variable prefixes.
+  for (const set of lastCrosstabDataContext?.multipleResponseSets || []) {
+    if (!["D", "E"].includes(set.type)) continue;
+    const related = set.variables.map(name => headers.find(header => getHeaderInfo(header)?.sourceHeader?.toLowerCase() === name.toLowerCase())).filter(Boolean);
+    if (!related.length) continue;
+    related.forEach(header => used.add(header));
+    groups.push({ key: set.name, title: set.label || questionDisplayTitle(set.name, set.name), headers: related, multiResponse: true, declaredMulti: true, countedValue: set.countedValue });
+  }
   headers.forEach((header) => {
     if (used.has(header)) return;
     const info = getHeaderInfo(header);
@@ -5206,7 +5257,14 @@ function groupQuestionHeaders(headers, rows = []) {
       used.add(header);
     }
   });
-  return groups;
+  return groups.sort((a, b) => Math.min(...a.headers.map(h => headers.indexOf(h))) - Math.min(...b.headers.map(h => headers.indexOf(h))));
+}
+
+function isMultiResponseMention(row, header, group) {
+  if (!group.declaredMulti) return isBinaryMentionValue(row[header]);
+  const info = getHeaderInfo(header);
+  const selected = info?.options?.[group.countedValue] ?? group.countedValue;
+  return String(row[header] ?? "").trim() === String(selected).trim();
 }
 
 function isBinaryMentionValue(value) {
@@ -5281,6 +5339,7 @@ function isOtherSpecifyHeader(header) {
 }
 
 function isOtherSpecifyField(header, rows = []) {
+  if (/(?:^|__)open\b/i.test(getHeaderInfo(header)?.longName || "")) return true;
   if (!isOtherSpecifyHeader(header)) return false;
   return /(?:^|__)open\b/i.test(String(header || "")) || !isBinaryOptionColumn(header, rows);
 }
@@ -5301,7 +5360,7 @@ function isOtherSpecifyText(text) {
 }
 
 function inferSingleColumnType(header, values) {
-  if (isOpenEndedHeader(header)) return "open";
+  if (isOpenEndedHeader(header) || /(?:^|__)open\b/i.test(getHeaderInfo(header)?.longName || "")) return "open";
 
   const validValues = values.filter(Boolean);
   const numericValues = validValues.map(toNumberOrNull).filter((value) => value !== null);
@@ -5385,9 +5444,9 @@ function buildSingleQuestionPivot(parsed, options = {}) {
   if (resetExcluded) excludedPivotItems = [];
   return groupQuestionHeaders(parsed.headers, parsed.rows).flatMap((group) => {
     const results = (() => {
-    if (group.headers.length > 1) {
-      const otherSpecifyHeaders = group.headers.filter((header) => isOtherSpecifyField(header, parsed.rows));
-      const activeHeaders = group.headers.filter((header) => !isOtherSpecifyField(header, parsed.rows));
+    if (group.headers.length > 1 || group.declaredMulti) {
+      const otherSpecifyHeaders = group.declaredMulti ? [] : group.headers.filter((header) => isOtherSpecifyField(header, parsed.rows));
+      const activeHeaders = group.declaredMulti ? group.headers : group.headers.filter((header) => !isOtherSpecifyField(header, parsed.rows));
       if (otherSpecifyHeaders.length) {
         excludedPivotItems.push({ title: `${group.title} - 其他项填空说明`, headers: otherSpecifyHeaders, reason: "其他项填空说明已作为辅助字段处理" });
       }
@@ -5396,19 +5455,19 @@ function buildSingleQuestionPivot(parsed, options = {}) {
         return [];
       }
       const activeGroup = { ...group, headers: activeHeaders };
-      if (isOpenEndedHeader(activeGroup.title) || activeGroup.headers.some((h) => isOpenEndedField(h, parsed.rows))) {
+      if (!group.declaredMulti && (isOpenEndedHeader(activeGroup.title) || activeGroup.headers.some((h) => isOpenEndedField(h, parsed.rows)))) {
         excludedPivotItems.push({ title: group.title, headers: group.headers, reason: "开放题过滤" });
         return [];
       }
       const type = inferMultiColumnType(activeGroup, parsed.rows);
       if (type === "multi_columns" || activeGroup.multiResponse) {
         const validBase = parsed.rows.filter((row) =>
-          activeGroup.headers.some((header) => isBinaryMentionValue(row[header]))
+          activeGroup.headers.some((header) => isMultiResponseMention(row, header, activeGroup))
         ).length;
         const optionRows = activeGroup.headers.map((header) => {
-          const mentions = parsed.rows.filter((row) => isBinaryMentionValue(row[header])).length;
+          const mentions = parsed.rows.filter((row) => isMultiResponseMention(row, header, activeGroup)).length;
           const info = getHeaderInfo(header);
-          const cleanLabel = info?.optionLabel || header.replace(new RegExp(`^${activeGroup.key}(?:__\\d+)?\\s*`), "").replace(/^[_\s]+/, "").trim() || header;
+          const cleanLabel = info?.optionLabel || (activeGroup.declaredMulti ? info?.variableLabel : null) || header.replace(new RegExp(`^${activeGroup.key}(?:__\\d+)?\\s*`), "").replace(/^[_\s]+/, "").trim() || header;
           return {
             label: cleanLabel,
             header: header,
@@ -5436,7 +5495,7 @@ function buildSingleQuestionPivot(parsed, options = {}) {
             });
             if (matchedHeaders.length > 0) {
               const netCount = parsed.rows.filter((row) =>
-                matchedHeaders.some((mh) => isBinaryMentionValue(row[mh]))
+                matchedHeaders.some((mh) => isMultiResponseMention(row, mh, activeGroup))
               ).length;
               finalRows.push({
                 label: netGroup.name || "NET",

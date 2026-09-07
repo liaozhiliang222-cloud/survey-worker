@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
-const names=['questionPrefix','getHeaderInfo','groupQuestionHeaders','isBinaryMentionValue','isBinaryOptionColumn','normalizeConditionValue','rawValueMatches','pivotKey','crosstabQuestionKeyCandidates'];
-const context=vm.createContext({lastCrosstabDataContext:null,questionDisplayTitle:(_key,title)=>title});
+const names=['questionPrefix','getHeaderInfo','groupQuestionHeaders','isBinaryMentionValue','isBinaryOptionColumn','normalizeConditionValue','rawValueMatches','pivotKey','crosstabQuestionKeyCandidates','decodeSavText','parseSavMultipleResponseSets','isMultiResponseMention','isOpenEndedHeader','inferSingleColumnType'];
+const context=vm.createContext({TextDecoder,Uint8Array,lastCrosstabDataContext:null,questionDisplayTitle:(_key,title)=>title});
 for(const name of names){const start=source.indexOf(`function ${name}(`);const end=source.indexOf('\nfunction ',start+1);vm.runInContext(source.slice(start,end),context);}
 const headers=['Q7__1 咨询店员','Q7__2 购买产品','Q7_1A 影响程度','Q7_1B__1 原因甲','Q7_1B__2 原因乙','Q7_1C__1 因素甲','Q7_1C__2 因素乙'];
 const rows=[Object.fromEntries(headers.map(h=>[h,'是'])),Object.fromEntries(headers.map(h=>[h,'否']))];
@@ -18,3 +18,23 @@ for(const code of ['1','2','3','4','5','6'])assert.equal(context.rawValueMatches
 for(const code of ['','7','11'])assert.equal(context.rawValueMatches(code,'1/R2/R3/R4/R5/R6'),false);
 assert.notEqual(context.pivotKey({sourceKey:'Q7',title:'相同题干',type:'多选题'}),context.pivotKey({sourceKey:'Q7_1B',title:'相同题干',type:'多选题'}));
 console.log('Crosstab grouping passed: letter suffixes, no reused fields, stable keys, OR banner codes');
+
+const encode = value => new TextEncoder().encode(value);
+const label = '离店沟通原因';
+const definition = `$Q49_2_4=D1 2 ${encode(label).length} ${label} v469_a v470_a\n`;
+const sets = context.parseSavMultipleResponseSets(encode(definition));
+assert.equal(sets[0].label,label);assert.equal(sets[0].countedValue,'2');
+assert.throws(()=>context.parseSavMultipleResponseSets(encode('$x=D1 1 99 short a b')));
+const c = context.parseSavMultipleResponseSets(encode('$category=C 0  a b\n'));
+assert.equal(c[0].type,'C');
+const e = context.parseSavMultipleResponseSets(encode('$e=E 1 1 2 0  a b\n'));
+assert.equal(e[0].countedValue,'2');
+context.lastCrosstabDataContext={multipleResponseSets:sets,headerInfos:[{sourceHeader:'V469_A',title:'V469_A 不礼貌',options:{1:'否',2:'是'}},{sourceHeader:'V470_A',title:'V470_A 不会主动联系',options:{1:'否',2:'是'}}]};
+const explicit=context.groupQuestionHeaders(['V469_A 不礼貌','V470_A 不会主动联系'],[]);
+assert.equal(explicit.length,1);assert.equal(explicit[0].key,'Q49_2_4');assert.equal(explicit[0].declaredMulti,true);
+assert.equal(context.isMultiResponseMention({'V469_A 不礼貌':'是'},'V469_A 不礼貌',explicit[0]),true);
+assert.equal(context.isMultiResponseMention({'V469_A 不礼貌':'否'},'V469_A 不礼貌',explicit[0]),false);
+console.log('SAV MRSETS passed: Chinese byte lengths, D/E metadata, generic variable names, counted values, empty samples');
+
+context.lastCrosstabDataContext.headerInfos.push({sourceHeader:'V476_A',title:'V476_A',longName:'Q49_2_4__8__open'});
+assert.equal(context.inferSingleColumnType('V476_A',['其他回答/含斜杠']), 'open');
