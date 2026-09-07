@@ -49,7 +49,7 @@
     "test:tool-gateway": "node tests/tool-gateway-smoke.mjs",
     "test:agent-tools": "node tests/agent-tool-calling-smoke.mjs",
     "test:agent-tool-acceptance": "node tests/agent-tool-acceptance-smoke.mjs",
-    "test:harness-openai-chat": "node tests/harness-openai-chat-smoke.mjs",
+    "test:harness-openai-chat": "node tests/harness-openai-chat-smoke.mjs && node tests/harness-upstream-stream-smoke.mjs",
     "test:harness-dsh-rpc": "node tests/harness-dsh-rpc-smoke.mjs",
     "test:cloudflare-harness-dsh": "node tests/cloudflare-harness-dsh-smoke.mjs",
     "test:research-streaming": "node tests/research-streaming-smoke.mjs",
