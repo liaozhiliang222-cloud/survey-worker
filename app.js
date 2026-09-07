@@ -2356,7 +2356,9 @@ function forwardFillRow(row) {
 }
 
 function isHeaderConditionCell(value) {
-  return /^[A-Za-z_][A-Za-z0-9_-]*\s*(?:=|＝|≠)\s*\S/i.test(String(value || ""));
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  try { return parseHeaderCondition(text).length > 0; } catch { return false; }
 }
 
 function cleanCrosstabGroupCell(value) {
@@ -2365,8 +2367,8 @@ function cleanCrosstabGroupCell(value) {
 }
 
 function cleanCrosstabConditionCell(value) {
-  const text = String(value || "").trim();
-  if (/[=＝≠]/.test(text) && !isHeaderConditionCell(text)) throw new Error(`无法识别表头筛选条件：${text}，请使用“变量名=编码”。`);
+  const text = String(value ?? "").trim();
+  if (/[=＝≠!！<>＜＞]/.test(text) && !isHeaderConditionCell(text)) throw new Error(`无法识别表头筛选条件：${text}，请使用“变量名=编码”，多个条件用“且”连接。`);
   return isHeaderConditionCell(text) ? text : "";
 }
 
@@ -5660,11 +5662,12 @@ function buildSingleQuestionPivot(parsed, options = {}) {
 }
 
 function normalizeConditionVariable(value) {
-  return String(value || "").trim().replace(/-/g, "_");
+  return String(value ?? "").normalize("NFKC").trim().replace(/^\[([^\]]+)\]$/, "$1").trim().toUpperCase();
 }
 
 function normalizeConditionValue(value) {
-  return String(value || "").trim().replace(/^R/i, "");
+  const text = String(value ?? "").normalize("NFKC").trim().replace(/^R(?=[+-]?\d)/i, "");
+  return /^[+-]?\d+(?:\.\d+)?$/.test(text) ? String(Number(text)) : text;
 }
 
 function getWorkingCrosstabData() {
@@ -5685,30 +5688,15 @@ function getWorkingCrosstabData() {
 }
 
 function parseHeaderCondition(condition) {
-  return String(condition || "")
-    .split(new RegExp("\\s*(?:" + "\\u4e14" + "|and|AND|&|\\+)\\s*"))
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const eqMatch = part.match(new RegExp("^(.+?)(?:=|" + "\\uff1d" + ")(.+)$"));
-      if (eqMatch) {
-        return {
-          variable: normalizeConditionVariable(eqMatch[1]),
-          value: normalizeConditionValue(eqMatch[2]),
-          operator: "eq"
-        };
-      }
-      const neMatch = part.match(new RegExp("^(.+?)(?:≠|" + "\\u2260" + ")(.+)$"));
-      if (neMatch) {
-        return {
-          variable: normalizeConditionVariable(neMatch[1]),
-          value: normalizeConditionValue(neMatch[2]),
-          operator: "ne"
-        };
-      }
-      return null;
-    })
-    .filter(Boolean);
+  const text = String(condition ?? "").normalize("NFKC").trim();
+  if (!text) return [];
+  return text.split(/\s*(?:且|&&?|\+)\s*|\s+and\s+/i).map(part => {
+    const match = part.trim().match(/^(\[[^\]]+\]|[\p{L}_@$#][\p{L}\p{N}_.$@#-]*)\s*(!=|<>|≠|=)\s*([^=<>!≠]+)$/u);
+    if (!match || !match[3].trim()) throw new Error(`无法识别表头筛选条件：${part || text}`);
+    const variable = normalizeConditionVariable(match[1]);
+    if (!/^[\p{L}_@$#][\p{L}\p{N}_.$@#-]*$/u.test(variable)) throw new Error(`无法识别表头变量名：${match[1]}`);
+    return { variable, value: normalizeConditionValue(match[3]), operator: match[2] === "=" ? "eq" : "ne" };
+  });
 }
 
 function rawValueMatches(actual, expected) {
@@ -5717,27 +5705,35 @@ function rawValueMatches(actual, expected) {
   return tokens(expected).some(value => actualValues.includes(value));
 }
 
-function conditionPartMatches(rawRow, rawHeaders, part) {
+function conditionPartMatches(rawRow, rawHeaders, part, resolvedHeaders = new Map()) {
   if (!part.variable) return true;
-  const directHeader = rawHeaders.find((header) => normalizeConditionVariable(header) === part.variable);
+  const resolveHeader = (name) => {
+    if (resolvedHeaders.has(name)) return resolvedHeaders.get(name);
+    const exact = rawHeaders.filter(header => normalizeConditionVariable(header) === name);
+    const candidates = exact.length ? exact : rawHeaders.filter(header => normalizeConditionVariable(header).replace(/-/g, "_") === name.replace(/-/g, "_"));
+    if (candidates.length > 1) throw new Error(`表头变量名存在歧义：${name}，请使用原始数据中的准确变量名。`);
+    resolvedHeaders.set(name, candidates[0]);
+    return candidates[0];
+  };
+  const directHeader = resolveHeader(normalizeConditionVariable(part.variable));
   if (directHeader) {
     const matches = rawValueMatches(rawRow[directHeader], part.value);
     return part.operator === "ne" ? !matches : matches;
   }
 
-  const multiHeader = rawHeaders.find((header) => normalizeConditionVariable(header) === `${part.variable}__${part.value}`);
+  const multiHeader = resolveHeader(`${part.variable}__${part.value}`);
   if (multiHeader) {
     const matches = isBinaryMentionValue(rawRow[multiHeader]);
     return part.operator === "ne" ? !matches : matches;
   }
 
-  const singleUnderscoreHeader = rawHeaders.find((header) => normalizeConditionVariable(header) === `${part.variable}_${part.value}`);
+  const singleUnderscoreHeader = resolveHeader(`${part.variable}_${part.value}`);
   if (singleUnderscoreHeader) {
     const matches = isBinaryMentionValue(rawRow[singleUnderscoreHeader]);
     return part.operator === "ne" ? !matches : matches;
   }
 
-  return false;
+  throw new Error(`原始数据中找不到表头变量：${part.variable}，请检查题号。`);
 }
 
 function filterRowsByHeaderCondition(data, condition) {
@@ -5747,9 +5743,10 @@ function filterRowsByHeaderCondition(data, condition) {
 
 function filterRowsByConditionParts(data, parts) {
   if (!parts.length) return data.rows;
+  const resolvedHeaders = new Map();
   return data.rows.filter((_, index) => {
     const rawRow = data.rawRows[index] || {};
-    return parts.every((part) => conditionPartMatches(rawRow, data.rawHeaders, part));
+    return parts.every((part) => conditionPartMatches(rawRow, data.rawHeaders, part, resolvedHeaders));
   });
 }
 

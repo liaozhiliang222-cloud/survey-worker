@@ -45,7 +45,7 @@ for (const name of ['forwardFillRow','isHeaderConditionCell','cleanCrosstabGroup
 const twoRows=context.parseCrosstabHeaderRows([['总体','四类','',''],['','QCL_3=1','QCL_3=2','QCL_3=3']]);
 assert.equal(twoRows[1].condition,'QCL_3=1');assert.equal(twoRows[2].label,'QCL_3=2');assert.equal(twoRows[3].parts[0].variable,'QCL_3');assert.equal(twoRows[0].condition,'');
 const threeRows=context.parseCrosstabHeaderRows([['总体','品牌',''],['总体','品牌甲','品牌乙'],['','Q5_1=R1','Q5_1=R2']]);assert.equal(threeRows[1].label,'品牌甲');assert.equal(threeRows[2].condition,'Q5_1=R2');
-assert.throws(()=>context.cleanCrosstabConditionCell('错误变量=1'));
+assert.throws(()=>context.cleanCrosstabConditionCell('Q1>=1'));
 console.log('Banner import passed: two-row cluster headers, named columns, legacy three-row headers, invalid conditions');
 
 // Closed attitude statements must not exclude an entire matrix question.
@@ -54,3 +54,22 @@ for (const label of ['A8 开放题', 'A8 开放式问题', 'A8 开放性问题',
   assert.equal(context.isOpenEndedHeader(label), true, label);
 }
 console.log('Open-ended detection passed: open attitude is retained, explicit free-text questions excluded');
+
+for (const name of ['conditionPartMatches']) {
+ const start=source.indexOf(`function ${name}(`),end=source.indexOf('\nfunction ',start+1);vm.runInContext(source.slice(start,end),context);
+}
+for (const variable of ['Q7_1B','QCL_3','V469_A','Q1.2','@GROUP','$SEG','#TYPE','人群分类']) {
+ assert.equal(context.parseHeaderCondition(`[${variable}]=R1`)[0].variable,variable.toUpperCase());
+ assert.equal(context.conditionPartMatches({[variable]:'1'},[variable],context.parseHeaderCondition(`[${variable}]=R1`)[0]),true);
+}
+assert.equal(context.parseHeaderCondition('ｑｃｌ＿３＝１')[0].variable,'QCL_3');
+assert.equal(context.parseHeaderCondition('BRAND=1')[0].variable,'BRAND');
+assert.equal(context.parseHeaderCondition('BRAND=1 And Q2!=2').length,2);
+assert.equal(context.parseHeaderCondition('Q2<>2')[0].operator,'ne');
+assert.equal(context.rawValueMatches('1.0','R1'),true);
+assert.equal(context.rawValueMatches('Retail','etail'),false);
+assert.equal(context.conditionPartMatches({'Q1_2':'1'},['Q1_2'],context.parseHeaderCondition('q1-2=1')[0]),true);
+assert.equal(context.conditionPartMatches({'Q1-2':'1','Q1_2':'2'},['Q1-2','Q1_2'],context.parseHeaderCondition('Q1-2=1')[0]),true);
+assert.throws(()=>context.conditionPartMatches({},['Q2'],context.parseHeaderCondition('Q1=1')[0]));
+for (const bad of ['Q1=','Q1>=2','Q1=1 且 无效','Q1=1 &','Q1==1']) assert.throws(()=>context.parseHeaderCondition(bad));
+console.log('Banner compatibility: Unicode, punctuation, fullwidth, brackets, inequality, AND boundaries and strict errors passed');
