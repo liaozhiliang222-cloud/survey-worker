@@ -6248,13 +6248,37 @@ function valueForQuestionRow(source, reference, mode, countGetter, percentGetter
   return proportionSigMarker(count, baseGetter(source), refCount, referenceBaseGetter(reference));
 }
 
+function crosstabOptionSortKey(label) {
+  const text = String(label ?? "").normalize("NFKC").trim();
+  // Other/specify and unanswered choices belong after substantive answers.
+  if (/^(?:其他|其它|以上都不|以上皆不|都没有|无以上|不知道|不清楚|不记得|记不清|拒答|暂不|暂无|不确定)|^\[[A-Za-z]+\d+(?:[_-]\d+)*[_-](?:97|98|99)\]$/.test(text)) return [2, 0, 0];
+  const clean = text.replace(/[,，]/g, "");
+  const range = clean.match(/^(\d+(?:\.\d+)?)\s*(万|千)?\s*(?:元|岁|年|月|次|%|平米|平方米)?\s*[-—–~～至到]\s*(\d+(?:\.\d+)?)\s*(万|千)?\s*(元|岁|年|月|次|%|平米|平方米)?$/);
+  const edge = clean.match(/^(\d+(?:\.\d+)?)\s*(万|千)?\s*(元|岁|年|月|次|%|平米|平方米)?\s*(以下|以内|以上|及以上|及以下|起)$/);
+  const multiplier = unit => unit === "万" ? 10000 : unit === "千" ? 1000 : 1;
+  if (range) return [0, Number(range[1]) * multiplier(range[2] || range[4]), 0];
+  if (edge) return [0, /以下|以内/.test(edge[4]) ? -Infinity : Number(edge[1]) * multiplier(edge[2]), 1];
+  if (/^[+-]?\d+(?:\.\d+)?$/.test(clean)) return [0, Number(clean), 0];
+  return [1, 0, 0];
+}
+
+function orderCrosstabOptions(rows) {
+  // Keep nominal choices in their existing order; only reorder quantitative bands and tail choices.
+  return rows.map((row, index) => ({row, index, key:crosstabOptionSortKey(row.label)})).sort((a,b) => a.key[0]-b.key[0] || a.key[1]-b.key[1] || a.key[2]-b.key[2] || a.index-b.index).map(entry=>entry.row);
+}
+
+function isRepeatedCrosstabSection(label, title) {
+  const clean = value => String(value ?? "").normalize("NFKC").replace(/^(?:[A-Za-z]+\d+(?:_\d+)*[.、\s]*)+/, "").replace(/【[^】]*】|\[(?:单选|多选|矩阵)[^\]]*\]/g, "").replace(/[\s？?。:：]/g, "");
+  return clean(label) !== "" && clean(label) === clean(title);
+}
+
 function buildWorkbookLineDescriptors(item) {
   const descriptors = [];
   const type = normalizedQuestionType(item);
 
   if (type === "量表题") {
     item.stats.forEach((stat) => descriptors.push({ label: stat[0], kind: "stat" }));
-    item.frequencies.forEach((row) => descriptors.push({ label: row.label, kind: "frequency" }));
+    orderCrosstabOptions(item.frequencies).forEach((row) => descriptors.push({ label: row.label, kind: "frequency" }));
     return descriptors;
   }
 
@@ -6268,16 +6292,16 @@ function buildWorkbookLineDescriptors(item) {
 
   if (type === "矩阵量表") {
     item.rows.forEach((subItem) => {
-      descriptors.push({ label: subItem.label, kind: "section" });
-      subItem.frequencies?.forEach((row) => descriptors.push({ label: `${row.label}分`, kind: "matrix_frequency", parent: subItem.label, score: row.label }));
+      if (item.rows.length > 1 || !isRepeatedCrosstabSection(subItem.label, item.title)) descriptors.push({ label: subItem.label, kind: "section" });
+      orderCrosstabOptions(subItem.frequencies || []).forEach((row) => descriptors.push({ label: `${row.label}分`, kind: "matrix_frequency", parent: subItem.label, score: row.label }));
     });
     return descriptors;
   }
 
   if (type === "矩阵单选") {
     item.rows.forEach((subItem) => {
-      descriptors.push({ label: subItem.label, kind: "section" });
-      subItem.frequencies?.forEach((row) => descriptors.push({ label: row.label, kind: "matrix_frequency", parent: subItem.label }));
+      if (item.rows.length > 1 || !isRepeatedCrosstabSection(subItem.label, item.title)) descriptors.push({ label: subItem.label, kind: "section" });
+      orderCrosstabOptions(subItem.frequencies || []).forEach((row) => descriptors.push({ label: row.label, kind: "matrix_frequency", parent: subItem.label }));
     });
     return descriptors;
   }
@@ -6293,7 +6317,8 @@ function buildWorkbookLineDescriptors(item) {
     return descriptors;
   }
 
-  item.rows?.forEach((row) => descriptors.push({ label: row.label, header: row.header, kind: type === "多选题" ? "multi" : "row", isNetGroup: row.isNetGroup }));
+  const optionRows = item.rows?.some(row => row.isNetGroup) ? item.rows : orderCrosstabOptions(item.rows || []);
+  optionRows.forEach((row) => descriptors.push({ label: row.label, header: row.header, kind: type === "多选题" ? "multi" : "row", isNetGroup: row.isNetGroup }));
   return descriptors;
 }
 

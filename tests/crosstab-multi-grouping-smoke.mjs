@@ -88,3 +88,15 @@ console.log('Banner compatibility: Unicode, punctuation, fullwidth, brackets, in
  }
 }
 console.log('A-Z banner prefixes: three-row import and actual row filtering passed for all 26 letters');
+
+for (const name of ['crosstabOptionSortKey','orderCrosstabOptions','isRepeatedCrosstabSection','normalizedQuestionType','buildWorkbookLineDescriptors']) {
+ const start=source.indexOf(`function ${name}(`),end=source.indexOf('\nfunction ',start+1);vm.runInContext(source.slice(start,end),context);
+}
+const bands=['1001-1500元','1501-2000元','3000元以上','500-1000元','500元以下','暂无确定预算'];
+assert.deepEqual(Array.from(context.orderCrosstabOptions(bands.map(label=>({label}))),r=>r.label),['500元以下','500-1000元','1001-1500元','1501-2000元','3000元以上','暂无确定预算']);
+assert.deepEqual(Array.from(context.orderCrosstabOptions(['其他，请说明','[S9-97]','品牌A','品牌B'].map(label=>({label}))),r=>r.label),['品牌A','品牌B','其他，请说明','[S9-97]']);
+assert.equal(context.isRepeatedCrosstabSection('S13 S13.请问您最近购买的产品？【单选】','S13. 请问您最近购买的产品？'),true);
+const matrix={title:'A7.态度',rows:[{label:'A7.态度',frequencies:[{label:'1'}]},{label:'子项2',frequencies:[{label:'2'}]}]};
+assert.equal(context.buildWorkbookLineDescriptors(matrix).filter(d=>d.kind==='section').length,2);
+assert.equal(context.buildWorkbookLineDescriptors({title:'S13.产品？',rows:[{label:'S13 S13.产品？【单选】',frequencies:[{label:'AIR'}]}]}).filter(d=>d.kind==='section').length,0);
+console.log('Crosstab presentation: bands, tail choices, repeated stems, matrix subquestions passed');
