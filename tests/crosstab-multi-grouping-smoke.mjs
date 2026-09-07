@@ -73,3 +73,18 @@ assert.equal(context.conditionPartMatches({'Q1-2':'1','Q1_2':'2'},['Q1-2','Q1_2'
 assert.throws(()=>context.conditionPartMatches({},['Q2'],context.parseHeaderCondition('Q1=1')[0]));
 for (const bad of ['Q1=','Q1>=2','Q1=1 且 无效','Q1=1 &','Q1==1']) assert.throws(()=>context.parseHeaderCondition(bad));
 console.log('Banner compatibility: Unicode, punctuation, fullwidth, brackets, inequality, AND boundaries and strict errors passed');
+
+// Every Latin prefix follows the same import and filtering contract.
+{
+ const name='filterRowsByConditionParts',start=source.indexOf(`function ${name}(`),end=source.indexOf('\nfunction ',start+1);
+ vm.runInContext(source.slice(start,end),context);
+ for (const prefix of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+  const variable=prefix+'12_1B';
+  const data={rawHeaders:[variable],rawRows:[{[variable]:'1'},{[variable]:'2'}],rows:[{id:1},{id:2}]};
+  const plan=context.parseCrosstabHeaderRows([['总体','测试分组'],['总体','人群1'],['',`${variable.toLowerCase()}=R2`]]);
+  assert.equal(plan[1].parts[0].variable,variable);
+  const matched=context.filterRowsByConditionParts(data,plan[1].parts);
+  assert.equal(matched.length,1);assert.equal(matched[0].id,2);
+ }
+}
+console.log('A-Z banner prefixes: three-row import and actual row filtering passed for all 26 letters');

@@ -1199,6 +1199,13 @@
                 </span>
                 <textarea id="crosstabData" placeholder="粘贴 CSV / Excel 复制出的表格，或导入 SAV / Excel（XLSX/XLS）数据文件。第一行需为字段名，例如：性别,是否购买,满意度"></textarea>
               </label>
+              <details class="panel-note" id="crosstabHeaderGuide">
+                <summary>表头题号与条件怎么填写？</summary>
+                <p>题号支持任意英文字母开头（A–Z），不区分大小写，例如 S1、T2、A7、B12_1、C3A、FZ1、QCL_3；请填写原始数据中的实际变量名。</p>
+                <p>表头按三行填写：第一行分组名称，第二行人群名称，第三行筛选条件。也支持两行格式：分组名称＋筛选条件。</p>
+                <p>等于：S1=1；多个编码任选其一：A7=1/2/3；同时满足：S1=1 且 T2=2；不等于：B1!=3。总体列的条件留空。</p>
+                <p>兼容 R1、全角字符和 [C3A]=2 等写法。多选拆列请使用实际字段名及其选中编码。题号不存在或条件有误时会提示，请修正后再生成。</p>
+              </details>
               <div class="import-inspection hidden" id="crosstabImportInspection" aria-live="polite"></div>
               <div id="crosstabQuestionnairePreview" class="panel-note" style="display:none; margin-top: 0.5rem;"></div>
               <div class="button-row" style="margin-top: 0.5rem;">
