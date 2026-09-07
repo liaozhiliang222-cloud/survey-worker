@@ -8269,3 +8269,8 @@ tbody tr.warn td {
   .cluster-variable-pagination button { padding:8px; min-width:0; }
   .cluster-variable-pagination span { text-align:center; }
 }
+
+.cluster-processing-card { border:1px solid #cbdcec; background:#f7faff; border-radius:12px; padding:16px; margin:16px 0; }
+.cluster-processing-card p { margin:8px 0; }
+.cluster-processing-fields { max-height:180px; overflow:auto; overflow-wrap:anywhere; }
+.cluster-processing-card summary { cursor:pointer; padding:6px 0; }

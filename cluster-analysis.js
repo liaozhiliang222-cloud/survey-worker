@@ -149,6 +149,7 @@
   }
 
   function refreshMethodAdvice() {
+    renderProcessingSummary();
     const adviceEl = $("clusterMethodAdvice");
     if (!adviceEl) return;
     if (!state.parsed) {
@@ -546,6 +547,7 @@
   function validateMethodOptions(options) {
     const clusterVariables = collectClusterVariables();
     const issues = [];
+    if (state.method === "twostep" && state.definitions.some(d => d.role === "cluster" && d.measurement === "ordinal")) issues.push("有序变量请先在高级变量设置中明确按连续数值或类别处理，再运行两步聚类。");
     if (state.method === "kmeans") {
       const nonNumeric = clusterVariables.filter((name) => {
         const definition = findDefinition(name);
@@ -1665,13 +1667,43 @@
     $("clusterVariableSummary").textContent = `用于分群 ${n} 个 · 用于画像 ${state.definitions.filter(d => d.role === "profile").length} 个` + (n > 50 ? "。变量较多，建议先筛选与研究目标相关的题目。" : "");
   }
 
+  function renderProcessingSummary() {
+    const el = $("clusterProcessingSummary");
+    if (!el) return;
+    document.querySelectorAll("[data-processing-method]").forEach(group => group.classList.toggle("hidden", group.dataset.processingMethod !== state.method));
+    const defs = state.definitions.filter(d => d.role === "cluster");
+    if (!state.parsed || !defs.length) { el.textContent = "请先选择用于分群的变量。"; return; }
+    const options = collectMethodOptions();
+    const numeric = d => state.method === "kmeans" || (state.method === "twostep" ? ["scale","count"].includes(d.measurement) : $("hiDataType").value !== "binary");
+    const scaleDefs = defs.filter(numeric);
+    const otherDefs = defs.filter(d => !numeric(d));
+    const standard = options.standardization;
+    const select = $({kmeans:"kmStandardization",twostep:"tsStandardization",hierarchical:"hiStandardization"}[state.method]);
+    const standardLabel = standard === "none" ? "不标准化" : select.selectedOptions[0].textContent;
+    let eligible = 0;
+    const weight = state.method === "kmeans" && options.useWeight ? collectWeightColumn() : null;
+    for (const row of state.parsed.rows) {
+      const valid = defs.map(d => {
+        const value = row[d.name];
+        if (core().isBlank(value)) return false;
+        if (!(state.method === "twostep" && options.missing === "include_user_codes") && core().isMissingValue(value,d.missingCodes)) return false;
+        return state.method === "hierarchical" || !numeric(d) || core().toNumber(value) !== null;
+      });
+      const accepted = state.method === "kmeans" && options.missing === "pairwise" ? valid.some(Boolean) : valid.every(Boolean);
+      if (accepted && (!weight || core().toNumber(row[weight]) > 0)) eligible++;
+    }
+    const missingLabel = state.method === "kmeans" && options.missing === "pairwise" ? "允许部分缺失，至少有一个有效回答" : options.missing === "include_user_codes" ? "保留用户定义的缺失编码，空白值仍排除" : "所选分群变量有缺失的样本不进入分析";
+    const list = (title, values) => values.length ? `<details><summary>${title}（${values.length} 个）</summary><ul class="cluster-processing-fields">${values.map(d=>`<li>${escapeHtml(d.name)}</li>`).join("")}</ul></details>` : "";
+    el.innerHTML = `<p><strong>${scaleDefs.length ? `${scaleDefs.length} 个数值变量：${escapeHtml(standardLabel)}` : "当前无需要数值标准化的变量"}</strong>；${otherDefs.length} 个类别／二元变量按类别处理。</p><p>${escapeHtml(missingLabel)}。</p><p><strong>预计参与 ${eligible} / ${state.parsed.rows.length} 条样本</strong> · 预计排除 ${state.parsed.rows.length-eligible} 条</p><p class="panel-note">仅处理用于分群的变量，原始数据不变。此处估算缺失和权重筛选后的样本量，最终以模型质量检查及离群处理结果为准。</p>${list(standard === "none" ? "不标准化的数值变量" : "标准化的数值变量",scaleDefs)}${list("按类别处理的变量",otherDefs)}`;
+  }
+
   function setupSimpleWorkflow() {
     const model = $("clusterKmeansOptions").closest(".step-body");
     const advice = $("clusterMethodAdvice");
     const oldStep = advice.closest(".cluster-step");
     model.insertBefore(advice, model.querySelector(".cluster-options"));
     oldStep.remove();
-    model.querySelector("h3").textContent = "设置并运行";
+    model.querySelector("h3").textContent = "确认处理与分群设置";
     model.closest(".cluster-step").querySelector(".step-badge").textContent = "3";
     const methodDetails = document.createElement("details");
     methodDetails.className = "cluster-advanced cluster-method-choice";
@@ -1692,6 +1724,18 @@
       });
       container.append(advanced);
     }
+    const processing = document.createElement("section");
+    processing.className = "cluster-processing-card";
+    processing.innerHTML = '<h4>运行前的数据处理</h4><div id="clusterProcessingSummary" aria-live="polite">选好分群变量后，会在这里显示处理方式和预计样本量。</div><details class="cluster-advanced"><summary>调整标准化与缺失处理</summary><div id="clusterProcessingControls"></div></details>';
+    methodDetails.after(processing);
+    for (const [method, ids] of [["kmeans",["kmStandardization","kmMissing"]],["twostep",["tsStandardization","tsMissing"]],["hierarchical",["hiStandardization"]]]) {
+      const group = document.createElement("div"); group.dataset.processingMethod = method;
+      ids.forEach(id => group.append($(id).closest("label")));
+      $("clusterProcessingControls").append(group);
+    }
+    let processingTimer;
+    document.getElementById("cluster-analysis").addEventListener("change", () => { clearTimeout(processingTimer); processingTimer = setTimeout(renderProcessingSummary, 0); });
+    renderProcessingSummary();
     for (const id of ["clusterVariableSearch", "clusterVariableFilter"]) $(id).addEventListener(id.endsWith("Search") ? "input" : "change", () => { state.variablePage = 0; renderVariableTable(); });
     $("clusterVariablePrev").addEventListener("click", () => { state.variablePage--; renderVariableTable(); });
     $("clusterVariableNext").addEventListener("click", () => { state.variablePage++; renderVariableTable(); });

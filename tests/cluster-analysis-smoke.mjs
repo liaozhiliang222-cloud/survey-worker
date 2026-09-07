@@ -671,3 +671,13 @@ console.log("Privacy OK");
 // ─── 构建 / 语法回归（由 npm run check:syntax 覆盖）────────
 
 console.log("\nAll cluster-analysis smoke tests passed.");
+
+// Cluster runtime must never fall back to cache-first delivery after UI releases.
+{
+ const source = (await import('node:fs')).readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
+ const start=source.indexOf('function isAppShellRequest('), end=source.indexOf('self.addEventListener',start);
+ const check=new Function('URL', source.slice(start,end)+'; return isAppShellRequest;')(URL);
+ for (const file of ['cluster-analysis.js','cluster-core.js','cluster-worker.js']) {
+  if(!check({url:'https://surveykit.cc/'+file+'?v=old',mode:'cors'})) throw Error('Cluster runtime was cache-first: '+file);
+ }
+}
