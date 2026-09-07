@@ -825,7 +825,7 @@ export function parseSavFile(arrayBuffer, resolveQuestionTitle) {
       offset += 8;
       return { bytes: unit };
     }
-    while (offset < bytes.length) {
+    while (savInstructionQueue.length || offset < bytes.length) {
       if (!savInstructionQueue.length) {
         savInstructionQueue = Array.from(bytes.slice(offset, offset + 8));
         offset += 8;
