@@ -665,17 +665,18 @@ export async function inspectResearchWorkbook(arrayBuffer, options = {}) {
 
 // ─── SAV 解析 ───────────────────────────────────────────────
 
-export function decodeSavText(bytes) {
+export function decodeSavText(bytes, encoding = "") {
   const cleaned = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const end = cleaned.findIndex((byte) => byte === 0);
+  const end = cleaned.findIndex(byte => byte === 0);
   const slice = cleaned.slice(0, end >= 0 ? end : cleaned.length);
+  if (encoding) return new TextDecoder(encoding).decode(slice).trim().replace(/\uFFFD+$/, "…");
   try {
-    const utf8 = new TextDecoder("utf-8").decode(slice).trim();
-    if (!utf8.includes("")) return utf8;
-    return new TextDecoder("gb18030").decode(slice).trim();
-  } catch {
-    return new TextDecoder("gb18030").decode(slice).trim();
-  }
+    // Streaming decode tolerates an incomplete final character, but still
+    // rejects invalid bytes inside the text. Never turn one cut character into GBK.
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    const text = decoder.decode(slice, { stream: true });
+    try { return (text + decoder.decode()).trim(); } catch { return text.trimEnd() + "…"; }
+  } catch { return new TextDecoder("gb18030").decode(slice).trim(); }
 }
 
 function savPad(length, unit = 4) {
@@ -733,6 +734,8 @@ export function parseSavFile(arrayBuffer, resolveQuestionTitle) {
   const bias = view.getFloat64(84, littleEndian) || 100;
   let offset = 176;
   const records = [];
+  let textEncoding = "";
+  const encodedText = [];
   let pendingLabels = null;
 
   const readInt = () => {
@@ -754,6 +757,7 @@ export function parseSavFile(arrayBuffer, resolveQuestionTitle) {
       if (hasLabel) {
         const labelLength = readInt();
         label = decodeSavText(bytes.slice(offset, offset + labelLength));
+        encodedText.push({ bytes: bytes.slice(offset, offset + labelLength), recordIndex: records.length });
         offset += labelLength + savPad(labelLength, 4);
       }
       offset += Math.abs(missingCount) * 8;
@@ -768,7 +772,7 @@ export function parseSavFile(arrayBuffer, resolveQuestionTitle) {
         offset += 1;
         const label = decodeSavText(bytes.slice(offset, offset + labelLength));
         offset += labelLength + savPad(labelLength + 1, 8);
-        pendingLabels.push({ valueBytes, label });
+        pendingLabels.push({ valueBytes, label, labelBytes: bytes.slice(offset - labelLength - savPad(labelLength + 1, 8), offset - savPad(labelLength + 1, 8)) });
       }
     } else if (recordType === 4) {
       const variableCount = readInt();
@@ -781,6 +785,7 @@ export function parseSavFile(arrayBuffer, resolveQuestionTitle) {
             ? savLabelKey(new DataView(item.valueBytes.buffer, item.valueBytes.byteOffset, item.valueBytes.byteLength).getFloat64(0, littleEndian))
             : savLabelKey(decodeSavText(item.valueBytes).trim());
           variable.valueLabels.set(key, item.label);
+          if (item.labelBytes) encodedText.push({ bytes: item.labelBytes, recordIndex, key });
         });
       });
       pendingLabels = null;
@@ -788,15 +793,25 @@ export function parseSavFile(arrayBuffer, resolveQuestionTitle) {
       const lineCount = readInt();
       offset += lineCount * 80;
     } else if (recordType === 7) {
-      readInt();
+      const subtype = readInt();
       const size = readInt();
       const count = readInt();
+      if (subtype === 20 && size === 1) textEncoding = decodeSavText(bytes.slice(offset, offset + count));
       offset += size * count;
     } else if (recordType === 999) {
       offset += 4;
       break;
     } else {
       throw new Error(`暂不支持的 SAV 字典记录类型：${recordType}`);
+    }
+  }
+
+  if (textEncoding) {
+    try { new TextDecoder(textEncoding); } catch { textEncoding = ""; }
+    for (const item of encodedText) {
+      const decoded = decodeSavText(item.bytes, textEncoding);
+      if (item.key === undefined) records[item.recordIndex].label = decoded;
+      else records[item.recordIndex].valueLabels.set(item.key, decoded);
     }
   }
 
