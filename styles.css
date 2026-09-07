@@ -175,7 +175,7 @@ a:focus-visible {
 .research-outline-interpretation { color: #52647d; }
 .research-outline-implication { padding-left: 10px; border-left: 3px solid #60a5fa; color: #213a64; }
 .research-outline-transition { padding: 9px 11px; border-radius: 8px; background: #eef4ff; color: #294b7a; }
-.research-outline-page { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin-top: 8px; padding: 11px; border-left: 4px solid #94a3b8; border-radius: 9px; background: #f8fafc; }
+.research-outline-page { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; margin-top: 8px; padding: 11px; border-left: 4px solid #94a3b8; border-radius: 9px; background: #f8fafc; }
 .research-outline-page.status-sufficient { border-left-color: #16a34a; }
 .research-outline-page.status-limited { border-left-color: #d97706; }
 .research-outline-page.status-needs_supplement { border-left-color: #dc2626; }
@@ -8189,3 +8189,31 @@ tbody tr.warn td {
 }
 
 .research-dataset-explanation{display:grid;gap:6px;overflow-wrap:anywhere;white-space:normal}.research-project-readiness{margin-top:12px;padding:12px 16px;border:1px solid #d8e4f0;border-radius:10px;background:#f4f8ff;max-width:100%;overflow-wrap:anywhere}.research-project-readiness p{margin:6px 0 0}.research-ppt-renderer-state p{overflow-wrap:anywhere}
+
+/* Outlines must fit the artifact sidebar as well as the wider reader. */
+.research-artifact-detail,
+.research-outline-summary,
+.research-outline-section,
+.research-outline-section * { min-width: 0; overflow-wrap: anywhere; box-sizing: border-box; }
+.research-outline-section { grid-template-columns: minmax(0, 1fr); }
+.research-outline-chapter { grid-template-columns: minmax(0, 1fr); }
+.research-outline-chapter h6 { padding-left: 0; line-height: 1.5; text-align: left; }
+.research-outline-page > strong { line-height: 1.5; }
+.research-outline-evidence .research-evidence-card { grid-template-columns: minmax(0, 1fr); }
+.research-outline-reader-open { overflow: hidden; }
+.research-outline-reader { width: min(1120px, calc(100vw - 32px)); max-width: none; max-height: 90dvh; padding: 0; border: 1px solid #dbe4f0; border-radius: 16px; color: #172b4d; background: #fff; }
+.research-outline-reader::backdrop { background: rgb(15 23 42 / 48%); }
+.research-outline-reader-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 24px; border-bottom: 1px solid #dbe4f0; background: #fff; }
+.research-outline-reader-head h2 { min-width: 0; margin: 0; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
+.research-outline-reader-head button { flex-shrink: 0; }
+.research-outline-reader-content { padding: 6px 24px 24px; font-size: 15px; line-height: 1.65; }
+.research-outline-reader-content .research-outline-chapter { padding: 20px; }
+.research-outline-reader-content .research-outline-chapter h6 { font-size: 17px; }
+.research-outline-reader-content .research-outline-page { padding: 16px; gap: 8px 14px; }
+@media (max-width: 600px) {
+  .research-outline-reader { width: calc(100vw - 16px); max-height: 94dvh; border-radius: 12px; }
+  .research-outline-reader-head { padding: 12px; align-items: flex-start; }
+  .research-outline-reader-head h2 { font-size: 15px; }
+  .research-outline-reader-content { padding: 0 12px 16px; }
+  .research-outline-reader-content .research-outline-chapter { padding: 12px; }
+}

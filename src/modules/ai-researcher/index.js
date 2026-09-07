@@ -299,6 +299,25 @@ function renderPptScript(detail, artifact, script) {
   }); detail.appendChild(pages);
   if (script.evidence_gaps?.length || script.validation_issues?.length) { const issues = node("section", "research-outline-section", ""); issues.appendChild(node("h5", "", "脚本检查与 Evidence Gap")); [...(script.evidence_gaps || []), ...(script.validation_issues || [])].slice(0, 40).forEach((item) => issues.appendChild(node("p", "research-outline-gap", "! " + (item.claim || item.message || item.reason)))); detail.appendChild(issues); }
 }
+function openOutlineReader(artifact, outline) {
+  const dialog = node("dialog", "research-outline-reader", "");
+  dialog.setAttribute("aria-labelledby", "researchOutlineReaderTitle");
+  const header = node("header", "research-outline-reader-head", "");
+  const title = node("h2", "", `${artifact.title} · V${artifact.version}`);
+  title.id = "researchOutlineReaderTitle";
+  const close = node("button", "secondary-btn", "关闭阅读视图");
+  close.type = "button";
+  close.addEventListener("click", () => dialog.close());
+  header.append(title, close);
+  const content = node("div", "research-outline-reader-content", "");
+  renderReportOutline(content, artifact, outline);
+  dialog.append(header, content);
+  dialog.addEventListener("close", () => { document.body.classList.remove("research-outline-reader-open"); dialog.remove(); });
+  dialog.addEventListener("click", event => { if (event.target === dialog) dialog.close(); });
+  document.body.appendChild(dialog);
+  document.body.classList.add("research-outline-reader-open");
+  dialog.showModal();
+}
 function renderArtifactDetail(artifact) {
   const detail = $("#researchArtifactDetail"); detail.replaceChildren(); detail.hidden = !artifact; if (!artifact) return;
   const head = node("div", "research-artifact-detail-head", ""); head.append(node("strong", "", artifact.title), node("span", "", artifactLabel(artifact) + " · V" + (artifact.version || 1))); const close = node("button", "ghost-btn", "关闭"); close.type = "button"; close.addEventListener("click", () => renderArtifactDetail(null)); head.appendChild(close);
@@ -306,7 +325,7 @@ function renderArtifactDetail(artifact) {
   if (artifact.type === "qualitative_analysis") { const generate = node("button", "primary-btn", "生成定性报告PPT"); generate.type = "button"; generate.addEventListener("click", () => openQualitativePptPreview(artifact, generate)); actions.prepend(generate); }
   if (artifact.type === "report_outline") { const script = node("button", "primary-btn", "生成 PPT 脚本"); script.type = "button"; script.addEventListener("click", () => startPptScript(artifact)); actions.prepend(script); }
   if (artifact.parent_artifact_id) { const compare = node("button", "ghost-btn", "与父版本对比"); compare.type = "button"; compare.addEventListener("click", () => compareArtifact(artifact)); actions.appendChild(compare); }
-  detail.append(head, actions); const outline = parsedOutline(artifact); const pptScript = parsedPptScript(artifact); const qualitativePpt = parsedQualitativePpt(artifact); if (outline) renderReportOutline(detail, artifact, outline); else if (pptScript) renderPptScript(detail, artifact, pptScript); else if (qualitativePpt) renderQualitativePpt(detail, artifact, qualitativePpt); else detail.appendChild(node("pre", "", artifact.content || ""));
+  detail.append(head, actions); const outline = parsedOutline(artifact); const pptScript = parsedPptScript(artifact); const qualitativePpt = parsedQualitativePpt(artifact); if (outline) { const expand = node("button", "secondary-btn", "展开阅读大纲"); expand.type = "button"; expand.addEventListener("click", () => openOutlineReader(artifact, outline)); actions.prepend(expand); renderReportOutline(detail, artifact, outline); } else if (pptScript) renderPptScript(detail, artifact, pptScript); else if (qualitativePpt) renderQualitativePpt(detail, artifact, qualitativePpt); else detail.appendChild(node("pre", "", artifact.content || ""));
   const evidence = state.evidence.filter((item) => item.value?.artifact_id === artifact.id); if (!outline && !pptScript && evidence.length) { const section = node("section", "research-evidence-list", ""); section.appendChild(node("strong", "", "原声证据（" + evidence.length + "）")); evidence.forEach((item) => { const card = node("article", "research-evidence-card", ""); card.append(node("blockquote", "", "“" + (item.value?.quote || "") + "”"), node("small", "", (item.value?.transcript_title || "访谈") + (item.value?.respondent_label ? " · " + item.value.respondent_label : ""))); const view = node("button", "ghost-btn", "查看原文上下文"); view.type = "button"; view.addEventListener("click", () => showEvidenceContext(item, card)); card.appendChild(view); section.appendChild(card); }); detail.appendChild(section); }
 }
 function renderArtifacts() { const list = $("#researchArtifactList"); $("#researchArtifactCount").textContent = `${state.artifacts.length} 项`; list.replaceChildren(); if (!state.artifacts.length) { list.appendChild(node("p", "research-empty-copy", "AI 回复可保存为调研方案、问卷或访谈大纲。")); renderContextChips(); return; } state.artifacts.forEach((artifact) => { const card = node("article", `research-artifact-card${state.selectedArtifactId === artifact.id ? " selected" : ""}`, ""); const meta = node("div", "research-artifact-meta", ""); meta.append(node("span", "", artifactLabel(artifact)), node("strong", "", `V${artifact.version || 1}`)); card.append(meta, node("h5", "", artifact.title || artifactLabel(artifact))); if (artifact.freshness?.status && artifact.freshness.status !== "current") card.append(node("p", "research-artifact-freshness", `${artifact.freshness.label || "待更新"}：来源证据或上游成果已变化，旧版本保留，可基于此版本派生更新。`)); if (artifact.parent_artifact_id) card.append(node("small", "research-version-parent", artifact.type === "ppt_script" ? "基于上一版 PPT Script 生成" : "基于上一版本生成")); const actions = node("div", "research-artifact-actions", ""); const entries = [["查看", () => renderArtifactDetail(artifact)], ["基于此版本派生", () => selectArtifact(artifact)], ["重命名", () => renameArtifact(artifact)], ["删除", () => deleteArtifact(artifact)]]; if (artifact.type === "report_outline") entries.splice(1, 0, ["生成 PPT 脚本", () => startPptScript(artifact)]); if (["qualitative_analysis", "ppt_script"].includes(artifact.type)) entries.splice(1, 0, ["生成定性报告PPT", () => openQualitativePptPreview(artifact)]); if (artifact.type === "qualitative_ppt") entries.splice(1, 1); entries.forEach(([label, action], index) => { const button = node("button", label.includes("生成") || index === 1 ? "secondary-btn" : "ghost-btn", label); button.type = "button"; button.addEventListener("click", action); actions.appendChild(button); }); card.appendChild(actions); list.appendChild(card); }); renderContextChips(); }
