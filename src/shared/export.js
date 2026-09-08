@@ -228,12 +228,14 @@ function excelXlsxStylesXml() {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="0.0%"/></numFmts><fonts count="16"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Arial"/></font><font><color rgb="FF006100"/><sz val="11"/><name val="Arial"/></font><font><color rgb="FF9C0006"/><sz val="11"/><name val="Arial"/></font><font><i/><color rgb="FF666666"/><sz val="10"/><name val="Arial"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="10"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FF17365D"/><sz val="10"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FF17365D"/><sz val="9"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FF17365D"/><sz val="9"/><name val="Arial"/></font><font><b/><color rgb="FF375623"/><sz val="10"/><name val="Arial"/></font><font><color rgb="FF334155"/><sz val="10"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FF17365D"/><sz val="10"/><name val="Microsoft YaHei"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="15"/><name val="Microsoft YaHei"/></font><font><u/><color rgb="FF0563C1"/><sz val="10"/><name val="Microsoft YaHei"/></font></fonts><fills count="11"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF4472C4"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFC6EFCE"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFC7CE"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F4E78"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF9DC3E6"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9EAF7"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEAF2F8"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE2F0D9"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF7F9FC"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="7"><border/><border><left/><right/><top/><bottom style="medium"><color rgb="FF1F4E78"/></bottom><diagonal/></border><border><left style="thin"><color rgb="FF526A82"/></left><right style="thin"><color rgb="FF526A82"/></right><top style="thin"><color rgb="FF526A82"/></top><bottom style="thin"><color rgb="FF526A82"/></bottom><diagonal/></border><border><left style="thin"><color rgb="FF526A82"/></left><right style="thin"><color rgb="FF526A82"/></right><top style="thin"><color rgb="FF526A82"/></top><bottom style="thin"><color rgb="FF526A82"/></bottom><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFE7EDF3"/></bottom><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFB4C6D7"/></bottom><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFD9E2F3"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="20"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="4" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="6" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="7" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="8" fillId="6" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="9" fillId="7" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="10" fillId="8" borderId="5" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="11" fillId="9" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="12" fillId="10" borderId="4" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="13" fillId="8" borderId="5" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="14" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="13" fillId="7" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="7" fillId="2" borderId="5" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="12" fillId="0" borderId="6" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="15" fillId="0" borderId="6" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
 }
 
+// ZIP 校验表复用，避免对文件中的每个字节重复计算 8 次多项式。
+const excelCrcTable = Uint32Array.from({ length: 256 }, (_, value) => {
+  for (let bit = 0; bit < 8; bit += 1) value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+  return value >>> 0;
+});
 function excelZipCrc32(bytes) {
   let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-  }
+  for (let i = 0; i < bytes.length; i += 1) crc = (crc >>> 8) ^ excelCrcTable[(crc ^ bytes[i]) & 0xff];
   return (crc ^ 0xffffffff) >>> 0;
 }
 
@@ -252,12 +254,13 @@ function excelZipConcat(parts) {
   return output;
 }
 
-function createExcelZipBytes(entries) {
+function createExcelZipBytes(entries, onProgress) {
   const encoder = new TextEncoder();
   const localParts = [];
   const centralParts = [];
   let offset = 0;
-  entries.forEach((entry) => {
+  entries.forEach((entry, index) => {
+    onProgress?.({ phase: "zip", current: index + 1, total: entries.length, name: entry.name });
     const name = encoder.encode(entry.name);
     const data = entry.content instanceof Uint8Array ? entry.content : encoder.encode(String(entry.content ?? ""));
     const crc = excelZipCrc32(data);
@@ -281,7 +284,7 @@ function createExcelZipBytes(entries) {
   return excelZipConcat([...localParts, ...centralParts, new Uint8Array(end)]);
 }
 
-export function buildExcelWorkbookXlsxBytes(sheets) {
+export function buildExcelWorkbookXlsxBytes(sheets, onProgress) {
   const safeSheets = (sheets || []).map((sheet, index) => ({ ...sheet, name: excelSafeSheetName(sheet.name, `Sheet${index + 1}`) }));
   const sheetOverrides = safeSheets.map((_, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
   const workbookSheets = safeSheets.map((sheet, index) => `<sheet name="${escapeHtml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("");
@@ -293,8 +296,64 @@ export function buildExcelWorkbookXlsxBytes(sheets) {
     { name: "xl/workbook.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>${workbookSheets}</sheets></workbook>` },
     { name: "xl/_rels/workbook.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${worksheetRelationships}<Relationship Id="rId${styleRelationshipId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
     { name: "xl/styles.xml", content: excelXlsxStylesXml() },
-    ...safeSheets.map((sheet, index) => ({ name: `xl/worksheets/sheet${index + 1}.xml`, content: excelXlsxSheetXml(sheet) }))
-  ]);
+    ...safeSheets.map((sheet, index) => {
+      onProgress?.({ phase: "sheet", current: index + 1, total: safeSheets.length, name: sheet.name });
+      return { name: `xl/worksheets/sheet${index + 1}.xml`, content: excelXlsxSheetXml(sheet) };
+    })
+  ], onProgress);
+}
+
+// 提前建立空闲后台任务；点击生成时先确认就绪，避免末尾再加载 Worker 模块。
+let preparedExcelWorker = null;
+export function prepareExcelWorkbookExport() {
+  if (typeof Worker === "undefined") return Promise.resolve(null);
+  if (!preparedExcelWorker) {
+    const pending = new Promise((resolve, reject) => {
+      let worker;
+      let timer;
+      const fail = error => { clearTimeout(timer); worker?.terminate(); reject(error); };
+      try {
+        worker = new Worker(new URL("./excel-export-worker.js?v=20260908-1", import.meta.url), { type: "module" });
+        timer = setTimeout(() => fail(new Error("Excel 后台工具加载超时，请检查网络后重试。")), 45000);
+        worker.onerror = () => fail(new Error("Excel 后台工具加载失败，请刷新页面后重试。"));
+        worker.onmessage = ({data}) => {
+          if (data.type === "ready") { clearTimeout(timer); worker.onmessage = null; resolve(worker); }
+        };
+      } catch (error) { fail(error); }
+    });
+    preparedExcelWorker = pending;
+    pending.catch(() => { if (preparedExcelWorker === pending) preparedExcelWorker = null; });
+  }
+  return preparedExcelWorker;
+}
+
+/** 独立后台任务，完成后转移字节缓冲，避免页面主线程打包大工作簿。 */
+export async function buildExcelWorkbookXlsxBytesAsync(sheets, onProgress) {
+  if (typeof Worker === "undefined") return buildExcelWorkbookXlsxBytes(sheets, onProgress);
+  const preparation = prepareExcelWorkbookExport();
+  preparedExcelWorker = null; // 每次调用独占一个 Worker，不与其他导出共享事件处理器。
+  const worker = await preparation;
+  return new Promise((resolve, reject) => {
+    let timer;
+    const finish = (error, bytes) => {
+      clearTimeout(timer);
+      worker.terminate();
+      if (error) reject(error); else resolve(bytes);
+    };
+    const armTimeout = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => finish(new Error("Excel 文件打包超时，请减少表头列后重试。")), 180000);
+    };
+    worker.onmessage = ({ data }) => {
+      if (data.type === "progress") { armTimeout(); onProgress?.(data.progress); }
+      else if (data.type === "result") finish(null, new Uint8Array(data.buffer));
+      else if (data.type === "error") finish(new Error(data.message));
+    };
+    worker.onerror = () => finish(new Error("Excel 后台打包失败，请重试。"));
+    worker.onmessageerror = () => finish(new Error("Excel 文件传输失败，请重试。"));
+    try { armTimeout(); worker.postMessage({ sheets }); }
+    catch (error) { finish(error); }
+  });
 }
 
 export function downloadExcelXml(filename, sheetName, rows, options = {}) {

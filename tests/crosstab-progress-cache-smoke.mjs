@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const app=fs.readFileSync(new URL('../app.js',import.meta.url),'utf8');
+const start=app.indexOf('let crosstabWorkflowSummaryCache');
+const end=app.indexOf('\nfunction syncCoreWorkflowUx()',start);
+let text='a,b\n1,2',calls=0;
+const context=vm.createContext({document:{querySelector:()=>({value:text})},parseDelimitedTable(value){calls++;const rows=value?value.split('\n'):[];return {headers:rows[0]?.split(',')||[],rows:rows.slice(1)};}});
+vm.runInContext(app.slice(start,end),context);
+for(let i=0;i<500;i++)assert.equal(context.getCrosstabWorkflowSummary().rowCount,1);
+assert.equal(calls,1,'progress changes must not reparse unchanged data');
+text='a,b,c\n1,2,3\n4,5,6';assert.equal(context.getCrosstabWorkflowSummary().rowCount,2);assert.equal(context.getCrosstabWorkflowSummary().headerCount,3);assert.equal(calls,2);
+text='';assert.equal(context.getCrosstabWorkflowSummary().rowCount,0);assert.equal(calls,3);
+console.log('PASS workflow summary caching and invalidation on edited/cleared data');

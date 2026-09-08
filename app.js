@@ -2812,6 +2812,8 @@ function delimitedImportInspection(parsed, filename = "数据文件") {
 }
 
 function renderCrosstabImportState(text, filename) {
+  // 数据导入后预热导出模块，避免到最后一步才等待网络加载。
+  void loadExcelExportModule().then(module => module.prepareExcelWorkbookExport()).catch(() => {});
   const dataField = document.querySelector("#crosstabData");
   window.CrosstabModelUI?.reset();
   dataField.value = normalizeImportedText(text);
@@ -4964,8 +4966,14 @@ function excelWorkbookStylesXml() {
 let excelExportModulePromise = null;
 
 function loadExcelExportModule() {
+  if (window.SurveyKitExcelExport) return Promise.resolve(window.SurveyKitExcelExport);
   if (!excelExportModulePromise) {
-    excelExportModulePromise = import("./src/shared/export.js?v=20260826-1").catch((error) => {
+    let timeout;
+    const loading = Promise.race([
+      import("./src/shared/export.js?v=20260908-3"),
+      new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("导出工具加载超时，请检查网络后重试。")), 45000); })
+    ]).finally(() => clearTimeout(timeout));
+    excelExportModulePromise = loading.catch(error => {
       excelExportModulePromise = null;
       throw error;
     });
@@ -5004,9 +5012,14 @@ ${worksheets}
 </Workbook>`;
 }
 
-async function downloadExcelWorkbookXml(filename, sheets) {
-  const { buildExcelWorkbookXlsxBytes } = await loadExcelExportModule();
-  const bytes = buildExcelWorkbookXlsxBytes(sheets);
+async function downloadExcelWorkbookXml(filename, sheets, onProgress) {
+  const { buildExcelWorkbookXlsxBytesAsync } = await loadExcelExportModule();
+  const bytes = await buildExcelWorkbookXlsxBytesAsync(sheets, progress => {
+    const packing = progress.phase === "zip";
+    onProgress?.(packing ? "正在打包 Excel 文件..." : "正在写入 Excel 工作表...",
+      packing ? 99 : 98, packing ? `正在校验并封装文件 ${progress.current}/${progress.total}` : `${progress.current}/${progress.total}：${progress.name}`);
+  });
+  onProgress?.("文件已就绪，正在发起下载...", 100, "如未出现下载，请检查浏览器下载列表。");
   downloadBlob(filename, new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
 }
 
@@ -5877,6 +5890,8 @@ async function generateQuestionPivot() {
     return;
   }
   try {
+  updateCrosstabProgress("正在检查 Excel 导出工具...", 4, "准备就绪后开始计算，避免在最后一步等待加载。");
+  await (await loadExcelExportModule()).prepareExcelWorkbookExport();
   updateCrosstabProgress("正在识别题型与题干...", 8, `数据量：${parsed.rows.length} 行，字段：${parsed.headers.length} 个。`);
   await nextUiTick();
   const modelConfig = window.CrosstabModelUI?.getConfig(parsed) || { kano: [], psm: [] };
@@ -6569,7 +6584,7 @@ async function exportQuestionPivotWorkbook(onProgress) {
     directoryRows.push({cells:[{value:"专项模型（按表头分组）",format:"directorySection",mergeAcross:4}]});
     modelSheets.forEach(sheet=>directoryRows.push({cells:[{value:sheet.name,href:`#'${sheet.name}'!A1`,format:"directoryLink"},{value:sheet.name==="KANO系数"?"正反配对、属性频数/占比及 Better/Worse 系数":"四问共同有效样本的价格累计百分比",format:"directoryBody",mergeAcross:3}]}));
   }
-  onProgress?.("正在写出 Excel 文件...", 98, "即将触发浏览器下载。");
+  onProgress?.("正在准备 Excel 文件打包...", 98, "统计已完成，正在生成可下载的文件。");
   await nextUiTick();
   await downloadExcelWorkbookXml("全部交叉表.xlsx", [
     { name: "目录", rows: directoryRows, kind: "directory", columnCount: 5, showGridlines: false },
@@ -6577,7 +6592,7 @@ async function exportQuestionPivotWorkbook(onProgress) {
     { name: "百分比", rows: percentSheet.rows, kind: "crosstab", columnCount: percentSheet.columnCount, showGridlines: false },
     { name: "显著性检验", rows: sigSheet.rows, kind: "crosstab", columnCount: sigSheet.columnCount, showGridlines: false },
     ...modelSheets
-  ]);
+  ], onProgress);
   lastCrosstabModelSheetNames = modelSheets.map(sheet=>sheet.name);
 }
 
@@ -20143,15 +20158,26 @@ function setFlowPanelState(panel, state) {
   panel.dataset.flowState = state;
 }
 
+// 进度刷新只需要行列数；原始文本未变化时不重复解析整份问卷。
+let crosstabWorkflowSummaryCache = { text: null, rowCount: 0, headerCount: 0 };
+function getCrosstabWorkflowSummary() {
+  const text = document.querySelector("#crosstabData")?.value || "";
+  if (crosstabWorkflowSummaryCache.text !== text) {
+    const parsed = parseDelimitedTable(text);
+    crosstabWorkflowSummaryCache = { text, rowCount: parsed.rows.length, headerCount: parsed.headers.length };
+  }
+  return crosstabWorkflowSummaryCache;
+}
+
 function syncCoreWorkflowUx() {
   const crosstabView = document.querySelector("#crosstab-analysis");
   if (crosstabView) {
-    const parsed = parseDelimitedTable(document.querySelector("#crosstabData")?.value || "");
-    const hasData = parsed.headers.length >= 2 && parsed.rows.length > 0;
+    const summary = getCrosstabWorkflowSummary();
+    const hasData = summary.headerCount >= 2 && summary.rowCount > 0;
     const hasFields = (document.querySelector("#crosstabRowVar")?.options.length || 0) >= 2
       && (document.querySelector("#crosstabColVar")?.options.length || 0) >= 2;
     const hasResult = Boolean(lastQuestionPivot || lastCrosstabAnalysis);
-    setTaskFlowIndicator(crosstabView, "import", hasFields ? "completed" : "active", hasData ? `${parsed.rows.length} 行 · ${parsed.headers.length} 字段` : "准备数据字段");
+    setTaskFlowIndicator(crosstabView, "import", hasFields ? "completed" : "active", hasData ? `${summary.rowCount} 行 · ${summary.headerCount} 字段` : "准备数据字段");
     setTaskFlowIndicator(crosstabView, "configure", hasResult ? "completed" : hasFields ? "active" : "locked", hasFields ? "选择批量或单表分析" : "等待字段识别");
     setTaskFlowIndicator(crosstabView, "result", hasResult ? "active" : "locked", hasResult ? "可查看并导出结果" : "查看结果并下载");
     const configureStage = document.querySelector("#crosstabConfigureStage");
@@ -20209,7 +20235,12 @@ function syncCoreWorkflowUx() {
 
 (function initCoreWorkflowUx() {
   const relevantViews = new Set(["crosstab-analysis", "ai-report", "ai-plan", "pptx-report"]);
-  const scheduleSync = () => window.setTimeout(syncCoreWorkflowUx, 0);
+  let syncPending = false;
+  const scheduleSync = () => {
+    if (syncPending) return;
+    syncPending = true;
+    window.setTimeout(() => { syncPending = false; syncCoreWorkflowUx(); }, 0);
+  };
   document.addEventListener("input", (event) => {
     if (relevantViews.has(event.target.closest(".view")?.id)) scheduleSync();
   });
@@ -20217,7 +20248,7 @@ function syncCoreWorkflowUx() {
     if (relevantViews.has(event.target.closest(".view")?.id)) scheduleSync();
   });
   document.addEventListener("click", (event) => {
-    if (relevantViews.has(event.target.closest(".view")?.id)) window.setTimeout(syncCoreWorkflowUx, 80);
+    if (relevantViews.has(event.target.closest(".view")?.id)) scheduleSync();
   });
   [
     "#crosstabResults", "#aiReportResults", "#aiReportDataPreview", "#aiPlanResults",

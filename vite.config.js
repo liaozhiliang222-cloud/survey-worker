@@ -12,6 +12,7 @@ const { configuredBodyLimit } = require("./lib/request-body");
 const runtimeFiles = [
   // Classic app.js imports these by source URL outside Vite's module graph.
   "src/shared/export.js",
+  "src/shared/excel-export-worker.js",
   "src/shared/file-parser.js",
   "research-theme.js",
   "ai-plan-quality.js",

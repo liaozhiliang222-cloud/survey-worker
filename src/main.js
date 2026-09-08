@@ -14,7 +14,9 @@ import * as fileParserModule from "./shared/file-parser.js";
 // ─── 共享模块（已完成提取）───────────────────────────────────
 export * as stats from "./shared/stats.js";
 export * as fileParser from "./shared/file-parser.js";
-export * as exportUtils from "./shared/export.js";
+import * as exportUtils from "./shared/export.js";
+export { exportUtils };
+window.SurveyKitExcelExport = exportUtils;
 export * as aiClient from "./shared/ai-client.js";
 export { state, resetWorkspaceRuntimeState } from "./shared/store.js";
 export { showToast, showButtonSaved, setButtonLoading } from "./shared/toast.js";
