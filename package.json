@@ -46,7 +46,7 @@
     "test:pptx-proxy": "node tests/pptx-proxy-smoke.mjs",
     "test:server-routes": "node tests/server-routes-smoke.mjs",
     "test:cloudflare-proxy": "node tests/cloudflare-proxy-smoke.mjs",
-    "test:cluster-analysis": "node tests/cluster-analysis-smoke.mjs",
+    "test:cluster-analysis": "node tests/cluster-analysis-smoke.mjs && node tests/cluster-multi-groups.cjs",
     "test:tool-gateway": "node tests/tool-gateway-smoke.mjs",
     "test:agent-tools": "node tests/agent-tool-calling-smoke.mjs",
     "test:agent-tool-acceptance": "node tests/agent-tool-acceptance-smoke.mjs",

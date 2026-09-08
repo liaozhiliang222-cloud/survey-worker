@@ -96,20 +96,32 @@
   const MEASUREMENT_TYPES = ["scale", "ordinal", "nominal", "binary", "count"];
   const ROLES = ["id", "cluster", "profile", "weight", "excluded"];
 
-  /** 识别多选变量组（Q5_1 / Q5_2 / Q5_3 或 Q5_R1 / Q5_R2） */
-  function detectMultiSelectGroups(headers) {
+  /** 同题号且全部为选中/未选中编码的字段才可作为多选组候选；名称不足以判定。 */
+  function detectMultiSelectGroups(headers, rows = []) {
+    if (!rows.length) return [];
     const groups = new Map();
-    const pattern = /^(.+?)(?:_+R?)(\d+)$/i;
+    const pattern = /^([a-z][a-z0-9_]*?)(?:_+R?)(\d+)$/i;
     headers.forEach((header) => {
-      const match = header.match(pattern);
+      const match = String(header).trim().split(/\s+/)[0].match(pattern);
       if (!match) return;
       const base = match[1];
       if (!groups.has(base)) groups.set(base, []);
       groups.get(base).push(header);
     });
-    return Array.from(groups.entries())
-      .filter(([, items]) => items.length >= 2)
-      .map(([name, variables]) => ({ name, variables }));
+    const codings = [["1", "0"], ["是", "否"], ["有", "无"], ["yes", "no"], ["y", "n"], ["true", "false"]];
+    return Array.from(groups.entries()).flatMap(([name, variables]) => {
+      if (variables.length < 2) return [];
+      const observed = variables.map((header) => new Set(uniqueValues(rows, header).map((value) => {
+        const number = toNumber(value);
+        return number === 0 || number === 1 ? String(number) : value.toLowerCase();
+      })));
+      // 不把同前缀中恰好是二元的几列从量表/连续变量组里单独抽出来。
+      if (observed.some((values) => !values.size)) return [];
+      const combined = new Set(observed.flatMap((values) => [...values]));
+      const coding = codings.find((pair) => combined.size === 2 && [...combined].every((value) => pair.includes(value)));
+      if (!coding) return [];
+      return [{ name, variables, positiveValue: coding[0], negativeValue: coding[1] }];
+    });
   }
 
   /** 根据数据自动判断单个变量的测量类型 */
@@ -145,7 +157,7 @@
    * @returns {Array<{name, role, measurement, detectedMeasurement, userConfirmed, missingCodes, positiveValue, negativeValue, ordinalOrder, reverseScoring, multiGroup, uniqueCount, missingCount}>}
    */
   function detectVariableTypes(rows, headers, options = {}) {
-    const groups = detectMultiSelectGroups(headers);
+    const groups = detectMultiSelectGroups(headers, rows);
     const groupVariables = new Set(groups.flatMap((group) => group.variables));
     const definitions = headers.map((header) => {
       const measurement = detectMeasurement(rows, header);

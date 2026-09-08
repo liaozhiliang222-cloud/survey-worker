@@ -259,7 +259,7 @@
     state.variablePage = 0;
     if ($("clusterVariableSearch")) $("clusterVariableSearch").value = "";
     state.definitions = core().detectVariableTypes(rows, headers);
-    state.multiGroups = core().detectMultiSelectGroups(headers);
+    state.multiGroups = core().detectMultiSelectGroups(headers, rows);
     state.results = {};
     state.diagnostics = null;
     state.clusterNames = {};
@@ -425,23 +425,23 @@
   function renderMultiGroups() {
     const container = $("clusterMultiGroups");
     if (!container) return;
+    container.closest("details")?.classList.toggle("hidden", !state.multiGroups.length);
     if (!state.multiGroups.length) {
       container.innerHTML = "";
       return;
     }
     container.innerHTML = `
-      <h4>多选变量组</h4>
+      <h4>同题号的二元选项（自动识别候选）</h4>
       ${state.multiGroups.map((group) => {
         const members = group.variables.map((name) => findDefinition(name)).filter(Boolean);
         const allCluster = members.length && members.every((definition) => definition.role === "cluster");
         return `<div class="cluster-group-row">
           <label><input type="checkbox" data-group="${escapeHtml(group.name)}" ${allCluster ? "checked" : ""}> 整组加入聚类（${escapeHtml(group.name)}）</label>
-          <span class="panel-note">${members.map((definition) => escapeHtml(definition.name)).join("、")}</span>
-          <label class="cluster-mini-option">选中值:<input type="text" size="3" value="1" data-group-value="${escapeHtml(group.name)}" data-kind="positive"></label>
-          <label class="cluster-mini-option">未选中值:<input type="text" size="3" value="0" data-group-value="${escapeHtml(group.name)}" data-kind="negative"></label>
+          <span class="panel-note">${members.map((definition) => escapeHtml(definition.name.split(/\s+/)[0])).join("、")}</span>
+          <span class="panel-note">选中：${escapeHtml(group.positiveValue)} · 未选中：${escapeHtml(group.negativeValue)}</span>
         </div>`;
       }).join("")}
-      <p class="panel-note">多选变量按二元变量组处理；勾选“整组加入”会把组内所有选项变量加入聚类，缺失值视为未选中。</p>`;
+      <p class="panel-note">一道多选题通常拆成多个选项字段，例如“拥有的家电”拆为冰箱、空调等。这里按题号和二元取值识别候选，请核对是否属于同一道题；勾选仅批量选择各选项，不合并为一个变量、不改变原始值。空白仍为缺失，按数据处理设置处理。</p>`;
     container.querySelectorAll("input[type='checkbox'][data-group]").forEach((checkbox) => {
       checkbox.addEventListener("change", () => {
         const group = state.multiGroups.find((item) => item.name === checkbox.dataset.group);
@@ -449,7 +449,6 @@
           const definition = findDefinition(name);
           if (definition) {
             definition.role = checkbox.checked ? "cluster" : "excluded";
-            definition.measurement = "binary";
           }
         });
         renderVariableTable();
@@ -457,22 +456,12 @@
         updateRunButtonState();
       });
     });
-    container.querySelectorAll("input[data-group-value]").forEach((input) => {
-      input.addEventListener("change", () => {
-        const group = state.multiGroups.find((item) => item.name === input.dataset.groupValue);
-        group?.variables.forEach((name) => {
-          const definition = findDefinition(name);
-          if (!definition) return;
-          if (input.dataset.kind === "positive") definition.positiveValue = input.value;
-          else definition.negativeValue = input.value;
-        });
-      });
-    });
+
   }
 
   function applyRoleSuggestions() {
     state.definitions = core().detectVariableTypes(state.parsed.rows, state.parsed.headers);
-    state.multiGroups = core().detectMultiSelectGroups(state.parsed.headers);
+    state.multiGroups = core().detectMultiSelectGroups(state.parsed.headers, state.parsed.rows);
     renderVariableTable();
     renderMultiGroups();
     refreshMethodAdvice();
@@ -609,7 +598,7 @@
     if (state.workerBroken) return null;
     if (!state.worker) {
       try {
-        state.worker = new Worker("./cluster-worker.js?v=20260908-1");
+        state.worker = new Worker("./cluster-worker.js?v=20260908-2");
       } catch (_) {
         state.worker = null;
         state.workerBroken = true;

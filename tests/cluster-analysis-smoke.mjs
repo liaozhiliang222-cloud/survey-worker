@@ -482,7 +482,7 @@ assert.equal(typeMap.q4.role, "cluster");
 assert.ok(typeMap.q1.userConfirmed === false);
 
 // 多选组识别
-const groups = core.detectMultiSelectGroups(["Q5_1", "Q5_2", "Q5_3", "Q5_R1", "gender"]);
+const groups = core.detectMultiSelectGroups(["Q5_1", "Q5_2", "Q5_3", "Q5_R1", "gender"], [{Q5_1: 1, Q5_2: 0, Q5_3: 1, Q5_R1: 0}]);
 assert.equal(groups.length, 1);
 assert.deepEqual(groups[0].name, "Q5");
 assert.ok(groups[0].variables.includes("Q5_1"));

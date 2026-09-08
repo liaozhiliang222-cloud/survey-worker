@@ -12,7 +12,7 @@
  *   postMessage({ type: "cluster_error", requestId, errorCode, message, details })
  *   主线程可发送 { type: "cluster_cancel", requestId } 取消任务
  */
-importScripts("./cluster-core.js?v=20260908-1");
+importScripts("./cluster-core.js?v=20260908-2");
 
 const core = self.ClusterCore;
 if (!core) {
