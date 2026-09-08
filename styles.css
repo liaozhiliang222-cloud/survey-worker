@@ -8274,3 +8274,4 @@ tbody tr.warn td {
 .cluster-processing-card p { margin:8px 0; }
 .cluster-processing-fields { max-height:180px; overflow:auto; overflow-wrap:anywhere; }
 .cluster-processing-card summary { cursor:pointer; padding:6px 0; }
+#cluster-analysis .hidden { display: none !important; }

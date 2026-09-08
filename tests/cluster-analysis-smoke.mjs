@@ -351,7 +351,7 @@ assert.ok(Math.abs(hi.distanceMatrix[0 * 120 + 1] - hi.distanceMatrix[1 * 120 + 
 assert.throws(() => core.hierarchicalCluster({
   rows, headers: ["rid", "gender", "x", "y"], definitions: baseDefinitions, clusterVariables,
   options: { linkage: "ward", distance: "cosine", object: "cases", dataType: "interval" }
-}), /Ward 法要求/);
+}), /仅支持数值型欧氏/);
 
 // 主要区间距离
 ["euclidean", "squared-euclidean", "cosine", "pearson", "chebyshev", "cityblock", "minkowski"].forEach((distance) => {
@@ -617,7 +617,7 @@ assert.match(uiSource, /recommendMethod/);
 // 运行与取消
 assert.match(html, /id="clusterRunButton"/);
 assert.match(html, /id="clusterCancelButton"/);
-assert.match(uiSource, /cluster_cancel/);
+assert.match(uiSource, /state\.abortPending/);
 // 群体名称编辑
 assert.match(uiSource, /data-cluster-name-input/);
 // Excel 与 CSV 导出
@@ -634,7 +634,7 @@ assert.match(workerSource, /cluster_progress/);
 assert.match(workerSource, /cluster_done/);
 assert.match(workerSource, /cluster_error/);
 assert.match(workerSource, /cluster_cancel/);
-assert.match(workerSource, /importScripts\("\.\/cluster-core\.js"\)/);
+assert.match(workerSource, /importScripts\("\.\/cluster-core\.js\?v=/);
 // 帮助页 SPSS 差异声明
 assert.match(html, /结果可能与其他统计软件存在差异/);
 // 权重说明（两步/系统聚类不使用权重）
@@ -679,5 +679,63 @@ console.log("\nAll cluster-analysis smoke tests passed.");
  const check=new Function('URL', source.slice(start,end)+'; return isAppShellRequest;')(URL);
  for (const file of ['cluster-analysis.js','cluster-core.js','cluster-worker.js']) {
   if(!check({url:'https://surveykit.cc/'+file+'?v=old',mode:'cors'})) throw Error('Cluster runtime was cache-first: '+file);
+ }
+}
+
+// Regression: the UI sends a top-level weight field, and non-positive weights
+// must not affect preprocessing, assignments, valid N or unweighted group sizes.
+{
+ const weightedRows=rows.map((r,i)=>({...r,w:i<3?[0,-1,''][i]:1}));
+ const weighted=core.kmeansCluster({rows:weightedRows,definitions:baseDefinitions,clusterVariables,weightColumn:'w',options:{k:3,useWeight:true,seed:42}});
+ const filtered=core.kmeansCluster({rows:weightedRows.slice(3),definitions:baseDefinitions,clusterVariables,options:{k:3,seed:42}});
+ assert.equal(weighted.validN,117);assert.equal(weighted.excludedN,3);
+ assert.equal(weighted.clusterSizes.reduce((a,c)=>a+c.count,0),117);
+ assert.ok(weighted.assignments.every(a=>a.rowIndex>=3));
+ assert.deepEqual(weighted.finalCenters,filtered.finalCenters);
+ const grand=weightedRows.slice(3).reduce((a,r)=>a+Number(r.x),0)/117;
+ assert.ok(Math.abs(weighted.anova.find(a=>a.variable==='x').grandMean-grand)<1e-9);
+}
+{
+ const categoricalRows=Array.from({length:30},(_,i)=>({a:i%2?'红色':'蓝色',b:i%3?'线上':'线下'}));
+ const definitions=['a','b'].map(name=>({name,role:'cluster',measurement:'nominal',missingCodes:[]}));
+ const checks=core.runQualityChecks({rows:categoricalRows,definitions,clusterVariables:['a','b']});
+ assert.ok(!checks.some(c=>c.code==='high_missing_rate'||c.code==='medium_missing_rate'));
+ const ordinal=definitions.map(d=>({...d,measurement:'ordinal'}));
+ const input={rows:categoricalRows,clusterVariables:['a','b'],options:{autoSelect:false,fixedK:2}};
+ const nominalResult=core.twostepCluster({...input,definitions});
+ const ordinalResult=core.twostepCluster({...input,definitions:ordinal});
+ assert.deepEqual(ordinalResult.assignments,nominalResult.assignments);
+ assert.equal(ordinalResult.validN,30);
+}
+console.log('Regression passed: weight plumbing/exclusion, grand mean, categorical quality and ordinal TwoStep');
+
+// Analytic distances on a line detect stale priority-queue entries and wrong LW scaling.
+{
+ const input={rows:[0,1,3].map(x=>({x,y:0})),definitions:baseDefinitions,clusterVariables:['x','y']};
+ for(const linkage of ['ward','centroid','median']) {
+  const eu=core.hierarchicalCluster({...input,options:{linkage,distance:'euclidean',standardization:'none',selectedK:2}});
+  const sq=core.hierarchicalCluster({...input,options:{linkage,distance:'squared-euclidean',standardization:'none',selectedK:2}});
+  const expected=linkage==='ward'?Math.sqrt(25/3):2.5;
+  assert.ok(Math.abs(eu.merges[1].distance-expected)<1e-10,linkage);
+  assert.ok(Math.abs(sq.merges[1].distance-expected**2)<1e-10,linkage);
+  assert.deepEqual(eu.assignments,sq.assignments);
+  assert.equal(eu.distanceMatrix[2],3);
+  assert.equal(sq.distanceMatrix[2],9);
+  assert.throws(()=>core.hierarchicalCluster({...input,options:{linkage,distance:'cityblock'}}),/仅支持/);
+ }
+ const two=core.twostepCluster({rows:[{x:1,y:1},{x:1,y:1},{x:1,y:1}],definitions:baseDefinitions,clusterVariables:['x','y'],options:{autoSelect:true,maxClusters:3}});
+ assert.equal(two.selectedK,two.clusterSizes.filter(c=>c.id>0).length);
+ assert.throws(()=>core.twostepCluster({rows:[{x:1,y:1},{x:1,y:1},{x:1,y:1}],definitions:baseDefinitions,clusterVariables:['x','y'],options:{autoSelect:false,fixedK:2}}),/无法形成/);
+ const checks=core.runQualityChecks({rows:Array.from({length:25},(_,i)=>({a:'类别'+i,b:i?'是':'否'})),definitions:[{name:'a',measurement:'nominal'},{name:'b',measurement:'binary'}],clusterVariables:['a','b']});
+ assert.ok(checks.some(c=>c.code==='too_many_categories'));
+ assert.ok(checks.some(c=>c.code==='unbalanced_binary'));
+}
+console.log('Regression passed: hierarchical recurrence/queue, incompatible distances, actual TwoStep K and text category checks');
+
+{
+ const input={rows:[{a:1,b:0,c:0},{a:0,b:1,c:0},{a:1,b:1,c:1}],definitions:['a','b','c'].map(name=>({name,measurement:'binary'})),clusterVariables:['a','b','c']};
+ for(const [distance,expected] of [['russell-rao',1],['rogers-tanimoto',0.8]]) {
+  const result=core.hierarchicalCluster({...input,options:{linkage:'between',dataType:'binary',distance}});
+  assert.ok(Math.abs(result.distanceMatrix[1]-expected)<1e-12,distance);
  }
 }

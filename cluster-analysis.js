@@ -28,6 +28,8 @@
     workerBroken: false,
     requestId: null,
     running: false,
+    abortPending: null,
+    disabledControls: new Map(),
     cancelled: false
   };
 
@@ -127,6 +129,7 @@
   };
 
   function switchMethod(method) {
+    if (state.running) return;
     if (!["kmeans", "twostep", "hierarchical"].includes(method)) return;
     state.method = method;
     document.querySelectorAll("[data-cluster-method]").forEach((tab) => {
@@ -207,6 +210,7 @@
   }
 
   async function handleImportFile(file) {
+    if (state.running) return;
     try {
       if (!/\.(xlsx|xls|csv|txt|sav)$/i.test(file.name)) {
         throw new Error("仅支持 .xlsx / .csv / .txt / .sav 文件。");
@@ -250,6 +254,7 @@
   }
 
   function loadParsed({ headers, rows, fileName, sheetNames = [], sheetIndex = 0 }) {
+    if (state.running) return;
     state.parsed = { headers, rows, fileName, sheetNames, sheetIndex };
     state.variablePage = 0;
     if ($("clusterVariableSearch")) $("clusterVariableSearch").value = "";
@@ -507,6 +512,7 @@
         missing: val("kmMissing") || "listwise",
         standardization: val("kmStandardization") || "zscore",
         useWeight: val("kmUseWeight") === "weightField",
+        weightColumn: collectWeightColumn(),
         seed: num("tsSeed", 20240101) || 20240101
       };
     }
@@ -547,7 +553,6 @@
   function validateMethodOptions(options) {
     const clusterVariables = collectClusterVariables();
     const issues = [];
-    if (state.method === "twostep" && state.definitions.some(d => d.role === "cluster" && d.measurement === "ordinal")) issues.push("有序变量请先在高级变量设置中明确按连续数值或类别处理，再运行两步聚类。");
     if (state.method === "kmeans") {
       const nonNumeric = clusterVariables.filter((name) => {
         const definition = findDefinition(name);
@@ -566,7 +571,7 @@
     if (state.method === "twostep" && options.distance === "euclidean") {
       const hasCategorical = clusterVariables.some((name) => {
         const definition = findDefinition(name);
-        return definition && ["nominal", "binary"].includes(definition.measurement);
+        return definition && ["nominal", "binary", "ordinal"].includes(definition.measurement);
       });
       if (hasCategorical) issues.push("欧氏距离仅在所有聚类变量均为连续变量时可用；当前包含分类变量，请改用对数似然距离。");
     }
@@ -604,7 +609,7 @@
     if (state.workerBroken) return null;
     if (!state.worker) {
       try {
-        state.worker = new Worker("./cluster-worker.js");
+        state.worker = new Worker("./cluster-worker.js?v=20260908-1");
       } catch (_) {
         state.worker = null;
         state.workerBroken = true;
@@ -623,10 +628,14 @@
       const requestId = `cluster_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       state.requestId = requestId;
       const timeout = setTimeout(() => {
+        worker.terminate();
+        state.worker = null;
         cleanup();
         reject(new Error("聚类计算超时，请重试或减少样本量。"));
       }, 10 * 60 * 1000);
       const cleanup = () => {
+        state.abortPending = null;
+        state.requestId = null;
         clearTimeout(timeout);
         worker.removeEventListener("message", onMessage);
         worker.removeEventListener("error", onError);
@@ -654,8 +663,10 @@
         cleanup();
         state.worker?.terminate?.();
         state.worker = null;
-        state.workerBroken = true;
-        reject(new Error("聚类 Worker 异常退出，将改用本地同步计算重试。"));
+        reject(new Error("聚类后台计算异常退出，请重试。"));
+      };
+      state.abortPending = () => {
+        worker.terminate(); state.worker = null; cleanup(); reject(new Error("任务已取消。"));
       };
       worker.addEventListener("message", onMessage);
       worker.addEventListener("error", onError);
@@ -681,7 +692,7 @@
     const definitions = state.definitions;
     const clusterVariables = collectClusterVariables();
     onProgress?.(0.1, "prepare", "数据准备");
-    const qualityChecks = core().runQualityChecks({ rows, definitions, clusterVariables, weightVariable: collectWeightColumn() });
+    const qualityChecks = core().runQualityChecks({ rows, definitions, clusterVariables, weightVariable: state.method === "kmeans" && payload.useWeight ? collectWeightColumn() : "" });
     const blockingIssues = qualityChecks.filter((issue) => issue.level === "block");
     if (blockingIssues.length) {
       throw new Error(`数据质量检查未通过：${blockingIssues.map((issue) => issue.title).join("；")}`);
@@ -732,6 +743,7 @@
       return;
     }
     state.running = true;
+    setConfigurationLocked(true);
     state.cancelled = false;
     $("clusterRunButton").disabled = true;
     $("clusterCancelButton").disabled = false;
@@ -743,15 +755,14 @@
       try {
         result = await computeInWorker(options, updateProgress);
       } catch (error) {
-        if (error.message === "任务已取消。") throw error;
-        if (error.message !== "worker_unavailable") {
-          // Worker 执行失败（可能浏览器环境限制），降级为同步计算
-        }
+        if (error.message !== "worker_unavailable") throw error;
+        if (state.parsed.rows.length > 500) throw new Error("当前浏览器无法启动后台计算。请使用支持 Web Worker 的浏览器后重试；大样本不会在页面主线程强行运行。");
         updateProgress(0.15, "prepare", "Worker 不可用，正在使用本地同步计算…");
         result = await new Promise((resolve, reject) => {
           // 让进度 UI 有机会渲染
           setTimeout(() => {
             try {
+              if (state.cancelled) throw new Error("任务已取消。");
               resolve(computeSynchronously(options, updateProgress));
             } catch (computeError) {
               reject(computeError);
@@ -760,34 +771,32 @@
         });
       }
       if (state.cancelled) return;
+      if (result.method === "hierarchical") state.hierarchicalK = result.selectedK;
       state.results[state.method] = result;
       state.diagnostics = null;
       state.clusterNames[state.method] = {};
       renderResults(result);
-      saveToProject(result);
+      saveToProject(currentResult());
       $("clusterExportPanel").classList.remove("hidden");
       $("clusterRunStatus").textContent = `分析完成 · ${METHOD_LABELS[state.method]} · ${result.validN} 个有效样本`;
       showToast(`用户分群分析完成：${METHOD_LABELS[state.method]} · ${result.selectedK} 个群体`, "success", 3600);
     } catch (error) {
+      if (state.cancelled) { $("clusterRunStatus").textContent = "已取消，可调整设置后重新运行"; return; }
       $("clusterRunStatus").textContent = `分析失败：${error.message || error}`;
       showToast(`分析失败：${error.message || error}`, "error", 5200);
     } finally {
       state.running = false;
-      $("clusterRunButton").disabled = false;
+      setConfigurationLocked(false);
+      updateRunButtonState();
       $("clusterCancelButton").disabled = true;
-      if (!state.cancelled) $("clusterProgress").classList.add("hidden");
+      $("clusterProgress").classList.add("hidden");
     }
   }
 
   function cancelRun() {
     if (!state.running) return;
     state.cancelled = true;
-    const worker = getWorker();
-    if (worker && state.requestId) {
-      try {
-        worker.postMessage({ type: "cluster_cancel", requestId: state.requestId });
-      } catch (_) { /* ignore */ }
-    }
+    state.abortPending?.();
     $("clusterRunStatus").textContent = "已取消";
     showToast("已取消本次聚类计算", "info", 2400);
   }
@@ -811,22 +820,22 @@
     if (maxK < 2) return;
     container.innerHTML = "<span>正在计算 K=2—" + maxK + " 的 SSE 与 Silhouette…</span>";
     const baseOptions = collectMethodOptions();
-    const entries = [];
-    for (let k = 2; k <= maxK; k += 1) {
-      try {
-        const result = core().kmeansCluster({
-          rows: state.parsed.rows,
-          definitions: state.definitions,
-          clusterVariables,
-          options: { ...baseOptions, k }
-        });
-        entries.push({ k, sse: result.sse, silhouette: result.silhouette, sizes: result.clusterSizes.map((size) => size.count) });
-      } catch (_) {
-        break;
-      }
+    if (baseOptions.runMode === "classify" || baseOptions.initMode !== "scattered") {
+      container.textContent = "群数比较需使用自动初始中心与迭代分类，请先调整高级设置。"; return;
     }
-    state.diagnostics = { maxK, entries };
-    renderKDiagnostics();
+    state.running = true; state.cancelled = false; setConfigurationLocked(true);
+    $("clusterCancelButton").disabled = false;
+    $("clusterProgress").classList.remove("hidden");
+    try {
+      state.diagnostics = await computeInWorker({...baseOptions, diagnostic: true, maxK}, updateProgress);
+      renderKDiagnostics();
+      if (state.diagnostics.warning) container.insertAdjacentHTML("beforeend", `<p class="panel-note">${escapeHtml(state.diagnostics.warning)}</p>`);
+    } catch (error) {
+      container.textContent = state.cancelled ? "群数比较已取消" : `群数比较未完成：${error.message === "worker_unavailable" ? "浏览器无法启动后台计算，请更换浏览器后重试" : error.message}`;
+    } finally {
+      state.running = false; setConfigurationLocked(false); updateRunButtonState();
+      $("clusterCancelButton").disabled = true; $("clusterProgress").classList.add("hidden");
+    }
   }
 
   function renderKDiagnostics() {
@@ -922,14 +931,15 @@
           viewResult.profile = null;
         }
         result = viewResult;
+        state.results.hierarchical = viewResult;
       }
     }
     const sizes = result.clusterSizes.filter((size) => size.id > 0);
     const minPct = sizes.length ? Math.min(...sizes.map((size) => size.pct)).toFixed(1) : "—";
     const totalPct = sizes.reduce((sum, size) => sum + size.pct, 0).toFixed(1);
-    const qualityWarnings = (result.qualityChecks || []).filter((issue) => issue.level !== "block");
+    const qualityWarnings = [...(result.qualityChecks || []).filter((issue) => issue.level !== "block"), ...(result.warnings || []).map(title => ({ title }))];
     const riskText = qualityWarnings.length
-      ? qualityWarnings.slice(0, 3).map((issue) => `· ${issue.title}`).join("<br>")
+      ? qualityWarnings.slice(0, 3).map((issue) => `· ${escapeHtml(issue.title)}`).join("<br>")
       : "无显著风险";
     const qualitySummary = qualityNote(result);
 
@@ -1009,7 +1019,9 @@
     if (kSwitch) {
       kSwitch.addEventListener("change", () => {
         state.hierarchicalK = Number(kSwitch.value);
+        state.clusterNames.hierarchical = {};
         renderResults(state.results.hierarchical);
+        saveToProject(currentResult());
       });
     }
     // 画像卡名称编辑
@@ -1554,6 +1566,27 @@
 
   // ─── 控件联动 ─────────────────────────────────────────────
 
+  function invalidateClusterResults() {
+    if (state.running) return;
+    state.results = {}; state.diagnostics = null;
+    $("kmDiagnosticsResult").innerHTML = "";
+    $("clusterExportPanel").classList.add("hidden");
+    renderResultsEmpty();
+    if (state.parsed) $("clusterRunStatus").textContent = "配置已更新，请重新分析";
+  }
+
+  function setConfigurationLocked(locked) {
+    if (locked) {
+      document.querySelectorAll("#cluster-analysis input, #cluster-analysis select, #cluster-analysis textarea, #cluster-analysis button").forEach(el => {
+        if (el.id === "clusterCancelButton") return;
+        state.disabledControls.set(el, el.disabled); el.disabled = true;
+      });
+    } else {
+      state.disabledControls.forEach((disabled, el) => { if (el.isConnected) el.disabled = disabled; });
+      state.disabledControls.clear();
+    }
+  }
+
   function updateRunButtonState() {
     const runButton = $("clusterRunButton");
     const diagnoseButton = $("kmRunDiagnostics");
@@ -1579,15 +1612,23 @@
     });
     // 系统聚类数据类型联动
     const syncHierarchicalOptions = () => {
-      const dataType = $("hiDataType")?.value || "interval";
+      let dataType = $("hiDataType")?.value || "interval";
       const linkage = $("hiLinkage")?.value || "ward";
       const distanceSelect = $("hiDistance");
       if (!distanceSelect) return;
-      const allowed = dataType === "interval"
+      const squaredLinkage = ["ward", "centroid", "median"].includes(linkage);
+      const allowed = squaredLinkage ? ["euclidean", "squared-euclidean"] : dataType === "interval"
         ? ["euclidean", "squared-euclidean", "cosine", "pearson", "chebyshev", "cityblock", "minkowski"]
         : dataType === "count"
           ? ["chi-square", "phi-square"]
           : ["simple-matching", "jaccard", "dice", "russell-rao", "phi", "yule-q", "rogers-tanimoto", "sokal-sneath"];
+      if (squaredLinkage) {
+        dataType = "interval";
+        $("hiDataType").value = "interval";
+        $("hiDistanceTransform").value = "none";
+      }
+      $("hiDataType").disabled = squaredLinkage;
+      $("hiDistanceTransform").disabled = squaredLinkage;
       Array.from(distanceSelect.options).forEach((option) => {
         option.disabled = !allowed.includes(option.value);
       });
@@ -1649,7 +1690,7 @@
       if ($("tsDistance").value === "euclidean") {
         const hasCategorical = collectClusterVariables().some((name) => {
           const definition = findDefinition(name);
-          return definition && ["nominal", "binary"].includes(definition.measurement);
+          return definition && ["nominal", "binary", "ordinal"].includes(definition.measurement);
         });
         if (hasCategorical) {
           showToast("欧氏距离仅在所有聚类变量均为连续变量时可用；当前包含分类变量，请改用对数似然距离。", "error", 4200);
@@ -1757,6 +1798,11 @@
       tab.addEventListener("click", () => { $("clusterAutoMethod").checked = false; switchMethod(tab.dataset.clusterMethod); });
     });
     setupSimpleWorkflow();
+    $("cluster-analysis").addEventListener("change", event => {
+      if (event.target.closest("#clusterVariableTable") || /^(km|ts|hi)/.test(event.target.id) || event.target.matches("[data-group], [data-group-value]")) invalidateClusterResults();
+    }, true);
+    $("clusterRoleSuggest").addEventListener("click", invalidateClusterResults, true);
+    $("clusterClearSelection").addEventListener("click", invalidateClusterResults, true);
     setupDropzone();
     $("clusterUseProjectData")?.addEventListener("click", useProjectData);
     $("clusterLoadExample")?.addEventListener("click", loadExampleData);
@@ -1792,16 +1838,6 @@
     if (typeof root.projectDataBus?.onChange === "function") {
       root.projectDataBus.onChange(() => {
         updateRunButtonState();
-        if (state.parsed && !state.results[state.method]) {
-          const active = root.projectDataBus.get("modelResults.cluster.active");
-          if (active?.method) {
-            const saved = root.projectDataBus.get(`modelResults.cluster.${active.method}`);
-            if (saved && !state.results[active.method]) {
-              state.results[active.method] = saved;
-              if (active.method === state.method) renderResults(saved);
-            }
-          }
-        }
       });
     }
   }

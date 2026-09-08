@@ -2773,7 +2773,7 @@
                     <select id="hiLinkage">
                       <option value="ward" selected>Ward 法（默认）</option>
                       <option value="between">组间联接法</option>
-                      <option value="within">组内联接法</option>
+                      <option value="within">等权平均联接法（WPGMA）</option>
                       <option value="nearest">最近邻法／单联接法</option>
                       <option value="furthest">最远邻法／完全联接法</option>
                       <option value="centroid">重心法</option>
@@ -2915,7 +2915,7 @@
             <article class="guide-card">
               <span>系统聚类</span>
               <h3>通过树状图观察群体逐步合并过程</h3>
-              <p>支持组间/组内联接、单联接、完全联接、重心法、中位数法与 Ward 法，支持区间、计数与二元数据距离。适合样本量较小、希望探索群数或对变量聚类（识别相似变量）的场景。</p>
+              <p>支持组间平均/等权平均联接、单联接、完全联接、重心法、中位数法与 Ward 法，支持区间、计数与二元数据距离。适合样本量较小、希望探索群数或对变量聚类（识别相似变量）的场景。</p>
             </article>
 
             <article class="guide-card">
@@ -3515,8 +3515,8 @@
     <script src="./ppt-report-ai.js?v=20260823-3"></script>
     <script src="./app.js?v=20260826-3"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
-    <script src="./cluster-core.js?v=20260907-2"></script>
-    <script src="./cluster-analysis.js?v=20260907-2"></script>
+    <script src="./cluster-core.js?v=20260908-1"></script>
+    <script src="./cluster-analysis.js?v=20260908-1"></script>
     <!-- Vite 模块化入口（Phase 1 过渡期：共享模块已提取，功能模块渐进迁移） -->
     <script type="module" src="./src/main.js?v=20260827-3"></script>
     <!-- MaxDiff 模块桥接：在 legacy 服务器（无 Vite）下也能加载阶段三/四的校验与 MNL/HB 模型 -->

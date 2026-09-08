@@ -12,7 +12,7 @@
  *   postMessage({ type: "cluster_error", requestId, errorCode, message, details })
  *   主线程可发送 { type: "cluster_cancel", requestId } 取消任务
  */
-importScripts("./cluster-core.js");
+importScripts("./cluster-core.js?v=20260908-1");
 
 const core = self.ClusterCore;
 if (!core) {
@@ -60,11 +60,27 @@ async function runCluster(payload, requestId) {
     rows,
     definitions,
     clusterVariables,
-    weightVariable: weightColumn || ""
+    weightVariable: method === "kmeans" && methodOptions?.useWeight ? weightColumn || "" : ""
   });
   const blockingIssues = qualityChecks.filter((issue) => issue.level === "block");
   if (blockingIssues.length) {
     throw new Error(`数据质量检查未通过：${blockingIssues.map((issue) => issue.title).join("；")}`);
+  }
+
+  if (method === "kmeans" && methodOptions?.diagnostic) {
+    const entries = []; let warning = "";
+    const maxK = Math.min(8, methodOptions.maxK || 8, rows.length - 1);
+    for (let k = 2; k <= maxK; k++) {
+      if (cancelled) throw new Error("任务已取消。");
+      postProgress(requestId, (k-1)/maxK, "cluster", `正在比较 ${k} 群方案`);
+      await yieldToEventLoop();
+      try {
+        const result = core.kmeansCluster({rows, definitions, clusterVariables, options:{...methodOptions, k, weightColumn: weightColumn || ""}});
+        entries.push({k,sse:result.sse,silhouette:result.silhouette,sizes:result.clusterSizes.map(size=>size.count)});
+      } catch(error) { warning = `${k} 群及以上未完成：${error.message}`; break; }
+    }
+    if (!entries.length) throw new Error(warning || "没有可比较的群数方案");
+    return {maxK,entries,warning};
   }
 
   postProgress(requestId, 0.3, "cluster", "正在执行聚类计算");

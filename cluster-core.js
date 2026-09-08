@@ -320,23 +320,29 @@
       const definition = defMap.get(name) || { name, missingCodes: [] };
       const header = definition.name || name;
       const values = [];
+      const categoryValues = [];
+      const categorical = ["nominal", "binary", "ordinal"].includes(definition.measurement);
       const missingCodes = definition.missingCodes || [];
       for (let i = 0; i < n; i += 1) {
         const value = rows[i][header];
         if (isMissingValue(value, missingCodes)) continue;
+        categoryValues.push(normText(value));
         const num = toNumber(value);
         if (num !== null) values.push(num);
       }
-      const nonMissing = values.length;
+      const checkedValues = categorical ? categoryValues : values;
+      const nonMissing = checkedValues.length;
       const missingRate = (n - nonMissing) / n;
 
       // 常量 / 近似常量变量
-      if (values.length >= 2) {
-        const unique = new Set(values);
+      if (checkedValues.length >= 2) {
+        const unique = new Set(checkedValues);
         if (unique.size === 1) {
           issues.push({ level: QUALITY_LEVELS.BLOCK, code: "constant_variable", title: "常量变量", detail: `“${header}”所有有效值完全相同，对分群没有区分能力，请排除或改用其他变量。`, variables: [header] });
         } else if (unique.size <= 2) {
-          const top = values.filter((value) => value === values[0]).length / values.length;
+          const frequencies = new Map();
+          checkedValues.forEach(value => frequencies.set(value, (frequencies.get(value) || 0) + 1));
+          const top = Math.max(...frequencies.values()) / checkedValues.length;
           if (top > 0.95) {
             issues.push({ level: QUALITY_LEVELS.HIGH, code: "near_constant_variable", title: "近似常量变量", detail: `“${header}”超过 95% 的样本取同一数值，区分能力很弱。`, variables: [header] });
           }
@@ -351,7 +357,7 @@
       }
 
       // 极端偏态 / 严重离群
-      if (values.length >= 10) {
+      if (!categorical && values.length >= 10) {
         const sorted = values.slice().sort((a, b) => a - b);
         const q1 = sorted[Math.floor(sorted.length * 0.25)];
         const q3 = sorted[Math.floor(sorted.length * 0.75)];
@@ -372,16 +378,16 @@
 
       // 分类变量：水平过多
       if (definition.measurement === "nominal" || definition.measurement === "ordinal") {
-        const categoryCount = new Set(values.map(String)).size;
+        const categoryCount = new Set(categoryValues).size;
         if (categoryCount > 20) {
           issues.push({ level: QUALITY_LEVELS.HIGH, code: "too_many_categories", title: "分类水平过多", detail: `“${header}”有 ${categoryCount} 个类别水平，两步聚类中会显著增加参数数量，建议合并类别。`, variables: [header] });
         }
       }
 
       // 二元变量极度不平衡
-      if (definition.measurement === "binary" || (values.length && new Set(values.map(String)).size === 2)) {
+      if (definition.measurement === "binary" || (checkedValues.length && new Set(checkedValues.map(String)).size === 2)) {
         const valueCounts = new Map();
-        values.forEach((value) => valueCounts.set(String(value), (valueCounts.get(String(value)) || 0) + 1));
+        checkedValues.forEach((value) => valueCounts.set(String(value), (valueCounts.get(String(value)) || 0) + 1));
         const counts = Array.from(valueCounts.values()).sort((a, b) => b - a);
         if (counts[1] && counts[0] / counts[1] > 20) {
           issues.push({ level: QUALITY_LEVELS.INFO, code: "unbalanced_binary", title: "二元变量极度不平衡", detail: `“${header}”两个类别的样本比超过 20:1，区分能力有限。`, variables: [header] });
@@ -568,7 +574,7 @@
       convergence = 0,
       missing = "listwise",
       standardization = "zscore",
-      weightColumn = "",
+      weightColumn = input.weightColumn || "",
       useWeight = false,
       seed = 20240101
     } = options || {};
@@ -598,8 +604,11 @@
     const rawMatrix = originalMatrix.map((cells) => cells.map((cell) => ({ ...cell })));
 
     // 2. 缺失处理：Listwise（默认）排除；Pairwise 保留行并在距离计算时按有效维度归一化
+    if (useWeight && !weightColumn) throw new Error("启用权重时必须指定权重变量。");
+    if (useWeight && !rows.some(row => toNumber(row[weightColumn]) > 0)) throw new Error("权重变量无有效正值，请检查权重列。");
     const validIndices = [];
     rawMatrix.forEach((cells, index) => {
+      if (useWeight && !(toNumber(rows[index][weightColumn]) > 0)) return;
       const anyMissing = cells.some((cell) => cell.missing);
       if (missing === "pairwise") {
         const allMissing = cells.every((cell) => cell.missing);
@@ -926,7 +935,12 @@
         }
         return count ? sum / count : null;
       });
-      const grandMean = safeMean(clusterMeans.filter((value) => value !== null)) || 0;
+      let validWeight = 0, weightedSum = 0;
+      for (let position = 0; position < n; position++) {
+        const cell = originalMatrix[validIndices[position]][variableIndex];
+        if (!cell.missing) { validWeight += weights[position]; weightedSum += cell.value * weights[position]; }
+      }
+      const grandMean = validWeight ? weightedSum / validWeight : 0;
       let betweenSum = 0;
       let withinSum = 0;
       let dfBetween = k - 1;
@@ -938,7 +952,7 @@
         betweenSum += weights[position] * (mean - grandMean) * (mean - grandMean);
         withinSum += weights[position] * (cell.value - mean) * (cell.value - mean);
       }
-      const dfWithin = Math.max(1, n - k);
+      const dfWithin = Math.max(1, validWeight - k);
       const f = withinSum > 0 ? (betweenSum / dfBetween) / (withinSum / dfWithin) : 0;
       return {
         variable: name,
@@ -1116,7 +1130,7 @@
     });
     const categoricalNames = clusterVariables.filter((name) => {
       const definition = defMap.get(name);
-      return definition && ["nominal", "binary"].includes(definition.measurement);
+      return definition && ["nominal", "binary", "ordinal"].includes(definition.measurement);
     });
     if (distance === "euclidean" && categoricalNames.length) {
       throw new Error("欧氏距离仅在所有聚类变量均为连续变量时可用；当前包含分类变量，请改用对数似然距离或移除分类变量。");
@@ -1457,6 +1471,10 @@
 
     // 选择最终群数
     const usable = criterionTable.filter((entry) => entry.clusters <= maxClusters);
+    if (!usable.length) throw new Error("没有可用的分群候选，请检查数据或降低噪声过滤阈值。");
+    if (!autoSelect && !usable.some(entry => entry.clusters === fixedK)) {
+      throw new Error(`当前数据的预聚类结果无法形成 ${fixedK} 个群体，可用群数为 ${usable.map(entry => entry.clusters).sort((a,b)=>a-b).join("、")}。请调整群数或预聚类距离阈值。`);
+    }
     let selectedK = fixedK;
     if (autoSelect) {
       const metric = criterion === "AIC" ? "aic" : "bic";
@@ -1653,7 +1671,7 @@
       assignments,
       stability,
       seed,
-      warnings: []
+      warnings: autoSelect ? [`自动群数比较基于预聚类后的候选模型（${usable.map(entry => entry.clusters).sort((a,b)=>a-b).join("、")} 群），可能受预聚类阈值和样本顺序影响；可通过稳定性检查复核。`] : []
     };
   }
 
@@ -1965,7 +1983,7 @@
 
   const LINKAGE_METHODS = {
     between: "组间联接法（UPGMA）",
-    within: "组内联接法",
+    within: "等权平均联接法（WPGMA）",
     nearest: "最近邻法／单联接法",
     furthest: "最远邻法／完全联接法",
     centroid: "重心法",
@@ -2079,8 +2097,8 @@
     if (distance === "simple-matching") return (b + c) / Math.max(1, total);
     if (distance === "jaccard") return (b + c) / Math.max(1, a + b + c);
     if (distance === "dice") return (b + c) / Math.max(1, 2 * a + b + c);
-    if (distance === "russell-rao") return (b + c) / Math.max(1, total);
-    if (distance === "rogers-tanimoto") return (b + c) / Math.max(1, a + 2 * (b + c) + d);
+    if (distance === "russell-rao") return (b + c + d) / Math.max(1, total);
+    if (distance === "rogers-tanimoto") return 2 * (b + c) / Math.max(1, a + 2 * (b + c) + d);
     if (distance === "sokal-sneath") return 2 * (b + c) / Math.max(1, a + 2 * (b + c) + d);
     if (distance === "phi") {
       const denominator = Math.sqrt(Math.max(1, (a + b) * (a + c) * (b + d) * (c + d)));
@@ -2244,12 +2262,20 @@
       }
     }
 
-    // Ward 法要求平方欧氏距离
-    if (linkage === "ward" && distance !== "squared-euclidean" && distance !== "euclidean") {
-      throw new Error("Ward 法要求使用欧氏距离或平方欧氏距离。");
+    const originalDistanceMatrix = Array.from(distanceMatrix);
+    // These Lance-Williams recurrences operate on squared Euclidean distances.
+    const squaredLinkage = ["ward", "centroid", "median"].includes(linkage);
+    if (squaredLinkage && (dataType !== "interval" || !["euclidean", "squared-euclidean"].includes(distance) || distanceTransform !== "none")) {
+      throw new Error("Ward、重心法和中位数法仅支持数值型欧氏/平方欧氏距离，且不能叠加距离变换。");
     }
-    if ((linkage === "centroid" || linkage === "median") && !["euclidean", "squared-euclidean", "cityblock", "chebyshev", "minkowski"].includes(distance)) {
-      throw new Error("重心法与中位数法要求使用欧氏类距离。");
+    if (squaredLinkage && distance === "euclidean") {
+      for (let a = 0; a < m; a += 1) {
+        for (let b = a + 1; b < m; b += 1) {
+          const squared = distanceMatrix[a * m + b] ** 2;
+          distanceMatrix[a * m + b] = squared;
+          distanceMatrix[b * m + a] = squared;
+        }
+      }
     }
 
     // 聚合：最小堆优先队列 + Lance-Williams
@@ -2308,7 +2334,7 @@
 
     while (clusterCount > 1 && heap.length) {
       let pair = heapPop();
-      while (pair && (active[pair.a].deleted || active[pair.b].deleted)) pair = heapPop();
+      while (pair && (active[pair.a].deleted || active[pair.b].deleted || pair.dist !== distanceMatrix[pair.a * m + pair.b])) pair = heapPop();
       if (!pair) break;
       const clusterA = active[pair.a];
       const clusterB = active[pair.b];
@@ -2320,7 +2346,7 @@
         clusterB: clusterB.id,
         membersA: clusterA.members.slice(),
         membersB: clusterB.members.slice(),
-        distance: pair.dist,
+        distance: squaredLinkage && distance === "euclidean" ? Math.sqrt(Math.max(0, pair.dist)) : pair.dist,
         n: clusterA.n + clusterB.n
       });
       clusterB.deleted = true;
@@ -2426,6 +2452,10 @@
 
     // 群体规模
     const finalK = selectedK > 0 ? Math.min(selectedK, m) : kMax;
+    if (!kAssignments.some(entry => entry.k === finalK)) {
+      kAssignments.push({ k: finalK, assignment: assignmentForK(finalK) });
+      kAssignments.sort((a,b)=>a.k-b.k);
+    }
     const finalAssignment = assignmentForK(finalK);
     const clusterSizes = [];
     const sizeMap = new Map();
@@ -2458,7 +2488,7 @@
       selectedK: finalK,
       merges,
       tree,
-      distanceMatrix: Array.from(distanceMatrix),
+      distanceMatrix: originalDistanceMatrix,
       kAssignments,
       coefficientSuggestions,
       suggestedK,
