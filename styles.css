@@ -8275,3 +8275,12 @@ tbody tr.warn td {
 .cluster-processing-fields { max-height:180px; overflow:auto; overflow-wrap:anywhere; }
 .cluster-processing-card summary { cursor:pointer; padding:6px 0; }
 #cluster-analysis .hidden { display: none !important; }
+
+.crosstab-model-panel { grid-column: 1 / -1; min-width: 0; }
+.crosstab-model-panel > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+#crosstabModelSummary { font-size: 13px; color: #536985; }
+.crosstab-model-spec { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; border: 1px solid #d9e4f1; padding: 16px; margin-top: 14px; border-radius: 10px; }
+.crosstab-model-spec label { min-width: 0; }
+.crosstab-model-spec select,.crosstab-model-spec input { width: 100%; min-width: 0; text-overflow: ellipsis; }
+.crosstab-model-spec button { justify-self: start; align-self: end; }
+@media (max-width: 760px) { .crosstab-model-spec { grid-template-columns: 1fr; } }

@@ -210,6 +210,7 @@ let lastAbcSuggestions = null;
 let lastCrosstabAnalysis = null;
 let lastQuestionPivot = null;
 let lastCrosstabHeaderPlan = null;
+let lastCrosstabModelSheetNames = [];
 let lastAiActualModel = "";
 let lastAiActualSource = "";
 let lastAiDiagnostics = Object.freeze({});
@@ -2812,6 +2813,7 @@ function delimitedImportInspection(parsed, filename = "数据文件") {
 
 function renderCrosstabImportState(text, filename) {
   const dataField = document.querySelector("#crosstabData");
+  window.CrosstabModelUI?.reset();
   dataField.value = normalizeImportedText(text);
   const parsed = detectCrosstabFields();
   const result = document.querySelector("#crosstabResults");
@@ -5877,8 +5879,9 @@ async function generateQuestionPivot() {
   try {
   updateCrosstabProgress("正在识别题型与题干...", 8, `数据量：${parsed.rows.length} 行，字段：${parsed.headers.length} 个。`);
   await nextUiTick();
+  const modelConfig = window.CrosstabModelUI?.getConfig(parsed) || { kano: [], psm: [] };
   lastQuestionPivot = buildSingleQuestionPivot(parsed);
-  if (!lastQuestionPivot.length) {
+  if (!lastQuestionPivot.length && !modelConfig.kano.length && !modelConfig.psm.length) {
     result.innerHTML = `<div class="empty-state"><strong>无法生成全部交叉表</strong><span>当前数据只识别到开放题或填空题；全部交叉表已默认排除开放题。</span></div>`;
     return;
   }
@@ -5893,7 +5896,7 @@ async function generateQuestionPivot() {
     result.innerHTML = `
       <article class="audit-issue">
         <div class="issue-head"><strong>全部交叉表已生成</strong><span class="issue-tag high">${lastQuestionPivot.length} 题</span></div>
-        <p>已直接导出 Excel 文件，包含“目录、频数、百分比、显著性检验”四个工作表，页面不再展开全部结果，避免输出区过长。</p>
+        <p>已直接导出 Excel 文件，包含“目录、频数、百分比、显著性检验”${lastCrosstabModelSheetNames.length ? `，另含“${escapeHtml(lastCrosstabModelSheetNames.join("、"))}”专项工作表` : "四个工作表"}，页面不再展开全部结果，避免输出区过长。</p>
         <div class="issue-evidence">${escapeHtml(`${typeSummary || "未识别到可统计题型"}${lastCrosstabHeaderPlan?.length ? `\n已按表头条件逐列筛选并计算：${lastCrosstabHeaderPlan.length} 列` : "\n未带入表头方案；如需顶部 Banner 表头，请先点击“导入表头”。"}\n多选拆列已按多重响应集输出选项提及，不再输出“选中/未选中”。矩阵量表已按子题拆分为独立量表题。`)}</div>
         ${excludedPivotItems.length ? `<div class="panel-note" style="margin-top:0.5rem;"><strong>已排除 ${excludedPivotItems.length} 个变量（开放题/填空题）：</strong> ${excludedPivotItems.slice(0, 20).map((e) => escapeHtml(e.title || e.headers[0])).join("、")}${excludedPivotItems.length > 20 ? ` 等共 ${excludedPivotItems.length} 个` : ""}</div>` : ""}
       </article>
@@ -6491,8 +6494,68 @@ function buildCrosstabDirectoryRows(positions, plan) {
   return rows;
 }
 
+async function buildCrosstabModelSheets(data, plan, config, onProgress) {
+  const model = window.CrosstabModels;
+  if (!model || (!config.kano.length && !config.psm.length)) return [];
+  model.validateModels(config, data.headers);
+  const groups = plan.map(banner => filterRowsByConditionParts(data, banner.parts || parseHeaderCondition(banner.condition)));
+  const sheets = [];
+  const number = value => value === null ? "—" : { value, type: "number" };
+  const percent = value => value === null ? "—" : { value, type: "number", format: "percent" };
+  const labelRow = (label, values, base = false) => ({ height: base ? 22 : 20, cells: [
+    { value: label, format: base ? "crosstabBase" : "crosstabRowLabel", mergeAcross: 1 },
+    ...values.map(value => base ? {value, type:"number", format:"crosstabBase"} : value)
+  ] });
+  const caption = (title, columns) => ({ height: 27, cells: [{ value:title, format:"crosstabCaption", mergeAcross:columns-1 }] });
+  const note = (value, columns) => ({ height: 40, cells: [{value,mergeAcross:columns-1}] });
+  if (config.kano.length) {
+    const rows=[], columns=2+plan.length;
+    for (const [index,spec] of config.kano.entries()) {
+      onProgress?.("正在计算 KANO 专项...",96,`${index+1}/${config.kano.length}：${spec.name}`);
+      const results=groups.map(group=>model.calculateKano(group,spec));
+      rows.push(caption(`KANO ${index+1}. ${spec.name}`,columns),...bannerHeaderRows(plan,"count"));
+      rows.push(labelRow("BASE：有效正反配对",results.map(r=>r.validN),true));
+      rows.push(labelRow("系数分母：A+O+M+I",results.map(r=>number(r.effectiveN))));
+      rows.push(labelRow("未配对/无法识别",results.map(r=>number(r.excludedN))));
+      for(const [code,title] of Object.entries(model.categories)) {
+        rows.push(labelRow(`${code} ${title} · 频数`,results.map(r=>number(r.counts[code]))));
+        rows.push(labelRow(`${code} ${title} · 占有效配对%`,results.map(r=>percent(r.validN?r.counts[code]/r.validN:null))));
+      }
+      rows.push(labelRow("KANO 分类（最高频，并列保留）",results.map(r=>r.classification)));
+      rows.push(labelRow("Better = (A+O)/(A+O+M+I)",results.map(r=>number(r.better===null?null:Number(r.better.toFixed(4))))));
+      rows.push(labelRow("Worse = −(O+M)/(A+O+M+I)",results.map(r=>number(r.worse===null?null:Number(r.worse.toFixed(4))))));
+      rows.push(note("R、Q 计入配对 BASE，不进入系数分母；无有效分母显示 —。Worse 为负值。全部专项结果按有效样本人数计算，系数不套用普通列比例显著性检验。",columns));
+      rows.push(note(`正向：${spec.functional}；反向：${spec.dysfunctional}；编码：${spec.scale==='reverse'?'5=喜欢，1=不喜欢':spec.scale==='standard'?'1=喜欢，5=不喜欢':'按回答文字识别'}`,columns),{cells:[],height:10});
+      await nextUiTick();
+    }
+    sheets.push({name:"KANO系数",kind:"crosstab",columnCount:columns,rows,showGridlines:false});
+  }
+  if(config.psm.length) {
+    const rows=[],columns=2+plan.length*4;
+    const expanded=plan.flatMap(banner=>model.priceKeys.map((key,i)=>({group:`${banner.group||"总体"} · ${banner.label||"总体"}`,label:model.priceLabels[i]+(i<2?"（≥价格）":"（≤价格）")})));
+    for(const [index,spec] of config.psm.entries()) {
+      onProgress?.("正在计算 PSM 累计百分比...",97,`${index+1}/${config.psm.length}：${spec.name}`);
+      const grid=model.calculatePsm(data.rows,spec).curve.map(p=>p.price);
+      const results=groups.map(group=>model.calculatePsm(group,spec,grid));
+      rows.push(caption(`PSM ${index+1}. ${spec.name}`,columns),...bannerHeaderRows(expanded,"percent"));
+      rows.push(labelRow("BASE：四问有效样本",results.flatMap(r=>Array(4).fill(r.validN)),true));
+      rows.push(labelRow("缺失/非正值/非金额",results.flatMap(r=>Array(4).fill(number(r.missingN)))));
+      rows.push(labelRow(spec.validation==='complete'?"顺序异常（保留）":"顺序异常（排除）",results.flatMap(r=>Array(4).fill(number(r.inconsistentN)))));
+      rows.push(note("价格（元）从低到高。太便宜、比较便宜：回答金额 ≥ 当前价格；比较贵、太贵：回答金额 ≤ 当前价格。四条曲线共享本组有效样本分母；无有效样本显示 —。",columns));
+      for(let p=0;p<grid.length;p++)rows.push(labelRow(grid[p],results.flatMap(r=>model.priceKeys.map(k=>percent(r.curve[p][k])))));
+      if(!grid.length)rows.push(note("没有符合当前样本口径的价格数据，请检查四问映射与价格顺序。",columns));
+      rows.push(note(`样本口径：${spec.validation==='complete'?'四问为正金额，保留顺序异常':'四问为正金额，且太便宜 ≤ 比较便宜 ≤ 比较贵 ≤ 太贵'}；各列均按样本人数计算。`,columns));
+      rows.push(note(model.priceKeys.map((k,i)=>`${model.priceLabels[i]}：${spec[k]}`).join("；"),columns),{cells:[],height:10});
+      await nextUiTick();
+    }
+    sheets.push({name:"PSM累计百分比",kind:"crosstab",columnCount:columns,rows,showGridlines:false});
+  }
+  return sheets;
+}
+
 async function exportQuestionPivotWorkbook(onProgress) {
   const data = getWorkingCrosstabData();
+  const modelConfig = window.CrosstabModelUI?.getConfig(data) || { kano: [], psm: [] };
   const plan = activeCrosstabHeaderPlan();
   onProgress?.("正在准备 Banner 表头...", 30, `表头列：${plan.length} 列。`);
   await nextUiTick();
@@ -6500,14 +6563,22 @@ async function exportQuestionPivotWorkbook(onProgress) {
   const countSheet = await buildCrosstabWorkbookSheetAsync(lastQuestionPivot, plan, bannerPivotIndexes, "count", onProgress, 48, 66);
   const percentSheet = await buildCrosstabWorkbookSheetAsync(lastQuestionPivot, plan, bannerPivotIndexes, "percent", onProgress, 66, 84);
   const sigSheet = await buildCrosstabWorkbookSheetAsync(lastQuestionPivot, plan, bannerPivotIndexes, "significance", onProgress, 84, 96);
+  const modelSheets = await buildCrosstabModelSheets(data, plan, modelConfig, onProgress);
+  const directoryRows = buildCrosstabDirectoryRows(countSheet.positions, plan);
+  if(modelSheets.length) {
+    directoryRows.push({cells:[{value:"专项模型（按表头分组）",format:"directorySection",mergeAcross:4}]});
+    modelSheets.forEach(sheet=>directoryRows.push({cells:[{value:sheet.name,href:`#'${sheet.name}'!A1`,format:"directoryLink"},{value:sheet.name==="KANO系数"?"正反配对、属性频数/占比及 Better/Worse 系数":"四问共同有效样本的价格累计百分比",format:"directoryBody",mergeAcross:3}]}));
+  }
   onProgress?.("正在写出 Excel 文件...", 98, "即将触发浏览器下载。");
   await nextUiTick();
   await downloadExcelWorkbookXml("全部交叉表.xlsx", [
-    { name: "目录", rows: buildCrosstabDirectoryRows(countSheet.positions, plan), kind: "directory", columnCount: 5, showGridlines: false },
+    { name: "目录", rows: directoryRows, kind: "directory", columnCount: 5, showGridlines: false },
     { name: "频数", rows: countSheet.rows, kind: "crosstab", columnCount: countSheet.columnCount, showGridlines: false },
     { name: "百分比", rows: percentSheet.rows, kind: "crosstab", columnCount: percentSheet.columnCount, showGridlines: false },
-    { name: "显著性检验", rows: sigSheet.rows, kind: "crosstab", columnCount: sigSheet.columnCount, showGridlines: false }
+    { name: "显著性检验", rows: sigSheet.rows, kind: "crosstab", columnCount: sigSheet.columnCount, showGridlines: false },
+    ...modelSheets
   ]);
+  lastCrosstabModelSheetNames = modelSheets.map(sheet=>sheet.name);
 }
 
 async function exportQuestionPivot(onProgress) {
@@ -6523,6 +6594,7 @@ function detectCrosstabFields() {
   if (document.querySelector("#crosstabData").value.trim()) {
     renderSharedImportInspection("#crosstabImportInspection", delimitedImportInspection(parsed, "粘贴数据"));
   }
+  window.CrosstabModelUI?.sync(getWorkingCrosstabData());
   window.setTimeout(syncCoreWorkflowUx, 0);
   return parsed;
 }

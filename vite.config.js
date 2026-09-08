@@ -19,6 +19,8 @@ const runtimeFiles = [
   "ppt-report-ai.js",
   "proposal-deck.js",
   "data-worker.js",
+  "crosstab-models.js",
+  "crosstab-model-ui.js",
   "cluster-core.js",
   "cluster-worker.js",
   "cluster-analysis.js",

@@ -1259,6 +1259,18 @@
               </div>
             </div>
 
+            <details class="panel crosstab-model-panel" id="crosstabModelPanel">
+              <summary><strong>KANO / PSM 专项计算</strong><span id="crosstabModelSummary">识别字段后自动匹配，也可手动配置</span></summary>
+              <p class="panel-note">KANO 正反题配对后计算属性分布及 Better/Worse 系数。PSM 使用四个实际金额字段，输出太便宜/比较便宜的反向累计和比较贵/太贵的正向累计百分比。按表头分组分别计算。</p>
+              <p id="crosstabModelWarnings" class="panel-note"></p>
+              <div class="button-row">
+                <button type="button" class="secondary-btn" id="crosstabDetectModels">重新自动识别</button>
+                <button type="button" class="secondary-btn" data-add-model="kano">+ KANO 功能</button>
+                <button type="button" class="secondary-btn" data-add-model="psm">+ PSM 题组</button>
+              </div>
+              <div id="crosstabModelEditor"></div>
+            </details>
+
             <div class="audit-results" id="crosstabResults" aria-live="polite">
               <div class="empty-state">
                 <strong>等待分析</strong>
@@ -3513,7 +3525,9 @@
     <script src="./research-theme.js?v=20260801-1"></script>
     <script src="./ai-plan-quality.js?v=20260823-1"></script>
     <script src="./ppt-report-ai.js?v=20260823-3"></script>
-    <script src="./app.js?v=20260826-3"></script>
+    <script src="./crosstab-models.js?v=20260908-1"></script>
+    <script src="./crosstab-model-ui.js?v=20260908-1"></script>
+    <script src="./app.js?v=20260908-1"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
     <script src="./cluster-core.js?v=20260908-1"></script>
     <script src="./cluster-analysis.js?v=20260908-1"></script>
