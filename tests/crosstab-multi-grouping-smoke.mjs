@@ -100,3 +100,26 @@ const matrix={title:'A7.态度',rows:[{label:'A7.态度',frequencies:[{label:'1'
 assert.equal(context.buildWorkbookLineDescriptors(matrix).filter(d=>d.kind==='section').length,2);
 assert.equal(context.buildWorkbookLineDescriptors({title:'S13.产品？',rows:[{label:'S13 S13.产品？【单选】',frequencies:[{label:'AIR'}]}]}).filter(d=>d.kind==='section').length,0);
 console.log('Crosstab presentation: bands, tail choices, repeated stems, matrix subquestions passed');
+
+// 合并多选拆列以样本为单位 OR 去重，所有请求编码必须存在。
+{
+ const rawHeaders=['B7_3__1','B7_3__2','B7_3__3','B7__3__1','Q1'];
+ const rawRows=[
+  {'B7_3__1':1,'B7_3__2':0,'Q1':1},
+  {'B7_3__1':1,'B7_3__2':1,'Q1':2},
+  {'B7_3__1':0,'B7_3__2':1,'Q1':1},
+  {'B7_3__1':0,'B7_3__2':0,'Q1':1},
+  {'B7_3__1':null,'B7_3__2':null,'Q1':1}
+ ];
+ const data={rawHeaders,rawRows,rows:rawRows};
+ const select=condition=>context.filterRowsByConditionParts(data,context.parseHeaderCondition(condition));
+ assert.equal(select('B7_3=R1/R2').length,3);
+ assert.equal(select('B7_3=R1/R1/R2').length,3);
+ assert.equal(select('B7_3=R1/R2 且 Q1=1').length,2);
+ assert.equal(select('B7_3!=R1/R2').length,2);
+ assert.equal(select('B7_3=R1').length,2);
+ assert.throws(()=>select('B7_3=R1/R99'),/99/);
+ assert.equal(context.conditionPartMatches({S7_1:0,S7_2:1},['S7_1','S7_2'],context.parseHeaderCondition('S7=R1/R2')[0]),true);
+ assert.equal(context.conditionPartMatches({B7_3:2,'B7_3__1':0},['B7_3','B7_3__1'],context.parseHeaderCondition('B7_3=R1/R2')[0]),true);
+}
+console.log('Merged multi-select banner passed: OR, deduplication, AND, inequality, exact prefix and missing-code rejection');

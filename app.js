@@ -5736,19 +5736,22 @@ function conditionPartMatches(rawRow, rawHeaders, part, resolvedHeaders = new Ma
     return part.operator === "ne" ? !matches : matches;
   }
 
-  const multiHeader = resolveHeader(`${part.variable}__${part.value}`);
-  if (multiHeader) {
-    const matches = isBinaryMentionValue(rawRow[multiHeader]);
-    return part.operator === "ne" ? !matches : matches;
+  // 多选拆列的合并条件：B7_3=R1/R2 对应 __1 OR __2，不拼成一个列名。
+  const cacheKey = `\0multi:${part.variable}:${part.value}`;
+  let optionHeaders = resolvedHeaders.get(cacheKey);
+  if (!optionHeaders) {
+    const codes = [...new Set(String(part.value ?? "").split(/[;,，、|/]/).map(normalizeConditionValue).filter(Boolean))];
+    optionHeaders = codes.map(code => {
+      const header = resolveHeader(`${part.variable}__${code}`) || resolveHeader(`${part.variable}_${code}`);
+      if (!header) throw new Error(`原始数据中找不到表头变量或多选选项：${part.variable}（选项 ${code}），请检查题号和编码。`);
+      return header;
+    });
+    if (!optionHeaders.length) throw new Error(`表头筛选条件缺少选项：${part.variable}`);
+    resolvedHeaders.set(cacheKey, optionHeaders);
   }
+  const matches = optionHeaders.some(header => isBinaryMentionValue(rawRow[header]));
+  return part.operator === "ne" ? !matches : matches;
 
-  const singleUnderscoreHeader = resolveHeader(`${part.variable}_${part.value}`);
-  if (singleUnderscoreHeader) {
-    const matches = isBinaryMentionValue(rawRow[singleUnderscoreHeader]);
-    return part.operator === "ne" ? !matches : matches;
-  }
-
-  throw new Error(`原始数据中找不到表头变量：${part.variable}，请检查题号。`);
 }
 
 function filterRowsByHeaderCondition(data, condition) {
