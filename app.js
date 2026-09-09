@@ -229,6 +229,7 @@ let autoNetBindings = {};
 let autoNetWarnings = [];
 let autoNetEnabled = true;
 let autoNetDataName = "";
+let crosstabSourceFilename = "";
 
 // === NET Group Config for multi-choice questions ===
 // Format: { questionKey: [ { name: "NET - 手机产品", optionLabels: ["R1", "R2", "R3"], optionHeaders: ["Q8_R1", "Q8_R2", "Q8_R3"] }, ... ] }
@@ -2820,7 +2821,15 @@ function delimitedImportInspection(parsed, filename = "数据文件") {
   };
 }
 
+function crosstabExportFilename(suffix = "交叉表") {
+  const stem = String(crosstabSourceFilename || "").split(/[\\/]/).pop()
+    .replace(/\.(?:sav|zsav|xlsx?|csv|tsv|txt)$/i, "")
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").replace(/[.\s]+$/g, "").trim();
+  return stem ? `${stem}-${suffix}.xlsx` : (suffix === "交叉表" ? "全部交叉表.xlsx" : `${suffix}.xlsx`);
+}
+
 function renderCrosstabImportState(text, filename) {
+  crosstabSourceFilename = filename || "";
   if (autoNetDataName && autoNetDataName !== filename) { autoNetSpec = {questions:{},warnings:[]}; autoNetBindings = {}; }
   autoNetDataName = filename;
 
@@ -6547,7 +6556,7 @@ async function exportQuestionPivotWorkbook(onProgress) {
   }
   onProgress?.("正在准备 Excel 文件打包...", 98, "统计已完成，正在生成可下载的文件。");
   await nextUiTick();
-  await downloadExcelWorkbookXml("全部交叉表.xlsx", [
+  await downloadExcelWorkbookXml(crosstabExportFilename(), [
     { name: "目录", rows: directoryRows, kind: "directory", columnCount: 5, showGridlines: false },
     { name: "频数", rows: countSheet.rows, kind: "crosstab", columnCount: countSheet.columnCount, showGridlines: false },
     { name: "百分比", rows: percentSheet.rows, kind: "crosstab", columnCount: percentSheet.columnCount, showGridlines: false },
@@ -6714,7 +6723,7 @@ function exportCrosstabAnalysis() {
     rows.push(cells);
   });
   rows.push([{ value: "合计", format: "crosstabBase" }, ...ct.colTotals.map((v) => ({ value: ct.total > 0 ? v / ct.total : 0, type: "number", format: "percent" })), { value: ct.total, type: "number", format: "crosstabBase" }, { value: 1, type: "number", format: "percent" }]);
-  downloadExcelFromRows("交叉表分析.xlsx", rows, "交叉表", {
+  downloadExcelFromRows(crosstabExportFilename("交叉表分析"), rows, "交叉表", {
     showGridlines: false,
     columnCount,
     columns: [
@@ -13626,6 +13635,7 @@ document.querySelector("#runQuestionPivot").addEventListener("click", renderQues
 document.querySelector("#runCrosstab").addEventListener("click", renderCrosstabAnalysis);
 document.querySelector("#exportCrosstab").addEventListener("click", exportCrosstabAnalysis);
 document.querySelector("#loadCrosstabExample").addEventListener("click", () => {
+  crosstabSourceFilename = "示例数据";
   document.querySelector("#crosstabData").value = exampleCrosstabData;
   const parsed = detectCrosstabFields();
   lastCrosstabAnalysis = null;
