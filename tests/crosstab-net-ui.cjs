@@ -1,6 +1,23 @@
 const {chromium}=require('@playwright/test');const assert=require('node:assert/strict');
 (async()=>{const b=await chromium.launch({channel:'chrome',headless:true});try{const p=await b.newPage({serviceWorkers:'block'});await p.addInitScript(()=>{localStorage.removeItem('surveyNetGroupConfig');localStorage.setItem('surveykit_tour_done','1')});await p.goto(process.env.TEST_BASE_URL||'http://127.0.0.1:4288');await p.evaluate(()=>showView('crosstab'));await p.locator('#crosstabImportFile').setInputFiles('C:/Users/a1382/Desktop/擦窗机器人/人群聚类数据-0908.sav');await p.waitForFunction(()=>getWorkingCrosstabData().rows.length===2000,{}, {timeout:60000});await p.locator('#crosstabQuestionnaireImportFile').setInputFiles('C:/Users/a1382/Desktop/擦窗机器人/科沃斯擦窗机器人问卷20260804（内部）（含控制逻辑）.xlsx');await p.waitForFunction(()=>Object.keys(autoNetBindings).length===8,{}, {timeout:60000});const baseline=await p.evaluate(()=>{const p=buildSingleQuestionPivot(getWorkingCrosstabData());return p.find(q=>q.sourceKey==='C2').rows.filter(r=>r.isNetGroup).map(r=>r.count)});assert.deepEqual(baseline,[1086,1125,999,798,566,665,796,424,3]);await p.locator('#autoNetEnabled').uncheck();assert.equal(await p.evaluate(()=>buildSingleQuestionPivot(getWorkingCrosstabData()).find(q=>q.sourceKey==='C2').rows.some(r=>r.isNetGroup)),false);await p.locator('#autoNetEnabled').check();await p.locator('#netGroupQuestionSelect').selectOption('C2');assert.equal(await p.locator('#netGroupEditor .net-group-item').count(),9);assert.equal(await p.locator('#netGroupEditor .net-group-item').first().locator('input[type=checkbox]:checked').count(),3);
 const singleKey=await p.evaluate(()=>Object.keys(autoNetBindings).find(k=>k.startsWith('B4 ')));await p.locator('#netGroupQuestionSelect').selectOption(singleKey);assert.equal(await p.locator('#netGroupEditor .net-group-item').first().locator('input[type=checkbox]:checked').count(),3);await p.locator('#netGroupQuestionSelect').selectOption('C2');
+const verified = await p.evaluate(() => {
+ const parsed = getWorkingCrosstabData(); let cells = 0;
+ for (const rows of [parsed.rows, parsed.rows.filter((r, i) => Number(parsed.rawRows[i].FZ) === 1), parsed.rows.filter((r, i) => Number(parsed.rawRows[i].FZ) === 2), []]) {
+  const items = buildSingleQuestionPivot({...parsed, rows});
+  for (const item of items.filter(q => q.rows?.some(r => r.isNetGroup))) {
+   if (item.type !== normalizedQuestionType(item)) throw Error('NET changed question type: ' + item.title);
+   for (const descriptor of buildWorkbookLineDescriptors(item)) {
+    const count = workbookValueForDescriptor(item, item, descriptor, 'count');
+    const percent = workbookValueForDescriptor(item, item, descriptor, 'percent').value;
+    const expected = item.validBase ? count / item.validBase : 0;
+    if (Math.abs(percent - expected) > 1e-12) throw Error(item.title + ' / ' + descriptor.label + ': ' + percent + ' != ' + expected);
+    cells++;
+   }
+  }
+ }
+ return cells;
+});assert.ok(verified > 100);console.log('PASS NET and child frequency/base reconciliation', verified);
 await p.evaluate(()=>{lastCrosstabHeaderPlan=[{group:'总体',label:'总体',parts:[]},{group:'用户类型',label:'现有',condition:'FZ=1',parts:parseHeaderCondition('FZ=1')},{group:'用户类型',label:'潜在',condition:'FZ=2',parts:parseHeaderCondition('FZ=2')}];});
 const download=p.waitForEvent('download',{timeout:120000});download.catch(()=>{});await p.locator('#runQuestionPivot').click({noWaitAfter:true});await p.waitForFunction(()=>document.querySelector('#crosstabResults').textContent.includes('全部交叉表已生成')||document.querySelector('#crosstabResults').textContent.includes('生成失败'),{}, {timeout:120000});assert.ok(!(await p.locator('#crosstabResults').innerText()).includes('生成失败'));await(await download).saveAs('.data/auto-net-acceptance.xlsx');
 await p.evaluate(()=>{setNetGroupsForQuestion('C2',[{name:'手动测试',optionHeaders:[autoNetBindings.C2[0].optionHeaders[0]]}]);refreshAutoNetBindings();});assert.equal(await p.evaluate(()=>getNetGroupsForQuestion('C2')[0].name),'手动测试');await p.evaluate(()=>{setNetGroupsForQuestion('C2',[])});assert.equal(await p.evaluate(()=>getNetGroupsForQuestion('C2').length),0);

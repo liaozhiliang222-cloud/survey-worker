@@ -1,4 +1,4 @@
-const CACHE_NAME = "research-toolbox-v86";
+const CACHE_NAME = "research-toolbox-v87";
 const ASSETS = [
   "./manifest.webmanifest",
   "./icon.svg",

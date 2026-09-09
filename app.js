@@ -6105,7 +6105,8 @@ function normalizedQuestionType(item) {
     return item.rows.some((row) => row.stats?.length) ? "矩阵量表" : "矩阵单选";
   }
   if (item.rows?.some((row) => row.score !== undefined)) return "排序题";
-  if (item.rows?.some((row) => row.mentionPercent !== undefined || row.countPercent !== undefined)) return "多选题";
+  // NET 汇总同时提供多种比率字段，题型只能从原始选项推断。
+  if (item.rows?.some((row) => !row.isNetGroup && (row.mentionPercent !== undefined || row.countPercent !== undefined))) return "多选题";
   return "单选题";
 }
 
