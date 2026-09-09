@@ -29,7 +29,7 @@
     "test:ai-questionnaire": "node tests/ai-questionnaire-smoke.mjs",
     "test:crosstab-models": "node tests/crosstab-models-smoke.cjs",
     "test:crosstab-header-template": "node tests/crosstab-header-template-smoke.mjs",
-    "test:crosstab-export-style": "node tests/crosstab-export-style-smoke.mjs && node tests/crosstab-multi-grouping-smoke.mjs && node tests/crosstab-background-smoke.mjs && node tests/crosstab-progress-cache-smoke.mjs",
+    "test:crosstab-export-style": "node tests/crosstab-export-style-smoke.mjs && node tests/crosstab-multi-grouping-smoke.mjs && node tests/crosstab-background-smoke.mjs && node tests/crosstab-progress-cache-smoke.mjs && node tests/crosstab-net-smoke.cjs",
     "test:pptx-chapter-chart": "node tests/pptx-chapter-chart-smoke.mjs",
     "test:model-chart-pptx-ui": "node tests/model-chart-pptx-ui-smoke.mjs",
     "test:research-model-excel-import": "node tests/research-model-excel-import-smoke.mjs",

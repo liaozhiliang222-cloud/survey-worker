@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');require('../crosstab-net.js');const {parse,arrange}=globalThis.CrosstabNet;
+const sheet={name:'问卷',rows:[['','B3','','因素','多选【NET内随机】'],['','B4','','最主要因素','单选【NET内随机】'],['','','安全性'],['','',1,'保护'],['','',2,'报警'],['','','体验'],['','',3,'速度'],['','C4','','打分','矩阵【仅出示NET】']]};
+const s=parse([sheet]);assert.deepEqual(Object.keys(s.questions),['B3','B4']);assert.deepEqual(s.questions.B3.groups[0].codes,['1','2']);assert.equal(s.questions.B4.type,'single');
+const duplicate=structuredClone(sheet);duplicate.rows.splice(5,0,['','',1,'重复']);assert.ok(parse([duplicate]).warnings.length);
+const rows=[{label:'二',header:'Q__2',count:2,mentionPercent:.5},{label:'一',header:'Q__1',count:2,mentionPercent:.5},{label:'其他',header:'Q__97',count:0,mentionPercent:0}];
+const groups=[{name:'安全性',optionHeaders:['Q__1','Q__2']},{name:'交叉组',optionHeaders:['Q__2']}];
+const data=[{'Q__1':1,'Q__2':1},{'Q__1':1,'Q__2':0},{'Q__1':0,'Q__2':1}];
+const result=arrange(rows,groups,m=>data.filter(r=>m.some(x=>r[x.header]===1)).length,3);
+assert.equal(result[0].count,3);assert.equal(result[0].countPercent,1);assert.deepEqual(result.map(r=>r.label),['NET - 安全性','一','二','NET - 交叉组','其他']);assert.equal(result[3].count,2);assert.equal(result[1].mentionPercent,.5);assert.equal(rows.length,3);
+console.log('PASS explicit/shared NET extraction, conflicting codes, OR deduplication, overlapping groups, child order and unchanged option denominators');

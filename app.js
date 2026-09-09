@@ -224,6 +224,11 @@ let excludedPivotItems = [];
 // === Crosstab Questionnaire Map for missing labels ===
 // Format: { "Q4": "请问您的个人月收入大约是多少？", "Q5": "...", ... }
 let crosstabQuestionnaireMap = {};
+let autoNetSpec = { questions: {}, warnings: [] };
+let autoNetBindings = {};
+let autoNetWarnings = [];
+let autoNetEnabled = true;
+let autoNetDataName = "";
 
 // === NET Group Config for multi-choice questions ===
 // Format: { questionKey: [ { name: "NET - 手机产品", optionLabels: ["R1", "R2", "R3"], optionHeaders: ["Q8_R1", "Q8_R2", "Q8_R3"] }, ... ] }
@@ -244,15 +249,12 @@ function saveNetGroupConfig() {
 }
 
 function getNetGroupsForQuestion(questionKey) {
-  return netGroupConfig[questionKey] || [];
+  if (Object.prototype.hasOwnProperty.call(netGroupConfig, questionKey)) return structuredClone(netGroupConfig[questionKey]);
+  return autoNetEnabled ? structuredClone(autoNetBindings[questionKey] || []) : [];
 }
 
 function setNetGroupsForQuestion(questionKey, groups) {
-  if (!groups || groups.length === 0) {
-    delete netGroupConfig[questionKey];
-  } else {
-    netGroupConfig[questionKey] = groups;
-  }
+  netGroupConfig[questionKey] = groups || [];
   saveNetGroupConfig();
 }
 let lastCrosstabDataContext = null;
@@ -2710,6 +2712,13 @@ function handleCrosstabQuestionnaireImport(file) {
         text = String(raw || "");
       }
       if (!text.trim()) throw new Error("文件内容为空。");
+      autoNetSpec = /\.(xlsx|xls)$/i.test(file.name)
+        ? window.CrosstabNet.parse(await xlsxToWorkbookSheets(raw))
+        : {questions:{},warnings:["此格式暂不自动推断 NET，请使用包含分组标题和选项编码的 Excel 问卷。"]};
+      autoNetEnabled = true;
+      if (document.querySelector("#autoNetEnabled")) document.querySelector("#autoNetEnabled").checked = true;
+      refreshAutoNetBindings();
+      renderNetGroupPanel();
       crosstabQuestionnaireMap = buildCrosstabQuestionnaireMap(text);
       const matchedCount = parseQuestions(text).length;
       const preview = document.querySelector("#crosstabQuestionnairePreview");
@@ -2812,6 +2821,9 @@ function delimitedImportInspection(parsed, filename = "数据文件") {
 }
 
 function renderCrosstabImportState(text, filename) {
+  if (autoNetDataName && autoNetDataName !== filename) { autoNetSpec = {questions:{},warnings:[]}; autoNetBindings = {}; }
+  autoNetDataName = filename;
+
   // 数据导入后预热导出模块，避免到最后一步才等待网络加载。
   void loadExcelExportModule().then(module => module.prepareExcelWorkbookExport()).catch(() => {});
   const dataField = document.querySelector("#crosstabData");
@@ -5511,43 +5523,10 @@ function buildSingleQuestionPivot(parsed, options = {}) {
         });
         const totalMentions = optionRows.reduce((sum, row) => sum + row.count, 0);
         optionRows.forEach((row) => { row.mentionPercent = totalMentions ? row.count / totalMentions : 0; });
-        // Apply NET group configuration
-        const netGroups = getNetGroupsForQuestion(activeGroup.key);
-        if (netGroups.length > 0) {
-          const finalRows = [];
-          const usedHeaders = new Set();
-          netGroups.forEach((netGroup) => {
-            const groupHeaders = netGroup.optionHeaders || netGroup.optionLabels || [];
-            const matchedHeaders = [];
-            groupHeaders.forEach((gh) => {
-              const match = optionRows.find((or) => or.header === gh || or.label === gh);
-              if (match && !usedHeaders.has(match.header)) {
-                matchedHeaders.push(match.header);
-                usedHeaders.add(match.header);
-              }
-            });
-            if (matchedHeaders.length > 0) {
-              const netCount = parsed.rows.filter((row) =>
-                matchedHeaders.some((mh) => isMultiResponseMention(row, mh, activeGroup))
-              ).length;
-              finalRows.push({
-                label: netGroup.name || "NET",
-                header: null,
-                count: netCount,
-                mentionPercent: 0,
-                countPercent: validBase ? netCount / validBase : 0,
-                isNetGroup: true
-              });
-            }
-          });
-          optionRows.forEach((row) => {
-            finalRows.push(row);
-          });
-          const totalMentions2 = finalRows.reduce((sum, row) => sum + row.count, 0);
-          finalRows.forEach((row) => { row.mentionPercent = totalMentions2 ? row.count / totalMentions2 : 0; });
-          return [{ title: activeGroup.title, type: "多选题", total, validBase, rows: finalRows }];
-        }
-        return [{ title: activeGroup.title, type: "多选题", total, validBase, rows: optionRows }];
+        const finalRows = window.CrosstabNet.arrange(optionRows, getNetGroupsForQuestion(activeGroup.key), members =>
+          parsed.rows.filter(row => members.some(member => isMultiResponseMention(row, member.header, activeGroup))).length, validBase);
+        return [{ title: activeGroup.title, type: "多选题", total, validBase, rows: finalRows }];
+
       }
 
       if (type === "ranking") {
@@ -5591,7 +5570,8 @@ function buildSingleQuestionPivot(parsed, options = {}) {
 
     const header = group.headers[0];
     const values = parsed.rows.map((row) => row[header]);
-    const type = inferSingleColumnType(header, values);
+    const sourceId = String(getHeaderInfo(header)?.sourceHeader || header.split(/\s+/)[0]).toUpperCase();
+    const type = autoNetSpec.questions[sourceId]?.type === "single" ? "single" : inferSingleColumnType(header, values);
     if (type === "nps") {
       const numericValues = values.map(toNumberOrNull).filter((value) => value !== null);
       const promoters = numericValues.filter((value) => value >= 9).length;
@@ -5627,50 +5607,23 @@ function buildSingleQuestionPivot(parsed, options = {}) {
         mentionPercent: totalMentions ? count / totalMentions : 0,
         countPercent: validBase ? count / validBase : 0
       }));
-      // Apply NET group configuration
-      const netGroups = getNetGroupsForQuestion(header);
-      if (netGroups.length > 0) {
-        const finalRows = [];
-        const usedLabels = new Set();
-        netGroups.forEach((netGroup) => {
-          const groupLabels = netGroup.optionLabels || netGroup.optionHeaders || [];
-          const matchedLabels = [];
-          groupLabels.forEach((gl) => {
-            const match = optionRows.find((or) => or.label === gl);
-            if (match && !usedLabels.has(match.label)) {
-              matchedLabels.push(match.label);
-              usedLabels.add(match.label);
-            }
-          });
-          if (matchedLabels.length > 0) {
-            const netCount = values.filter((value) => {
-              const items = splitMultiValues(value);
-              return items.some((item) => matchedLabels.includes(item));
-            }).length;
-            finalRows.push({
-              label: netGroup.name || "NET",
-              count: netCount,
-              mentionPercent: 0,
-              countPercent: validBase ? netCount / validBase : 0,
-              isNetGroup: true
-            });
-          }
-        });
-        optionRows.forEach((row) => {
-          finalRows.push(row);
-        });
-        const totalMentions2 = finalRows.reduce((sum, row) => sum + row.count, 0);
-        finalRows.forEach((row) => { row.mentionPercent = totalMentions2 ? row.count / totalMentions2 : 0; });
-        return [{ title: questionDisplayTitle(header, header), type: "多选题", total, validBase, rows: finalRows }];
-      }
-      return [{ title: questionDisplayTitle(header, header), type: "多选题", total, validBase, rows: optionRows }];
+      const finalRows = window.CrosstabNet.arrange(optionRows, getNetGroupsForQuestion(header), members =>
+        values.filter(value => splitMultiValues(value).some(label => members.some(member => member.label === label))).length, validBase);
+      return [{ title: questionDisplayTitle(header, header), type: "多选题", total, validBase, rows: finalRows }];
+
     }
     if (type === "open") {
       excludedPivotItems.push({ title: header, headers: [header], reason: "开放题过滤" });
       return [];
     }
     const validValues = values.filter(Boolean);
-    return [{ title: questionDisplayTitle(header, header), type: "单选题", total, validBase: validValues.length, rows: frequencyRows(values, validValues.length, validValues.length) }];
+    const optionRows = frequencyRows(values, validValues.length, validValues.length);
+    const configuredNets = getNetGroupsForQuestion(header);
+    for (const net of configuredNets) for (const label of net.optionLabels || []) {
+      if (!optionRows.some(row => row.label === label)) optionRows.push({label,count:0,percent:0,validPercent:0});
+    }
+    const netRows = window.CrosstabNet.arrange(optionRows, configuredNets, members => members.reduce((sum, member) => sum + member.count, 0), validValues.length);
+    return [{ title: questionDisplayTitle(header, header), type: "单选题", total, validBase: validValues.length, rows: netRows }];
     })();
     return results.map((item, index) => ({ ...item, sourceKey: group.key + (results.length > 1 ? `::${index}` : "") }));
   });
@@ -5898,6 +5851,7 @@ async function generateQuestionPivot() {
   updateCrosstabProgress("正在识别题型与题干...", 8, `数据量：${parsed.rows.length} 行，字段：${parsed.headers.length} 个。`);
   await nextUiTick();
   const modelConfig = window.CrosstabModelUI?.getConfig(parsed) || { kano: [], psm: [] };
+  refreshAutoNetBindings();
   lastQuestionPivot = buildSingleQuestionPivot(parsed);
   if (!lastQuestionPivot.length && !modelConfig.kano.length && !modelConfig.psm.length) {
     result.innerHTML = `<div class="empty-state"><strong>无法生成全部交叉表</strong><span>当前数据只识别到开放题或填空题；全部交叉表已默认排除开放题。</span></div>`;
@@ -6412,7 +6366,10 @@ function workbookValueForDescriptor(item, referenceItem, descriptor, mode) {
   return valueForQuestionRow(row, refRow, mode, (x) => x?.count, (x) => x?.percent, () => questionValidBase(item), () => questionValidBase(reference));
 }
 
-function styledCrosstabValue(value, mode) {
+function styledCrosstabValue(value, mode, isNetGroup = false) {
+  if (isNetGroup) return value && typeof value === "object"
+    ? {...value,format:mode === "percent" ? "netPercent" : "netNumber"}
+    : {value,format:"netNumber"};
   if (mode === "significance" && value === "↑") return { value, format: "top2" };
   if (mode === "significance" && value === "↓") return { value, format: "bottom2" };
   return value;
@@ -6453,7 +6410,7 @@ function appendCrosstabWorkbookBlock(rows, positions, item, index, plan, bannerI
         },
         ...bannerItems.map((bannerItem) => styledCrosstabValue(
           workbookValueForDescriptor(bannerItem, bannerItems[0], descriptor, mode),
-          mode
+          mode, descriptor.isNetGroup
         ))
       ]
     });
@@ -19929,9 +19886,58 @@ calculateQuota();
 
 
 
+// 自动 NET 只绑定明确题号和编码；任何缺项均提示，不悄悄缩小 NET 范围。
+function refreshAutoNetBindings() {
+  autoNetBindings = {};
+  autoNetWarnings = [...autoNetSpec.warnings];
+  const parsed = getWorkingCrosstabData();
+  const rawNames = parsed.rawHeaders || parsed.headers;
+  const displayFor = name => parsed.headers[rawNames.indexOf(name)];
+  const findRaw = name => rawNames.filter(h => String(h).trim().toUpperCase() === name.toUpperCase());
+  for (const [id, spec] of Object.entries(autoNetSpec.questions)) {
+    const singles = findRaw(id);
+    if (singles.length > 1) { autoNetWarnings.push(`${id}：题号对应多个字段，请手动核对。`); continue; }
+    const single = singles[0];
+    if (!single && !rawNames.some(h => String(h).toUpperCase().startsWith(id + "_"))) { if(rawNames.length) autoNetWarnings.push(`${id}：当前数据未找到对应题号。`); continue; }
+    const key = single ? displayFor(single) : id;
+    const mapped = [];
+    for (const group of spec.groups) {
+      const members = [], labels = [], missing = [];
+      for (const code of group.codes) {
+        if (single) {
+          const info = getHeaderInfo(key);
+          const option = Object.entries(info?.options || {}).find(([value]) => normalizeConditionValue(value) === code);
+          const observed = parsed.rawRows?.some(row => normalizeConditionValue(row[single]) === code);
+          if (!option && !observed) { missing.push(code); continue; }
+          labels.push(String(option ? option[1] : code));
+        } else {
+          const matches = [`${id}__${code}`, `${id}_${code}`, `${id}_R${code}`].flatMap(findRaw);
+          if (matches.length !== 1) { missing.push(code); continue; }
+          const display = displayFor(matches[0]);
+          members.push(display);
+          labels.push(getHeaderInfo(display)?.optionLabel || display);
+        }
+      }
+      if (missing.length) { autoNetWarnings.push(`${id} / ${group.name}：编码 ${missing.join("、")} 未唯一匹配，该组未自动应用。`); continue; }
+      mapped.push({ name: `NET - ${group.name}`, optionHeaders: single ? labels : members, optionLabels: labels, source: "questionnaire" });
+    }
+    if (mapped.length) autoNetBindings[key] = mapped;
+  }
+  const summary = document.querySelector("#autoNetSummary");
+  if (summary) {
+    const count = Object.values(autoNetBindings).reduce((n, groups) => n + groups.length, 0);
+    summary.textContent = Object.keys(autoNetSpec.questions).length
+      ? `问卷识别 ${Object.keys(autoNetSpec.questions).length} 道 NET 题，已匹配 ${Object.keys(autoNetBindings).length} 道题、${count} 个分组。手动配置优先；未匹配的分组不计入自动 NET。`
+      : "上传含明确 NET 分组的 Excel 问卷后自动识别，可在下方调整。";
+  }
+  const warnings = document.querySelector("#autoNetWarnings");
+  if (warnings) warnings.textContent = autoNetWarnings.join("\n");
+}
+
 // === NET Group Configuration Panel Functions ===
 
 function renderNetGroupPanel() {
+  refreshAutoNetBindings();
   const panel = document.querySelector("#netGroupPanel");
   const select = document.querySelector("#netGroupQuestionSelect");
   if (!panel || !select) return;
@@ -19947,7 +19953,7 @@ function renderNetGroupPanel() {
   const multiQuestions = groups.filter((g) => {
     if (g.headers.length === 1) {
       const type = inferSingleColumnType(g.headers[0], parsed.rows.map((r) => r[g.headers[0]]));
-      return type === "multi_single_cell";
+      return type === "multi_single_cell" || !!autoNetBindings[g.headers[0]];
     }
     const type = inferMultiColumnType(g, parsed.rows);
     return type === "multi_columns" || g.multiResponse;
@@ -19991,7 +19997,10 @@ function buildNetGroupEditor() {
   } else {
     const values = parsed.rows.map((r) => r[question.headers[0]]);
     const mentions = new Map();
-    values.forEach((v) => splitMultiValues(v).forEach((item) => mentions.set(item, (mentions.get(item) || 0) + 1)));
+    const sourceId = String(getHeaderInfo(question.headers[0])?.sourceHeader || question.headers[0].split(/\s+/)[0]).toUpperCase();
+    const isSingle = autoNetSpec.questions[sourceId]?.type === "single";
+    values.forEach(v => (isSingle ? [String(v ?? "").trim()].filter(Boolean) : splitMultiValues(v)).forEach(item => mentions.set(item, (mentions.get(item) || 0) + 1)));
+    if (isSingle) Object.values(getHeaderInfo(question.headers[0])?.options || {}).forEach(label => { if (!mentions.has(String(label))) mentions.set(String(label), 0); });
     options = [...mentions.keys()].map((k) => ({ label: k, header: k }));
   }
 
@@ -20006,7 +20015,7 @@ function buildNetGroupEditor() {
         </div>
         <div class="net-group-options">
           ${options.map((opt) => {
-            const isSelected = (group.optionLabels || group.optionHeaders || []).includes(opt.label) || (group.optionLabels || group.optionHeaders || []).includes(opt.header);
+            const isSelected = [...(group.optionLabels || []), ...(group.optionHeaders || [])].includes(opt.label) || [...(group.optionLabels || []), ...(group.optionHeaders || [])].includes(opt.header);
             return `<label class="${isSelected ? 'selected' : ''}"><input type="checkbox" data-opt="${escapeHtml(opt.label)}" data-index="${index}" ${isSelected ? 'checked' : ''}> ${escapeHtml(opt.label)}</label>`;
           }).join("")}
         </div>
@@ -20090,6 +20099,11 @@ function clearNetGroups() {
 
 // Bind NET group panel events
 document.addEventListener("DOMContentLoaded", () => {
+  document.querySelector("#autoNetEnabled")?.addEventListener("change", event => {
+    autoNetEnabled = event.target.checked;
+    buildNetGroupEditor();
+    lastQuestionPivot = null;
+  });
   const addBtn = document.querySelector("#addNetGroup");
   const applyBtn = document.querySelector("#applyNetGroups");
   const clearBtn = document.querySelector("#clearNetGroups");

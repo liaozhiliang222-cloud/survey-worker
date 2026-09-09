@@ -21,6 +21,7 @@ const runtimeFiles = [
   "proposal-deck.js",
   "data-worker.js",
   "crosstab-models.js",
+  "crosstab-net.js",
   "crosstab-model-ui.js",
   "cluster-core.js",
   "cluster-worker.js",
