@@ -81,6 +81,12 @@
       if(!(evidence(f)&&evidence(d)))return;
       // Explicit labels can reveal a reversed order in a platform export.
       if(/反向问题|反向題|dysfunctional/i.test(f.label)&&!/反向问题|反向題|dysfunctional/i.test(d.label))[f,d]=[d,f];
+      // Use the source wording, retaining the pair ID for traceability.
+      const feature = [f.label,d.label].map(label =>
+        label.match(/请您?针对(.+?)功能分别回答/)?.[1] ||
+        label.match(/如果(?:产品)?(?:不具备|具备|不具有|具有)(.+?)的功能[，,]/)?.[1]
+      ).find(Boolean);
+      if (feature && name !== feature.trim()) name = `${name} ${feature.trim()}`;
       kano.push({name,functional:f.header,dysfunctional:d.header,scale:"labels"});paired.add(f.header);paired.add(d.header);
     };
     for(const [name,g] of groups) if(g.functional?.length===1&&g.dysfunctional?.length===1) add(g.functional[0],g.dysfunctional[0],name);
