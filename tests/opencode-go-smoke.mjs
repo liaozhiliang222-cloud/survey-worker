@@ -18,7 +18,7 @@ test("backend key goes only to fixed Go endpoint; default model and session are 
     assert.equal(options.headers.Authorization, "Bearer test-backend-key");
     assert.equal(options.headers["x-opencode-session"], "test-conversation-12345");
     assert.equal(options.headers["User-Agent"], "research-toolbox/1.0");
-    assert.equal(options.redirect, "error");
+    assert.equal(options.redirect, "manual");
     const body = JSON.parse(options.body);
     assert.equal(body.model, GO_MODELS[0]);
     assert.deepEqual(body.thinking, { type: "disabled" });
@@ -35,6 +35,17 @@ test("manual MiMo selection is used first", async () => {
     return success();
   });
   assert.equal(result.headers.get("X-Actual-Model"), GO_MODELS[1]);
+});
+
+test("redirects are rejected without following an untrusted credential destination", async () => {
+  let calls = 0;
+  const result = await handleOpenCodeGo(payload(), env, async () => {
+    calls++;
+    return new Response(null, { status: 302, headers: { Location: "https://attacker.invalid" } });
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.status, 502);
+  assert.equal(result.headers.get("location"), null);
 });
 
 for (const [status, error, reason] of [
