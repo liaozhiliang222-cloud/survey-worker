@@ -7,6 +7,15 @@ import { loadJson, saveJson } from "./storage.js";
 // ─── Provider 预设 ──────────────────────────────────────────
 
 export const aiProviderPresets = {
+  "opencode-go": {
+    name: "OpenCode Go（后端内置）",
+    model: "deepseek-v4.1-flash",
+    url: "https://opencode.ai/zen/go/v1/chat/completions",
+    tiers: [
+      { label: "DeepSeek V4.1 Flash（默认）", model: "deepseek-v4.1-flash" },
+      { label: "MiMo-V2.6-Flash", model: "mimo-v2.6-flash" }
+    ]
+  },
   deepseek: {
     name: "DeepSeek",
     model: "deepseek-v4-pro",
@@ -65,8 +74,8 @@ export const aiProviderPresets = {
 
 // ─── Settings 管理 ──────────────────────────────────────────
 
-export function getDefaultAiSettings(provider = "deepseek") {
-  const preset = aiProviderPresets[provider] || aiProviderPresets.deepseek;
+export function getDefaultAiSettings(provider = "opencode-go") {
+  const preset = aiProviderPresets[provider] || aiProviderPresets["opencode-go"];
   const tier = preset.tiers?.[0] || { model: preset.model };
   return {
     provider,
@@ -80,8 +89,8 @@ export function getDefaultAiSettings(provider = "deepseek") {
 
 export function loadAiSettings() {
   const saved = loadJson("surveyAiSettings", null);
-  if (saved) return { ...getDefaultAiSettings(saved.provider || "deepseek"), ...saved, mode: "api" };
-  return getDefaultAiSettings("deepseek");
+  if (saved?.apiKey || saved?.provider === "opencode-go") return { ...getDefaultAiSettings(saved.provider || "opencode-go"), ...saved, mode: "api" };
+  return getDefaultAiSettings("opencode-go");
 }
 
 export function persistAiSettings(settings) {
@@ -239,6 +248,17 @@ function createAiClientRequestId() {
   return globalThis.crypto?.randomUUID?.() || ("ai-" + Date.now() + "-" + Math.random().toString(16).slice(2));
 }
 
+let aiConversationSessionId = "";
+function getAiConversationSessionId() {
+  if (aiConversationSessionId) return aiConversationSessionId;
+  try { aiConversationSessionId = sessionStorage.getItem("surveyAiConversationId") || ""; } catch {}
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(aiConversationSessionId)) {
+    aiConversationSessionId = globalThis.crypto?.randomUUID?.() || ("ai-" + Date.now() + "-" + Math.random().toString(16).slice(2));
+    try { sessionStorage.setItem("surveyAiConversationId", aiConversationSessionId); } catch {}
+  }
+  return aiConversationSessionId;
+}
+
 function recordAiDiagnostics(response, clientRequestId) {
   lastAiActualModel = response.headers.get("X-Actual-Model") || "";
   lastAiDiagnostics = Object.freeze({
@@ -249,6 +269,7 @@ function recordAiDiagnostics(response, clientRequestId) {
     durationMs: Number(response.headers.get("X-AI-Duration-Ms")) || 0,
     rotation: response.headers.get("X-AI-Rotation") || "",
     fallbackUsed: response.headers.get("X-AI-Fallback-Used") === "1",
+    fallbackReason: response.headers.get("X-AI-Fallback-Reason") || "",
     attempts: response.headers.get("X-AI-Attempt-Sources") || "",
     errorType: response.headers.get("X-AI-Error-Type") || "",
   });
@@ -335,6 +356,7 @@ export async function callAiChatCompletion(settings, messages, options = {}) {
       provider: settings.provider,
       url: settings.url,
       apiKey: settings.apiKey,
+      sessionId: getAiConversationSessionId(),
       taskTier: options.taskTier || "balanced",
       body: requestBody
     }),

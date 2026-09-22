@@ -370,6 +370,15 @@ let pendingQuestionnaireImport = "";
 let sharedImportTargetId = "";
 
 const aiProviderPresets = {
+  "opencode-go": {
+    name: "OpenCode Go（后端内置）",
+    model: "deepseek-v4.1-flash",
+    url: "https://opencode.ai/zen/go/v1/chat/completions",
+    tiers: [
+      { label: "DeepSeek V4.1 Flash（默认）", model: "deepseek-v4.1-flash" },
+      { label: "MiMo-V2.6-Flash", model: "mimo-v2.6-flash" }
+    ]
+  },
   deepseek: {
     name: "DeepSeek",
     model: "deepseek-v4-pro",
@@ -9463,10 +9472,10 @@ async function generateAiPlan() {
           streamRetryCount: 1,
           taskTier: "quality"
         });
-        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
+        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "后端 OpenCode Go 模型";
       } catch (error) {
         output = `${localPlan}\n\n---\n\n> 大模型调用失败，已回退为本地方案框架。错误信息：${error.message}`;
-        source = settings.apiKey ? "本地方案框架（模型调用失败）" : "平台内置免费模型（调用失败）";
+        source = settings.apiKey ? "本地方案框架（模型调用失败）" : "后端 OpenCode Go 模型（调用失败）";
       }
     } else {
       output = `${localPlan}\n\n---\n\n> 大模型设置未通过校验，已回退为本地方案框架：${errors.join("；")}`;
@@ -9552,7 +9561,7 @@ async function reviseAiPlan() {
           streamRetryCount: 1,
           taskTier: "quality"
         });
-        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
+        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "后端 OpenCode Go 模型";
       } catch (error) {
         revisionError = `大模型修改失败：${error.message}`;
       }
@@ -10034,8 +10043,8 @@ function renderAiProgress(container, steps, activeIndex = 0, note = "", title = 
   `;
 }
 
-function getDefaultAiSettings(provider = "deepseek") {
-  const preset = aiProviderPresets[provider] || aiProviderPresets.deepseek;
+function getDefaultAiSettings(provider = "opencode-go") {
+  const preset = aiProviderPresets[provider] || aiProviderPresets["opencode-go"];
   const tier = preset.tiers?.[0] || { model: preset.model };
   return {
     provider,
@@ -10050,7 +10059,7 @@ function getDefaultAiSettings(provider = "deepseek") {
 function readAiSettingsFromForm() {
   const modelTier = document.querySelector("#aiModelTier")?.value || "";
   return {
-    provider: document.querySelector("#aiProvider")?.value || "deepseek",
+    provider: document.querySelector("#aiProvider")?.value || "opencode-go",
     mode: "api",
     modelTier,
     model: document.querySelector("#aiModelName")?.value.trim() || "",
@@ -10083,7 +10092,7 @@ function renderAiSettingsStatus(settings = loadAiSettings()) {
   const hint = document.querySelector("#aiProviderHint");
   const planHint = document.querySelector("#aiPlanProviderHint");
   if (!status && !preview && !hint && !planHint) return;
-  const preset = aiProviderPresets[settings.provider] || aiProviderPresets.deepseek;
+  const preset = aiProviderPresets[settings.provider] || aiProviderPresets["opencode-go"];
   const errors = validateAiSettings(settings);
   const ready = errors.length === 0;
   if (status) {
@@ -10099,21 +10108,21 @@ function renderAiSettingsStatus(settings = loadAiSettings()) {
   if (hint) {
     hint.innerHTML = `
       <strong>生成方式</strong>
-      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）。` : "已自动使用平台内置免费模型。")}</span>
+      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）。` : "已自动使用后端 OpenCode Go 模型。")}</span>
     `;
   }
   if (planHint) {
     planHint.innerHTML = `
       <strong>生成方式</strong>
-      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）生成调研方案。` : "已自动使用平台内置免费模型。")}</span>
+      <span>${escapeHtml(settings.apiKey ? `将优先调用 ${preset.name}（${settings.model}）生成调研方案。` : "已自动使用后端 OpenCode Go 模型。")}</span>
     `;
   }
 }
 
-function updateAiModelTierOptions(provider = "deepseek", selectedModel = "") {
+function updateAiModelTierOptions(provider = "opencode-go", selectedModel = "") {
   const tierSelect = document.querySelector("#aiModelTier");
   if (!tierSelect) return;
-  const preset = aiProviderPresets[provider] || aiProviderPresets.deepseek;
+  const preset = aiProviderPresets[provider] || aiProviderPresets["opencode-go"];
   const tiers = preset.tiers?.length ? preset.tiers : [{ label: preset.model || "默认模型", model: preset.model || "" }];
   tierSelect.innerHTML = tiers.map((tier) => `<option value="${escapeHtml(tier.model)}">${escapeHtml(tier.label)}</option>`).join("");
   const nextValue = tiers.some((tier) => tier.model === selectedModel) ? selectedModel : tiers[0].model;
@@ -10140,9 +10149,9 @@ function fillAiSettingsForm(settings = loadAiSettings()) {
 function loadAiSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem("surveyAiSettings") || "null");
-    if (saved) return { ...getDefaultAiSettings(saved.provider || "deepseek"), ...saved, mode: "api" };
+    if (saved?.apiKey || saved?.provider === "opencode-go") return { ...getDefaultAiSettings(saved.provider || "opencode-go"), ...saved, mode: "api" };
   } catch {}
-  return getDefaultAiSettings("deepseek");
+  return getDefaultAiSettings("opencode-go");
 }
 
 function saveAiSettings() {
@@ -10161,8 +10170,8 @@ function saveAiSettings() {
 }
 
 function applyAiProviderPreset() {
-  const provider = document.querySelector("#aiProvider")?.value || "deepseek";
-  const preset = aiProviderPresets[provider] || aiProviderPresets.deepseek;
+  const provider = document.querySelector("#aiProvider")?.value || "opencode-go";
+  const preset = aiProviderPresets[provider] || aiProviderPresets["opencode-go"];
   const model = document.querySelector("#aiModelName");
   const url = document.querySelector("#aiApiBaseUrl");
   if (provider !== "custom") {
@@ -10390,6 +10399,7 @@ function aiProxyPayload(settings, messages, options = {}) {
     provider: settings.provider,
     url: settings.url,
     apiKey: settings.apiKey,
+      sessionId: getAiConversationSessionId(),
     taskTier: options.taskTier || "balanced",
     body: requestBody,
   };
@@ -10497,6 +10507,17 @@ async function callAiChatCompletionJob(settings, messages, options = {}) {
   throw new Error("AI 后台任务等待超时，请稍后重试。");
 }
 
+let aiConversationSessionId = "";
+function getAiConversationSessionId() {
+  if (aiConversationSessionId) return aiConversationSessionId;
+  try { aiConversationSessionId = sessionStorage.getItem("surveyAiConversationId") || ""; } catch {}
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(aiConversationSessionId)) {
+    aiConversationSessionId = globalThis.crypto?.randomUUID?.() || ("ai-" + Date.now() + "-" + Math.random().toString(16).slice(2));
+    try { sessionStorage.setItem("surveyAiConversationId", aiConversationSessionId); } catch {}
+  }
+  return aiConversationSessionId;
+}
+
 function recordAiDiagnostics(response, clientRequestId) {
   lastAiActualModel = response.headers.get("X-Actual-Model") || "";
   lastAiActualSource = response.headers.get("X-AI-Source") || "";
@@ -10508,6 +10529,7 @@ function recordAiDiagnostics(response, clientRequestId) {
     durationMs: Number(response.headers.get("X-AI-Duration-Ms")) || 0,
     rotation: response.headers.get("X-AI-Rotation") || "",
     fallbackUsed: response.headers.get("X-AI-Fallback-Used") === "1",
+    fallbackReason: response.headers.get("X-AI-Fallback-Reason") || "",
     attempts: response.headers.get("X-AI-Attempt-Sources") || "",
     errorType: response.headers.get("X-AI-Error-Type") || "",
   });
@@ -10766,7 +10788,7 @@ async function renderAiBrief() {
   const design = buildAiQuestionnaireDesign();
   const steps = [
     { title: "整理研究需求", detail: "读取研究类型、目标人群、样本量和业务目标。" },
-    { title: "校验生成方式", detail: settings.mode === "local" || !settings.apiKey ? "已自动使用平台内置免费模型。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}（${settings.model}）。` },
+    { title: "校验生成方式", detail: settings.mode === "local" || !settings.apiKey ? "已自动使用后端 OpenCode Go 模型。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}（${settings.model}）。` },
     { title: "生成问卷初稿", detail: `按${design.config.lengthMode === "short" ? "精简短卷" : "专业长卷"}模式生成完整、可编程的问卷初稿。` },
     { title: "整理可导出结果", detail: "启用复制、Markdown、Word 和同步到项目稿。" }
   ];
@@ -12761,10 +12783,10 @@ async function reviseAiQuestionnaire() {
       try {
         renderAiProgress(result, steps, 2, "正在按你的要求重写问卷，通常需要几十秒。");
         output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 32000, timeoutMs: 600000, stream: true, taskTier: "fast" });
-        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "平台内置免费模型";
+        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "后端 OpenCode Go 模型";
       } catch (error) {
         output += `\n\n> 大模型修改失败：${error.message}`;
-        source = settings.apiKey ? "本地规则（模型调用失败）" : "平台内置免费模型（调用失败）";
+        source = settings.apiKey ? "本地规则（模型调用失败）" : "后端 OpenCode Go 模型（调用失败）";
       }
     } else {
       output += `\n\n> 大模型设置未通过校验：${errors.join("；")}`;
@@ -12839,7 +12861,7 @@ async function testAiSettings() {
     localStorage.setItem("surveyAiSettings", JSON.stringify(settings));
     renderAiSettingsStatus(settings);
     if (preview) {
-      preview.innerHTML = `<strong>连接成功</strong><span>连接成功</span>`;
+      preview.innerHTML = `<strong>连接成功</strong><span>${escapeHtml(`实际模型：${lastAiActualModel || settings.model}${lastAiDiagnostics.fallbackUsed ? "（已切换备用模型）" : ""}`)}</span>`;
     }
     showButtonSaved(document.querySelector("#testAiSettings"), "测试通过");
   } catch (error) {
@@ -12851,7 +12873,7 @@ async function testAiSettings() {
 
 function clearAiSettings() {
   localStorage.removeItem("surveyAiSettings");
-  fillAiSettingsForm(getDefaultAiSettings("deepseek"));
+  fillAiSettingsForm(getDefaultAiSettings("opencode-go"));
   showButtonSaved(document.querySelector("#clearAiSettings"), "已清空");
 }
 
@@ -17376,6 +17398,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
               + "。"
             : " 本次未启用主题约束，沿用兼容流程。";
           const routeLabel = ({
+            "builtin-opencode-go": "OpenCode Go",
             "builtin-surveykit-gateway": "SurveyKit",
             "builtin-sensenova": "SenseNova",
             "builtin-bailian": "百炼",

@@ -304,13 +304,14 @@
               <div class="section-heading compact">
                 <div>
                   <h3>模型供应商</h3>
-                  <p>选择常用大模型并填写自己的 API Key（可选）。未配置时自动使用平台内置免费模型；配置自己的 Key 后可使用更高质量的大模型。</p>
+                  <p>选择常用大模型并填写自己的 API Key（可选）。留空时使用后端 OpenCode Go（默认 DeepSeek V4.1 Flash，可切换 MiMo-V2.6-Flash）；配置自己的 Key 后可使用更高质量的大模型。</p>
                 </div>
               </div>
               <div class="form-grid two">
                 <label>
                   供应商
                   <select id="aiProvider">
+                    <option value="opencode-go">OpenCode Go（后端内置，默认）</option>
                     <option value="deepseek">DeepSeek</option>
                     <option value="kimi">Kimi（月之暗面）</option>
                     <option value="zhipu">智谱 GLM</option>
@@ -322,8 +323,8 @@
                 <label>
                   模型档位
                   <select id="aiModelTier">
-                    <option value="deepseek-v4-pro">V4 Pro（默认）</option>
-                    <option value="deepseek-v4-flash">V4 Flash（快速/低成本）</option>
+                    <option value="deepseek-v4.1-flash">DeepSeek V4.1 Flash（默认）</option>
+                    <option value="mimo-v2.6-flash">MiMo-V2.6-Flash</option>
                   </select>
                 </label>
                 <label>
@@ -336,7 +337,7 @@
                 </label>
                 <label class="span-row">
                   API Key
-                  <input id="aiApiKey" type="password" autocomplete="off" placeholder="（可选）填入自己的 API Key，未配置时自动使用平台内置免费模型" />
+                  <input id="aiApiKey" type="password" autocomplete="off" placeholder="（可选）填入自己的 API Key，留空时使用后端 OpenCode Go（默认 DeepSeek V4.1 Flash，可切换 MiMo-V2.6-Flash）" />
                 </label>
               </div>
               <div class="button-row">
@@ -344,7 +345,7 @@
                 <button class="secondary-btn" id="testAiSettings" type="button">测试连接</button>
                 <button class="secondary-btn" id="clearAiSettings" type="button">清空设置</button>
               </div>
-              <p class="panel-note">注意：未配置 API Key 时自动使用平台内置免费模型；配置自己的 Key 后可使用更高质量的大模型。API Key 仅保存在浏览器本地。</p>
+              <p class="panel-note">注意：未配置 API Key 时使用后端 OpenCode Go（默认 DeepSeek V4.1 Flash，可切换 MiMo-V2.6-Flash）；配置自己的 Key 后可使用更高质量的大模型。内置 Key 仅保存在后端；手动填写的个人 Key 保存在浏览器本地。</p>
             </section>
 
             <section class="panel">
@@ -3171,7 +3172,7 @@
               </div>
               <div class="import-preview compact-import-preview" id="aiPlanProviderHint">
                 <strong>生成方式</strong>
-                <span>未配置 API Key 时自动使用平台内置免费模型；配置自己的 Key 后可使用更高质量的大模型。</span>
+                <span>未配置 API Key 时使用后端 OpenCode Go（默认 DeepSeek V4.1 Flash，可切换 MiMo-V2.6-Flash）；配置自己的 Key 后可使用更高质量的大模型。</span>
               </div>
               <div class="button-row">
                 <button class="primary-btn" id="generateAiPlan" type="button">生成调研方案</button>
@@ -3337,7 +3338,7 @@
               </div>
               <div class="import-preview compact-import-preview" id="aiProviderHint">
                 <strong>生成方式</strong>
-                <span>未配置 API Key 时自动使用平台内置免费模型；配置自己的 Key 后可使用更高质量的大模型。</span>
+                <span>未配置 API Key 时使用后端 OpenCode Go（默认 DeepSeek V4.1 Flash，可切换 MiMo-V2.6-Flash）；配置自己的 Key 后可使用更高质量的大模型。</span>
               </div>
               <div class="button-row">
                 <button class="primary-btn" id="generateAiBrief" type="button">生成问卷初稿</button>
@@ -3410,7 +3411,7 @@
                 <button class="secondary-btn" id="exportAiWorkbenchMd" type="button" disabled>导出 Markdown</button>
                 <button class="secondary-btn" id="exportAiWorkbenchWord" type="button" disabled>导出 Word</button>
               </div>
-              <p class="panel-note">未配置 API Key 时自动使用平台内置免费模型；配置自己的 Key 后可使用更高质量的大模型。AI 调用经过本站后端代理转发，API Key 仅保存在浏览器本地。</p>
+              <p class="panel-note">未配置 API Key 时使用后端 OpenCode Go（默认 DeepSeek V4.1 Flash，可切换 MiMo-V2.6-Flash）；配置自己的 Key 后可使用更高质量的大模型。AI 调用经过本站后端代理转发，内置 Key 仅保存在后端；手动填写的个人 Key 保存在浏览器本地。</p>
             </div>
 
             <div class="audit-results" id="aiWorkbenchResults" aria-live="polite">
@@ -3533,7 +3534,7 @@
     <script src="./crosstab-net.js?v=20260909-1"></script>
     <script src="./crosstab-models.js?v=20260910-1"></script>
     <script src="./crosstab-model-ui.js?v=20260908-1"></script>
-    <script src="./app.js?v=20260909-4"></script>
+    <script src="./app.js?v=20260922-opencode-go"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
     <script src="./cluster-core.js?v=20260908-2"></script>
     <script src="./cluster-analysis.js?v=20260908-2"></script>

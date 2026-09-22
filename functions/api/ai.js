@@ -183,6 +183,9 @@ function configuredModels(env, pluralKey, singularKey, defaults) {
 }
 
 function getBuiltinConfigs(env) {
+  if (String(env?.OPENCODE_GO_API_KEY || "").trim()) {
+    return [{ source: "builtin-opencode-go", models: ["deepseek-v4.1-flash", "mimo-v2.6-flash"] }];
+  }
   const configs = [];
   const volcengineAgentPlanKey = String(
     env?.VOLCENGINE_AGENT_PLAN_API_KEY
@@ -472,6 +475,14 @@ export async function onRequest({ request, env }) {
 
   try {
     const payload = await request.json();
+    if (payload.provider === "opencode-go" || (!String(payload.apiKey || "").trim() && env?.OPENCODE_GO_API_KEY)) {
+      const { handleOpenCodeGo } = await import("../../lib/opencode-go.mjs");
+      const response = await handleOpenCodeGo(payload, env);
+      response.headers.set("X-AI-Request-ID", requestId);
+      response.headers.set("X-AI-Task-Tier", payload.taskTier || "balanced");
+      response.headers.set("X-AI-Duration-Ms", String(Date.now() - requestStartedAt));
+      return response;
+    }
     const body = payload.body;
     if (!body?.model || !Array.isArray(body.messages)) {
       return fail("\u6a21\u578b\u6216\u6d88\u606f\u5185\u5bb9\u4e0d\u5b8c\u6574\u3002", 400, "invalid_request");
