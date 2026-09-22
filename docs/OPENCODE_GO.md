@@ -17,3 +17,7 @@ OpenCode Go 主要面向编码代理，其他应用的可用性由服务提供�
 验证：`node --test tests/*.test.mjs`。测试使用假 Key，不消耗真实模型额度。
 
 接口与模型来源：[OpenCode Go 官方文档](https://opencode.ai/docs/go/)。Secret 配置：[Cloudflare Pages bindings](https://developers.cloudflare.com/pages/functions/bindings/#secrets)。
+
+## 生产变量数量
+
+本次发布遇到 Cloudflare Free 的变量数量上限。已移除 19 个与代码默认值完全一致的纯文本绑定；原值保留在 `tests/fixtures/redundant-production-vars.json`，上下文、分块、文件解析的等价行为由 `tests/production-default-bindings-smoke.mjs` 验证。25MB 文件上限、定性分析的独立限额、认证参数和所有 Secret 均保留。
