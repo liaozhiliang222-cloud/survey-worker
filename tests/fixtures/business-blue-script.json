@@ -1,0 +1,692 @@
+{
+  "schema_version": "surveykit.ppt_script.v1",
+  "title": "蓝色商务模板第一期验收演示",
+  "style_profile": {
+    "id": "research_business_blue_v1",
+    "version": "1.0.0"
+  },
+  "pages": [
+    {
+      "id": "bb_cover",
+      "page_type": "cover",
+      "layout_variant": "bb_cover",
+      "chapter": "报告封面",
+      "title": "用户体验研究报告",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": []
+    },
+    {
+      "id": "bb_contents",
+      "page_type": "navigation",
+      "layout_variant": "bb_contents",
+      "chapter": "报告目录",
+      "title": "报告目录：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_section",
+      "page_type": "section_intro",
+      "layout_variant": "bb_section",
+      "chapter": "章节过渡",
+      "title": "章节过渡：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": []
+    },
+    {
+      "id": "bb_summary",
+      "page_type": "executive_summary",
+      "layout_variant": "bb_summary",
+      "chapter": "核心结论总览",
+      "title": "核心结论总览：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_quotes",
+      "page_type": "quote_evidence",
+      "layout_variant": "bb_quotes",
+      "chapter": "用户原声",
+      "title": "用户原声：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [],
+      "quotes": [
+        {
+          "text": "我想先知道怎么收费，弄明白以后再决定要不要继续。",
+          "evidence_id": "demo_evidence",
+          "segment_id": "demo_segment_1",
+          "respondent_label": "演示受访者 A",
+          "source_label": "模板验收示例"
+        },
+        {
+          "text": "如果填错了能回去改，我操作的时候就不会那么紧张。",
+          "evidence_id": "demo_evidence",
+          "segment_id": "demo_segment_2",
+          "respondent_label": "演示受访者 B",
+          "source_label": "模板验收示例"
+        }
+      ]
+    },
+    {
+      "id": "bb_persona_pair",
+      "page_type": "persona",
+      "layout_variant": "bb_persona_pair",
+      "chapter": "人群画像对比",
+      "title": "人群画像对比：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        }
+      ]
+    },
+    {
+      "id": "bb_journey",
+      "page_type": "journey",
+      "layout_variant": "bb_journey",
+      "chapter": "用户旅程",
+      "title": "用户旅程：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_fishbone",
+      "page_type": "problem_reason",
+      "layout_variant": "bb_fishbone",
+      "chapter": "问题成因鱼骨",
+      "title": "问题成因鱼骨：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_matrix",
+      "page_type": "matrix",
+      "layout_variant": "bb_matrix",
+      "chapter": "能力与需求矩阵",
+      "title": "能力与需求矩阵：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_value_canvas",
+      "page_type": "concept_definition",
+      "layout_variant": "bb_value_canvas",
+      "chapter": "需求与价值匹配",
+      "title": "需求与价值匹配：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        }
+      ]
+    },
+    {
+      "id": "bb_swot",
+      "page_type": "framework",
+      "layout_variant": "bb_swot",
+      "chapter": "SWOT 分析",
+      "title": "SWOT 分析：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_comparison",
+      "page_type": "comparison",
+      "layout_variant": "bb_comparison",
+      "chapter": "方案对比",
+      "title": "方案对比：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        }
+      ]
+    },
+    {
+      "id": "bb_feature_compare",
+      "page_type": "competitor_comparison",
+      "layout_variant": "bb_feature_compare",
+      "chapter": "竞品能力对比",
+      "title": "竞品能力对比：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_positioning",
+      "page_type": "segmentation_map",
+      "layout_variant": "bb_positioning",
+      "chapter": "市场定位",
+      "title": "市场定位：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [],
+      "axes": {
+        "x": "自主探索倾向",
+        "y": "服务支持需求"
+      },
+      "segments": [
+        {
+          "title": "主动探索者",
+          "summary": "愿意尝试新功能，但需要清晰边界。",
+          "x": 70,
+          "y": 30
+        },
+        {
+          "title": "谨慎求助者",
+          "summary": "希望有人引导关键决策。",
+          "x": 25,
+          "y": 75
+        }
+      ]
+    },
+    {
+      "id": "bb_priority",
+      "page_type": "priority_matrix",
+      "layout_variant": "bb_priority",
+      "chapter": "需求优先级",
+      "title": "需求优先级：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_actions",
+      "page_type": "recommendation",
+      "layout_variant": "bb_actions",
+      "chapter": "行动清单",
+      "title": "行动清单：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_roadmap",
+      "page_type": "recommendation",
+      "layout_variant": "bb_roadmap",
+      "chapter": "实施路线",
+      "title": "实施路线：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_glossary",
+      "page_type": "research_framework",
+      "layout_variant": "bb_glossary",
+      "chapter": "研究口径",
+      "title": "研究口径：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_sources",
+      "page_type": "appendix",
+      "layout_variant": "bb_sources",
+      "chapter": "来源附录",
+      "title": "来源附录：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_closing",
+      "page_type": "summary",
+      "layout_variant": "bb_closing",
+      "chapter": "结尾共识",
+      "title": "结尾共识：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        }
+      ]
+    },
+    {
+      "id": "bb_findings",
+      "page_type": "theme_summary",
+      "layout_variant": "bb_findings",
+      "chapter": "主题发现",
+      "title": "主题发现：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_start_stop_continue",
+      "page_type": "recommendation",
+      "layout_variant": "bb_start_stop_continue",
+      "chapter": "开始／停止／继续",
+      "title": "开始／停止／继续：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "开始",
+          "body": "在关键决策前说明收费和服务条件。"
+        },
+        {
+          "title": "停止",
+          "body": "减少无法返回修改的操作步骤。"
+        },
+        {
+          "title": "继续",
+          "body": "保留有效的问题反馈机制。"
+        }
+      ]
+    },
+    {
+      "id": "bb_strategy_house",
+      "page_type": "framework",
+      "layout_variant": "bb_strategy_house",
+      "chapter": "策略框架",
+      "title": "策略框架：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        },
+        {
+          "title": "行动落地",
+          "body": "将发现转成明确的改进事项，持续验证体验变化。"
+        }
+      ]
+    },
+    {
+      "id": "bb_gap",
+      "page_type": "case_study",
+      "layout_variant": "bb_gap",
+      "chapter": "现状与目标差距",
+      "title": "现状与目标差距：基于访谈证据制定改进重点",
+      "subtitle": "演示内容 · 用于模板验收，不代表真实研究结果",
+      "key_message": "参与者希望先看懂服务规则，再决定是否继续使用。",
+      "evidence_ids": [
+        "demo_evidence"
+      ],
+      "source_notes": "模板验收演示材料，非真实受访者或研究结论",
+      "content_structure": [
+        {
+          "title": "规则清晰",
+          "body": "参与者希望在选择之前看到收费条件和服务范围。"
+        },
+        {
+          "title": "操作可控",
+          "body": "用户需要查看关键步骤，并能在提交之前返回修改。"
+        },
+        {
+          "title": "回应及时",
+          "body": "遇到困难时能够找到帮助，确认问题已经被接收。"
+        }
+      ]
+    }
+  ]
+}

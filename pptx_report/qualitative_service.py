@@ -274,9 +274,15 @@ class QualitativePptRenderService:
                     "title": str(page.get("title") or "").strip(),
                     "page_type": str(page.get("page_type") or "qualitative_insight"),
                     "layout_variant": variant,
-                    "layout_candidates": layout_candidates(
-                        str(page.get("page_type") or "qualitative_insight"), variant
+                    "source_layout_variant": resolve_layout_variant(
+                        next((p for p in script.get("pages", []) if str(p.get("id")) == source_id), page),
+                        str((script.get("style_profile") or {}).get("id") or ""),
                     ),
+                    "layout_candidates": layout_candidates(
+                        str(next((p for p in script.get("pages", []) if str(p.get("id")) == source_id), page).get("page_type") or "qualitative_insight"), variant,
+                        str((script.get("style_profile") or {}).get("id") or ""),
+                    ),
+                    "layout_binding": page.get("layout_binding") or {},
                     "density": self._density(page),
                     "continuation": {
                         "is_continuation": bool(page.get("split_from_page_id")),
@@ -319,6 +325,8 @@ class QualitativePptRenderService:
 
     @serialized_heavy_task
     def render(self, script: dict) -> dict:
+        if (script.get("style_profile") or {}).get("id") == "research_business_blue_v1":
+            return self.render_required_officecli(script)
         engine, fallback = self._select_engine()
         try:
             rendered = engine.render(script)

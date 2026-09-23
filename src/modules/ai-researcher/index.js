@@ -1,4 +1,5 @@
 import { datasetExplanation, artifactPreflight } from "../../../lib/research-readiness.mjs";
+import { selectPptTemplate, normalizeLayoutBinding, setPptPageLayout } from "../../../lib/ppt-template-state.mjs";
 /** AI Researcher V0.3.1 frontend. Server /api/research is authoritative; SSE 为可选增强。 */
 import { RESEARCH_RUN_RECOVERY_TIMEOUT_MS, latestStreamSnapshot, normalizeStreamPayload, parseSseBuffer, readSseResponse } from "./stream.mjs";
 import { downloadBlob } from "../../shared/export.js";
@@ -100,7 +101,7 @@ function renderReportOutline(detail, artifact, outline) {
   if (outline.evidence_conflicts?.length) { const conflicts = node("section", "research-outline-section", ""); conflicts.appendChild(node("h5", "", "Evidence Conflict")); outline.evidence_conflicts.forEach((item) => { const card = node("article", "research-outline-conflict", ""); card.append(node("strong", "", item.theme || "冲突证据"), node("p", "", item.explanation), node("small", "", item.status === "segmented" ? "已识别人群/渠道/阶段边界" : item.status === "resolved" ? "已解释" : "待进一步验证")); appendOutlineEvidence(card, item.evidence_ids); conflicts.appendChild(card); }); detail.appendChild(conflicts); }
   if (outline.evidence_gaps?.length) { const gaps = node("section", "research-outline-section", ""); gaps.appendChild(node("h5", "", "Evidence Gap")); outline.evidence_gaps.forEach((gap) => { const card = node("article", "research-outline-gap-card", ""); card.append(node("strong", "", gap.claim), node("p", "", gap.reason), node("small", "", `建议：${gap.recommendation || "补充对应证据"}`)); gaps.appendChild(card); }); detail.appendChild(gaps); }
 }
-async function savePptScriptVersion(artifact, script, message = "PPT Script 已保存为新版本。") { const pages = script.pages || []; pages.forEach((page, index) => { page.page_number = index + 1; }); const result = await api(`/projects/${encodeURIComponent(state.project.id)}/artifacts`, { method: "POST", body: jsonBody({ type: "ppt_script", title: script.title || artifact.title, content: JSON.stringify(script, null, 2), parent_artifact_id: artifact.id }) }); const saved = result.artifact || result; state.selectedArtifactId = saved.id; await loadArtifacts(); renderArtifactDetail(state.artifacts.find((item) => item.id === saved.id) || saved); notify(`${message} V${saved.version}`, "success"); return saved; }
+async function savePptScriptVersion(artifact, script, message = "PPT Script 已保存为新版本。", { openReader = true } = {}) { const pages = script.pages || []; pages.forEach((page, index) => { page.page_number = index + 1; }); const result = await api(`/projects/${encodeURIComponent(state.project.id)}/artifacts`, { method: "POST", body: jsonBody({ type: "ppt_script", title: script.title || artifact.title, content: JSON.stringify(script, null, 2), parent_artifact_id: artifact.id }) }); const saved = result.artifact || result; state.selectedArtifactId = saved.id; await loadArtifacts(); if (openReader) renderArtifactDetail(state.artifacts.find((item) => item.id === saved.id) || saved); notify(`${message} V${saved.version}`, "success"); return saved; }
 function startPptScript(outlineArtifact) { closeArtifactReader(); state.selectedArtifactId = outlineArtifact.id; state.targetPptScriptPageId = null; state.taskType = "ppt_script"; state.selectedFileIds.clear(); state.autoRetrieve = false; $("#researchChatInput").value = "请基于这份 Report Outline 生成完整的页面级 PPT Script。"; renderContextChips(); renderArtifacts(); setMobileTab("chat"); $("#researchChatInput").focus(); }
 function revisePptScriptPage(artifact, page) { const instruction = window.prompt("输入这一页的修改要求", "压缩到一个核心结论和三条支撑信息，保持 Evidence 不变。"); if (!instruction?.trim()) return; closeArtifactReader(); state.selectedArtifactId = artifact.id; state.targetPptScriptPageId = page.id; state.rerenderQualitativeAfterScriptRevision = true; state.taskType = "ppt_script"; state.selectedFileIds.clear(); state.autoRetrieve = false; $("#researchChatInput").value = instruction.trim(); renderContextChips(); setMobileTab("chat"); $("#researchChatInput").focus(); }
 
@@ -116,6 +117,7 @@ function resetQualitativePptPreviewState() {
   state.pendingQualitativePptScriptArtifact = null; state.pendingQualitativePptScript = null;
   state.pendingQualitativePptDirty = false; state.pendingQualitativePptOriginalFingerprint = "";
   state.pendingQualitativePreview = null; state.pendingQualitativePreviewToken = null;
+  if ($("#researchPptTemplateSelect")) $("#researchPptTemplateSelect").disabled = false;
 }
 async function resolveQualitativePptSources(sourceArtifact) {
   let scriptArtifact = sourceArtifact.type === "ppt_script" ? sourceArtifact : null;
@@ -153,10 +155,26 @@ function renderQualitativePagePreviews(preview) {
     const image = document.createElement("img"); image.className = "research-ppt-page-image"; image.alt = `第 ${index + 1} 页真实预览：${slide.title || slide.page_type}`; image.loading = "lazy"; image.src = `data:${slide.thumbnail_mime_type || "image/png"};base64,${slide.thumbnail_base64 || ""}`;
     const meta = node("div", "research-ppt-page-preview-meta", "");
     meta.append(node("span", `density ${slide.density?.status || "medium"}`, `密度 ${previewDensityLabel(slide.density?.status)}`), node("span", `evidence ${slide.evidence?.status || "limited"}`, `${previewEvidenceLabel(slide.evidence?.status)} · ${slide.evidence?.count || 0} 条${slide.evidence?.quote_count ? ` · ${slide.evidence.quote_count} 条原声` : ""}`));
+    const sourcePage = state.pendingQualitativePptScript?.pages?.find((p) => p.id === slide.source_page_id);
     const layout = node("label", "research-ppt-page-layout", ""); layout.appendChild(node("span", "", "候选布局"));
     const select = document.createElement("select"); select.setAttribute("aria-label", `${slide.title || "当前页"}候选布局`);
-    (slide.layout_candidates || []).forEach((candidate) => { const option = document.createElement("option"); option.value = candidate.id; option.textContent = candidate.label || QUALITATIVE_LAYOUT_LABELS[candidate.id] || candidate.id; option.selected = candidate.id === slide.layout_variant; select.appendChild(option); });
-    select.disabled = (slide.layout_candidates || []).length < 2; select.addEventListener("change", () => rerenderQualitativeSourcePage(slide, select, card)); layout.appendChild(select); meta.appendChild(layout);
+    (slide.layout_candidates || []).forEach((candidate) => { const option = document.createElement("option"); option.value = candidate.id; option.textContent = candidate.label || QUALITATIVE_LAYOUT_LABELS[candidate.id] || candidate.id; option.selected = candidate.id === (slide.source_layout_variant || slide.layout_variant); select.appendChild(option); });
+    select.disabled = (slide.layout_candidates || []).length < 2 || Boolean(sourcePage?.layout_binding?.locked); select.addEventListener("change", () => rerenderQualitativeSourcePage(slide, select, card)); layout.appendChild(select); meta.appendChild(layout);
+    if (sourcePage) {
+      const lock = node("button", "ghost-btn", sourcePage.layout_binding?.locked ? "解锁版式" : "锁定版式"); lock.type = "button";
+      lock.addEventListener("click", () => {
+        sourcePage.layout_binding = { ...normalizeLayoutBinding(sourcePage.layout_binding), locked: !sourcePage.layout_binding?.locked };
+        if (sourcePage.layout_binding.locked) {
+          sourcePage.layout_variant = slide.source_layout_variant || slide.layout_variant;
+          sourcePage.layout_spec = { ...(sourcePage.layout_spec || {}), variant: sourcePage.layout_variant };
+        }
+        state.pendingQualitativePptDirty = true; renderQualitativePagePreviews(state.pendingQualitativePreview);
+      }); meta.appendChild(lock);
+      if (state.selectedQualitativeTemplateId === "research_business_blue_v1") {
+        const split = node("button", "ghost-btn", sourcePage.layout_binding?.force_split ? "恢复自动拆页" : "拆分内容"); split.type = "button";
+        split.addEventListener("click", async () => { const next = JSON.parse(JSON.stringify(state.pendingQualitativePptScript)); const page = next.pages.find((p) => p.id === sourcePage.id); page.layout_binding = { ...normalizeLayoutBinding(page.layout_binding), force_split: !page.layout_binding?.force_split }; await updateQualitativeTemplatePreview(next); }); meta.appendChild(split);
+      }
+    }
     const issues = node("div", "research-ppt-page-issues", "");
     if (slide.validation_issues?.length) slide.validation_issues.forEach((issue) => issues.appendChild(node("p", issue.severity || "warning", `${issue.severity === "error" ? "!" : issue.severity === "fixed" ? "✓" : "△"} ${issue.message}`)));
     else issues.appendChild(node("p", "passed", "✓ 当前页未发现 Script 校验问题"));
@@ -166,6 +184,13 @@ function renderQualitativePagePreviews(preview) {
 function renderQualitativePptPreflight(sourceArtifact, catalog, preview = null) {
   const template = (catalog.templates || []).find((item) => item.template_id === state.selectedQualitativeTemplateId) || catalog.templates?.[0] || {};
   state.selectedQualitativeTemplateId = template.template_id || QUALITATIVE_TEMPLATE_ID;
+  const picker = $("#researchPptTemplateSelect");
+  picker.replaceChildren(); (catalog.templates || []).forEach((item) => { const option = document.createElement("option"); option.value = item.template_id; option.textContent = item.name; option.selected = item.template_id === state.selectedQualitativeTemplateId; picker.appendChild(option); });
+  const examples = $("#researchPptTemplateExamples"); examples.replaceChildren();
+  (template.layouts || []).filter((item) => template.preview_layout_ids?.includes(item.id) && item.preview_url).forEach((item) => {
+    const figure = node("figure", "", ""); const img = document.createElement("img"); img.src = item.preview_url; img.alt = `${item.label}版式示例（演示内容）`; img.loading = "lazy";
+    figure.append(img, node("figcaption", "", `${item.label} · 演示内容`)); examples.appendChild(figure);
+  });
   $("#researchPptTemplateName").textContent = `${template.name || "Tech Blue V2"} · ${template.version || "2.0"}`;
   $("#researchPptTemplateDescription").textContent = template.description || "企业级定性研究报告模板";
   const palette = $("#researchPptTemplatePalette"); palette.replaceChildren();
@@ -197,6 +222,9 @@ function renderQualitativePptPreflight(sourceArtifact, catalog, preview = null) 
 async function rerenderQualitativeSourcePage(slide, select, card) {
   const script = state.pendingQualitativePptScript; const target = script?.pages?.find((page) => page.id === slide.source_page_id); if (!target) { notify("找不到该源页面，无法重新渲染。", "error"); return; }
   const previewToken = state.pendingQualitativePreviewToken;
+  if (state.selectedQualitativeTemplateId === "research_business_blue_v1") {
+    try { const catalog = await loadQualitativeTemplateCatalog(); const template = catalog.templates.find((t) => t.template_id === state.selectedQualitativeTemplateId); await updateQualitativeTemplatePreview(setPptPageLayout(script, target.id, select.value, template)); } catch (error) { notify(error.message, "error"); renderQualitativePagePreviews(state.pendingQualitativePreview); } return;
+  }
   const oldVariant = target.layout_variant || target.variant || target.layout_spec?.variant || ""; const nextVariant = select.value; if (oldVariant === nextVariant) return;
   const oldLayoutSpec = target.layout_spec && typeof target.layout_spec === "object" ? { ...target.layout_spec } : target.layout_spec;
   target.layout_variant = nextVariant; target.layout_spec = { ...(target.layout_spec && typeof target.layout_spec === "object" ? target.layout_spec : {}), variant: nextVariant };
@@ -211,6 +239,33 @@ async function rerenderQualitativeSourcePage(slide, select, card) {
     target.layout_variant = oldVariant; target.layout_spec = oldLayoutSpec; select.value = oldVariant; notify(error.message, "error");
   } finally { select.disabled = false; card.classList.remove("rendering"); }
 }
+async function updateQualitativeTemplatePreview(nextScript) {
+  if (!state.pendingQualitativePptScript || !state.pendingQualitativePreviewToken) return;
+  const previous = { script: state.pendingQualitativePptScript, template: state.selectedQualitativeTemplateId, preview: state.pendingQualitativePreview, dirty: state.pendingQualitativePptDirty };
+  const token = requestId(); state.pendingQualitativePreviewToken = token;
+  state.pendingQualitativePptScript = nextScript; state.selectedQualitativeTemplateId = nextScript.style_profile?.id || previous.template; state.pendingQualitativePreview = null;
+  const picker = $("#researchPptTemplateSelect"); picker.disabled = true; $("#researchPptPreviewConfirm").disabled = true;
+  renderQualitativePreviewLoading();
+  try {
+    const preview = await requestQualitativePptPreview(nextScript);
+    if (state.pendingQualitativePreviewToken !== token) return;
+    state.pendingQualitativePreview = preview; state.pendingQualitativePptDirty = true;
+    renderQualitativePagePreviews(preview); renderQualitativePptPreflight(state.pendingQualitativePptScriptArtifact, await loadQualitativeTemplateCatalog(), preview);
+  } catch (error) {
+    if (state.pendingQualitativePreviewToken !== token) return;
+    state.pendingQualitativePptScript = previous.script; state.selectedQualitativeTemplateId = previous.template; state.pendingQualitativePreview = previous.preview; state.pendingQualitativePptDirty = previous.dirty;
+    if (previous.preview) renderQualitativePagePreviews(previous.preview);
+    renderQualitativePptPreflight(state.pendingQualitativePptScriptArtifact, await loadQualitativeTemplateCatalog(), previous.preview);
+    notify(error.message, "error");
+  } finally { if (state.pendingQualitativePreviewToken === token) picker.disabled = false; }
+}
+async function changeQualitativeTemplate() {
+  try {
+    const catalog = await loadQualitativeTemplateCatalog();
+    const template = catalog.templates.find((item) => item.template_id === $("#researchPptTemplateSelect").value);
+    await updateQualitativeTemplatePreview(selectPptTemplate(state.pendingQualitativePptScript, template));
+  } catch (error) { notify(error.message, "error"); }
+}
 async function openQualitativePptPreview(sourceArtifact, button = null) {
   if (!state.project || !sourceArtifact) return;
   setBusy(button, true, "准备预览…"); clearNotice();
@@ -218,7 +273,7 @@ async function openQualitativePptPreview(sourceArtifact, button = null) {
     const resolved = await resolveQualitativePptSources(sourceArtifact);
     const catalog = await loadQualitativeTemplateCatalog();
     state.pendingQualitativePptSource = sourceArtifact; state.pendingQualitativePptButton = button; state.pendingQualitativePptAnalysis = resolved.analysis; state.pendingQualitativePptOutline = resolved.outline; state.pendingQualitativePptScriptArtifact = resolved.scriptArtifact; state.pendingQualitativePptScript = JSON.parse(JSON.stringify(resolved.script));
-    state.selectedQualitativeTemplateId = catalog.default_template_id || QUALITATIVE_TEMPLATE_ID;
+    state.selectedQualitativeTemplateId = catalog.templates?.some((t) => t.template_id === resolved.script.style_profile?.id) ? resolved.script.style_profile.id : catalog.default_template_id || QUALITATIVE_TEMPLATE_ID;
     const token = requestId(); state.pendingQualitativePreviewToken = token;
     renderQualitativePptPreflight(resolved.scriptArtifact, catalog); renderQualitativePreviewLoading();
     $("#researchQualitativePptPreviewDialog").showModal();
@@ -233,8 +288,8 @@ async function confirmQualitativePptPreview(event) {
   const sourceButton = state.pendingQualitativePptButton; const templateId = state.selectedQualitativeTemplateId; const resolved = { analysis: state.pendingQualitativePptAnalysis, outline: state.pendingQualitativePptOutline, scriptArtifact: state.pendingQualitativePptScriptArtifact };
   setBusy(confirm, true, state.pendingQualitativePptDirty ? "保存脚本中…" : "开始正式生成…");
   try {
-    if (state.pendingQualitativePptDirty) resolved.scriptArtifact = await savePptScriptVersion(resolved.scriptArtifact, state.pendingQualitativePptScript, "布局修改已保存为");
-    $("#researchQualitativePptPreviewDialog").close(); resetQualitativePptPreviewState();
+    if (state.pendingQualitativePptDirty) resolved.scriptArtifact = await savePptScriptVersion(resolved.scriptArtifact, state.pendingQualitativePptScript, "布局修改已保存为", { openReader: false });
+    closeArtifactReader(); $("#researchQualitativePptPreviewDialog").close(); resetQualitativePptPreviewState();
     await generateQualitativePpt(resolved.scriptArtifact, sourceButton, { templateId, requireOfficeCli: true, resolved });
   } catch (error) { notify(error.message, "error"); }
   finally { setBusy(confirm, false); }
@@ -254,13 +309,13 @@ async function generateQualitativePpt(sourceArtifact, button = null, options = {
     const blob = base64PptxBlob(rendered.content_base64 || "");
     const uploaded = await api(`/projects/${encodeURIComponent(state.project.id)}/files`, { method: "POST", headers: { "Content-Type": blob.type, "X-Research-File-Name": encodeURIComponent(rendered.filename || "定性研究报告.pptx"), "X-Research-File-Category": "other" }, body: blob });
     const previous = state.artifacts.find((item) => item.type === "qualitative_ppt");
-    const metadata = { schema_version: "surveykit.qualitative_ppt.v1", template_id: rendered.template_id || templateId, file_id: uploaded.file.id, file_name: uploaded.file.file_name, source_report_outline: outline.id, source_ppt_script: scriptArtifact.id, source_analysis_artifacts: [analysis.id], slide_count: rendered.slide_count, validation: rendered.validation, object_counts: rendered.object_counts, renderer: rendered.renderer, quality_gate: rendered.quality_gate, layout_adaptations: rendered.layout_adaptations, render_llm_tokens: rendered.llm_tokens, generated_at: new Date().toISOString() };
+    const metadata = { schema_version: "surveykit.qualitative_ppt.v1", template_id: rendered.template_id || templateId, template_name: rendered.template_name, template_version: rendered.template_version || script.style_profile?.version, file_id: uploaded.file.id, file_name: uploaded.file.file_name, source_report_outline: outline.id, source_ppt_script: scriptArtifact.id, source_analysis_artifacts: [analysis.id], slide_count: rendered.slide_count, validation: rendered.validation, object_counts: rendered.object_counts, renderer: rendered.renderer, quality_gate: rendered.quality_gate, layout_adaptations: rendered.layout_adaptations, render_llm_tokens: rendered.llm_tokens, generated_at: new Date().toISOString() };
     const created = await api(`/projects/${encodeURIComponent(state.project.id)}/artifacts`, { method: "POST", body: jsonBody({ type: "qualitative_ppt", title: (script.title || analysis.title || "定性研究报告").replace(/PPT\s*脚本/gi, "PPT"), content: JSON.stringify(metadata, null, 2), parent_artifact_id: previous?.id || undefined }) });
     await Promise.all([loadArtifacts(), loadFiles({ poll: false })]);
     const artifact = created.artifact || created; state.selectedArtifactId = artifact.id;
     renderArtifactDetail(state.artifacts.find((item) => item.id === artifact.id) || artifact);
     downloadBlob(rendered.filename || "定性研究报告.pptx", blob);
-    notify(`Tech Blue V2 定性报告 PPT V${artifact.version || 1} 已生成：${rendered.slide_count} 页，Render LLM Token = ${rendered.llm_tokens || 0}。`, "success");
+    notify(`${rendered.template_name || (templateId === QUALITATIVE_TEMPLATE_ID ? "Tech Blue V2" : "蓝色商务研究报告")} PPT V${artifact.version || 1} 已生成：${rendered.slide_count} 页，可继续编辑。`, "success");
   } catch (error) { notify(error.message, "error"); }
   finally { setBusy(button, false); }
 }
@@ -269,7 +324,7 @@ function renderQualitativePpt(detail, artifact, metadata) {
   const gate = metadata.quality_gate || {}; const gateText = gate.status === "passed" ? `OfficeCLI ${gate.version || ""} 已通过` : gate.status === "unavailable" ? "OfficeCLI 未安装（已显式记录）" : gate.status === "skipped" ? "OfficeCLI 校验已关闭" : gate.status === "error" ? "OfficeCLI 校验执行异常" : "历史版本未记录 OfficeCLI 校验";
   const adaptation = metadata.layout_adaptations || {}; const adaptationText = adaptation.continuation_page_count ? ` · 自适应续页：${adaptation.continuation_page_count} 页` : "";
   const variantUsage = Object.entries(adaptation.variant_usage || {}).map(([variant, count]) => `${QUALITATIVE_LAYOUT_LABELS[variant] || variant} × ${count}`).join(" · ");
-  const summary = node("section", "research-ppt-script-summary", ""); summary.append(node("strong", "", `${metadata.slide_count || 0} 页 · 原生可编辑 PPTX`), node("p", "", `模板：${metadata.template_id === QUALITATIVE_TEMPLATE_ID ? "Tech Blue V2" : metadata.template_id || "历史模板"} · 渲染器：${metadata.renderer?.engine || "python-pptx"} · ${gateText}${adaptationText} · Render LLM Token：${metadata.render_llm_tokens || 0} · 验证问题：${metadata.validation?.issue_count || 0} · 全页图片：${metadata.object_counts?.full_slide_images || 0}`)); if (variantUsage) summary.appendChild(node("p", "research-ppt-layout-coverage", `版式覆盖：${variantUsage}`)); detail.appendChild(summary);
+  const summary = node("section", "research-ppt-script-summary", ""); summary.append(node("strong", "", `${metadata.slide_count || 0} 页 · 原生可编辑 PPTX`), node("p", "", `模板：${metadata.template_name || (metadata.template_id === QUALITATIVE_TEMPLATE_ID ? "Tech Blue V2" : metadata.template_id === "research_business_blue_v1" ? "蓝色商务研究报告" : metadata.template_id || "历史模板")} · 渲染器：${metadata.renderer?.engine || "python-pptx"} · ${gateText}${adaptationText} · Render LLM Token：${metadata.render_llm_tokens || 0} · 验证问题：${metadata.validation?.issue_count || 0} · 全页图片：${metadata.object_counts?.full_slide_images || 0}`)); if (variantUsage) summary.appendChild(node("p", "research-ppt-layout-coverage", `版式覆盖：${variantUsage}`)); detail.appendChild(summary);
   const file = state.files.find((item) => item.id === metadata.file_id); const actions = node("div", "research-ppt-script-toolbar", "");
   if (file) { const download = node("button", "primary-btn", "下载可编辑 PPTX"); download.type = "button"; download.addEventListener("click", () => downloadResearchFile(file)); actions.appendChild(download); }
   const script = state.artifacts.find((item) => item.id === metadata.source_ppt_script); if (script) { const rerender = node("button", "secondary-btn", "基于当前 Script 重新渲染"); rerender.type = "button"; rerender.addEventListener("click", () => openQualitativePptPreview(script, rerender)); actions.appendChild(rerender); }
@@ -685,6 +740,7 @@ function bindEvents() {
   $("#researchTranscriptEditor")?.addEventListener("submit", saveTranscriptMetadata); $("#researchGenerateTranscriptSummaries")?.addEventListener("click", generateMissingTranscriptSummaries); $("#researchGenerateTranscriptSummary")?.addEventListener("click", generateActiveTranscriptSummary); $("#researchFileCorrectTranscript")?.addEventListener("click", () => { $("#researchFileDialog").close(); openTranscriptCorrectionDialog(state.activeTranscript?.id || ""); }); $("#researchFileReviewTranscript")?.addEventListener("click", () => { $("#researchFileDialog").close(); openTranscriptCorrectionReview(state.activeTranscript?.id || ""); });
   $("#researchTranscriptCorrectionForm")?.addEventListener("submit", startTranscriptCorrection); $("#researchTranscriptCorrectionCancel")?.addEventListener("click", () => $("#researchTranscriptCorrectionDialog").close()); $("#researchCorrectionReviewClose")?.addEventListener("click", () => $("#researchTranscriptCorrectionReviewDialog").close()); $("#researchCorrectionExport")?.addEventListener("click", exportCorrectedTranscript);
   $("#researchAddContext")?.addEventListener("click", openContextDialog); $("#researchMemorySearch")?.addEventListener("click", searchMemory); $("#researchContextPickerForm")?.addEventListener("submit", applyContext); $("#researchContextCancel")?.addEventListener("click", () => $("#researchContextDialog").close()); $("#researchSaveArtifactForm")?.addEventListener("submit", saveArtifact); $("#researchArtifactCancel")?.addEventListener("click", () => { state.pendingArtifactContent = ""; $("#researchSaveArtifactDialog").close(); });
+  $("#researchPptTemplateSelect")?.addEventListener("change", changeQualitativeTemplate);
   $("#researchQualitativePptPreviewForm")?.addEventListener("submit", confirmQualitativePptPreview); $("#researchPptPreviewCancel")?.addEventListener("click", () => { $("#researchQualitativePptPreviewDialog").close(); resetQualitativePptPreviewState(); }); $("#researchQualitativePptPreviewDialog")?.addEventListener("close", () => { if (state.pendingQualitativePreviewToken) resetQualitativePptPreviewState(); });
   $("#researchQuickTasks")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-research-prompt]"); if (!button) return; state.taskType = button.dataset.researchTaskType || "free_chat";

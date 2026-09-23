@@ -1,0 +1,440 @@
+{
+  "template_id": "research_business_blue_v1",
+  "name": "蓝色商务研究报告",
+  "version": "1.0.0",
+  "description": "24 种研究报告版式，支持逐页预览、内容续页与原生可编辑导出。",
+  "source_sha256": "8c7fc1a40ae334ff507a53044e5a37e71b84a2320e75d57e2d0c834592fedb60",
+  "aspect_ratio": "16:9",
+  "tokens": {
+    "navy": "#0B2545",
+    "deep_blue": "#0B3E8F",
+    "primary": "#1B5AA8",
+    "cyan": "#2E77C2",
+    "ice": "#F4F7FC",
+    "accent": "#E0703A"
+  },
+  "preview_layout_ids": [
+    "bb_cover",
+    "bb_quotes",
+    "bb_journey",
+    "bb_comparison",
+    "bb_fishbone",
+    "bb_actions"
+  ],
+  "layouts": [
+    {
+      "id": "bb_cover",
+      "label": "报告封面",
+      "source_slide": 201,
+      "page_types": [
+        "cover",
+        "navigation"
+      ],
+      "capacity": 1,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": "/templates/research-business-blue-v1/cover.png"
+    },
+    {
+      "id": "bb_contents",
+      "label": "报告目录",
+      "source_slide": 188,
+      "page_types": [
+        "navigation"
+      ],
+      "capacity": 6,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_section",
+      "label": "章节过渡",
+      "source_slide": 191,
+      "page_types": [
+        "section_intro"
+      ],
+      "capacity": 1,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_summary",
+      "label": "核心结论总览",
+      "source_slide": 183,
+      "page_types": [
+        "executive_summary",
+        "qualitative_summary",
+        "theme_summary",
+        "summary"
+      ],
+      "capacity": 5,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_quotes",
+      "label": "用户原声",
+      "source_slide": 185,
+      "page_types": [
+        "quote_evidence",
+        "qualitative_insight"
+      ],
+      "capacity": 3,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title",
+        "quotes"
+      ],
+      "overflow": "continuation",
+      "preview_url": "/templates/research-business-blue-v1/quotes.png"
+    },
+    {
+      "id": "bb_persona_pair",
+      "label": "人群画像对比",
+      "source_slide": 121,
+      "page_types": [
+        "persona",
+        "segment_comparison",
+        "comparison",
+        "segmentation_map"
+      ],
+      "capacity": 2,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_journey",
+      "label": "用户旅程",
+      "source_slide": 71,
+      "page_types": [
+        "journey"
+      ],
+      "capacity": 5,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": "/templates/research-business-blue-v1/journey.png"
+    },
+    {
+      "id": "bb_fishbone",
+      "label": "问题成因鱼骨",
+      "source_slide": 12,
+      "page_types": [
+        "problem_reason"
+      ],
+      "capacity": 6,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": "/templates/research-business-blue-v1/fishbone.png"
+    },
+    {
+      "id": "bb_matrix",
+      "label": "能力与需求矩阵",
+      "source_slide": 11,
+      "page_types": [
+        "matrix",
+        "framework"
+      ],
+      "capacity": 9,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_value_canvas",
+      "label": "需求与价值匹配",
+      "source_slide": 39,
+      "page_types": [
+        "concept_definition",
+        "framework"
+      ],
+      "capacity": 3,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_swot",
+      "label": "SWOT 分析",
+      "source_slide": 94,
+      "page_types": [
+        "framework",
+        "matrix"
+      ],
+      "capacity": 4,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_comparison",
+      "label": "方案对比",
+      "source_slide": 93,
+      "page_types": [
+        "comparison",
+        "segment_comparison",
+        "competitor_comparison",
+        "evidence_diagnostic"
+      ],
+      "capacity": 3,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": "/templates/research-business-blue-v1/comparison.png"
+    },
+    {
+      "id": "bb_feature_compare",
+      "label": "竞品能力对比",
+      "source_slide": 108,
+      "page_types": [
+        "competitor_comparison",
+        "comparison",
+        "matrix"
+      ],
+      "capacity": 6,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_positioning",
+      "label": "市场定位",
+      "source_slide": 100,
+      "page_types": [
+        "segmentation_map"
+      ],
+      "capacity": 4,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_priority",
+      "label": "需求优先级",
+      "source_slide": 122,
+      "page_types": [
+        "priority_matrix"
+      ],
+      "capacity": 6,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_actions",
+      "label": "行动清单",
+      "source_slide": 197,
+      "page_types": [
+        "recommendation"
+      ],
+      "capacity": 5,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": "/templates/research-business-blue-v1/actions.png"
+    },
+    {
+      "id": "bb_roadmap",
+      "label": "实施路线",
+      "source_slide": 50,
+      "page_types": [
+        "recommendation",
+        "journey"
+      ],
+      "capacity": 5,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_glossary",
+      "label": "研究口径",
+      "source_slide": 196,
+      "page_types": [
+        "research_framework",
+        "appendix"
+      ],
+      "capacity": 6,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_sources",
+      "label": "来源附录",
+      "source_slide": 200,
+      "page_types": [
+        "appendix",
+        "research_framework"
+      ],
+      "capacity": 6,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_closing",
+      "label": "结尾共识",
+      "source_slide": 189,
+      "page_types": [
+        "summary",
+        "executive_summary",
+        "qualitative_summary"
+      ],
+      "capacity": 3,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_findings",
+      "label": "主题发现",
+      "source_slide": 182,
+      "page_types": [
+        "theme_summary",
+        "qualitative_insight",
+        "qualitative_summary",
+        "executive_summary",
+        "case_study"
+      ],
+      "capacity": 6,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_start_stop_continue",
+      "label": "开始／停止／继续",
+      "source_slide": 126,
+      "page_types": [
+        "recommendation"
+      ],
+      "capacity": 3,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_strategy_house",
+      "label": "策略框架",
+      "source_slide": 42,
+      "page_types": [
+        "framework",
+        "needs_pyramid"
+      ],
+      "capacity": 4,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    },
+    {
+      "id": "bb_gap",
+      "label": "现状与目标差距",
+      "source_slide": 101,
+      "page_types": [
+        "case_study",
+        "comparison",
+        "problem_reason"
+      ],
+      "capacity": 3,
+      "renderer": "officecli",
+      "editable": true,
+      "required_slots": [
+        "title"
+      ],
+      "overflow": "continuation",
+      "preview_url": null
+    }
+  ],
+  "editable": true
+}

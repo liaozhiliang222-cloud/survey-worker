@@ -15,6 +15,7 @@ from pptx import Presentation
 from .officecli_runner import OfficeCliRunner
 from .qualitative_layouts import resolve_layout_variant
 from .qualitative_renderer import _object_counts, layout_adaptations, prepare_pages, validate_script
+from .business_blue_layouts import BUSINESS_BLUE_ID
 
 
 SLIDE_W, SLIDE_H = 33.87, 19.05
@@ -298,6 +299,7 @@ class OfficeCliDeckBuilder:
         spacing: float | None = None,
         line_spacing: str | None = None,
         auto_fit: str | None = "shrink",
+        literal_text: bool = False,
     ) -> None:
         self._shape_index += 1
         props: dict[str, Any] = {
@@ -327,7 +329,7 @@ class OfficeCliDeckBuilder:
         if text is not None:
             props.update(
                 {
-                    "text": _display_text(text),
+                    "text": _text(text) if literal_text else _display_text(text),
                     "font": FONT,
                     "font.ea": FONT,
                     "size": f"{size:g}pt",
@@ -1399,7 +1401,11 @@ def build_officecli_commands(script: dict, pages: list[dict]) -> list[dict[str, 
     style_profile = script.get("style_profile") if isinstance(script.get("style_profile"), dict) else {}
     template_id = _text(style_profile.get("id"))
     for page in pages:
-        _render_page(builder, page, report_title, template_id)
+        if template_id == BUSINESS_BLUE_ID:
+            from .business_blue_renderer import render_business_blue_page
+            render_business_blue_page(builder, page, report_title)
+        else:
+            _render_page(builder, page, report_title, template_id)
     return builder.commands
 
 

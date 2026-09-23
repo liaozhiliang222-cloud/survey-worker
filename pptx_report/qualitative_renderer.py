@@ -23,6 +23,7 @@ from pptx.util import Inches, Pt
 from .theme import Theme
 from .utils import set_slide_background, style_font
 from .qualitative_layouts import TEMPLATE_ID, VARIANT_COLLECTION_LIMITS, resolve_layout_variant, variant_usage
+from .business_blue_layouts import BUSINESS_BLUE_ID
 
 
 LEGACY_PAGE_TYPES = {
@@ -933,6 +934,9 @@ def prepare_pages(script: dict) -> tuple[list[dict], list[dict]]:
     prepared, issues = [], []
     style_profile = script.get("style_profile") if isinstance(script.get("style_profile"), dict) else {}
     template_id = _text(style_profile.get("id"))
+    if template_id == BUSINESS_BLUE_ID:
+        from .business_blue_content import prepare_business_blue
+        return prepare_business_blue(script)
     for original in _items(script.get("pages")):
         page = deepcopy(original) if isinstance(original, dict) else {}
         page_type = _text(page.get("page_type"))
@@ -1016,7 +1020,7 @@ def layout_adaptations(script: dict, pages: list[dict], issues: list[dict]) -> d
         if page.get("split_total")
     }
     result = {
-        "profile": "qualitative_tech_blue_v2" if template_id == TEMPLATE_ID else "qualitative_enterprise_v1_1",
+        "profile": template_id if template_id in {TEMPLATE_ID, BUSINESS_BLUE_ID} else "qualitative_enterprise_v1_1",
         "input_page_count": len(_items(script.get("pages"))),
         "output_page_count": len(pages),
         "continuation_page_count": sum(bool(page.get("split_from_page_id")) for page in pages),
@@ -1024,7 +1028,7 @@ def layout_adaptations(script: dict, pages: list[dict], issues: list[dict]) -> d
         "fixed_issue_count": sum(item.get("severity") == "fixed" for item in issues),
         "verbatim_quotes_preserved": True,
     }
-    if template_id == TEMPLATE_ID:
+    if template_id in {TEMPLATE_ID, BUSINESS_BLUE_ID}:
         result["template_id"] = template_id
         result["variant_usage"] = variant_usage(pages, template_id)
     return result
@@ -1051,7 +1055,7 @@ def validate_script(script: dict, pages: list[dict], split_issues: list[dict]) -
         module_count = len(findings) + len(quotes) + len(blocks)
         if module_count > 8:
             issues.append({"code": "TOO_MANY_MODULES", "severity": "warning", "page_id": page_id, "message": f"页面包含 {module_count} 个内容模块。"})
-        if page.get("page_type") not in NO_EVIDENCE_TYPES and not _items(page.get("evidence_ids")):
+        if page.get("page_type") not in NO_EVIDENCE_TYPES | {"cover"} and not _items(page.get("evidence_ids")):
             issues.append({"code": "EVIDENCE_MISSING", "severity": "error", "page_id": page_id, "message": "页面未绑定 Evidence。"})
         if page.get("page_type") not in NO_EVIDENCE_TYPES and not _text(page.get("source_notes")) and not quotes:
             issues.append({"code": "SOURCE_NOTE_MISSING", "severity": "warning", "page_id": page_id, "message": "页面缺少面向读者的来源说明。"})
@@ -1102,6 +1106,8 @@ def _validate_rendered_geometry(prs: Presentation, pages: list[dict]) -> list[di
 def render_qualitative_report(script: dict) -> dict:
     if not isinstance(script, dict):
         raise ValueError("qualitative PPT script 必须是 JSON 对象")
+    if (script.get("style_profile") or {}).get("id") == BUSINESS_BLUE_ID:
+        raise ValueError("蓝色商务模板需要 OfficeCLI 渲染，不能回退到旧版式。")
     pages, split_issues = prepare_pages(script)
     if not pages:
         raise ValueError("qualitative PPT script 至少需要一页")

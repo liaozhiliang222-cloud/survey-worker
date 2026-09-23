@@ -9,8 +9,10 @@ from __future__ import annotations
 from collections import Counter
 from functools import lru_cache
 import json
+import os
 from pathlib import Path
 from typing import Any
+from .business_blue_layouts import BUSINESS_BLUE_ID, business_blue_catalog, business_blue_candidates, resolve_business_blue
 
 
 TEMPLATE_ID = "qualitative_tech_blue_v2"
@@ -101,6 +103,8 @@ def _text(value: Any, limit: int = 120) -> str:
 
 def resolve_layout_variant(page: dict, template_id: str = "") -> str:
     """Return a supported variant without mutating the page."""
+    if template_id == BUSINESS_BLUE_ID:
+        return resolve_business_blue(page)
     page_type = _text(page.get("page_type"), 80)
     layout_spec = page.get("layout_spec") if isinstance(page.get("layout_spec"), dict) else {}
     requested = _text(
@@ -121,8 +125,10 @@ def variant_usage(pages: list[dict], template_id: str = "") -> dict[str, int]:
     return dict(Counter(resolve_layout_variant(page, template_id) for page in pages))
 
 
-def layout_candidates(page_type: str, selected: str = "") -> list[dict]:
+def layout_candidates(page_type: str, selected: str = "", template_id: str = "") -> list[dict]:
     """Return the renderer-supported choices for one semantic page type."""
+    if template_id == BUSINESS_BLUE_ID:
+        return business_blue_candidates(page_type, selected)
     allowed = LAYOUT_VARIANTS.get(_text(page_type, 80), ("insight_evidence",))
     catalog = qualitative_template_catalog()
     catalog_by_id = {
@@ -148,6 +154,10 @@ def qualitative_template_catalog() -> dict:
         **catalog,
         "name": "Tech Blue V2",
         "description": "企业级定性研究报告：科技蓝、原生可编辑、无左侧贯穿竖条。",
+        "supported_layouts": [
+            {"id": variant, "label": LAYOUT_LABELS.get(variant, variant), "page_types": [page_type]}
+            for page_type, variants in LAYOUT_VARIANTS.items() for variant in variants
+        ],
         "preview_layout_ids": [
             "editorial_overview",
             "profile_evidence",
@@ -157,3 +167,17 @@ def qualitative_template_catalog() -> dict:
             "action_roadmap",
         ],
     }
+
+
+def qualitative_template_catalogs() -> list[dict]:
+    catalogs = [qualitative_template_catalog()]
+    if os.getenv("SURVEYKIT_BUSINESS_BLUE_ENABLED", "1").lower() not in {"0", "false", "off"}:
+        catalogs.append(business_blue_catalog())
+    return catalogs
+
+
+def require_qualitative_template(template_id: str) -> dict:
+    for catalog in qualitative_template_catalogs():
+        if catalog["template_id"] == template_id:
+            return catalog
+    raise ValueError(f"不支持的定性 PPT 模板：{template_id}")

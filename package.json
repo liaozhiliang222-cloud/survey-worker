@@ -66,6 +66,7 @@
     "test:qualitative-analysis": "node tests/qualitative-analysis-workflow-smoke.mjs && node tests/qualitative-analysis-ui-smoke.mjs",
     "test:transcript-correction": "node tests/transcript-correction-workflow-smoke.mjs && node tests/transcript-correction-d1-smoke.mjs && node tests/transcript-correction-ui-smoke.mjs",
     "test:report-storyline": "node tests/report-storyline-workflow-smoke.mjs && node tests/report-storyline-ui-smoke.mjs",
+    "test:business-blue": "node tests/business-blue-state-smoke.mjs && python tests/business_blue_smoke.py && playwright test tests/e2e/business-blue-template.spec.js",
     "test:ppt-script": "node tests/ppt-script-workflow-smoke.mjs && node tests/ppt-script-ui-smoke.mjs && node tests/qualitative-ppt-ui-smoke.mjs && node tests/qualitative-ppt-artifact-smoke.mjs",
     "test:data-jobs": "node tests/data-jobs-smoke.mjs",
     "test:sav-dataset": "node tests/sav-dataset-smoke.mjs && node tests/sav-encoding-smoke.mjs",

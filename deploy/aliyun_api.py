@@ -79,7 +79,7 @@ from pptx_report.qualitative_service import (
     OfficeCliUnavailableError,
     QualitativePptRenderService,
 )
-from pptx_report.qualitative_layouts import TEMPLATE_ID, qualitative_template_catalog
+from pptx_report.qualitative_layouts import TEMPLATE_ID, qualitative_template_catalog, qualitative_template_catalogs, require_qualitative_template
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 REQUEST_ENVELOPE_MAGIC = b"SKPPTX1\n"
@@ -502,11 +502,16 @@ def healthz():
 
 def _qualitative_script_for_template(script: dict, template_id: str) -> dict:
     style_profile = script.get("style_profile") if isinstance(script.get("style_profile"), dict) else {}
+    catalog = require_qualitative_template(template_id)
+    requested_version = str(style_profile.get("version") or "")
+    if style_profile.get("id") == template_id and requested_version and requested_version != catalog.get("version"):
+        raise ValueError("模板版本已变化，请重新选择模板并预览。")
     return {
         **script,
         "style_profile": {
             **style_profile,
             "id": template_id,
+            "version": catalog.get("version"),
         },
     }
 
@@ -529,8 +534,7 @@ async def preview_qualitative_report(request: Request):
         if not isinstance(script, dict):
             raise ValueError("缺少有效的 qualitative PPT script")
         template_id = str(payload.get("template_id") or TEMPLATE_ID).strip()
-        if template_id != TEMPLATE_ID:
-            raise ValueError(f"不支持的定性 PPT 模板：{template_id}")
+        template_catalog = require_qualitative_template(template_id)
         rendered = QUALITATIVE_PPT_SERVICE.preview(
             _qualitative_script_for_template(script, template_id),
             source_page_id=str(payload.get("source_page_id") or "").strip(),
@@ -572,20 +576,21 @@ async def generate_qualitative_report(request: Request):
         # The request-level template selection is authoritative. Legacy scripts
         # may carry an older style-profile id and must upgrade cleanly to V2.
         template_id = str(payload.get("template_id") or TEMPLATE_ID).strip()
-        if template_id != TEMPLATE_ID:
-            raise ValueError(f"不支持的定性 PPT 模板：{template_id}")
+        template_catalog = require_qualitative_template(template_id)
         require_officecli = payload.get("require_officecli", True) is not False
         if not require_officecli:
             raise ValueError("定性报告正式渲染只支持 OfficeCLI。")
         capabilities = QUALITATIVE_PPT_SERVICE.capabilities()
         if require_officecli and not capabilities["officecli_installed"]:
-            raise OfficeCliUnavailableError("Tech Blue V2 需要服务器 OfficeCLI 就绪后再生成。")
+            raise OfficeCliUnavailableError("所选模板需要服务器 OfficeCLI 就绪后再生成。")
         script = _qualitative_script_for_template(script, template_id)
         rendered = QUALITATIVE_PPT_SERVICE.render_required_officecli(script)
         filename = _safe_title(str(script.get("title") or "定性研究报告")) + ".pptx"
         return JSONResponse({
             "filename": filename,
             "template_id": template_id,
+            "template_version": template_catalog.get("version"),
+            "template_name": template_catalog.get("name"),
             "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "content_base64": base64.b64encode(rendered["content"]).decode("ascii"),
             "slide_count": rendered["slide_count"],
@@ -616,7 +621,7 @@ def list_qualitative_templates():
     return JSONResponse(
         {
             "default_template_id": TEMPLATE_ID,
-            "templates": [qualitative_template_catalog()],
+            "templates": qualitative_template_catalogs(),
             "renderer": QUALITATIVE_PPT_SERVICE.capabilities(),
         },
         headers={"Cache-Control": "no-store"},
