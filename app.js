@@ -19913,7 +19913,8 @@ if ("serviceWorker" in navigator) {
         if (!worker) return;
         worker.addEventListener("statechange", () => {
           if (worker.state === "activated" && navigator.serviceWorker.controller) {
-            window.location.reload();
+            // Imported datasets can live only in memory; never discard them on a cache update.
+            showToast("页面更新已就绪，请保存当前结果后手动刷新以使用新版本。", "info", 8000);
           }
         });
       });

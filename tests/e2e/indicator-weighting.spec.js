@@ -2,6 +2,19 @@ const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 test.beforeEach(async ({page})=>{await page.addInitScript(()=>localStorage.setItem('surveykit_tour_done','1'));});
 
+test('cache activation preserves in-progress imported data',async({page})=>{
+  await page.addInitScript(()=>{
+    const worker={state:'installing',addEventListener:(name,fn)=>{window.activateTestWorker=()=>{worker.state='activated';fn();};}};
+    const registration={installing:worker,update:()=>Promise.resolve(),addEventListener:(name,fn)=>{if(name==='updatefound')fn();}};
+    Object.defineProperty(navigator,'serviceWorker',{value:{controller:{},register:()=>Promise.resolve(registration)},configurable:true});
+  });
+  await load(page);
+  await page.waitForFunction(()=>typeof window.activateTestWorker==='function');
+  await page.evaluate(()=>window.activateTestWorker());
+  await expect(page.locator('#crosstabData')).toHaveValue('brand,a,b\nA,10,9\nA,0,\nB,8,10\nB,,8');
+  await expect(page.getByText('页面更新已就绪，请保存当前结果后手动刷新以使用新版本。')).toBeVisible();
+});
+
 async function load(page, csv = 'brand,a,b\nA,10,9\nA,0,\nB,8,10\nB,,8') {
   await page.goto('/#crosstab-analysis');
   await page.locator('#crosstabData').fill(csv);

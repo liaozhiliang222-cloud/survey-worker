@@ -35,3 +35,5 @@ Excel附表：二级加权指标、三级指标表现、指标权重方案、指
 自动验证：`npm run test:indicator-weighting`；浏览器验证：`npx playwright test tests/e2e/indicator-weighting.spec.js`。私有数据复算脚本 `scripts/validate-indicator-files.cjs` 接受本地fixture路径，研究原始数据不进入仓库。
 
 本次为浏览器功能发布，不含后端业务或数据库变更。Pages独立发布新版本；PPT后端保留既有版本，分别核对健康与revision，不为同步版本号重装后端。回滚使用前一Pages部署。
+
+线上真实SAV验证补充：缓存更新不再自动刷新页面，仅提示用户保存结果后手动刷新，避免丢失内存中的原始变量映射和样本。完整交叉表的154个二级值、77个二级空值及目录跳转经下载回读验证。
