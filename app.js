@@ -1397,7 +1397,9 @@ function decodeXmlText(value) {
     .replaceAll("&gt;", ">")
     .replaceAll("&amp;", "&")
     .replaceAll("&quot;", "\"")
-    .replaceAll("&apos;", "'");
+    .replaceAll("&apos;", "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)));
 }
 
 function normalizeImportedText(text) {
@@ -1790,20 +1792,23 @@ function rowsToDelimitedTableWithContext(rows) {
 }
 
 async function xlsxToWorkbookSheets(arrayBuffer) {
+  const signature = new Uint8Array(arrayBuffer, 0, Math.min(2, arrayBuffer.byteLength));
+  if (signature[0] !== 0x50 || signature[1] !== 0x4b) throw new Error("文件不是有效的 .xlsx 工作簿，请用 Excel/WPS 另存为 .xlsx 后导入。");
   if (window.SurveyKitFileParser?.xlsxToWorkbookSheets) {
     return window.SurveyKitFileParser.xlsxToWorkbookSheets(arrayBuffer);
   }
-  const sharedXml = await readZipText(arrayBuffer, "xl/sharedStrings.xml").catch(() => "");
-  const workbookXml = await readZipText(arrayBuffer, "xl/workbook.xml").catch(() => "");
-  const relationshipXml = await readZipText(arrayBuffer, "xl/_rels/workbook.xml.rels").catch(() => "");
+  const sharedXml = await readZipText(arrayBuffer, "xl/sharedStrings.xml");
+  const workbookXml = await readZipText(arrayBuffer, "xl/workbook.xml");
+  const relationshipXml = await readZipText(arrayBuffer, "xl/_rels/workbook.xml.rels");
+  if (!workbookXml) throw new Error("缺少 Excel 工作簿结构，请检查文件是否损坏并另存为 .xlsx。");
   const sharedStrings = sharedStringsFromXml(sharedXml);
   const sheetPaths = getWorkbookSheetPaths(workbookXml, relationshipXml);
   const sheetNames = getWorkbookSheetNames(workbookXml);
   const sheets = [];
 
   for (const [index, sheetPath] of sheetPaths.entries()) {
-    const sheetXml = await readZipText(arrayBuffer, sheetPath).catch(() => "");
-    if (!sheetXml) continue;
+    const sheetXml = await readZipText(arrayBuffer, sheetPath);
+    if (!sheetXml) throw new Error("工作表内容缺失，请修复文件或另存为 .xlsx 后导入。");
     const rows = xlsxSheetXmlToRows(sheetXml, sharedStrings);
     if (rows.length) sheets.push({ index, name: sheetNames[index] || ("Sheet" + (index + 1)), rows });
   }
@@ -2547,60 +2552,92 @@ function renderQuestionnaireImportPreview(text, filename = "已导入文件") {
   `;
 }
 
+function renderDocumentImportStatus(targetId, message, failed = false) {
+  const target = document.getElementById(targetId);
+  if (!target) return;
+  let status = document.getElementById(`${targetId}ImportStatus`);
+  if (!status) {
+    status = document.createElement("p");
+    status.id = `${targetId}ImportStatus`;
+    status.className = "document-import-status";
+    status.setAttribute("role", "status");
+    target.insertAdjacentElement("afterend", status);
+  }
+  status.dataset.state = failed ? "error" : "success";
+  status.textContent = message;
+}
+
+function assertSupportedImportFile(file, extensions) {
+  if (/\.doc$/i.test(file.name)) throw new Error(legacyDocUnsupportedMessage(file.name));
+  if (/\.xls$/i.test(file.name)) throw new Error("旧版 .xls 暂不支持，请用 Excel/WPS 另存为 .xlsx 后导入。");
+  const extension = file.name.split(".").pop().toLowerCase();
+  if (!extensions.includes(extension)) throw new Error(`不支持此文件格式，请使用 ${extensions.map((item) => `.${item}`).join("、")}。`);
+}
+
+function workbookSheetsToDocumentText(sheets) {
+  return sheets.map((sheet) => {
+    const lines = (sheet.rows || []).map((row) => row.map((cell) => String(cell ?? "").trim()).filter(Boolean).join("\t")).filter(Boolean);
+    return lines.length ? `【${sheet.name}】\n${lines.join("\n")}` : "";
+  }).filter(Boolean).join("\n\n");
+}
+
+async function documentImportFileToText(file, requirements = false) {
+  assertSupportedImportFile(file, ["docx", "xlsx", "pptx", "md", "txt", "csv"]);
+  if (/\.docx$/i.test(file.name)) return docxToQuestionnaireText(await file.arrayBuffer());
+  if (/\.pptx$/i.test(file.name)) return pptxToTemplateText(await file.arrayBuffer());
+  if (/\.xlsx$/i.test(file.name)) {
+    const raw = await file.arrayBuffer();
+    if (!requirements) {
+      const questionnaire = await xlsxToQuestionnaireText(raw);
+      if (questionnaire.trim()) return questionnaire;
+    }
+    return workbookSheetsToDocumentText(await xlsxToWorkbookSheets(raw));
+  }
+  const text = await file.text();
+  return !requirements && /\.csv$/i.test(file.name) ? csvToQuestionnaireText(text) || text : text;
+}
+
 function applyImportedTextToTarget(text, targetId, filename = "已导入文件") {
   const normalized = normalizeImportedText(text);
-  if (!normalized) return;
+  if (!normalized) throw new Error("未识别到可导入的文本，请检查文件是否为空或仅包含图片。");
   const target = document.querySelector(`#${targetId}`);
   if (!target) return;
   target.value = normalized;
-  syncQuestionnaireToWorkspace(normalized);
+  const requirements = ["aiInput", "aiPlanInput"].includes(targetId);
+  if (!requirements) syncQuestionnaireToWorkspace(normalized);
+  target.dispatchEvent(new Event("input", { bubbles: true }));
+  renderDocumentImportStatus(targetId, `已导入 ${filename}（${normalized.length} 字符）`);
   showButtonSaved(document.querySelector(`[data-import-target="${targetId}"]`), "已导入");
   const preview = document.querySelector("#questionnaireImportPreview");
-  if (preview) {
+  if (preview && !requirements) {
     const questions = parseQuestions(normalized);
     preview.innerHTML = `<strong>${escapeHtml(filename)}</strong><span>已同步到 ${escapeHtml(targetId)}；识别题量：${questions.length}。</span>`;
   }
 }
 
-function handleQuestionnaireImport(file, targetId = "") {
+async function handleQuestionnaireImport(file, targetId = "") {
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async () => {
-    try {
-      const raw = reader.result;
-      if (/\.doc$/i.test(file.name)) {
-        throw new Error(legacyDocUnsupportedMessage(file.name));
-      }
-      const text = /\.docx$/i.test(file.name)
-        ? await docxToQuestionnaireText(raw)
-        : /\.xlsx$/i.test(file.name)
-          ? await xlsxToQuestionnaireText(raw)
-          : /\.csv$/i.test(file.name)
-          ? csvToQuestionnaireText(String(raw || ""))
-            : String(raw || "");
-      if (targetId) {
-        applyImportedTextToTarget(text, targetId, file.name);
-      } else {
-        renderQuestionnaireImportPreview(text, file.name);
-      }
-    } catch (error) {
-      pendingQuestionnaireImport = "";
-      const applyButton = document.querySelector("#applyQuestionnaireImport");
-      const preview = document.querySelector("#questionnaireImportPreview");
-      applyButton.disabled = true;
-      preview.innerHTML = `
-        <strong>导入失败</strong>
-        <span>${escapeHtml(error.message || "文件解析失败，请尝试另存为 TXT 或 CSV 后导入。")}</span>
-      `;
-      if (targetId) {
-        showButtonSaved(document.querySelector(`[data-import-target="${targetId}"]`), "导入失败");
-      }
+  try {
+    const text = await documentImportFileToText(file, ["aiInput", "aiPlanInput"].includes(targetId));
+    if (!normalizeImportedText(text)) throw new Error("未识别到可导入的文本，请检查文件是否为空或仅包含图片。");
+    if (targetId) {
+      applyImportedTextToTarget(text, targetId, file.name);
+    } else {
+      renderQuestionnaireImportPreview(text, file.name);
     }
-  };
-  if (/\.(doc|docx|xlsx)$/i.test(file.name)) {
-    reader.readAsArrayBuffer(file);
-  } else {
-    reader.readAsText(file, "utf-8");
+  } catch (error) {
+    pendingQuestionnaireImport = "";
+    const applyButton = document.querySelector("#applyQuestionnaireImport");
+    const preview = document.querySelector("#questionnaireImportPreview");
+    if (applyButton) applyButton.disabled = true;
+    if (preview && !targetId) preview.innerHTML = `
+      <strong>导入失败</strong>
+      <span>${escapeHtml(error.message || "文件解析失败，请尝试另存为 TXT 或 CSV 后导入。")}</span>
+    `;
+    if (targetId) {
+      renderDocumentImportStatus(targetId, `导入失败：${error.message || "文件读取失败，请重试。"}`, true);
+      showButtonSaved(document.querySelector(`[data-import-target="${targetId}"]`), "导入失败");
+    }
   }
 }
 
@@ -2701,55 +2738,33 @@ function questionDisplayTitle(variableName, fallback = "") {
   return fallbackText;
 }
 
-function handleCrosstabQuestionnaireImport(file) {
+async function handleCrosstabQuestionnaireImport(file) {
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async () => {
-    try {
-      const raw = reader.result;
-      let text = "";
-      if (/\.doc$/i.test(file.name)) {
-        throw new Error(legacyDocUnsupportedMessage(file.name));
-      } else if (/\.docx$/i.test(file.name)) {
-        text = await docxToQuestionnaireText(raw);
-      } else if (/\.(xlsx|xls)$/i.test(file.name)) {
-        try {
-          text = await xlsxToQuestionnaireText(raw);
-        } catch {
-          text = String(raw || "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
-        }
-      } else {
-        text = String(raw || "");
-      }
-      if (!text.trim()) throw new Error("文件内容为空。");
-      autoNetSpec = /\.(xlsx|xls)$/i.test(file.name)
-        ? window.CrosstabNet.parse(await xlsxToWorkbookSheets(raw))
-        : {questions:{},warnings:["此格式暂不自动推断 NET，请使用包含分组标题和选项编码的 Excel 问卷。"]};
-      autoNetEnabled = true;
-      if (document.querySelector("#autoNetEnabled")) document.querySelector("#autoNetEnabled").checked = true;
-      refreshAutoNetBindings();
-      renderNetGroupPanel();
-      crosstabQuestionnaireMap = buildCrosstabQuestionnaireMap(text);
-      const matchedCount = parseQuestions(text).length;
-      const preview = document.querySelector("#crosstabQuestionnairePreview");
-      if (preview) {
-        preview.style.display = "";
-        preview.innerHTML = `已导入问卷 <strong>${escapeHtml(file.name)}</strong>，识别到 ${matchedCount} 道题，变量名与题干已自动关联。数据中没有题干的变量会优先使用问卷中的标题。`;
-      }
-      showButtonSaved(document.querySelector("#importCrosstabQuestionnaire"), `已导入 ${matchedCount} 题`);
-    } catch (error) {
-      const preview = document.querySelector("#crosstabQuestionnairePreview");
-      if (preview) {
-        preview.style.display = "";
-        preview.innerHTML = `<span style="color: #c0392b">导入失败：${escapeHtml(error.message || "文件解析失败")}</span>`;
-      }
-      showButtonSaved(document.querySelector("#importCrosstabQuestionnaire"), "导入失败");
+  try {
+    const text = await documentImportFileToText(file);
+    const matchedCount = parseQuestions(text).length;
+    if (!matchedCount) throw new Error("未识别到问卷题目，请保留题号和题干；项目需求请使用“导入需求文档”。");
+    autoNetSpec = /\.xlsx$/i.test(file.name)
+      ? window.CrosstabNet.parse(await xlsxToWorkbookSheets(await file.arrayBuffer()))
+      : { questions: {}, warnings: ["此格式暂不自动推断 NET，请使用包含分组标题和选项编码的 Excel 问卷。"] };
+    autoNetEnabled = true;
+    if (document.querySelector("#autoNetEnabled")) document.querySelector("#autoNetEnabled").checked = true;
+    refreshAutoNetBindings();
+    renderNetGroupPanel();
+    crosstabQuestionnaireMap = buildCrosstabQuestionnaireMap(text);
+    const preview = document.querySelector("#crosstabQuestionnairePreview");
+    if (preview) {
+      preview.style.display = "";
+      preview.innerHTML = `已导入问卷 <strong>${escapeHtml(file.name)}</strong>，识别到 ${matchedCount} 道题，变量名与题干已自动关联。`;
     }
-  };
-  if (/\.(docx|doc|xlsx|xls)$/i.test(file.name)) {
-    reader.readAsArrayBuffer(file);
-  } else {
-    reader.readAsText(file, "utf-8");
+    showButtonSaved(document.querySelector("#importCrosstabQuestionnaire"), `已导入 ${matchedCount} 题`);
+  } catch (error) {
+    const preview = document.querySelector("#crosstabQuestionnairePreview");
+    if (preview) {
+      preview.style.display = "";
+      preview.innerHTML = `<span style="color: #c0392b">导入失败：${escapeHtml(error.message || "文件读取失败")}</span>`;
+    }
+    showButtonSaved(document.querySelector("#importCrosstabQuestionnaire"), "导入失败");
   }
 }
 
@@ -2886,6 +2901,8 @@ function handleCrosstabImport(file) {
   const reader = new FileReader();
   reader.onload = async () => {
     try {
+      assertSupportedImportFile(file, ["sav", "xlsx", "csv", "txt"]);
+      if (reader.error) throw new Error("文件读取失败，请重新选择文件。");
       const raw = reader.result;
       if (crosstabImportMode === "header") {
         const definitions = /\.xlsx$/i.test(file.name)
@@ -2910,18 +2927,6 @@ function handleCrosstabImport(file) {
           workbookInspection = await parser.inspectResearchWorkbook(raw);
           renderSharedImportInspection("#crosstabImportInspection", workbookInspection);
         }
-      } else if (/\.xls$/i.test(file.name) && !/\.xlsx$/i.test(file.name)) {
-        renderSharedImportInspection("#crosstabImportInspection", {
-          status: "warning",
-          format_label: "旧版 Excel",
-          sheets: [],
-          metrics: {},
-          diagnostics: [{
-            severity: "warning",
-            message: "浏览器无法在导入前完整预览旧版 .xls 结构。",
-            action: "建议用 Excel/WPS 另存为 .xlsx，以获得稳定解析和结构诊断。",
-          }],
-        });
       }
       const text = /\.sav$/i.test(file.name)
         ? savToDelimitedTableText(raw)
@@ -2949,6 +2954,7 @@ function handleCrosstabImport(file) {
       );
     }
   };
+  reader.onerror = reader.onload;
   if (/\.(xlsx|sav)$/i.test(file.name)) {
     reader.readAsArrayBuffer(file);
   } else {
@@ -3847,6 +3853,7 @@ function generateCleaningRules(text, config = getCleaningConfig()) {
 }
 
 async function cleaningFileToParsed(file) {
+  assertSupportedImportFile(file, ["sav", "xlsx", "csv", "txt"]);
   const raw = await file.arrayBuffer();
   const text = /\.sav$/i.test(file.name)
     ? savToDelimitedTableText(raw)
@@ -8485,10 +8492,12 @@ async function pptxToTemplateText(arrayBuffer) {
 }
 
 async function aiPlanTemplateFileToText(file) {
+  assertSupportedImportFile(file, ["docx", "xlsx", "pptx", "md", "txt", "csv"]);
   const raw = await file.arrayBuffer();
   if (/\.doc$/i.test(file.name)) throw new Error(legacyDocUnsupportedMessage(file.name));
   if (/\.docx$/i.test(file.name)) return docxToAiPlanTemplateText(raw);
   if (/\.pptx$/i.test(file.name)) return pptxToTemplateText(raw);
+  if (/\.xlsx$/i.test(file.name)) return workbookSheetsToDocumentText(await xlsxToWorkbookSheets(raw));
   return normalizeTemplateText(await file.text());
 }
 
@@ -8706,12 +8715,7 @@ function aiQuestionnaireTemplateStorageKey() {
 }
 
 async function aiQuestionnaireTemplateFileToText(file) {
-  const raw = await file.arrayBuffer();
-  if (/\.doc$/i.test(file.name)) throw new Error(legacyDocUnsupportedMessage(file.name));
-  if (/\.docx$/i.test(file.name)) return docxToQuestionnaireText(raw);
-  if (/\.(xlsx|xls)$/i.test(file.name)) return xlsxToQuestionnaireText(raw);
-  if (/\.pptx$/i.test(file.name)) return pptxToTemplateText(raw);
-  return normalizeTemplateText(await file.text());
+  return documentImportFileToText(file);
 }
 
 function inferQuestionnaireTemplateType(question) {
@@ -8861,6 +8865,7 @@ async function importAiQuestionnaireTemplateFile(file) {
   const text = await aiQuestionnaireTemplateFileToText(file);
   if (!text.trim()) throw new Error("未识别到模板文本内容。");
   const template = analyzeAiQuestionnaireTemplate(text, file.name);
+  if (!template.questionCount) throw new Error("未识别到带题号的问卷题目。如果这是项目需求，请使用下方的“导入需求文档”。问卷模板请保留题号和题干。");
   aiQuestionnaireTemplates = [template, ...aiQuestionnaireTemplates.filter((item) => item.name !== template.name)].slice(0, 12);
   saveAiQuestionnaireTemplates();
   const modeSelect = document.querySelector("#aiQuestionnaireTemplateMode");
@@ -13522,7 +13527,7 @@ window.addEventListener("load", () => {
   }
 });
 document
-  .querySelectorAll("#questionnaireText, #timeText, #cleaningText, #headerText, #abcText, #aiPlanInput, #aiInput")
+  .querySelectorAll("#questionnaireText, #timeText, #cleaningText, #headerText, #abcText")
   .forEach((field) => field.addEventListener("input", () => syncQuestionnaireToWorkspace(field.value)));
 
 document.querySelector("#runAudit").addEventListener("click", runAudit);
@@ -13708,6 +13713,8 @@ function handleAiReportImport(file) {
   const reader = new FileReader();
   reader.onload = async () => {
     try {
+      assertSupportedImportFile(file, ["sav", "xlsx", "csv", "txt"]);
+      if (reader.error) throw new Error("文件读取失败，请重新选择文件。");
       const raw = reader.result;
       const text = /\.sav$/i.test(file.name)
         ? savToDelimitedTableText(raw)
@@ -13727,6 +13734,7 @@ function handleAiReportImport(file) {
       showButtonSaved(document.querySelector("#importAiReportData"), "导入失败");
     }
   };
+  reader.onerror = reader.onload;
   if (/\.(xlsx|sav)$/i.test(file.name)) {
     reader.readAsArrayBuffer(file);
   } else {

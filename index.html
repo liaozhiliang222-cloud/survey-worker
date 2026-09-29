@@ -120,7 +120,7 @@
           </div>
 
           <div class="dashboard-workspace v2">
-            <input class="hidden" id="sharedQuestionnaireImportFile" type="file" accept=".docx,.doc,.xlsx,.xls,.md,.txt,.csv" />
+            <input class="hidden" id="sharedQuestionnaireImportFile" type="file" accept=".docx,.xlsx,.md,.txt,.csv,.pptx" />
             <input class="hidden" id="workspaceProjectImportFile" type="file" accept=".json" />
 
             <section class="panel workspace-library-bar">
@@ -229,7 +229,7 @@
                   <span>支持 Word、Excel、Markdown、TXT、CSV</span>
                 </div>
                 <label class="file-drop" for="questionnaireImportFile">
-                  <input id="questionnaireImportFile" type="file" accept=".docx,.doc,.xlsx,.xls,.md,.txt,.csv" />
+                  <input id="questionnaireImportFile" type="file" accept=".docx,.xlsx,.md,.txt,.csv,.pptx" />
                   <span>选择本地文件</span>
                 </label>
                 <div class="import-preview compact-import-preview" id="questionnaireImportPreview">
@@ -1011,7 +1011,7 @@
 
           <div class="link-tester">
             <div class="panel">
-              <input class="hidden" id="cleaningDataFile" type="file" accept=".csv,.txt,.xlsx,.xls,.sav" />
+              <input class="hidden" id="cleaningDataFile" type="file" accept=".csv,.txt,.xlsx,.sav" />
               <div class="cleaning-stepper">
                 <span class="active">1 上传数据</span>
                 <span>2 生成规则</span>
@@ -1186,8 +1186,8 @@
 
           <div class="link-tester">
             <div class="panel" id="crosstabInputPanel">
-              <input class="hidden" id="crosstabImportFile" type="file" accept=".sav,.xlsx,.xls,.csv,.txt" />
-              <input class="hidden" id="crosstabQuestionnaireImportFile" type="file" accept=".docx,.doc,.xlsx,.xls,.md,.txt" />
+              <input class="hidden" id="crosstabImportFile" type="file" accept=".sav,.xlsx,.csv,.txt" />
+              <input class="hidden" id="crosstabQuestionnaireImportFile" type="file" accept=".docx,.xlsx,.md,.txt,.csv,.pptx" />
               <label>
                 <span class="label-action">
                   <span>数据表</span>
@@ -1432,7 +1432,7 @@
                 <div class="step-badge">2</div>
                 <div class="step-body">
                   <h3>导入数据</h3>
-                  <input class="hidden" id="aiReportImportFile" type="file" accept=".sav,.xlsx,.xls,.csv,.txt" />
+                  <input class="hidden" id="aiReportImportFile" type="file" accept=".sav,.xlsx,.csv,.txt" />
                   <div class="ai-report-import-box">
                     <div>
                       <span class="section-pill">数据表</span>
@@ -3015,11 +3015,11 @@
           <div class="link-tester">
             <div class="panel">
               <div class="ai-template-box">
-                <input class="hidden" id="aiPlanTemplateFile" type="file" accept=".docx,.pptx,.md,.txt" />
+                <input class="hidden" id="aiPlanTemplateFile" type="file" accept=".docx,.xlsx,.pptx,.md,.txt,.csv" />
                 <div>
                   <span class="section-pill">方案模板库</span>
                   <h3>导入公司方案模板</h3>
-                  <p>支持 Word、PPT、Markdown、TXT。导入后 AI 会识别章节层级、列表、表格、内容颗粒度和措辞风格，让新方案更贴近不同公司的交付要求。</p>
+                  <p>支持 DOCX、XLSX、PPTX、Markdown、TXT、CSV。导入后 AI 会识别章节层级、列表、表格、内容颗粒度和措辞风格，让新方案更贴近不同公司的交付要求。</p>
                 </div>
                 <button class="secondary-btn" id="importAiPlanTemplate" type="button">导入模板</button>
               </div>
@@ -3261,11 +3261,11 @@
           <div class="link-tester">
             <div class="panel">
               <div class="ai-template-box">
-                <input class="hidden" id="aiQuestionnaireTemplateFile" type="file" accept=".docx,.xlsx,.xls,.md,.txt,.csv,.pptx" />
+                <input class="hidden" id="aiQuestionnaireTemplateFile" type="file" accept=".docx,.xlsx,.md,.txt,.csv,.pptx" />
                 <div>
                   <span class="section-pill">问卷模板库</span>
                   <h3>导入问卷模板</h3>
-                  <p>支持 Word、Excel、Markdown、TXT、CSV 和 PPT。导入后 AI 会学习题号体系、题型组合、选项表格、跳题备注和随机/置底规则。</p>
+                  <p>支持 DOCX、XLSX、Markdown、TXT、CSV 和 PPTX。导入后 AI 会学习题号体系、题型组合、选项表格、跳题备注和随机/置底规则。</p>
                 </div>
                 <button class="secondary-btn" id="importAiQuestionnaireTemplate" type="button">导入模板</button>
               </div>

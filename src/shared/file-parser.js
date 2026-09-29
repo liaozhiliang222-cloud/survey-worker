@@ -512,16 +512,18 @@ function diagnostic(severity, code, message, action = "", sheet = "") {
 }
 
 export async function xlsxToWorkbookSheets(arrayBuffer) {
-  const sharedXml = await readZipText(arrayBuffer, "xl/sharedStrings.xml").catch(() => "");
-  const workbookXml = await readZipText(arrayBuffer, "xl/workbook.xml").catch(() => "");
-  const relationshipXml = await readZipText(arrayBuffer, "xl/_rels/workbook.xml.rels").catch(() => "");
+  const signature = new Uint8Array(arrayBuffer, 0, Math.min(2, arrayBuffer.byteLength));
+  if (signature[0] !== 0x50 || signature[1] !== 0x4b) throw new Error("文件不是有效的 .xlsx 工作簿，请用 Excel/WPS 另存为 .xlsx 后导入。");
+  const sharedXml = await readZipText(arrayBuffer, "xl/sharedStrings.xml");
+  const workbookXml = await readZipText(arrayBuffer, "xl/workbook.xml");
+  const relationshipXml = await readZipText(arrayBuffer, "xl/_rels/workbook.xml.rels");
   if (!workbookXml) throw new Error("文件中缺少 Excel 工作簿结构（xl/workbook.xml），请确认文件未损坏并另存为 .xlsx。");
   const sharedStrings = sharedStringsFromXml(sharedXml);
   const sheets = getWorkbookSheets(workbookXml, relationshipXml);
   const parsedSheets = [];
   for (const sheet of sheets) {
-    const sheetXml = await readZipText(arrayBuffer, sheet.path).catch(() => "");
-    if (!sheetXml) continue;
+    const sheetXml = await readZipText(arrayBuffer, sheet.path);
+    if (!sheetXml) throw new Error(`工作表 ${sheet.name} 内容缺失，请修复文件或另存为 .xlsx 后导入。`);
     const rows = xlsxSheetXmlToRows(sheetXml, sharedStrings);
     if (rows.length) parsedSheets.push({ ...sheet, rows });
   }
