@@ -54,7 +54,8 @@
   function render() {
     const host = el('indicatorWeightPanel'); if (!host) return;
     const d = data(), active = state.schemes.find(s => s.id === state.active);
-    host.innerHTML = `<div class="section-heading compact"><h3>指标加权（可选）</h3><label class="iw-toggle"><input type="checkbox" id="iwEnabled" ${state.enabled ? 'checked' : ''}> 启用指标加权</label></div>
+    host.innerHTML = `<div class="section-heading compact"><h3>指标加权（可选）</h3><label class="iw-toggle"><input type="checkbox" id="iwEnabled" aria-controls="iwConfiguration" aria-expanded="${state.enabled}" ${state.enabled ? 'checked' : ''}> 启用指标加权</label></div>
+      <div id="iwConfiguration" ${state.enabled ? '' : 'hidden'}>
       <p class="panel-note">导入各维度的权重系数，或选用关键驱动分析保存的方案。按题项表现加权形成二级指标；与受访者样本加权分开设置。</p>
       <div class="button-row"><label class="secondary-btn" for="iwFile">导入权重文件</label><input id="iwFile" type="file" accept=".xlsx,.csv" class="iw-file"><button class="secondary-btn" id="iwTemplate" type="button">下载权重模板</button><button class="secondary-btn" id="iwCleaned" type="button">使用项目清洗后数据</button><button class="secondary-btn" type="button" data-jump="driver-analysis">前往关键驱动分析</button></div>
       <div class="iw-grid"><label>当前权重方案<select id="iwScheme"><option value="">请选择已保存方案</option>${state.schemes.map(s=>`<option value="${esc(s.id)}" ${s.id===state.active?'selected':''}>${esc(s.name)} · ${esc(s.versionLabel)}</option>`).join('')}</select></label>
@@ -64,7 +65,7 @@
       ${scaleControls('iw', active?.dimensions?.[0]?.scale)}
       <div id="iwDimensions">${active ? '<p>应用的二级指标（可多选）</p>' + active.dimensions.map(dim=>`<label class="iw-choice"><input type="checkbox" data-iw-dimension="${esc(dim.name)}" ${state.selected.includes(dim.name)?'checked':''}>${esc(dim.name)} <small>${dim.items.length}题 · ${esc(dim.source?.kind==='regression'?'回归B':dim.source?.fileName||'导入权重')}</small></label>`).join('') : '<p class="panel-note">尚未选择方案，可先导入文件；有现成系数时无需提供总体题Y。</p>'}</div>
       <div class="button-row"><button id="iwPreview" class="primary-btn" type="button">计算加权指标预览</button><button id="iwExport" class="secondary-btn" type="button">导出加权指标 Excel</button><button id="iwSaveSettings" class="secondary-btn" type="button">另存当前设置</button><button id="iwCombine" class="secondary-btn" type="button" ${active?'':'disabled'}>编辑 / 合并为新方案</button></div>
-      <p id="iwMessage" class="iw-message" role="status"></p><div id="iwImport"></div><div id="iwResults"></div><datalist id="iwFields">${d.fields.map(f=>`<option value="${esc(f.id)}">${esc(f.label)}</option>`).join('')}</datalist>`;
+      <p id="iwMessage" class="iw-message" role="status"></p><div id="iwImport"></div><div id="iwResults"></div><datalist id="iwFields">${d.fields.map(f=>`<option value="${esc(f.id)}">${esc(f.label)}</option>`).join('')}</datalist></div>`;
     if (sheets.length) renderImport();
     if (draft.length) renderDraft();
   }
@@ -242,7 +243,7 @@
       }
       if(target.id==='iwSheet'){source={sheetIndex:Number(target.value)};draft=[];defaultSource();renderImport();return;}
       if(target.dataset.iwEdit){const i=draft[Number(target.dataset.index)],k=target.dataset.iwEdit;i.origin={...i.origin,kind:'manual',method:'手动调整后的权重'};delete i.diagnostics;i[k]=k==='value'?C.coefficient(target.value).value:k==='reverse'?target.checked:target.value;renderDraft();return;}
-      if(target.id==='iwEnabled'){state.enabled=target.checked;persist();invalidate();}
+      if(target.id==='iwEnabled'){state.enabled=target.checked;el('iwConfiguration').hidden=!state.enabled;target.setAttribute('aria-expanded',String(state.enabled));persist();invalidate();}
       if(target.id==='iwScheme'){invalidate();state.active=target.value;state.selected=(state.schemes.find(s=>s.id===state.active)?.dimensions||[]).map(d=>d.name);persist();render();}
       if(target.dataset.iwDimension){state.selected=Array.from(el('iwDimensions').querySelectorAll('input:checked')).map(i=>i.dataset.iwDimension);persist();invalidate();}
       if(/^iw(Metric|Min|Max|Low|High|Missing|Filter|SampleWeight)$/.test(target.id))invalidate();

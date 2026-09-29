@@ -22,6 +22,7 @@ async function load(page, csv = 'brand,a,b\nA,10,9\nA,0,\nB,8,10\nB,,8') {
   await expect(page.locator('#iwFile')).toBeAttached();
 }
 async function weights(page, name = 'weights.csv', values = '维度,变量,权重\n服务,a,0.5\n服务,b,0.5') {
+  await page.locator('#iwEnabled').check();
   await page.locator('#iwFile').setInputFiles({name,mimeType:'text/csv',buffer:Buffer.from(values)});
   await page.locator('#iwReadRows').click();
   await page.locator('#iwSaveDraft').click();
@@ -56,6 +57,7 @@ test('schemes stay in their project; missing and negative coefficients are block
   await load(page);await weights(page);
   await page.evaluate(async()=>{workspaceProject={id:'indicator-test-B'};await projectDataBus.attachToProject('indicator-test-B');});
   await expect(page.locator('#iwScheme option')).toHaveCount(1);
+  await page.locator('#iwEnabled').check();
   await page.locator('#iwFile').setInputFiles({name:'bad.csv',mimeType:'text/csv',buffer:Buffer.from('维度,变量,权重\n服务,a,-1\n服务,b,2')});
   await page.locator('#iwReadRows').click();await page.locator('#iwSaveDraft').click();
   await expect(page.locator('#iwMessage')).toContainText('为负');
@@ -66,6 +68,7 @@ test('schemes stay in their project; missing and negative coefficients are block
 test('dimension regression saves B weights and invalidates after input edits',async({page})=>{
   const rows=['a,b,y'];for(let i=0;i<30;i++){const a=i%5,b=Math.floor(i/5),y=1+.4*a+.8*b+(i%2?.05:-.05);rows.push([a,b,y].join(','));}
   await load(page,rows.join('\n'));
+  await page.locator('#iwEnabled').check();
   await page.locator('#indicatorWeightPanel [data-jump="driver-analysis"]').click();
   await page.locator('#iwAddModel').click();
   await page.locator('[data-model-prop="name"]').fill('体验');
