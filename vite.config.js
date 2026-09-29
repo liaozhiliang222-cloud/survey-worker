@@ -23,6 +23,8 @@ const runtimeFiles = [
   "crosstab-models.js",
   "crosstab-net.js",
   "crosstab-model-ui.js",
+  "indicator-weighting.js",
+  "indicator-weighting-ui.js",
   "cluster-core.js",
   "cluster-worker.js",
   "cluster-analysis.js",

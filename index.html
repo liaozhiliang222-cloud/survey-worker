@@ -1267,6 +1267,7 @@
               </div>
             </div>
 
+            <div class="panel indicator-weight-panel" id="indicatorWeightPanel"></div>
             <details class="panel crosstab-model-panel" id="crosstabModelPanel">
               <summary><strong>KANO / PSM 专项计算</strong><span id="crosstabModelSummary">识别字段后自动匹配，也可手动配置</span></summary>
               <p class="panel-note">KANO 正反题配对后计算属性分布及 Better/Worse 系数。PSM 使用四个实际金额字段，输出太便宜/比较便宜的反向累计和比较贵/太贵的正向累计百分比。按表头分组分别计算。</p>
@@ -2206,6 +2207,7 @@
               </h2>
             </div>
           </div>
+          <div class="panel indicator-weight-panel" id="indicatorDriverPanel"></div>
           <div class="link-tester">
             <div class="panel">
               <label>
@@ -2220,7 +2222,7 @@
                 <button class="secondary-btn" id="exportDriverExcel" type="button" disabled>导出 Excel</button>
                 <button class="secondary-btn" id="exportDriverPptx" type="button" disabled>导出可编辑 PPT</button>
               </div>
-              <p class="panel-note">方法：多元线性回归标准化系数 + 相对重要性（Shapley 值简化版）。因变量应为等距/等比尺度（如 5 点量表均值或 NPS）。</p>
+              <p class="panel-note">本简易模式展示标准化系数及其绝对值占比，不是Shapley分解。满意度计分请使用上方“满意度分层加权”，按原始B生成权重。</p>
             </div>
             <div class="audit-results" id="driverResults" aria-live="polite">
               <div class="empty-state">
@@ -2332,7 +2334,7 @@
             <article class="guide-card">
               <span>分析方法</span>
               <h3>多元线性回归 + 相对重要性</h3>
-              <p>通过标准化回归系数反映各维度影响力大小，结合 Shapley 值简化版计算相对重要性占比，直观呈现驱动力排序。</p>
+              <p>简易模式按标准化系数的绝对值占比排序，并非Shapley分解。分层加权模式按维度选择总体题Y和三级题X，用非标准化B归一化后应用到交叉分析。</p>
             </article>
 
             <article class="guide-card">
@@ -3536,7 +3538,9 @@
     <script src="./crosstab-net.js?v=20260909-1"></script>
     <script src="./crosstab-models.js?v=20260910-1"></script>
     <script src="./crosstab-model-ui.js?v=20260908-1"></script>
-    <script src="./app.js?v=20260922-opencode-go"></script>
+    <script src="./indicator-weighting.js?v=20260929-1"></script>
+    <script src="./app.js?v=20260929-indicators"></script>
+    <script src="./indicator-weighting-ui.js?v=20260929-1"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
     <script src="./cluster-core.js?v=20260908-2"></script>
     <script src="./cluster-analysis.js?v=20260908-2"></script>

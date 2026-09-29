@@ -1,4 +1,4 @@
-const CACHE_NAME = "research-toolbox-v92";
+const CACHE_NAME = "research-toolbox-v93";
 const ASSETS = [
   "./manifest.webmanifest",
   "./icon.svg",
@@ -16,7 +16,7 @@ function isAppShellRequest(request) {
   const url = new URL(request.url);
   if (request.mode === "navigate") return true;
   if (url.pathname.startsWith("/src/") || url.pathname.startsWith("/assets/")) return true;
-  return ["/", "/index.html", "/app.js", "/ppt-report-ai.js", "/proposal-deck.js", "/cluster-analysis.js", "/crosstab-models.js", "/crosstab-net.js", "/crosstab-model-ui.js", "/cluster-core.js", "/cluster-worker.js", "/styles.css", "/sw.js"].some((path) => url.pathname.endsWith(path));
+  return ["/", "/index.html", "/app.js", "/ppt-report-ai.js", "/proposal-deck.js", "/cluster-analysis.js", "/crosstab-models.js", "/crosstab-net.js", "/crosstab-model-ui.js", "/indicator-weighting.js", "/indicator-weighting-ui.js", "/cluster-core.js", "/cluster-worker.js", "/styles.css", "/sw.js"].some((path) => url.pathname.endsWith(path));
 }
 
 self.addEventListener("install", (event) => {

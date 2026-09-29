@@ -335,8 +335,10 @@ const projectDataBus = {
   async attachToProject(projectId) {
     this._currentProjectId = projectId;
     this._data = {};
+    this._notify("__project__");
     if (!projectId || !window.SurveyKitIDB) return;
     const records = await window.SurveyKitIDB.loadAllProjectData(projectId);
+    if (this._currentProjectId !== projectId) return;
     for (const record of records) {
       this._data[record.dataKey] = {
         value: record.value,
@@ -2878,6 +2880,7 @@ function renderCrosstabImportState(text, filename) {
 }
 
 function renderCrosstabHeaderImportState(definitions, filename) {
+  window.IndicatorWeightUI?.invalidate("交叉分组已更新，请重新计算。");
   lastCrosstabHeaderPlan = definitions;
   const grouped = definitions.reduce((groups, item) => {
     groups[item.group || "未分组"] = (groups[item.group || "未分组"] || 0) + 1;
@@ -6558,6 +6561,8 @@ async function exportQuestionPivotWorkbook(onProgress) {
   const data = getWorkingCrosstabData();
   const modelConfig = window.CrosstabModelUI?.getConfig(data) || { kano: [], psm: [] };
   const plan = activeCrosstabHeaderPlan();
+  // Validate indicator settings before spending time on ordinary crosstabs.
+  window.IndicatorWeightUI?.getConfig();
   onProgress?.("正在准备 Banner 表头...", 30, `表头列：${plan.length} 列。`);
   await nextUiTick();
   const bannerPivotIndexes = await buildBannerPivotIndexesAsync(data, plan, onProgress, 32, 48);
@@ -6565,10 +6570,12 @@ async function exportQuestionPivotWorkbook(onProgress) {
   const percentSheet = await buildCrosstabWorkbookSheetAsync(lastQuestionPivot, plan, bannerPivotIndexes, "percent", onProgress, 66, 84);
   const sigSheet = await buildCrosstabWorkbookSheetAsync(lastQuestionPivot, plan, bannerPivotIndexes, "significance", onProgress, 84, 96);
   const modelSheets = await buildCrosstabModelSheets(data, plan, modelConfig, onProgress);
+  const indicatorSheets = await window.IndicatorWeightUI?.buildSheets(plan) || [];
+  modelSheets.push(...indicatorSheets);
   const directoryRows = buildCrosstabDirectoryRows(countSheet.positions, plan);
   if(modelSheets.length) {
     directoryRows.push({cells:[{value:"专项模型（按表头分组）",format:"directorySection",mergeAcross:4}]});
-    modelSheets.forEach(sheet=>directoryRows.push({cells:[{value:sheet.name,href:`#'${sheet.name}'!A1`,format:"directoryLink"},{value:sheet.name==="KANO系数"?"正反配对、属性频数/占比及 Better/Worse 系数":"四问共同有效样本的价格累计百分比",format:"directoryBody",mergeAcross:3}]}));
+    modelSheets.forEach(sheet=>directoryRows.push({cells:[{value:sheet.name,href:`#'${sheet.name}'!A1`,format:"directoryLink"},{value:sheet.name==="KANO系数"?"正反配对、属性频数/占比及 Better/Worse 系数":sheet.name==="PSM价格敏感度"?"四问共同有效样本的价格累计百分比":sheet.name.startsWith("PSM")?"价格敏感度分析":"指标加权结果、基数、权重配置及模型诊断",format:"directoryBody",mergeAcross:3}]}));
   }
   onProgress?.("正在准备 Excel 文件打包...", 98, "统计已完成，正在生成可下载的文件。");
   await nextUiTick();
@@ -6596,6 +6603,7 @@ function detectCrosstabFields() {
     renderSharedImportInspection("#crosstabImportInspection", delimitedImportInspection(parsed, "粘贴数据"));
   }
   window.CrosstabModelUI?.sync(getWorkingCrosstabData());
+  window.IndicatorWeightUI?.sync();
   window.setTimeout(syncCoreWorkflowUx, 0);
   return parsed;
 }

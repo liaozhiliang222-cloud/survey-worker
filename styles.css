@@ -8297,3 +8297,27 @@ tbody tr.warn td {
 
 .document-import-status { margin: 8px 0 0; font-size: 13px; color: #25704a; overflow-wrap: anywhere; }
 .document-import-status[data-state="error"] { color: #b42318; }
+/* Indicator weights are independent from respondent sample weights. */
+.indicator-weight-panel { grid-column: 1 / -1; min-width: 0; width: 100%; box-sizing: border-box; }
+.indicator-weight-panel .button-row { flex-wrap: wrap; }
+.indicator-weight-panel label, .indicator-weight-panel select, .indicator-weight-panel input { min-width: 0; }
+.indicator-weight-panel .table-wrap { max-width: 100%; overflow: auto; }
+.indicator-weight-panel .iw-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 14px 0; }
+.indicator-weight-panel label { display: flex; flex-direction: column; gap: 6px; }
+.indicator-weight-panel .iw-toggle, .indicator-weight-panel .iw-choice { display: inline-flex; flex-direction: row; align-items: center; gap: 7px; margin: 6px 14px 6px 0; }
+.indicator-weight-panel input[type="checkbox"] { width: auto; min-width: 16px; }
+.indicator-weight-panel .iw-file { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.indicator-weight-panel .iw-file-preview { max-height: 260px; overflow: auto; margin: 12px 0; }
+.indicator-weight-panel .iw-file-preview td { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.indicator-weight-panel .iw-draft-table { max-height: 460px; overflow: auto; }
+.indicator-weight-panel .iw-draft-table input { min-width: 125px; }
+.indicator-weight-panel .iw-draft-table input[type="checkbox"] { min-width: 16px; }
+.indicator-weight-panel th, .indicator-weight-panel td { padding: 9px 12px; }
+.indicator-weight-panel thead { position: sticky; top: 0; background: var(--panel, #fff); z-index: 1; }
+.indicator-weight-panel .iw-message { white-space: pre-wrap; padding: 8px 0; }
+.indicator-weight-panel .iw-error { color: #ad2831; }
+.indicator-weight-panel .iw-invalid { border-color: #ad2831; }
+.indicator-weight-panel .iw-editor { border-top: 1px solid #dbe3ee; margin-top: 16px; padding-top: 14px; }
+.indicator-weight-panel .iw-model { display: grid; grid-template-columns: 1fr 1.2fr 1.8fr auto; align-items: start; gap: 12px; padding: 14px 0; border-bottom: 1px solid #dbe3ee; }
+.indicator-weight-panel select[multiple] { min-height: 150px; }
+@media(max-width: 900px) { .indicator-weight-panel .iw-model { grid-template-columns: 1fr; } }
