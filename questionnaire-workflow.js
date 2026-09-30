@@ -164,12 +164,12 @@
       if(locked){announce();return false;}
       try {
         const store=storage();
-        if(store.getItem(key())!==baseline)throw new Error('另一页面已修改本项目档案。请先下载本次会话，再重新读取并导入合并。');
+        if(store.getItem(key())!==baseline)throw Object.assign(new Error('另一个页面已更新这份问卷。请先备份当前修改，再载入已保存内容。'),{code:'conflict'});
         const content=JSON.stringify({...data,projectId,savedAt:new Date().toISOString()});
         if(content.length>8_000_000)throw new Error('档案超过本地容量限制，请下载备份。');
         store.setItem(key(),content);baseline=content;
-        saveState={state:'saved',message:'已保存到此浏览器，刷新或重启后可恢复。'};
-      }catch(error){saveState={state:'failed',message:`保存失败，仅本次会话：${error.message} 请下载档案备份。`};}
+        saveState={state:'saved',message:'已自动保存到当前浏览器'};
+      }catch(error){saveState={state:'failed',reason:error.code==='conflict'?'conflict':'storage',message:error.code==='conflict'?error.message:'自动保存失败，当前内容仍在页面中。请再次保存，或导出 Word；也可在高级选项中备份。'};}
       announce();return saveState.state==='saved';
     }
     function load() {
@@ -178,8 +178,8 @@
       try {
         baseline=storage().getItem(key());
         if(baseline!==null){const archive=JSON.parse(baseline);if(archive.projectId && archive.projectId!==projectId)throw new Error('项目标识不匹配');data=validateArchive(archive);}
-        saveState={state:'saved',message:baseline?'已恢复此项目的本地档案。':'本项目尚无问卷档案；编辑后自动保存。'};
-      }catch(error){locked=true;saveState={state:'failed',message:`读取失败：${error.message} 原存储未覆盖；新内容仅在本次会话，请下载备份。`};}
+        saveState={state:'saved',message:baseline?'已载入上次保存的内容':'开始编辑后会自动保存到当前浏览器'};
+      }catch(error){locked=true;saveState={state:'failed',reason:'read',message:'暂时无法读取上次保存的内容，原记录已保留。请先在高级选项中备份当前修改，再尝试载入。'};}
       announce();
     }
     load();

@@ -39,7 +39,7 @@ test('project switching isolates content and draft even after reload',async({pag
  expect(await page.locator('#aiInput').inputValue()).toBe('项目B需求');
 });
 test('invalid import is atomic; v1 import appends and remaps',async({page})=>{
- await boot(page);const before=await page.evaluate(()=>aiQuestionnaireSession.export());
+ await boot(page);await page.locator('#questionnaireStorageOptions summary').click();const before=await page.evaluate(()=>aiQuestionnaireSession.export());
  const upload=async obj=>page.locator('#questionnaireArchiveImport').setInputFiles({name:'archive.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(obj))});
  await upload({...before,pilots:[{id:1,version:99}]});
  await expect(page.locator('#questionnaireArchiveMessage')).toContainText('导入失败');
@@ -54,9 +54,11 @@ test('quota failure remains exportable and retry persists',async({page})=>{
  await page.locator('#aiReviseInput').fill('额度失败也保留');
  await expect(page.locator('#questionnaireSaveStatus')).toHaveAttribute('data-state','failed');
  expect(await page.evaluate(()=>aiQuestionnaireSession.export().draft.aiReviseInput)).toBe('额度失败也保留');
+ await expect(page.locator('#questionnaireRetrySave')).toBeVisible();await expect(page.locator('#questionnaireReload')).toBeHidden();
+ await page.locator('#questionnaireStorageOptions summary').click();
  const download=page.waitForEvent('download');await page.locator('#questionnaireArchiveExport').click();await download;
  await page.evaluate(()=>Storage.prototype.setItem=window.originalStorageSet);
- await page.locator('#questionnaireRetrySave').click();await expect(page.locator('#questionnaireSaveStatus')).toHaveAttribute('data-state','saved');
+ await page.locator('#questionnaireRetrySave').click();await expect(page.locator('#questionnaireSaveStatus')).toHaveAttribute('data-state','saved');await expect(page.locator('#questionnaireRetrySave')).toBeHidden();
  await page.reload();await expect(page.locator('#aiReviseInput')).toHaveValue('额度失败也保留');
 });
 test('late AI response cannot write into another project',async({page})=>{
@@ -68,4 +70,21 @@ test('late AI response cannot write into another project',async({page})=>{
  await expect.poll(()=>page.evaluate(()=>aiQuestionnaireBusy)).toBe(false);
  expect(await page.evaluate(()=>aiQuestionnaireSession.current())).toBeNull();
  expect(await page.evaluate(()=>lastAiQuestionnaireText)).toBe('');
+});
+
+test('normal questionnaire flow shows compact saving status and keeps recovery in advanced options',async({page})=>{
+ await boot(page);
+ await expect(page.locator('#questionnaireSaveStatus')).toHaveText('已自动保存到当前浏览器');
+ for(const id of ['questionnaireRetrySave','questionnaireReload','questionnaireArchiveExport','questionnaireArchiveImport'])await expect(page.locator('#'+id)).toBeHidden();
+ await expect(page.locator('#questionnaireStorageOptions')).not.toHaveAttribute('open','');
+ await expect(page.locator('#exportAiWord')).toBeEnabled();
+ const download=page.waitForEvent('download');await page.locator('#exportAiWord').click();expect((await download).suggestedFilename()).toMatch(/\.docx$/);
+ await page.locator('.questionnaire-persistence').screenshot({path:'.data/questionnaire-compact-save.png'});
+ // A conflicting tab cannot be overwritten; recovery is surfaced only on failure.
+ await page.evaluate(()=>{const session=aiQuestionnaireSession,key='surveykit_questionnaire_workflow_v2:'+encodeURIComponent(session.status().projectId),stored=JSON.parse(localStorage.getItem(key));stored.savedAt='other-tab';localStorage.setItem(key,JSON.stringify(stored));});
+ await page.locator('#aiReviseInput').fill('需要保留的当前修改');
+ await expect(page.locator('#questionnaireReload')).toBeVisible();await expect(page.locator('#questionnaireReload')).toHaveText('载入最新内容');
+ await expect(page.locator('#questionnaireSaveStatus')).toContainText('另一个页面');
+ page.once('dialog',dialog=>dialog.dismiss());await page.locator('#questionnaireReload').click();await expect(page.locator('#aiReviseInput')).toHaveValue('需要保留的当前修改');
+ await page.locator('#questionnaireStorageOptions summary').click();await expect(page.getByRole('button',{name:'备份问卷',exact:true})).toBeVisible();
 });

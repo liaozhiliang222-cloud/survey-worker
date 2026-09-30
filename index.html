@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#102a56" />
     <title>调研工具箱</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=20260930-s4-2" />
+    <link rel="stylesheet" href="./styles.css?v=20260930-save-ui-1" />
   </head>
   <body>
     <div class="app-loading-overlay" id="appLoading">
@@ -3206,13 +3206,21 @@
               <p class="panel-note">生成结果适合作为 V1.0 问卷初稿，正式上线前建议继续用“上线质检、时长估算、数据清洗、表头设计”做复核。</p>
             </div>
 
-            <div class="panel questionnaire-persistence">
-              <strong id="questionnaireProjectScope">问卷档案</strong>
-              <p id="questionnaireSaveStatus" role="status"></p>
-              <p class="panel-note">按工作台当前项目保存到此浏览器；清除浏览器数据会移除本地档案。导入会追加版本并重映射试访归属，不覆盖已有版本。</p>
-              <div class="button-row"><button type="button" id="questionnaireRetrySave">重试保存</button><button type="button" id="questionnaireReload">重新读取本地档案</button><button type="button" id="questionnaireArchiveExport">下载档案备份</button></div>
-              <label>导入版本与试访档案 <input type="file" id="questionnaireArchiveImport" accept=".json,application/json"></label>
-              <p id="questionnaireArchiveMessage" role="status"></p>
+            <div class="questionnaire-persistence" aria-label="问卷自动保存">
+              <div class="questionnaire-save-line">
+                <p id="questionnaireSaveStatus" role="status"></p>
+                <button type="button" class="secondary-btn" id="questionnaireRetrySave" hidden>再次保存</button>
+                <button type="button" class="secondary-btn" id="questionnaireReload" hidden>载入已保存内容</button>
+              </div>
+              <details id="questionnaireStorageOptions">
+                <summary>高级选项</summary>
+                <p id="questionnaireProjectScope" class="panel-note"></p>
+                <p class="panel-note">通常导出 Word 即可。只有需要在其他浏览器接着编辑、保留修改历史时，才需要备份。自动保存仅在当前浏览器有效。</p>
+                <button type="button" class="secondary-btn" id="questionnaireArchiveExport">备份问卷</button>
+                <label>从备份恢复 <input type="file" id="questionnaireArchiveImport" accept=".json,application/json"></label>
+                <p class="panel-note">请选择之前备份的 JSON 文件，不是 Word 文档。恢复会添加备份中的版本及试填反馈，不覆盖已有内容。</p>
+                <p id="questionnaireArchiveMessage" role="status"></p>
+              </details>
             </div>
             <div class="audit-results" id="aiResults" aria-live="polite">
               <article class="audit-issue">
@@ -3387,14 +3395,14 @@
     <script src="./ai-plan-quality.js?v=20260823-1"></script>
     <script src="./questionnaire-quality.js?v=20260930-5"></script>
     <script src="./questionnaire-delivery.js?v=20260930-1"></script>
-    <script src="./questionnaire-workflow.js?v=20260930-s2-1"></script>
-    <script src="./questionnaire-review-ui.js?v=20260930-s2-1"></script>
+    <script src="./questionnaire-workflow.js?v=20260930-save-ui-1"></script>
+    <script src="./questionnaire-review-ui.js?v=20260930-save-ui-1"></script>
     <script src="./ppt-report-ai.js?v=20260823-3"></script>
     <script src="./crosstab-net.js?v=20260909-1"></script>
     <script src="./crosstab-models.js?v=20260910-1"></script>
     <script src="./crosstab-model-ui.js?v=20260908-1"></script>
     <script src="./indicator-weighting.js?v=20260929-1"></script>
-    <script src="./app.js?v=20260930-s2-1"></script>
+    <script src="./app.js?v=20260930-save-ui-1"></script>
     <script src="./indicator-weighting-ui.js?v=20260929-2"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
     <script src="./cluster-core.js?v=20260908-2"></script>

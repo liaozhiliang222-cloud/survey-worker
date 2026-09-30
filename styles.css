@@ -8356,3 +8356,12 @@ tbody tr.warn td {
 .research-recipe-range input[type=number] { width: 110px; min-width: 0; }
 .research-recipe-domain textarea { box-sizing: border-box; width: 100%; margin-top: 8px; padding: 8px; }
 .research-recipe-dialog [role=alert] { color: #b42318; }
+
+.questionnaire-persistence { padding: 10px 0; color: #64748b; font-size: 13px; }
+.questionnaire-save-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.questionnaire-save-line p { margin: 0; }
+.questionnaire-save-line [hidden] { display: none; }
+.questionnaire-save-line [data-state=failed] { color: #b42318; }
+.questionnaire-persistence summary { cursor: pointer; margin-top: 8px; font-size: 12px; }
+.questionnaire-persistence details[open] { padding-bottom: 8px; }
+.questionnaire-persistence details > label { display: block; margin-top: 12px; }

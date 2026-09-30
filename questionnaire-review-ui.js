@@ -34,7 +34,7 @@
     const firstRoute = session.view?.().route || root.QuestionnaireQuality.audit(current.text, current.config).routes[0]?.id;
     return `<article class="audit-issue questionnaire-workflow" data-workflow>
       <div class="issue-head"><strong>预览、版本与试访</strong><span class="issue-tag">V${current.id}</span></div>
-      <p class="panel-note">当前项目已记录 ${versions.length} 个版本；保存状态见上方。可下载档案迁移到其他浏览器。恢复旧稿会创建新版本，原记录保留。</p>
+      <p class="panel-note">已记录 ${versions.length} 个版本。恢复旧稿会创建新版本，原记录保留。</p>
       <p data-workflow-message role="status"></p>
       <details><summary>作答路径预览</summary><label>选择待核对路径<select data-workflow-route>${routeOptions(current,firstRoute)}</select></label><div class="workflow-content" data-workflow-path>${pathHtml(current,firstRoute)}</div></details>
       <details><summary>版本差异与恢复</summary><label>与当前 V${current.id} 比较<select data-workflow-compare>${versions.filter(v=>v.id!==current.id).map(v=>`<option value="${v.id}" ${v.id===previous?.id?'selected':''}>V${v.id} · ${escape(v.label)}</option>`).join('') || '<option value="">暂无旧版</option>'}</select></label><div class="workflow-content" data-workflow-diff>${diffHtml(previous,current)}</div><button type="button" class="secondary-btn" data-workflow-action="restore" ${previous?'':'disabled'}>将所选旧稿恢复为新版本</button></details>

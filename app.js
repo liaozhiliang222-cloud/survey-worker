@@ -9980,7 +9980,12 @@ function buildAiQuestionnaireDesign() {
 const questionnaireDraftFields = ['aiInput','aiContext','aiAudience','aiSampleSize','aiQuestionnaireLengthMode','aiQuestionnaireTemplateMode','aiQuestionnaireTemplateSelect','aiReviseInput','aiRevisionMode','aiRevisionTargets'];
 function updateQuestionnaireSaveStatus(status) {
   const node=document.querySelector('#questionnaireSaveStatus');
-  if(node){node.textContent=workspaceLibraryPersistenceFailed?'项目目录保存失败，刷新后可能无法找到此项目。请下载档案备份。':status.message;node.dataset.state=workspaceLibraryPersistenceFailed?'failed':status.state;}
+  if(node){node.textContent=workspaceLibraryPersistenceFailed?'项目保存失败，请再次保存；也可先导出 Word 或在高级选项中备份。':status.message;node.dataset.state=workspaceLibraryPersistenceFailed?'failed':status.state;}
+  const failed=workspaceLibraryPersistenceFailed||status.state==='failed';
+  const retry=document.querySelector('#questionnaireRetrySave'),reload=document.querySelector('#questionnaireReload');
+  if(retry)retry.hidden=!failed||status.reason==='read';
+  if(reload){reload.hidden=!['conflict','read'].includes(status.reason);reload.textContent=status.reason==='conflict'?'载入最新内容':'载入已保存内容';}
+
 }
 function saveQuestionnaireDraft() {
   const draft=Object.fromEntries(questionnaireDraftFields.map(id=>[id,document.getElementById(id)?.value || '']));
@@ -9999,12 +10004,12 @@ function restoreQuestionnaireSession() {
   renderAiQuestionnaireTemplateOptions(draft.aiQuestionnaireTemplateSelect || '');
   lastAiQuestionnaireConfig=current?.config || null;lastAiQuestionnaireText=current?.text || '';lastAiPrompt=current?window.QuestionnaireDelivery.clientText(current.text):'';
   lastAiQuestionnaireAudit=current?window.QuestionnaireQuality.audit(current.text,current.config):null;
-  document.querySelector('#aiResults').innerHTML=current?renderAiQuestionnaireHtml({config:current.config,questionnaireText:current.text,source:'项目本地档案'}):'<div class="empty-state"><strong>本项目尚无问卷版本</strong><span>填写需求生成问卷，或导入版本与试访档案。</span></div>';
+  document.querySelector('#aiResults').innerHTML=current?renderAiQuestionnaireHtml({config:current.config,questionnaireText:current.text,source:'项目本地档案'}):'<div class="empty-state"><strong>本项目尚无问卷版本</strong><span>填写需求，生成并修改问卷后导出 Word。</span></div>';
   for(const id of ['copyAiPrompt','exportAiPrompt','exportAiWord','applyAiQuestionnaire','reviseAiQuestionnaire']){const button=document.getElementById(id);if(button)button.disabled=!current;}
   const platform=document.querySelector('#exportAiPlatformFormat');if(platform)platform.disabled=!current||Boolean(lastAiQuestionnaireAudit?.summary.errors||lastAiQuestionnaireAudit?.summary.pending);
   document.querySelector('#aiRevisionStatus').textContent='';
   updateQuestionnaireSaveStatus(aiQuestionnaireSession.status());
-  document.querySelector('#questionnaireProjectScope').textContent=aiQuestionnaireSession.status().projectId==='local-draft'?'独立问卷草稿（此浏览器）':`项目：${workspaceProject?.projectName || '未命名项目'}`;
+  document.querySelector('#questionnaireProjectScope').textContent=aiQuestionnaireSession.status().projectId==='local-draft'?'当前问卷未绑定项目':`项目：${workspaceProject?.projectName || '未命名项目'}`;
 }
 function bindQuestionnaireProject(id) {
   const next=String(id || 'local-draft');if(aiQuestionnaireSession.status().projectId===next)return;
@@ -18770,7 +18775,7 @@ document.querySelector("#reviseAiQuestionnaire").addEventListener("click", () =>
 document.querySelector('#ai-assistant').addEventListener('input', event=>{if(questionnaireDraftFields.includes(event.target.id))saveQuestionnaireDraft();});
 document.querySelector('#ai-assistant').addEventListener('change', event=>{if(questionnaireDraftFields.includes(event.target.id)||event.target.closest('#aiStudyType'))saveQuestionnaireDraft();});
 document.querySelector('#questionnaireRetrySave').addEventListener('click',()=>{persistWorkspaceLibrary();aiQuestionnaireSession.retrySave();});
-document.querySelector('#questionnaireArchiveExport').addEventListener('click',()=>downloadBlob('问卷版本与试访档案.json',new Blob([JSON.stringify(aiQuestionnaireSession.export(),null,2)],{type:'application/json;charset=utf-8'})));
+document.querySelector('#questionnaireArchiveExport').addEventListener('click',()=>downloadBlob('问卷备份.json',new Blob([JSON.stringify(aiQuestionnaireSession.export(),null,2)],{type:'application/json;charset=utf-8'})));
 document.querySelector('#questionnaireArchiveImport').addEventListener('change',async event=>{
   const file=event.target.files?.[0];if(!file)return;
   const projectId=aiQuestionnaireSession.status().projectId;
@@ -18786,7 +18791,7 @@ document.querySelector('#questionnaireArchiveImport').addEventListener('change',
 });
 document.querySelector('#questionnaireReload').addEventListener('click',()=>{
   if(aiQuestionnaireBusy)return;
-  if(aiQuestionnaireSession.status().state!=='saved'&&!window.confirm('重新读取会替换本次未保存的内容，请先下载档案。是否继续？'))return;
+  if(aiQuestionnaireSession.status().state!=='saved'&&!window.confirm('载入会替换当前未保存的修改，请先在高级选项中备份问卷。是否继续？'))return;
   aiQuestionnaireSession.reload();restoreQuestionnaireSession();
 });
 window.QuestionnaireReviewUI.bind(document.querySelector("#aiResults"), {
