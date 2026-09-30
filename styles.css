@@ -139,6 +139,9 @@ a:focus-visible {
   gap: 14px;
 }
 
+.questionnaire-quality-list li { overflow-wrap: anywhere; }
+.questionnaire-quality-list small { display: block; margin-top: 6px; color: var(--muted, #475569); }
+
 /* Research Agent V0.8 — Evidence → Insight → Storyline → Report Outline */
 .research-outline-summary,
 .research-outline-section {
@@ -8321,3 +8324,16 @@ tbody tr.warn td {
 .indicator-weight-panel .iw-model { display: grid; grid-template-columns: 1fr 1.2fr 1.8fr auto; align-items: start; gap: 12px; padding: 14px 0; border-bottom: 1px solid #dbe3ee; }
 .indicator-weight-panel select[multiple] { min-height: 150px; }
 @media(max-width: 900px) { .indicator-weight-panel .iw-model { grid-template-columns: 1fr; } }
+
+/* Questionnaire review controls: wrap long question text on mobile. */
+.questionnaire-workflow details { margin: 12px 0; }
+.questionnaire-workflow label { display: grid; gap: 6px; margin: 10px 0; min-width: 0; }
+.questionnaire-workflow select, .questionnaire-workflow input, .questionnaire-workflow textarea { width: 100%; min-width: 0; max-width: 100%; }
+.workflow-content { max-height: 480px; overflow: auto; overflow-wrap: anywhere; }
+.workflow-path small { display: block; color: var(--muted, #64748b); }
+.workflow-path li { margin: 10px 0; }
+.workflow-diff, .workflow-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.workflow-diff > div { min-width: 0; }
+.workflow-diff pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; background: #f4f7fb; padding: 12px; }
+.workflow-wide { grid-column: 1 / -1; }
+@media (max-width: 640px) { .workflow-diff, .workflow-form { grid-template-columns: minmax(0, 1fr); } }

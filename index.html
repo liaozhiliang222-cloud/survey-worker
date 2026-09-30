@@ -3358,6 +3358,10 @@
                   对话修改问卷
                   <textarea id="aiReviseInput" placeholder="生成初稿后，可以继续输入修改要求。例如：增加NPS题；把年龄筛选改为18-45岁；减少开放题；把购买渠道改成多选并随机。"></textarea>
                 </label>
+                <label>修订范围<select id="aiRevisionMode"><option value="full">整卷修订（可调整结构）</option><option value="selected">指定题目或模块</option></select></label>
+                <label>局部修订题号<input id="aiRevisionTargets" placeholder="例如 D2、F1A；D* 表示所有D前缀题目"></label>
+                <p class="panel-note">局部修订保留题号及编程规则；涉及增删题目、资格或路径调整时使用整卷修订。</p>
+                <p id="aiRevisionStatus" role="status"></p>
                 <button class="secondary-btn" id="reviseAiQuestionnaire" type="button" disabled>按要求修改问卷</button>
               </div>
               <p class="panel-note">生成结果适合作为 V1.0 问卷初稿，正式上线前建议继续用“上线质检、时长估算、数据清洗、表头设计”做复核。</p>
@@ -3534,12 +3538,15 @@
     </script>
     <script src="./research-theme.js?v=20260801-1"></script>
     <script src="./ai-plan-quality.js?v=20260823-1"></script>
+    <script src="./questionnaire-quality.js?v=20260930-2"></script>
+    <script src="./questionnaire-workflow.js?v=20260930-3"></script>
+    <script src="./questionnaire-review-ui.js?v=20260930-3"></script>
     <script src="./ppt-report-ai.js?v=20260823-3"></script>
     <script src="./crosstab-net.js?v=20260909-1"></script>
     <script src="./crosstab-models.js?v=20260910-1"></script>
     <script src="./crosstab-model-ui.js?v=20260908-1"></script>
     <script src="./indicator-weighting.js?v=20260929-1"></script>
-    <script src="./app.js?v=20260929-indicators2"></script>
+    <script src="./app.js?v=20260930-questionnaire3"></script>
     <script src="./indicator-weighting-ui.js?v=20260929-2"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
     <script src="./cluster-core.js?v=20260908-2"></script>

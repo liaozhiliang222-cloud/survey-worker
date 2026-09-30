@@ -2,6 +2,7 @@
  * AI 问卷设计模块
  * 提取自 app.js — 问卷生成核心逻辑
  */
+import "../../../questionnaire-quality.js";
 import { state } from "../../shared/store.js";
 import { loadAiSettings, validateAiSettings, callAiChatCompletion, aiProviderPresets } from "../../shared/ai-client.js";
 
@@ -93,11 +94,11 @@ export function buildLocalQuestionnaire(config = {}) {
     "## 二、问卷正文",
     "",
     "### 模块A：开场白与甄别",
-    "| 编码 | 题型 | 题目 | 选项 | 逻辑与备注 |",
-    "|---|---|---|---|---|",
-    "| S1 | 单选 | 请问您的年龄是？ | 18岁以下/18-24/25-29/30-34/35-39/40-44/45-54/55+ | 按目标人群条件设置终止 |",
-    "| S2 | 单选 | 您目前长期居住在哪类地区？ | 一线/新一线/二线/三线/四线及以下 | 按地域配额设置终止 |",
-    "| S3 | 单选 | 过去3个月您是否购买/使用过该品类？ | 是/否 | 否→终止或跳转潜在用户路径 |",
+    ...globalThis.QuestionnaireQuality.buildScreener(config).map((q) => [
+      `**${q.code}. ${q.title}**`, `题型：${q.type}`, "| 编码 | 选项内容 | 逻辑与备注 |", "|---|---|---|",
+      ...q.options.map((o) => `| ${o[0]} | ${o[1]} | ${o[2]} |`), `备注：${q.note}`, ""
+    ].join("\n")),
+    globalThis.QuestionnaireQuality.pendingContract(),
     "",
     "### 模块B：品类行为与场景",
     "（根据研究类型展开品类使用频率、场景、渠道等基础行为题）",
@@ -140,7 +141,8 @@ export function buildAiQuestionnairePrompt(config = {}) {
         "甄别题不得直接询问受访者是否属于目标人群，必须拆成可回忆、可验证的客观问题。",
         "主体问卷必须围绕业务决策形成完整链路。",
         "题目与选项必须具体、全面、互斥且尽量穷尽。",
-        "每道选择题必须包含三列表格：编码、选项内容、逻辑与备注。"
+        "每道选择题必须包含三列表格：编码、选项内容、逻辑与备注。",
+        globalThis.QuestionnaireQuality.designRules()
       ].join("")
     },
     {
@@ -153,6 +155,8 @@ export function buildAiQuestionnairePrompt(config = {}) {
         `问卷模式：${config.lengthMode === "short" ? "精简短卷" : "专业长卷"}`,
         `完整度建议：${target.level}，建议约${target.min}-${target.max}个主问题编号`,
         "",
+        "条件原文来源：",
+        globalThis.QuestionnaireQuality.sourceContext(config),
         "研究需求：",
         config.brief || "用户未填写详细需求，请根据项目背景主动推导。",
         "",
@@ -212,7 +216,8 @@ export async function generateAiQuestionnaire(config, options = {}) {
     }
   }
 
-  output = sanitizeAiQuestionnaireOutput(output);
+  const finalized = globalThis.QuestionnaireQuality.finalize(sanitizeAiQuestionnaireOutput(output), config);
+  output = finalized.output;
   state.lastAiQuestionnaireText = output;
-  return { output, source };
+  return { output, source, qualityAudit: finalized.audit };
 }

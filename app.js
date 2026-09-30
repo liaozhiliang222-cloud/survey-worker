@@ -205,6 +205,10 @@ let aiPlanTemplates = [];
 let aiQuestionnaireTemplates = [];
 let lastAiPrompt = "";
 let lastAiQuestionnaireText = "";
+let lastAiQuestionnaireConfig = null;
+let lastAiQuestionnaireAudit = null;
+const aiQuestionnaireSession = window.QuestionnaireWorkflow.createSession();
+let aiQuestionnaireBusy = false;
 let lastAiWorkbenchOutput = "";
 let lastAbcSuggestions = null;
 let lastCrosstabAnalysis = null;
@@ -9771,48 +9775,7 @@ function aiQuestion(code, type, title, options, note = "") {
 }
 
 function baseAiQuestions(config) {
-  return [
-    aiQuestion("S1", "单选题", "请问您的年龄是？", [
-      ["1", "18岁以下", "按目标人群条件判断"],
-      ["2", "18-24岁", "继续"],
-      ["3", "25-29岁", "继续"],
-      ["4", "30-34岁", "继续"],
-      ["5", "35-39岁", "继续"],
-      ["6", "40-44岁", "继续"],
-      ["7", "45-54岁", "按目标人群条件判断"],
-      ["8", "55岁及以上", "按目标人群条件判断"]
-    ], "客观人口属性甄别；按项目人群边界设置终止条件，不在题干中暴露招募标准。"),
-    aiQuestion("S2", "单选题", "请问您目前长期居住在哪类地区？", [
-      ["1", "一线城市", ""],
-      ["2", "新一线城市", ""],
-      ["3", "二线城市", ""],
-      ["4", "三线城市", ""],
-      ["5", "四线及以下城市或县城", ""],
-      ["6", "乡镇或农村地区", ""],
-      ["97", "其他地区（请注明）", "置底"]
-    ], "用于配额和交叉分析；不要仅凭城市级别终止，除非研究范围明确限制。"),
-    aiQuestion("S3", "多选题", "过去3个月内，您对该品类有过哪些实际行为？", [
-      ["1", "本人购买并使用过", "继续"],
-      ["2", "本人购买给他人使用过", "继续"],
-      ["3", "使用过但不是本人购买", "继续或进入使用者路径"],
-      ["4", "主动了解、搜索或比较过相关产品", "进入潜在用户路径"],
-      ["5", "有购买计划，但尚未采取行动", "进入潜在用户路径"],
-      ["98", "以上均无", "置底、排他；按研究范围判断是否终止"]
-    ], "将目标人群拆成可回忆的客观行为，不得直接询问受访者是否“属于目标人群”；选项1-5随机，98置底且排他。"),
-    aiQuestion("S4", "单选题", "在购买该品类产品时，您通常扮演什么角色？", [
-      ["1", "主要由我决定并购买", "继续"],
-      ["2", "我与他人共同决定", "继续"],
-      ["3", "我会提出建议，但不负责最终决定", "按研究目标分层或继续"],
-      ["4", "我通常只使用，不参与选择或购买", "进入使用者路径或按研究目标判断"],
-      ["5", "我既不使用，也不参与选择或购买", "通常终止"]
-    ], "用决策参与度判断样本价值，避免把非主决策者一律排除。"),
-    aiQuestion("S5", "多选题", "请问您本人或共同居住的家人是否从事以下相关工作？", [
-      ["1", "市场研究、广告、公关或媒体", "视项目保密要求排除"],
-      ["2", "该品类的生产、品牌、经销或零售", "视项目保密要求排除"],
-      ["3", "与本研究主题直接相关的专业岗位", "视项目保密要求排除"],
-      ["98", "以上均无", "置底、排他"]
-    ], "行业排除仅覆盖确有偏差或保密风险的人群；选项1-3随机，98置底且排他。")
-  ];
+  return window.QuestionnaireQuality.buildScreener(config);
 }
 
 function bodyAiQuestions(config) {
@@ -9823,7 +9786,7 @@ function bodyAiQuestions(config) {
       ["3", "只使用未购买", ""],
       ["4", "没有购买或使用过", "如项目仅看现有用户，可终止或跳至潜在用户模块"]
     ], "行为准入与用户分层题，不随机。"),
-    aiQuestion("Q2", "多选题", "您通常通过哪些渠道了解或购买该品类产品？", [
+    aiQuestion("Q2", "多选题", "您通常通过哪些渠道了解该品类产品？", [
       ["1", "电商平台", ""],
       ["2", "品牌官方渠道", ""],
       ["3", "线下门店", ""],
@@ -9832,6 +9795,10 @@ function bodyAiQuestions(config) {
       ["99", "其他（请注明）", "选项99置底"]
     ], "选项随机显示；选项99置底。")
   ];
+  common.push(aiQuestion("Q_CHANNEL", "多选题", "您实际通过哪些渠道购买过该品类产品？", [
+    ["1", "电商平台", "随机"], ["2", "品牌官方渠道", "随机"], ["3", "线下门店", "随机"],
+    ["4", "社交平台店铺或直播间", "随机"], ["5", "请他人代购", "随机"], ["97", "其他（请注明）", "置底"], ["99", "不记得", "置底、排他"]
+  ], "显示条件：S3选择本人购买过；未购买者跳过。记录实际购买渠道，不与信息来源合并。"));
 
   const modules = {
     concept: [
@@ -9955,7 +9922,7 @@ function buildAiQuestionnaireDesign() {
     `- 研究类型：${aiStudyTypeName(config.studyTypes || config.studyType)}`,
     `- 目标人群：${config.audience}`,
     `- 目标样本量：N=${config.sampleSize}`,
-    "- 设计标准：面向专业调研公司交付的可编程完整版初稿，优先保证研究问题覆盖与后续分析价值。",
+    "- 本地备用骨架：尚未完成项目化题目和资格定义，必须复核后再编程上线。",
     "- 质量控件：建议保留1道注意力检测题，并记录答题时长用于清洗。",
     "",
     "二、问卷正文",
@@ -9969,7 +9936,7 @@ function buildAiQuestionnaireDesign() {
     "",
     ...body.map(renderAiQuestionTable),
     "",
-    "QC1. 注意力检测题",
+    "QC1. 本题是注意力检测，请选择比较同意。",
     "题型：单选题",
     "",
     "| 编码 | 选项内容 | 逻辑与备注 |",
@@ -9978,7 +9945,7 @@ function buildAiQuestionnaireDesign() {
     "| 2 | 比较同意 | 正确答案 |",
     "| 3 | 一般 |  |",
     "| 4 | 不太同意 |  |",
-    "> 设计思路：请在题干中明确“本题是注意力检测，请选择比较同意”，用于识别无效样本。",
+    "> 设计思路：请在题干中明确“本题是注意力检测，请选择比较同意”，仅标记复核，结合时长与多项独立信号判断，不因单题失败直接判无效。",
     "",
     "模块C：背景信息",
     "",
@@ -9987,18 +9954,45 @@ function buildAiQuestionnaireDesign() {
     "模块D：结束语",
     "问卷到此结束，感谢您的参与！",
     "",
-    "三、质量自查清单",
-    "- ✅ 问卷结构完整：开场白、甄别、主体、背景信息、结束语齐全。",
-    "- ✅ 题目编码清晰：单选/多选/量表/数值/开放题使用不同编码前缀。",
-    "- ✅ 随机与置底规则明确：非顺序型选项建议随机，其他/拒答类选项置底。",
-    "- ✅ 数据清洗前置：包含注意力检测题，并建议记录答题时长。",
-    "- ⚠️ 需人工确认：品牌/功能/概念素材、价格上下限、配额条件和跳题逻辑需结合正式项目补充。",
+    "三、待复核事项",
+    "- 本地备用稿尚未核实资格、分流、选项完整性和适用对象，不可作为已验收问卷。",
+    window.QuestionnaireQuality.pendingContract(),
     "",
     "四、原始研究需求",
     brief
   ].join("\n");
 
   return { config, questions: allQuestions, questionnaireText };
+}
+
+
+function finalizeAiQuestionnaire(output, config, label = "生成初稿") {
+  lastAiQuestionnaireConfig = { ...config };
+  const finalized = window.QuestionnaireQuality.finalize(sanitizeAiQuestionnaireOutput(output), lastAiQuestionnaireConfig);
+  lastAiQuestionnaireAudit = finalized.audit;
+  lastAiPrompt = finalized.output;
+  lastAiQuestionnaireText = finalized.output;
+  aiQuestionnaireSession.record(finalized.output, lastAiQuestionnaireConfig, label);
+  const platformButton = document.querySelector("#exportAiPlatformFormat");
+  if (platformButton) platformButton.disabled = Boolean(finalized.audit.summary.errors || finalized.audit.summary.pending);
+  return finalized.output;
+}
+
+function renderAiQuestionnaireQuality(audit) {
+  if (!audit) return '<p class="panel-note">质量检查未运行，结果待复核。</p>';
+  const labels = { eligibility: "入组条件", quota: "配额", segment: "分群", quality: "质量信号" };
+  const states = { confirmed: "条件含义待复核", proposed: "系统建议", pending: "待确认" };
+  const findings = audit.issues.map((issue) => `<li><strong>${escapeHtml(issue.question)} · ${escapeHtml(issue.message)}</strong><span>${escapeHtml(issue.evidence)}</span><small>${escapeHtml(issue.suggestion)}</small></li>`).join("");
+  const sources = audit.rules.map((rule) => `<li><strong>${escapeHtml(labels[rule.kind])} · ${escapeHtml(rule.condition)}</strong><span>${escapeHtml(rule.questionIds.join("、"))}；${escapeHtml(states[rule.status])}${rule.status === "confirmed" && !rule.sourceVerified ? "（引用不匹配）" : ""}</span><small>${escapeHtml(rule.source?.quote || "尚无客户明确依据")}</small></li>`).join("");
+  return `<article class="audit-issue" data-questionnaire-quality>
+    <div class="issue-head"><strong>问卷质量检查</strong><span class="issue-tag ${audit.summary.errors ? "high" : "medium"}">${escapeHtml(audit.status)}</span></div>
+    <div class="metric-grid compact-metrics"><div><span>需修改</span><strong>${audit.summary.errors}</strong></div><div><span>建议复核</span><strong>${audit.summary.warnings}</strong></div><div><span>待确认</span><strong>${audit.summary.pending}</strong></div></div>
+    <p class="panel-note">${escapeHtml(audit.note)}</p>
+    ${findings ? `<ul class="ai-risk-list questionnaire-quality-list">${findings}</ul>` : '<p>未发现本轮规则命中，仍需人工复核和试访。</p>'}
+    <details data-questionnaire-coverage><summary>需求—指标—题号核对（${(audit.coverage || []).length}项）</summary><p class="panel-note">候选题匹配不等于完整覆盖；逐项复核测量口径和人群适用性。</p><ul class="ai-risk-list questionnaire-quality-list">${(audit.coverage || []).map(item => `<li><strong>${escapeHtml(item.metric)} · ${escapeHtml(item.status)}</strong><span>${escapeHtml(item.questionIds.join("、") || "尚无题目")}；${escapeHtml(item.population || "适用范围待复核")}</span><small>依据：${escapeHtml(item.evidence)}；分析：${escapeHtml(item.analysis)}；缺口：${escapeHtml(item.gaps.join("、") || "结构证据齐备，含义和适用性待人工复核")}</small></li>`).join("")}</ul></details>
+    <details><summary>样本条件与原文依据（${audit.rules.length}条）</summary>${sources ? `<ul class="ai-risk-list questionnaire-quality-list">${sources}</ul>` : '<p>尚无可核对的条件记录。</p>'}</details>
+    <p class="panel-note">复制、Word与Markdown保留本次检查结果。需修改或待确认项解决后启用平台格式导出。</p>
+  </article>`;
 }
 
 function renderAiQuestionnaireHtml(result) {
@@ -10014,16 +10008,14 @@ function renderAiQuestionnaireHtml(result) {
         <div><span>目标样本</span><strong>${result.config.sampleSize}</strong></div>
         <div><span>生成来源</span><strong>${escapeHtml(result.source || "本地规则")}</strong></div>
       </div>
-      <ul class="ai-risk-list">
-        <li><strong>结构</strong><span>开场白与甄别、问卷主体、背景信息、结束语已生成。</span></li>
-        <li><strong>编码</strong><span>已按 S/Q/M/RS/N/OE/KANO 等题型输出三列表格。</span></li>
-        <li><strong>逻辑</strong><span>已补充随机显示、其他置底、终止/继续、质量控制等备注。</span></li>
-      </ul>
+      <p class="panel-note">问卷初稿已生成；资格条件、适用对象和跳题规则的检查结果见下方。</p>
     </article>
+    ${renderAiQuestionnaireQuality(result.qualityAudit || lastAiQuestionnaireAudit)}
+    ${window.QuestionnaireReviewUI.render(aiQuestionnaireSession)}
     <article class="audit-issue">
       <div class="issue-head">
         <strong>可复制问卷 Markdown</strong>
-        <span class="issue-tag low">V1.0</span>
+        <span class="issue-tag low">V${aiQuestionnaireSession.current()?.id || 1}</span>
       </div>
       <textarea class="prompt-box" readonly>${escapeHtml(result.questionnaireText)}</textarea>
     </article>
@@ -10661,11 +10653,12 @@ function buildAiQuestionnairePrompt() {
         "甄别题不得直接询问受访者是否属于目标人群，也不得把用户填写的目标人群描述照抄成是/否题。必须拆成可回忆、可验证的客观问题，例如近期品类行为、购买或使用时间、决策角色、地域配额、行业排除和同类调研参与情况。",
         "甄别逻辑要兼顾现有用户、潜在用户、购买者、使用者和影响者；只有与研究范围明确冲突时才终止，其他情况优先分层或跳转，避免过度筛选。",
         "主体问卷必须围绕业务决策形成完整链路：品类行为与场景、需求与痛点、认知和选择驱动、方案或概念评价、购买转化、价格或功能、品牌/渠道、细分变量、背景资料。根据研究类型增删模块，但不得只输出少量通用题。",
-        "题目与选项必须具体、全面、互斥且尽量穷尽。多选题通常提供6-12个有业务含义的选项；矩阵属性通常提供8-15项；必要时设置其他、以上均无、不知道/不适用，并明确排他、随机、轮换和置底规则。",
+        "题目与选项必须具体、全面、互斥且尽量穷尽。选项和矩阵长度按研究目标与作答负担确定，不为凑数量扩展；必要时设置其他、以上均无、不知道/不适用，并明确排他、随机、轮换和置底规则。",
         "量表必须写明完整端点、方向和适用对象；避免双重问题、诱导措辞、主观假设和无法回答的回忆周期。概念测试、PSM、KANO、NPS等研究方法必须遵守其标准问法与分析要求。",
         "每道选择题必须包含三列表格：编码、选项内容、逻辑与备注。必须标注跳题、终止、引用前题、随机、轮换、置底、排他、质量控制和数据清洗提示。",
         "能根据项目背景合理推导的品牌、渠道、场景、需求、痛点、功能和属性要主动补齐；只有确实依赖客户素材的信息才使用【待客户确认】标记，不要大量使用品牌A、功能A、XX元等空泛占位符。",
-        "依据用户选择的短卷或长卷模式控制内容深度。无论哪种模式，都应优先保证研究问题覆盖和后续分析价值，不得按固定答题时长压缩内容。"
+        "依据用户选择的短卷或长卷模式控制内容深度。无论哪种模式，都应优先保证研究问题覆盖和后续分析价值，不得按固定答题时长压缩内容。",
+        window.QuestionnaireQuality.designRules()
       ].join("")
     },
     {
@@ -10688,6 +10681,8 @@ function buildAiQuestionnairePrompt() {
         "编程交付规则：题号体系稳定；所有选项有编码；明确单选/多选/限选/排序/矩阵/开放/数值题；标注引用答案、显示条件、跳转、终止、随机、轮换、排他、置底和必答/可拒答。",
         templateBlock ? "模板参考规则：用户已导入问卷模板，请优先学习模板的题号体系、题型结构、选项编码、跳题备注和随机/置底写法；但不要机械复制模板中的旧项目品牌、产品、价格和人群信息。" : "",
         "",
+        "条件原文来源（需求与界面样本量不一致时列为待确认）：",
+        window.QuestionnaireQuality.sourceContext(config),
         "研究需求：",
         config.brief || "用户未填写详细需求，请根据项目背景与研究类型主动推导研究架构和完整题目，不要要求用户补填额外表单。",
         templateBlock ? `\n${templateBlock}` : "",
@@ -10695,7 +10690,7 @@ function buildAiQuestionnairePrompt() {
         "请输出以下结构：",
         "一、问卷说明与编程约定",
         "二、问卷正文：模块A开场白与客观甄别、模块B品类与行为基础、模块C核心研究模块、模块D转化/价格/功能模块、模块E背景信息、模块F结束语",
-        "三、质量自查清单：覆盖度、措辞中立性、选项完备性、逻辑闭环、量表一致性和待客户确认项",
+        "三、待复核清单：具体题号、依据和待确认项。随后输出样本条件和分流规则的questionnaire-rules代码块，不得宣称全项通过",
         "",
         "可参考但不要机械照抄的本地初稿：",
         localDraft
@@ -10803,7 +10798,8 @@ async function renderAiBrief() {
     { title: "整理研究需求", detail: "读取研究类型、目标人群、样本量和业务目标。" },
     { title: "校验生成方式", detail: settings.mode === "local" || !settings.apiKey ? "已自动使用后端 OpenCode Go 模型。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}（${settings.model}）。` },
     { title: "生成问卷初稿", detail: `按${design.config.lengthMode === "short" ? "精简短卷" : "专业长卷"}模式生成完整、可编程的问卷初稿。` },
-    { title: "整理可导出结果", detail: "启用复制、Markdown、Word 和同步到项目稿。" }
+    { title: "运行问卷规则检查", detail: "核对条件来源、资格分流、题型量表与质控规则。" },
+    { title: "整理可导出结果", detail: "复制、Markdown、Word保留本次检查结果。" }
   ];
   renderAiProgress(result, steps, 0);
   let output = design.questionnaireText;
@@ -10839,15 +10835,13 @@ async function renderAiBrief() {
     }
   }
   renderAiProgress(result, steps, 3);
-  output = sanitizeAiQuestionnaireOutput(output);
-  lastAiPrompt = output;
-  lastAiQuestionnaireText = output;
+  output = finalizeAiQuestionnaire(output, design.config);
   renderAiProgress(result, steps, 4);
   copyButton.disabled = false;
   exportButton.disabled = false;
   if (wordButton) wordButton.disabled = false;
   const platformBtn = document.querySelector("#exportAiPlatformFormat");
-  if (platformBtn) platformBtn.disabled = false;
+  if (platformBtn) platformBtn.disabled = Boolean(lastAiQuestionnaireAudit?.summary.errors || lastAiQuestionnaireAudit?.summary.pending);
   if (applyButton) applyButton.disabled = false;
   if (reviseButton) reviseButton.disabled = false;
   result.innerHTML = renderAiQuestionnaireHtml({ ...design, questionnaireText: output, source });
@@ -11732,8 +11726,12 @@ function exportAiWord() {
 
 function exportAiPlatformFormat() {
   if (!lastAiPrompt) return;
+  if (!lastAiQuestionnaireAudit || lastAiQuestionnaireAudit.summary.errors || lastAiQuestionnaireAudit.summary.pending) {
+    showToast("请先修复需修改项并确认资格条件；当前可导出Word或Markdown初稿供复核。");
+    return;
+  }
   // 将问卷稿转换为问卷星/腾讯问卷批量导入格式
-  const lines = lastAiPrompt.split("\n");
+  const lines = window.QuestionnaireQuality.stripReport(lastAiPrompt).replace(/```questionnaire-rules[\s\S]*?```/g, "").split("\n");
   const output = [];
   let qNum = 0;
   for (const line of lines) {
@@ -12749,72 +12747,75 @@ function exportAiReportPpt() {
 }
 
 function buildAiRevisionPrompt(instruction, currentDraft) {
+  const config = { ...(lastAiQuestionnaireConfig || getAiDesignerConfig()), revisionInstruction: [lastAiQuestionnaireConfig?.revisionInstruction, instruction].filter(Boolean).join("\n") };
   return [
     {
       role: "system",
-      content: "你是一名资深市场研究问卷设计专家。请根据用户修改要求，直接输出符合专业调研公司交付标准的完整问卷。第一行必须是Markdown一级标题。保留客观甄别、正式模块结构、稳定题号、三列表格、完整选项、量表端点、跳题/终止/引用前题、随机/轮换/排他/置底规则和质量自查清单。甄别题不得直接询问是否属于目标人群，修改时也不得把完整问卷压缩成摘要。"
+      content: "你是一名资深市场研究问卷设计专家。请根据用户修改要求，直接输出符合专业调研公司交付标准的完整问卷。第一行必须是Markdown一级标题。保留客观甄别、正式模块结构、稳定题号、三列表格、完整选项、量表端点、跳题/终止/引用前题、随机/轮换/排他/置底规则和质量自查清单。甄别题不得直接询问是否属于目标人群，修改时也不得把完整问卷压缩成摘要。" + "\n" + window.QuestionnaireQuality.designRules()
     },
     {
       role: "user",
       content: [
+        "原始条件来源：",
+        window.QuestionnaireQuality.sourceContext(config),
+        "上一版系统检查（修订后重新检查，不得照抄通过声明）：",
+        JSON.stringify(lastAiQuestionnaireAudit?.issues || []),
         "用户修改要求：",
         instruction,
         "",
         "当前问卷初稿：",
-        currentDraft
+        window.QuestionnaireQuality.stripReport(currentDraft)
       ].join("\n")
     }
   ];
 }
 
 async function reviseAiQuestionnaire() {
-  const instruction = document.querySelector("#aiReviseInput").value.trim();
+  const field = document.querySelector("#aiReviseInput");
+  const instruction = field.value.trim();
   const result = document.querySelector("#aiResults");
-  if (!lastAiQuestionnaireText) {
-    result.innerHTML = `<div class="empty-state"><strong>暂无可修改问卷</strong><span>请先生成问卷初稿。</span></div>`;
+  const status = document.querySelector("#aiRevisionStatus");
+  if (!lastAiQuestionnaireText || !instruction) {
+    status.textContent = !lastAiQuestionnaireText ? "请先生成问卷初稿。" : "请先填写修改要求。";
     return;
   }
-  if (!instruction) {
-    result.innerHTML = `<div class="empty-state"><strong>缺少修改要求</strong><span>请先写明希望如何修改问卷。</span></div>`;
-    return;
-  }
-  const settings = loadAiSettings();
-  const steps = [
-    { title: "读取修改要求", detail: "整理当前问卷初稿和用户追加要求。" },
-    { title: "校验模型设置", detail: settings.mode === "local" || !settings.apiKey ? "未配置可用 API Key，将生成本地修改说明。" : `准备调用 ${aiProviderPresets[settings.provider]?.name || "大模型"} 修改问卷。` },
-    { title: "重写问卷初稿", detail: "保留编码、表格、逻辑备注和自查清单。" },
-    { title: "重新执行逻辑校验", detail: "检查修改后的题号、跳题和选项风险。" },
-    { title: "更新可导出结果", detail: "启用复制、Word、Markdown 与同步项目稿。" }
-  ];
-  renderAiProgress(result, steps, 0);
-  let output = `${lastAiQuestionnaireText}\n\n---\n\n# 待修改说明\n\n${instruction}\n\n> 当前未调用大模型，已先把修改要求附在问卷末尾。配置 API Key 后可自动重写完整问卷。`;
-  let source = "本地规则";
-  renderAiProgress(result, steps, 1);
-  if (settings.mode !== "local") {
+  const current = aiQuestionnaireSession.current();
+  const local = document.querySelector("#aiRevisionMode").value === "selected";
+  const selection = document.querySelector("#aiRevisionTargets").value.trim();
+  const revisionConfig = { ...(lastAiQuestionnaireConfig || getAiDesignerConfig()), revisionInstruction: [lastAiQuestionnaireConfig?.revisionInstruction, instruction].filter(Boolean).join("\n") };
+  status.textContent = "";
+  try {
+    const messages = local ? window.QuestionnaireWorkflow.patchPrompt(current.text, selection, instruction, revisionConfig) : buildAiRevisionPrompt(instruction, current.text);
+    const settings = loadAiSettings();
     const errors = validateAiSettings(settings);
-    if (!errors.length) {
-      try {
-        renderAiProgress(result, steps, 2, "正在按你的要求重写问卷，通常需要几十秒。");
-        output = await callAiChatCompletion(settings, buildAiRevisionPrompt(instruction, lastAiQuestionnaireText), { maxTokens: 32000, timeoutMs: 600000, stream: true, taskTier: "fast" });
-        source = settings.apiKey ? (aiProviderPresets[settings.provider]?.name || "大模型") : "后端 OpenCode Go 模型";
-      } catch (error) {
-        output += `\n\n> 大模型修改失败：${error.message}`;
-        source = settings.apiKey ? "本地规则（模型调用失败）" : "后端 OpenCode Go 模型（调用失败）";
-      }
-    } else {
-      output += `\n\n> 大模型设置未通过校验：${errors.join("；")}`;
-      source = "本地规则（设置未通过校验）";
-    }
+    if (settings.mode === "local" || errors.length) throw new Error(errors.join("；") || "当前生成方式不能执行AI修订。");
+    renderAiProgress(result, [{title: local ? "修订指定题目" : "修订完整问卷", detail: local ? "仅替换指定题块；其他正文与编程规则保持原样。" : "根据修改要求生成完整新版。"}, {title:"重检并记录版本",detail:"重新核对规则，保留旧稿和差异。"}],0);
+    const response = await callAiChatCompletion(settings, messages, { maxTokens: 32000, timeoutMs: 600000, stream: true, taskTier: "fast" });
+    if (!String(response || '').trim()) throw new Error("模型未返回内容。");
+    if (aiQuestionnaireSession.current().id !== current.id) throw new Error("当前版本已变化，请重新提交修订。");
+    const output = local ? window.QuestionnaireWorkflow.applyPatch(current.text, selection, response) : response;
+    finalizeAiQuestionnaire(output, revisionConfig, local ? `局部修订 ${selection}` : "整卷修订");
+    result.innerHTML = renderAiQuestionnaireHtml({ config: revisionConfig, questionnaireText: lastAiQuestionnaireText, source: local ? "AI局部修订" : "AI整卷修订" });
+    field.value = "";
+    status.textContent = `已保存为 V${aiQuestionnaireSession.current().id}，可查看版本差异。`;
+  } catch (error) {
+    result.innerHTML = renderAiQuestionnaireHtml({ config: current.config, questionnaireText: current.text, source: "保留修订前版本" });
+    status.textContent = `修改未应用：${error.message} 原版本和修改要求已保留。`;
   }
-  renderAiProgress(result, steps, 3);
-  output = sanitizeAiQuestionnaireOutput(output);
-  lastAiPrompt = output;
-  lastAiQuestionnaireText = output;
-  const design = buildAiQuestionnaireDesign();
-  const logicIssues = auditQuestionnaire(output).filter((issue) => issue.title !== "缺少问卷稿");
-  renderAiProgress(result, steps, 4);
-  result.innerHTML = renderAiQuestionnaireHtml({ ...design, questionnaireText: output, source, logicIssues });
-  document.querySelector("#aiReviseInput").value = "";
+}
+
+async function runAiQuestionnaireOperation(operation) {
+  if (aiQuestionnaireBusy) return;
+  aiQuestionnaireBusy = true;
+  const buttons = [document.querySelector("#generateAiBrief"), document.querySelector("#reviseAiQuestionnaire")];
+  buttons.forEach(button => { if (button) button.disabled = true; });
+  try { await operation(); }
+  catch (error) { showToast(`问卷操作未完成：${error.message}`); }
+  finally {
+    aiQuestionnaireBusy = false;
+    buttons[0].disabled = false;
+    buttons[1].disabled = !lastAiQuestionnaireText;
+  }
 }
 
 function loadAiWorkbenchProject() {
@@ -19845,13 +19846,32 @@ document.querySelector("#loadAiPlanExample").addEventListener("click", () => {
   syncAiPlanAdditionalModules();
 });
 
-document.querySelector("#generateAiBrief").addEventListener("click", renderAiBrief);
+document.querySelector("#generateAiBrief").addEventListener("click", () => runAiQuestionnaireOperation(renderAiBrief));
 document.querySelector("#copyAiPrompt").addEventListener("click", copyAiPrompt);
 document.querySelector("#exportAiPrompt").addEventListener("click", exportAiPrompt);
 document.querySelector("#exportAiWord").addEventListener("click", exportAiWord);
 document.querySelector("#exportAiPlatformFormat")?.addEventListener("click", exportAiPlatformFormat);
 document.querySelector("#applyAiQuestionnaire").addEventListener("click", applyAiQuestionnaireToWorkspace);
-document.querySelector("#reviseAiQuestionnaire").addEventListener("click", reviseAiQuestionnaire);
+document.querySelector("#reviseAiQuestionnaire").addEventListener("click", () => runAiQuestionnaireOperation(reviseAiQuestionnaire));
+window.QuestionnaireReviewUI.bind(document.querySelector("#aiResults"), {
+  session: aiQuestionnaireSession,
+  busy: () => aiQuestionnaireBusy,
+  restore: (version) => {
+    if (!version) return;
+    finalizeAiQuestionnaire(version.text, version.config, `恢复 V${version.id}`);
+    document.querySelector("#aiResults").innerHTML = renderAiQuestionnaireHtml({ config: version.config, questionnaireText: lastAiQuestionnaireText, source: `从 V${version.id} 恢复` });
+    document.querySelector("#aiRevisionStatus").textContent = `已恢复为 V${aiQuestionnaireSession.current().id}，试访数据仍归属于原版本。`;
+  },
+  feedback: (record) => {
+    if (!record) return;
+    document.querySelector("#aiReviseInput").value = `试访 V${record.version}，路径 ${record.route}${record.question ? `，题号 ${record.question}` : ""}：${record.feedback}\n请核实并改善上述问题，保留已有研究目标。`;
+    document.querySelector("#aiRevisionMode").value = record.question ? "selected" : "full";
+    document.querySelector("#aiRevisionTargets").value = record.question;
+    document.querySelector("#aiReviseInput").focus();
+  },
+  download: (archive) => downloadBlob("问卷版本与试访档案.json", new Blob([JSON.stringify(archive,null,2)], { type: "application/json;charset=utf-8" }))
+});
+
 document.querySelector("#aiProvider").addEventListener("change", applyAiProviderPreset);
 document.querySelector("#aiModelTier").addEventListener("change", () => {
   const tierModel = document.querySelector("#aiModelTier")?.value || "";

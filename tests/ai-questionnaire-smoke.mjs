@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { createRequire } from "node:module";
+const quality = createRequire(import.meta.url)("../questionnaire-quality.js");
 
 const source = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
@@ -72,16 +74,18 @@ const promptEnd = source.indexOf("function sanitizeAiQuestionnaireOutput(", prom
 const prompt = source.slice(promptStart, promptEnd);
 assert.match(prompt, /主流专业调研公司的正式定量问卷交付习惯/);
 assert.match(prompt, /甄别题不得直接询问受访者是否属于目标人群/);
-assert.match(prompt, /多选题通常提供6-12个/);
-assert.match(prompt, /矩阵属性通常提供8-15项/);
+assert.match(prompt, /选项和矩阵长度按研究目标与作答负担确定/);
+assert.match(prompt, /不为凑数量扩展/);
 assert.match(prompt, /不得按固定答题时长压缩内容/);
 assert.doesNotMatch(prompt, /期望时长：|config\.duration/);
 
 const screenerStart = source.indexOf("function baseAiQuestions(");
 const screenerEnd = source.indexOf("function bodyAiQuestions(", screenerStart);
-const screener = source.slice(screenerStart, screenerEnd);
+context.window = { QuestionnaireQuality: quality };
+vm.runInContext(source.slice(screenerStart, screenerEnd), context);
+const screener = JSON.stringify(context.baseAiQuestions({}));
 assert.match(screener, /过去3个月内，您对该品类有过哪些实际行为/);
-assert.match(screener, /在购买该品类产品时，您通常扮演什么角色/);
+assert.match(screener, /您实际参与哪些环节/);
 assert.doesNotMatch(screener, /是否属于本次研究目标人群/);
 
 assert.doesNotMatch(html, /id="aiDuration"/);
@@ -99,7 +103,7 @@ assert.match(source, /max: Math\.min\(70, target \+ 6\)/);
 assert.match(source, /lengthMode: document\.querySelector\("#aiQuestionnaireLengthMode"\)/);
 assert.equal((source.match(/maxTokens: 32000/g) || []).length, 2);
 assert.match(source, /buildAiQuestionnairePrompt\(\), \{[\s\S]{0,80}maxTokens: 32000/);
-assert.match(source, /buildAiRevisionPrompt\(instruction, lastAiQuestionnaireText\), \{ maxTokens: 32000, timeoutMs: 600000, stream: true, taskTier: "fast" \}/);
+assert.match(source, /callAiChatCompletion\(settings, messages, \{ maxTokens: 32000, timeoutMs: 600000, stream: true, taskTier: "fast" \}/);
 assert.match(source, /timeoutMs: design\.config\.lengthMode === "long" \? 600000 : 360000/);
 assert.match(source, /专业长卷通常需要 2–6 分钟/);
 assert.match(source, /if \(options\.stream\) requestBody\.stream = true/);
