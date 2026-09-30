@@ -2,6 +2,24 @@
 
 面向市场调研项目的本地 Web 工具，覆盖问卷设计、数据清洗、交叉表分析、AI 报告和 PPTX 报告生成。
 
+## 当前开发基线
+
+正式工作目录为 `D:/调研工具/codex-temp/opencode-go-release-source`。2026-09-30 核验的 Web 线上提交为 `3bb99455b83873e23568c951ea60d8d48c507c61`，本轮 S0/S1/S2/S3/S4 的发布候选为 `v0.13.0-20260930.research-s4`，从 `codex/s0-data-baseline` 汇入 main。实际上线状态以健康接口的 release/revision 为准。外层仓库和阶段副本不作为本轮发布输入。
+
+产品规划与 S0/S1/S2/S3/S4 验收记录见 [产品迭代计划](docs/PRODUCT_ROADMAP_2026-09-30.md)。启动及发布命令均从本仓库根目录执行；部署继续遵循现有发布文档。
+
+## 分析简报
+
+原始样本在 AI 研究员中选择数据版本，点击“生成分析简报”；可勾选题目并计算，或复用已有结果。成果保存到项目，支持 Word/Markdown 导出。外部汇总交叉表在 PPT 报告的结构预览中生成文字简报。旧报告文本可通过 `/#ai-report` 打开和导出。
+
+针对本轮修改运行 `npm run test:s1`、`npx playwright test tests/e2e/s1-analysis-brief.spec.js` 和 `python -m unittest discover -s tests -p s1_brief_context_test.py`。后续发布需要同时包含 Python 证据接口的数值单位修正。
+
+## 分析配方与串行批次（S4）
+
+AI 研究员的数据区支持“保存分析配方”“复用配方 / 串行批量”以及“追加工作表”。配方可下载 JSON 后导入其他项目；可按问卷定义填写完整数值量表或类别列表，并逐字段查看校验结果。映射和量表核验通过后，依次重新计算所选数据集并生成各自的交叉表 Excel。批次状态保存在后端，失败项在任务列表重试。
+
+运行 `npm run test:s4` 和 `npx playwright test tests/e2e/s4-analysis-recipes.spec.js` 验证。发布前须应用 `0023_analysis_recipes_sheets.sql`，同步更新 Web/研究接口与外部数据执行器；发布候选为 `v0.13.0-20260930.research-s4`。详细边界见产品计划第 15–16 节。
+
 ## 本地启动
 
 开发与测试使用 `.node-version` 固定的 Node.js 24.17.0（测试脚本包含 `node:sqlite`，CI 使用相同版本）：
@@ -62,3 +80,7 @@ Cloudflare Pages 必须显式配置 `PPTX_BACKEND_URL`，未配置时代理返�
 正式发布、生产验证与后端回滚步骤见 [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md)。
 
 `.env.example` 仅提供变量名称和本地默认值，不应写入真实密钥。
+
+问卷支持按项目自动保存需求、版本及试访记录，刷新后恢复；可下载和导入 JSON 档案。数据保存在当前浏览器，迁移设备或清理浏览器前请下载备份。
+
+AI 研究员的 PPT 脚本新增“报告交付检查”：定位数值/原声来源、保护锁定与人工编辑页，复核后下载包含可编辑混合 PPT、Excel、统计口径及覆盖/来源清单的交付包。首批支持横向定量对比、原声与综合结论；运行 `npm run test:s3` 验证新链路。

@@ -8337,3 +8337,22 @@ tbody tr.warn td {
 .workflow-diff pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; background: #f4f7fb; padding: 12px; }
 .workflow-wide { grid-column: 1 / -1; }
 @media (max-width: 640px) { .workflow-diff, .workflow-form { grid-template-columns: minmax(0, 1fr); } }
+
+/* Reusable method and Sheet registration dialogs. */
+.research-recipe-dialog { width: min(760px, 94vw); max-height: 85dvh; padding: 24px; overflow: auto; }
+.research-recipe-dialog h3 { margin-top: 0; }
+.research-recipe-dialog label { display: flex; gap: 12px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
+.research-recipe-dialog select, .research-recipe-dialog input:not([type=checkbox]) { max-width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+.research-recipe-dialog button { margin: 8px 8px 4px 0; }
+.research-recipe-dialog p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.research-analysis-batch { border: 1px solid #d8e4f0; border-radius: 8px; padding: 12px; margin: 12px 0; line-height: 1.7; overflow-wrap: anywhere; }
+
+.research-recipe-dialog input[type=checkbox] { width: 16px; flex: 0 0 16px; margin: 0; }
+
+.research-recipe-domain { padding: 12px; background: #f5f8fc; border-radius: 8px; margin-bottom: 16px; }
+.research-recipe-domain[hidden], .research-recipe-domain [hidden] { display: none; }
+.research-recipe-domain small, .research-recipe-domain-summary { display: block; margin: 8px 0; color: #475569; overflow-wrap: anywhere; }
+.research-recipe-range { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.research-recipe-range input[type=number] { width: 110px; min-width: 0; }
+.research-recipe-domain textarea { box-sizing: border-box; width: 100%; margin-top: 8px; padding: 8px; }
+.research-recipe-dialog [role=alert] { color: #b42318; }

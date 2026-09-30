@@ -115,36 +115,108 @@
     return groups;
   }
 
-  function createSession() {
-    const versions = [], pilots = [];
-    let nextPilotId = 1;
+  const STORAGE_PREFIX = 'surveykit_questionnaire_workflow_v2:';
+  const emptyArchive = () => ({format:'questionnaire-workflow',version:2,versions:[],pilots:[],draft:{},view:{},nextPilotId:1});
+  const plain = value => value && typeof value === 'object' && !Array.isArray(value);
+  function validateArchive(input) {
+    if (!plain(input) || input.format !== 'questionnaire-workflow' || ![1,2].includes(input.version) || !Array.isArray(input.versions) || !Array.isArray(input.pilots)) throw new Error('档案格式或版本不兼容，当前记录未变更。');
+    if (JSON.stringify(input).length > 8_000_000 || input.versions.length > 500 || input.pilots.length > 10000) throw new Error('档案超过容量限制，请拆分后导入。');
+    const archive=emptyArchive(), ids=new Set(), pilotIds=new Set(), audits=new Map();
+    const date = value => typeof value==='string' && Number.isFinite(Date.parse(value));
+    for (const v of input.versions) {
+      if (!plain(v) || !Number.isSafeInteger(v.id) || v.id<1 || ids.has(v.id) || typeof v.text!=='string' || !v.text.trim() || v.text.length>2_000_000 || !plain(v.config) || typeof v.label!=='string' || !date(v.createdAt)) throw new Error('问卷版本记录无效或题稿缺失，未导入。');
+      ids.add(v.id); archive.versions.push(clone(v));
+    }
+    archive.versions.sort((a,b)=>a.id-b.id);
+    for (const record of input.pilots) {
+      if (!plain(record) || !Number.isSafeInteger(record.id) || record.id<1 || pilotIds.has(record.id) || !date(record.createdAt) || typeof record.feedback!=='string' || record.feedback.length>4000) throw new Error('试访记录无效，未导入。');
+      const normalized=validatePilot(record,archive.versions,audits);pilotIds.add(record.id);archive.pilots.push({...clone(record),...normalized});
+    }
+    for(const key of ['draft','view']) {
+      if(input[key]!==undefined && (!plain(input[key]) || Object.entries(input[key]).some(([k,v])=>['__proto__','constructor','prototype'].includes(k) || typeof v!=='string' || v.length>100000))) throw new Error('草稿或预览设置无效，未导入。');
+      archive[key]=clone(input[key] || {});
+    }
+    archive.nextPilotId=Math.max(1,...archive.pilots.map(p=>p.id+1),Number.isSafeInteger(input.nextPilotId)?input.nextPilotId:1);
+    return archive;
+  }
+  function validatePilot(input, versions, audits=new Map()) {
+    const version=versions.find(v=>v.id===Number(input.version));
+    if(!version)throw new Error('试访所属版本不存在。');
+    if(!audits.has(version.id))audits.set(version.id,quality.audit(version.text,version.config));
+    const audit=audits.get(version.id),routes=audit.routes;
+    if(!(routes.length?routes.some(r=>r.id===input.route):input.route==='全卷'))throw new Error('请选择该版本中的实际试访路径。');
+    const minutes=Number(input.minutes);
+    if(!Number.isFinite(minutes)||minutes<=0||minutes>1440)throw new Error('请输入大于0且不超过1440的实际分钟数。');
+    if(!['completed','interrupted','terminated'].includes(input.outcome))throw new Error('请选择试访完成状态。');
+    const question=String(input.question || '').trim().toUpperCase();
+    if(question&&!audit.questions.some(q=>q.id===question))throw new Error('反馈题号不属于该版本。');
+    return {version:version.id,route:input.route,minutes,outcome:input.outcome,question,feedback:String(input.feedback || '').trim().slice(0,4000)};
+  }
+  function createSession(options={}) {
+    let projectId=String(options.projectId || 'local-draft'), data=emptyArchive(), baseline=null, locked=false;
+    let saveState={state:'session',message:'仅本次会话，未配置本地存储。'};
+    const memory=new Map();
+    const storage=()=>typeof options.storage==='function'?options.storage():options.storage;
+    const key=()=>STORAGE_PREFIX+encodeURIComponent(projectId);
+    function announce(){options.onStatus?.({...saveState,projectId});}
+    function save() {
+      if(!options.storage){announce();return false;}
+      if(locked){announce();return false;}
+      try {
+        const store=storage();
+        if(store.getItem(key())!==baseline)throw new Error('另一页面已修改本项目档案。请先下载本次会话，再重新读取并导入合并。');
+        const content=JSON.stringify({...data,projectId,savedAt:new Date().toISOString()});
+        if(content.length>8_000_000)throw new Error('档案超过本地容量限制，请下载备份。');
+        store.setItem(key(),content);baseline=content;
+        saveState={state:'saved',message:'已保存到此浏览器，刷新或重启后可恢复。'};
+      }catch(error){saveState={state:'failed',message:`保存失败，仅本次会话：${error.message} 请下载档案备份。`};}
+      announce();return saveState.state==='saved';
+    }
+    function load() {
+      data=emptyArchive();baseline=null;locked=false;
+      if(!options.storage){saveState={state:'session',message:'仅本次会话，未配置本地存储。'};announce();return;}
+      try {
+        baseline=storage().getItem(key());
+        if(baseline!==null){const archive=JSON.parse(baseline);if(archive.projectId && archive.projectId!==projectId)throw new Error('项目标识不匹配');data=validateArchive(archive);}
+        saveState={state:'saved',message:baseline?'已恢复此项目的本地档案。':'本项目尚无问卷档案；编辑后自动保存。'};
+      }catch(error){locked=true;saveState={state:'failed',message:`读取失败：${error.message} 原存储未覆盖；新内容仅在本次会话，请下载备份。`};}
+      announce();
+    }
+    load();
     return {
-      record(text, config, label) {
-        const version = { id: versions.length + 1, text, config: clone(config), label, createdAt: new Date().toISOString() };
-        versions.push(version); return clone(version);
+      record(text,config,label) {
+        if(typeof text!=='string'||!text.trim()||!plain(config))throw new Error('问卷正文或需求快照无效。');
+        if(data.versions.length>=500 || text.length>2_000_000)throw new Error('已达到版本或题稿容量限制，请先下载档案备份。');
+        const version={id:Math.max(0,...data.versions.map(v=>v.id))+1,text,config:clone(config),label:String(label || '保存版本'),createdAt:new Date().toISOString()};
+        data.versions.push(version);save();return clone(version);
       },
-      versions: () => clone(versions),
-      current: () => versions.length ? clone(versions[versions.length - 1]) : null,
-      get: id => clone(versions.find(v => v.id === Number(id)) || null),
-      addPilot(input) {
-        const version = versions.find(v => v.id === Number(input.version));
-        if (!version) throw new Error('试访所属版本不存在。');
-        const routes = quality.audit(version.text, version.config).routes;
-        if (!(routes.length ? routes.some(r => r.id === input.route) : input.route === '全卷')) throw new Error('请选择该版本中的实际试访路径。');
-        const minutes = Number(input.minutes);
-        if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440) throw new Error('请输入大于0且不超过1440的实际分钟数。');
-        if (!['completed','interrupted','terminated'].includes(input.outcome)) throw new Error('请选择试访完成状态。');
-        const question = String(input.question || '').trim().toUpperCase();
-        if (question && !quality.parseQuestions(version.text).some(q => q.id === question)) throw new Error('反馈题号不属于该版本。');
-        const record = { id: nextPilotId++, version: version.id, route: input.route, minutes, outcome: input.outcome, question, feedback: String(input.feedback || '').trim().slice(0,4000), createdAt: new Date().toISOString() };
-        pilots.push(record); return clone(record);
+      versions:()=>clone(data.versions),current:()=>clone(data.versions.at(-1)||null),get:id=>clone(data.versions.find(v=>v.id===Number(id))||null),
+      addPilot(input){if(data.pilots.length>=10000)throw new Error('试访记录已达容量限制，请先下载档案备份。');const record={...validatePilot(input,data.versions),id:data.nextPilotId++,createdAt:new Date().toISOString()};data.pilots.push(record);save();return clone(record);},
+      pilots:version=>clone(data.pilots.filter(p=>p.version===Number(version))),
+      removePilot(id){data.pilots=data.pilots.filter(p=>p.id!==Number(id));save();},
+      export:()=>clone({...data,projectId}),status:()=>({...saveState,projectId}),retrySave:save,
+      draft:()=>clone(data.draft),view:()=>clone(data.view),
+      setDraft(draft){data.draft=clone(draft);save();},setView(view){data.view={...data.view,...clone(view)};save();},
+      switchProject(id){
+        const next=String(id || 'local-draft');if(next===projectId)return;
+        memory.set(projectId,{data:clone(data),baseline,locked,saveState});projectId=next;
+        const prior=memory.get(next);
+        if(prior && prior.saveState.state!=='saved'){({data,baseline,locked,saveState}=prior);announce();}else load();
       },
-      pilots: version => clone(pilots.filter(p => p.version === Number(version))),
-      removePilot: id => { const index = pilots.findIndex(p => p.id === Number(id)); if (index >= 0) pilots.splice(index,1); },
-      export: () => ({ format: 'questionnaire-workflow', version: 1, versions: clone(versions), pilots: clone(pilots) })
+      reload(){load();},
+      forgetProject(id){const target=String(id);if(target===projectId)throw new Error('请先切换项目再删除档案。');if(options.storage)storage().removeItem(STORAGE_PREFIX+encodeURIComponent(target));memory.delete(target);},
+      import(input){
+        const incoming=validateArchive(input),merged=clone(data),mapping=new Map();
+        let nextVersion=Math.max(0,...merged.versions.map(v=>v.id))+1,nextPilot=merged.nextPilotId;
+        for(const v of incoming.versions){mapping.set(v.id,nextVersion);merged.versions.push({...v,id:nextVersion++,label:`导入 V${v.id} · ${v.label}`});}
+        for(const p of incoming.pilots)merged.pilots.push({...p,id:nextPilot++,version:mapping.get(p.version)});
+        merged.nextPilotId=nextPilot;
+        if(!data.versions.length){merged.draft=incoming.draft;merged.view=incoming.view;}
+        validateArchive(merged);data=merged;save();return {versions:incoming.versions.length,pilots:incoming.pilots.length};
+      }
     };
   }
-  const api = { blocks, targets, applyPatch, patchPrompt, diff, preview, pilotSummary, createSession };
+  const api = { blocks, targets, applyPatch, patchPrompt, diff, preview, pilotSummary, createSession, validateArchive, STORAGE_PREFIX };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.QuestionnaireWorkflow = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

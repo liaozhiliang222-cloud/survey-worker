@@ -18,6 +18,7 @@
   POST /api/pptx-report[?<qs>]         -> .pptx 文件流（attachment 下载）
 """
 from __future__ import annotations
+from starlette.concurrency import run_in_threadpool
 
 import base64
 import hashlib
@@ -554,6 +555,22 @@ async def preview_qualitative_report(request: Request):
         )
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"error": {"message": f"定性 PPT 预览失败：{exc}"}}, status_code=500)
+
+
+@app.post("/api/pptx-report/research-report-package")
+async def research_report_package(request: Request):
+    from pptx_report.research_delivery import build_package
+    body = await request.body()
+    if len(body) > 8 * MAX_METADATA_BYTES:
+        return JSONResponse({"error":{"message":"交付请求不能超过 8MB"}},status_code=413)
+    try:
+        payload=json.loads(body.decode("utf-8"))
+        if not isinstance(payload,dict) or not payload.get("project_id") or payload["project_id"] != request.headers.get("X-Project-Id"):
+            return JSONResponse({"error":{"message":"项目不匹配"}},status_code=403)
+        result=await run_in_threadpool(build_package,payload)
+        return Response(result["content"],media_type="application/zip",headers={"Content-Disposition":"attachment; filename=research-delivery.zip","Cache-Control":"no-store"})
+    except (ValueError,KeyError,TypeError) as error:
+        return JSONResponse({"error":{"message":str(error)}},status_code=400)
 
 
 @app.post("/api/pptx-report/qualitative-report")

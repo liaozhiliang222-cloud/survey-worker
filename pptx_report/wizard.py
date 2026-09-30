@@ -2055,7 +2055,7 @@ def build_insight_context(
                         continue
                     numeric = float(value)
                     values["总体" if str(segment).strip().lower() == "total" else str(segment)] = round(
-                        numeric * 100 if abs(numeric) <= 1 else numeric,
+                        numeric * 100 if infer_data_kind(question) == "percentage" and abs(numeric) <= 1 else numeric,
                         1,
                     )
                 rows.append({"option": str(category), "values": values})

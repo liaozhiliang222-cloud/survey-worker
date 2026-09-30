@@ -70,16 +70,17 @@ try {
   const registration = { store, fileStorage: storage, userId, projectId: project.id, file };
   const first = await registerRawDataset({ ...registration, sheetName: "SheetA" });
   assert.equal((await registerRawDataset({ ...registration, sheetName: "SheetA" })).id, first.id);
-  await assert.rejects(() => registerRawDataset({ ...registration, sheetName: "SheetB" }), (error) => error.code === "DATASET_SHEET_CONFLICT");
-  const concurrentStore = { listDatasets: async () => [], createDataset: async () => first };
-  await assert.rejects(() => registerRawDataset({ ...registration, store: concurrentStore, sheetName: "SheetB" }), (error) => error.code === "DATASET_SHEET_CONFLICT");
+  const second = await registerRawDataset({ ...registration, sheetName: "SheetB" });
+  assert.notEqual(second.id,first.id);
+  const concurrentStore = { listDatasets: async () => [], createDataset: store.createDataset.bind(store) };
+  assert.equal((await registerRawDataset({ ...registration, store: concurrentStore, sheetName: "SheetB" })).id,second.id);
 
   const handler = createResearchHandler({ env: { RESEARCH_DEV_USER_ID: userId }, store, fileStorage: storage, harnessAdapter: {}, logger: { log() {}, error() {} } });
   server = http.createServer(handler);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}/api/research/projects/${project.id}`;
   const sheetResponse = await fetch(`${base}/datasets`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file_id: file.id, sheet_name: "SheetB" }) });
-  assert.equal(sheetResponse.status, 400); assert.match((await sheetResponse.json()).error.message, /工作表/);
+  assert.equal(sheetResponse.status, 201); assert.equal((await sheetResponse.json()).dataset.id,second.id);
   const cleanResponse = await fetch(`${base}/datasets/${weighted.id}/clean`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rules: [{ type: "blank_row" }], confirmed: true }) });
   assert.equal(cleanResponse.status, 400); assert.match((await cleanResponse.json()).error.message, /加权/);
 
@@ -96,7 +97,7 @@ try {
   assert.equal(await store.getProject(userId, project.id), null);
   for (const storageKey of keys) await assert.rejects(() => storage.get(storageKey), (error) => error.code === "ENOENT");
   assert.equal((await fetch(base, { method: "DELETE" })).status, 404);
-  console.log("Data regressions passed: missing values, valid bases, weighted cleaning guard, Sheet conflict, complete deletion and retry.");
+  console.log("Data regressions passed: missing values, valid bases, weighted cleaning guard, independent Sheets, complete deletion and retry.");
 } finally {
   if (server) { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
   // Only remove this test's own verified temporary workspace.

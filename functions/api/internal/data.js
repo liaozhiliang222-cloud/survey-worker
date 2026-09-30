@@ -2,7 +2,7 @@ import { createResearchStore } from '../research/[[path]].js';
 import { authorizedDataExecutor, boundedBytes } from '../../../lib/data-executor-transport.mjs';
 
 // This endpoint accepts only a dedicated service credential, never research anonymous identity.
-const methods = new Set(['getProject','getDataset','getFile','listDatasets','listAnalysisResults','createDataset','createFile','updateFile','deleteFile','replaceFileChunks','createCleaningLog','createAnalysisResult','createEvidence','createToolResult','getDataJob','listRunnableDataJobs','listPendingDataFiles','claimDataJob','heartbeatDataJob','expireDataJobs','failDataJob','publishDataJob']);
+const methods = new Set(['getProject','getDataset','getFile','listDatasets','listAnalysisResults','createDataset','createFile','updateFile','deleteFile','replaceFileChunks','createCleaningLog','createAnalysisResult','createEvidence','createToolResult','getDataJob','getDataJobByKey','createDataJob','listAnalysisBatches','listRunnableDataJobs','listPendingDataFiles','claimDataJob','heartbeatDataJob','expireDataJobs','failDataJob','publishDataJob']);
 const objectKey = /^(research\/[a-f0-9]{24}|datasets\/[A-Za-z0-9_%:-]{1,256})\/[A-Za-z0-9_-]{1,128}\.[a-z0-9]{1,8}$/;
 const json = (body,status=200) => Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 export async function onRequest({request,env}) {

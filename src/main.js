@@ -1,3 +1,5 @@
+import * as analysisBrief from "../lib/analysis-brief.mjs";
+window.SurveyKitAnalysisBrief = analysisBrief;
 /**
  * 调研工具箱 — 模块化入口
  * Phase 1 过渡策略：
@@ -54,7 +56,7 @@ export * as kano from "./modules/kano/index.js";
 export * as maxdiff from "./modules/maxdiff/index.js";
 export * as aiPlan from "./modules/ai-plan/index.js";
 export * as aiQuestionnaire from "./modules/ai-questionnaire/index.js";
-export * as aiReport from "./modules/ai-report/index.js";
+
 export * as pptxReport from "./modules/pptx-report/index.js";
 export * as aiResearcher from "./modules/ai-researcher/index.js";
 export * as tools from "./modules/tools/index.js";

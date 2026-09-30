@@ -7,27 +7,16 @@ async function openView(page, viewId) {
   await expect(page.locator(`#${viewId}`)).toHaveClass(/active/);
 }
 
-test("移动端页头不遮挡页面标题，AI 报告按输入到结果排序", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await openView(page, "ai-report");
-
-  const topbar = await page.locator(".mobile-topbar").boundingBox();
-  const title = await page.locator("#ai-report .page-title").boundingBox();
-  const config = await page.locator("#ai-report .ai-report-config").boundingBox();
-  const output = await page.locator("#aiReportOutputPanel").boundingBox();
-  expect(topbar).toBeTruthy();
-  expect(title).toBeTruthy();
-  expect(config).toBeTruthy();
-  expect(output).toBeTruthy();
-  expect(topbar.y + topbar.height).toBeLessThanOrEqual(title.y);
-  expect(config.y).toBeLessThan(output.y);
-  await expect(page.locator("#aiReportOutputPanel")).toHaveClass(/is-dormant/);
-  await expect(page.locator('[data-flow-step="generate"]')).toHaveAttribute("data-state", "locked");
-
-  const importButton = await page.locator("#importAiReportData").boundingBox();
-  const menuButton = await page.locator("#mobileMenuBtn").boundingBox();
-  expect(importButton.height).toBeGreaterThanOrEqual(44);
-  expect(menuButton.height).toBeGreaterThanOrEqual(44);
+test("移动端历史报告保留恢复入口和新流程导航", async ({ page }) => {
+  await page.setViewportSize({ width:390,height:844 });
+  await page.addInitScript(()=>localStorage.setItem('surveykit_tour_done','1'));
+  await page.goto('/#ai-report');
+  const topbar=await page.locator('.mobile-topbar').boundingBox();
+  const title=await page.locator('#ai-report .page-title').boundingBox();
+  expect(topbar.y+topbar.height).toBeLessThanOrEqual(title.y);
+  await expect(page.locator('#legacyReportFile')).toBeVisible();
+  await page.locator('#ai-report [data-jump="research"]').click();
+  await expect(page.locator('#research')).toHaveClass(/active/);
 });
 
 test("交叉表区分识别、批量生成和当前变量分析", async ({ page }) => {

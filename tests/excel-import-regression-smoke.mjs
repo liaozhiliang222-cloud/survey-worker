@@ -10,12 +10,5 @@ assert.equal(
   "xlsxToDelimitedTableText must have a single implementation so a partial duplicate cannot override it"
 );
 
-const detectorStart = source.indexOf("function detectAiReportFields()");
-const detectorEnd = source.indexOf("const exampleAiReportData", detectorStart);
-assert.ok(detectorStart >= 0 && detectorEnd > detectorStart, "detectAiReportFields body should be present");
-const detector = source.slice(detectorStart, detectorEnd);
-assert.match(detector, /const rawText = document\.querySelector\("#aiReportData"\)\.value/);
-assert.match(detector, /parseDelimitedTable\(rawText\)/);
-assert.doesNotMatch(detector, /return sheets/);
-
-console.log("Excel import regression smoke passed: one XLSX converter and scoped rawText detection");
+assert.doesNotMatch(source, /function detectAiReportFields\(/, "Retired importer must not overwrite the crosstab context");
+console.log("Excel import regression smoke passed: single XLSX converter, retired report importer removed");

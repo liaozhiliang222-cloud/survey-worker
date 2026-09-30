@@ -53,5 +53,15 @@ try {
   assert.equal((await store.listAnalysisResults(project.id)).length,1);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM research_data_job_commits WHERE job_id=?').get(late.id).n,0);
  }
+ // Batch advancement must work through the authenticated remote store, without a browser.
+ const {captureRecipe}=await import('../lib/analysis-recipes.mjs');
+ const {startAnalysisBatch}=await import('../lib/analysis-batches.mjs');
+ const storage=remoteDataStorage({base,secret}).fileStorage;
+ const recipe=await captureRecipe({store,fileStorage:storage,projectId:project.id,datasetId:dataset.id,input:{name:'remote batch',family:'satisfaction_nps',variables:['NPS'],banners:['GROUP'],metrics:{NPS:'nps'}}});
+ const batch=await startAnalysisBatch({store,fileStorage:storage,userId:scope.userId,projectId:project.id,input:{request_key:'remote-batch-001',recipe,items:[{dataset_id:dataset.id}]}});
+ // Remove the queued job to exercise remote sweep's get-by-key + enqueue path.
+ db.prepare('DELETE FROM research_data_jobs WHERE id=?').run(batch.items[0].job.id);
+ const swept=await child({operation:'sweep'});assert.equal(swept.result,1,JSON.stringify(swept));
+ assert.equal((await store.getDataJobByKey(project.id,'recipe:remote-batch-001:0')).status,'completed');
  console.log('Remote executor: authentication, scoped registration, real child + HTTP storage, atomic crosstab, download, idempotency and cancellation passed.');
 } finally {await new Promise(resolve=>server.close(resolve));db.close();}

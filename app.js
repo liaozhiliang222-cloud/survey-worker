@@ -207,8 +207,9 @@ let lastAiPrompt = "";
 let lastAiQuestionnaireText = "";
 let lastAiQuestionnaireConfig = null;
 let lastAiQuestionnaireAudit = null;
-const aiQuestionnaireSession = window.QuestionnaireWorkflow.createSession();
+const aiQuestionnaireSession = window.QuestionnaireWorkflow.createSession({ storage: () => window.localStorage, onStatus: updateQuestionnaireSaveStatus });
 let aiQuestionnaireBusy = false;
+let questionnaireBindingsReady = false;
 let lastAiWorkbenchOutput = "";
 let lastAbcSuggestions = null;
 let lastCrosstabAnalysis = null;
@@ -702,15 +703,18 @@ function loadWorkspaceLibrary() {
   return workspaceLibrary;
 }
 
+var workspaceLibraryPersistenceFailed;
 function persistWorkspaceLibrary() {
   if (!workspaceLibrary) return;
   try {
     localStorage.setItem(WORKSPACE_LIBRARY_KEY, JSON.stringify(workspaceLibrary));
+    workspaceLibraryPersistenceFailed = false;
     const active = workspaceLibrary.projects.find((project) => project.id === workspaceLibrary.activeProjectId);
     if (active) localStorage.setItem(WORKSPACE_LEGACY_KEY, JSON.stringify(active));
     else localStorage.removeItem(WORKSPACE_LEGACY_KEY);
   } catch (_) {
-    // 隐私模式或存储空间不足时保持当前会话可用。
+    workspaceLibraryPersistenceFailed = true;
+    updateQuestionnaireSaveStatus({state:"failed",message:"项目目录保存失败，仅本次会话可用，请下载问卷档案备份。"});
   }
 }
 
@@ -732,6 +736,7 @@ function upsertWorkspaceProject(project, activityText = "") {
   else library.projects.unshift(normalized);
   library.activeProjectId = normalized.id;
   workspaceProject = normalized;
+  bindQuestionnaireProject(normalized.id);
   persistWorkspaceLibrary();
   renderWorkspaceProjectLibrary();
   return normalized;
@@ -776,6 +781,7 @@ function activateWorkspaceProject(projectId) {
 }
 
 function resetWorkspaceRuntimeState() {
+  bindQuestionnaireProject(workspaceProject?.id);
   lastCrosstabDataContext = null;
   lastWeightingResult = null;
   lastCleaningRules = null;
@@ -839,6 +845,7 @@ function loadWorkspaceProject() {
 
 function fillWorkspaceProject(project) {
   if (!project) return;
+  bindQuestionnaireProject(project.id);
   document.querySelector("#workspaceProjectName").value = project.projectName || "";
   document.querySelector("#workspaceStudyType").value = project.studyType || "概念测试";
   document.querySelector("#workspaceStage").value = project.stage || "调研前";
@@ -901,8 +908,8 @@ function workspaceStatusSnapshot(project, savedStatus = {}) {
     model_kano: Boolean(lastKanoAnalysis || savedStatus.modelKano),
     model_maxdiff: Boolean(lastMaxDiffDesign || lastMaxDiffScore || savedStatus.modelMaxdiff),
     model_cluster: Boolean(projectDataBus.get("modelResults.cluster.active") || savedStatus.modelCluster),
-    ai_report: Boolean(lastAiReport || savedStatus.aiReport),
-    report_delivery: Boolean(lastAiReport || savedStatus.reportDelivery),
+    ai_report: false, // Legacy completion is not proof of a new project brief.
+    report_delivery: false, // Verify deliverables in their authoritative workflow.
     project_archive: Boolean(savedStatus.archive || project.status.archive),
     export_assets: Boolean(savedStatus.exportAssets || project.status.exportAssets)
   };
@@ -930,8 +937,8 @@ function workspaceFlowNodes() {
     { id: "model_kano", stage: "分析产出", name: "KANO 模型", detail: "需求属性分类", action: "KANO", jump: "kano", dependsOn: "cleaning_execution" },
     { id: "model_maxdiff", stage: "分析产出", name: "MaxDiff 模型", detail: "相对偏好排序", action: "MaxDiff", jump: "maxdiff", dependsOn: "cleaning_execution" },
     { id: "model_cluster", stage: "分析产出", name: "用户分群", detail: "K-Means / 两步 / 系统聚类", action: "分群分析", jump: "cluster-analysis", dependsOn: "cleaning_execution" },
-    { id: "ai_report", stage: "分析产出", name: "AI 洞察报告", detail: "Markdown 报告", action: "生成报告", jump: "ai-report", dependsOn: "crosstab" },
-    { id: "report_delivery", stage: "分析产出", name: "报告交付", detail: "MD / Word / PPT", action: "导出报告", jump: "ai-report", dependsOn: "ai_report" },
+    { id: "ai_report", stage: "分析产出", name: "分析简报", detail: "研究员 · Word / Markdown", action: "生成简报", jump: "research", dependsOn: "crosstab" },
+    { id: "report_delivery", stage: "分析产出", name: "报告交付", detail: "PPT / 交叉表简报", action: "导出报告", jump: "pptx-report", dependsOn: "crosstab" },
     { id: "project_archive", stage: "交付归档", name: "项目归档", detail: "冻结项目产出", action: "归档项目", jump: "overview", dependsOn: "report_delivery" },
     { id: "export_assets", stage: "交付归档", name: "导出资产包", detail: "打包项目资料", action: "导出全部", jump: "overview", dependsOn: "project_archive" }
   ];
@@ -1161,7 +1168,7 @@ function renderWorkspaceProject() {
     ["上线质检", "link-test", ["调研前"]],
     ["数据清洗", "cleaning-rules", ["数据清洗", "调研前"]],
     ["交叉表分析", "crosstab-analysis", ["分析产出", "数据清洗"]],
-    ["生成报告", "ai-report", ["分析产出", "交付归档"]],
+    ["生成报告", "pptx-report", ["分析产出", "交付归档"]],
     ["归档项目", "overview", ["交付归档"]],
     ["系统设置", "settings", ["调研前", "数据清洗", "分析产出", "交付归档"]]
   ];
@@ -1182,7 +1189,7 @@ function renderWorkspaceProject() {
   const fallbackLogItems = [
     project.updatedAt ? `保存项目档案：${project.projectName || "未命名项目"}` : "等待保存项目档案",
     status.cleaning_execution ? `完成数据清洗：${removalRate}` : status.data_import ? "已导入原始数据，等待执行清洗" : "尚未导入原始数据",
-    status.ai_report ? "已生成 AI 洞察报告" : "AI 报告待生成",
+    "新版分析简报与报告交付状态请在研究员 / PPT 流程中查看",
     status.questionnaire_design ? "问卷稿已保存，可进入上线质检" : "问卷稿待导入或设计"
   ];
   const activities = (project.activities || []).slice(0, 6);
@@ -1262,6 +1269,7 @@ function deleteWorkspaceProject() {
   workspaceProject = library.projects.find((item) => item.id === library.activeProjectId) || null;
   persistWorkspaceLibrary();
   resetWorkspaceRuntimeState();
+  try {aiQuestionnaireSession.forgetProject(project.id);}catch(error){showToast(`项目已删除，但问卷档案清理失败：${error.message}`);}
   if (workspaceProject) {
     fillWorkspaceProject(workspaceProject);
     projectDataBus.attachToProject(workspaceProject.id).then(() => renderWorkspaceProject());
@@ -2941,6 +2949,8 @@ function handleCrosstabImport(file) {
           ? await xlsxToDelimitedTableText(raw)
           : String(raw || "");
       if (!normalizeImportedText(text)) throw new Error("未识别到有效数据。");
+      // Plain text imports have no codebook and must not inherit a previous workbook mapping.
+      if (!/\.(sav|xlsx)$/i.test(file.name)) lastCrosstabDataContext = null;
       const parsed = renderCrosstabImportState(text, file.name);
       if (workbookInspection) {
         renderSharedImportInspection("#crosstabImportInspection", workbookInspection);
@@ -5675,7 +5685,13 @@ function getWorkingCrosstabData() {
   if (
     lastCrosstabDataContext &&
     parsed.headers.length === lastCrosstabDataContext.displayHeaders.length &&
-    parsed.headers.every((header, index) => header === lastCrosstabDataContext.displayHeaders[index])
+    parsed.headers.every((header, index) => header === lastCrosstabDataContext.displayHeaders[index]) &&
+    parsed.rows.length === lastCrosstabDataContext.displayRows.length &&
+    parsed.rows.every((row, index) => {
+      const cached = lastCrosstabDataContext.displayRows[index];
+      return cached && !Array.isArray(cached) && parsed.headers.every(header =>
+        String(row[header] ?? "") === String(cached[header] ?? ""));
+    })
   ) {
     return {
       headers: lastCrosstabDataContext.displayHeaders,
@@ -5683,6 +5699,10 @@ function getWorkingCrosstabData() {
       rawHeaders: lastCrosstabDataContext.rawHeaders,
       rawRows: lastCrosstabDataContext.rawRows
     };
+  }
+  // Discard stale import metadata as well as rows; array rows belong to the legacy report.
+  if (lastCrosstabDataContext?.displayRows?.some(row => !Array.isArray(row))) {
+    lastCrosstabDataContext = null;
   }
   return { headers: parsed.headers, rows: parsed.rows, rawHeaders: parsed.headers, rawRows: parsed.rows };
 }
@@ -8800,13 +8820,16 @@ function loadAiQuestionnaireTemplates() {
   renderAiQuestionnaireTemplateOptions();
 }
 
-function renderAiQuestionnaireTemplateOptions(selectedId = "") {
+function renderAiQuestionnaireTemplateOptions(selectedId = aiQuestionnaireSession.draft().aiQuestionnaireTemplateSelect || "") {
   const select = document.querySelector("#aiQuestionnaireTemplateSelect");
   if (!select) return;
   select.innerHTML = aiQuestionnaireTemplates.length
     ? aiQuestionnaireTemplates.map((template) => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.name)}</option>`).join("")
     : `<option value="">暂无模板</option>`;
-  if (selectedId && aiQuestionnaireTemplates.some((template) => template.id === selectedId)) select.value = selectedId;
+  if (selectedId && !aiQuestionnaireTemplates.some((template) => template.id === selectedId)) {
+    const option=document.createElement('option');option.value=selectedId;option.textContent='原模板在此浏览器不可用，请重新导入';select.appendChild(option);
+  }
+  if(selectedId)select.value=selectedId;
   renderAiQuestionnaireTemplatePreview();
 }
 
@@ -9954,6 +9977,40 @@ function buildAiQuestionnaireDesign() {
 }
 
 
+const questionnaireDraftFields = ['aiInput','aiContext','aiAudience','aiSampleSize','aiQuestionnaireLengthMode','aiQuestionnaireTemplateMode','aiQuestionnaireTemplateSelect','aiReviseInput','aiRevisionMode','aiRevisionTargets'];
+function updateQuestionnaireSaveStatus(status) {
+  const node=document.querySelector('#questionnaireSaveStatus');
+  if(node){node.textContent=workspaceLibraryPersistenceFailed?'项目目录保存失败，刷新后可能无法找到此项目。请下载档案备份。':status.message;node.dataset.state=workspaceLibraryPersistenceFailed?'failed':status.state;}
+}
+function saveQuestionnaireDraft() {
+  const draft=Object.fromEntries(questionnaireDraftFields.map(id=>[id,document.getElementById(id)?.value || '']));
+  draft.studyTypes=JSON.stringify(getAiStudyTypes());aiQuestionnaireSession.setDraft(draft);
+}
+function restoreQuestionnaireSession() {
+  const current=aiQuestionnaireSession.current(),config=current?.config || {},draft={
+    aiInput:config.brief || '',aiContext:config.project || '',aiAudience:config.audience || '',aiSampleSize:String(config.sampleSize || 400),
+    aiQuestionnaireLengthMode:config.lengthMode || 'long',aiQuestionnaireTemplateMode:config.templateMode || 'none',
+    aiQuestionnaireTemplateSelect:config.template?.id || '',studyTypes:JSON.stringify(config.studyTypes || [config.studyType || 'concept']),
+    ...aiQuestionnaireSession.draft()
+  };
+  for(const id of questionnaireDraftFields){const field=document.getElementById(id);if(field)field.value=draft[id] ?? ({aiSampleSize:'400',aiQuestionnaireLengthMode:'long',aiQuestionnaireTemplateMode:'none',aiRevisionMode:'full'}[id] || '');}
+  let types=['concept'];try{types=JSON.parse(draft.studyTypes || '["concept"]');}catch{}
+  setAiStudyTypeSelection(types);
+  renderAiQuestionnaireTemplateOptions(draft.aiQuestionnaireTemplateSelect || '');
+  lastAiQuestionnaireConfig=current?.config || null;lastAiQuestionnaireText=current?.text || '';lastAiPrompt=current?window.QuestionnaireDelivery.clientText(current.text):'';
+  lastAiQuestionnaireAudit=current?window.QuestionnaireQuality.audit(current.text,current.config):null;
+  document.querySelector('#aiResults').innerHTML=current?renderAiQuestionnaireHtml({config:current.config,questionnaireText:current.text,source:'项目本地档案'}):'<div class="empty-state"><strong>本项目尚无问卷版本</strong><span>填写需求生成问卷，或导入版本与试访档案。</span></div>';
+  for(const id of ['copyAiPrompt','exportAiPrompt','exportAiWord','applyAiQuestionnaire','reviseAiQuestionnaire']){const button=document.getElementById(id);if(button)button.disabled=!current;}
+  const platform=document.querySelector('#exportAiPlatformFormat');if(platform)platform.disabled=!current||Boolean(lastAiQuestionnaireAudit?.summary.errors||lastAiQuestionnaireAudit?.summary.pending);
+  document.querySelector('#aiRevisionStatus').textContent='';
+  updateQuestionnaireSaveStatus(aiQuestionnaireSession.status());
+  document.querySelector('#questionnaireProjectScope').textContent=aiQuestionnaireSession.status().projectId==='local-draft'?'独立问卷草稿（此浏览器）':`项目：${workspaceProject?.projectName || '未命名项目'}`;
+}
+function bindQuestionnaireProject(id) {
+  const next=String(id || 'local-draft');if(aiQuestionnaireSession.status().projectId===next)return;
+  if(questionnaireBindingsReady)saveQuestionnaireDraft();aiQuestionnaireSession.switchProject(next);restoreQuestionnaireSession();
+}
+
 function finalizeAiQuestionnaire(output, config, label = "生成初稿") {
   lastAiQuestionnaireConfig = { ...config };
   const finalized = window.QuestionnaireQuality.finalize(window.QuestionnaireDelivery.prepare(sanitizeAiQuestionnaireOutput(output)), lastAiQuestionnaireConfig);
@@ -9961,6 +10018,8 @@ function finalizeAiQuestionnaire(output, config, label = "生成初稿") {
   lastAiPrompt = window.QuestionnaireDelivery.clientText(finalized.output);
   lastAiQuestionnaireText = finalized.output;
   aiQuestionnaireSession.record(finalized.output, lastAiQuestionnaireConfig, label);
+  aiQuestionnaireSession.setView({route:finalized.audit.routes[0]?.id || ""});
+  saveQuestionnaireDraft();
   const platformButton = document.querySelector("#exportAiPlatformFormat");
   if (platformButton) platformButton.disabled = Boolean(finalized.audit.summary.errors || finalized.audit.summary.pending);
   return finalized.output;
@@ -10761,6 +10820,7 @@ function buildAiResearchBrief(text, context) {
 }
 
 async function renderAiBrief() {
+  const operationProject=aiQuestionnaireSession.status().projectId;
   {
   const result = document.querySelector("#aiResults");
   const selectedStudyTypes = Array.from(document.querySelectorAll('#aiStudyType input[type="checkbox"]:checked'));
@@ -10770,6 +10830,7 @@ async function renderAiBrief() {
   if (!selectedStudyTypes.length) missing.push({ label: "研究类型", selector: "#aiStudyType .multiselect-trigger" });
   if (!document.querySelector("#aiAudience")?.value.trim()) missing.push({ label: "目标人群", selector: "#aiAudience" });
   if (!document.querySelector("#aiQuestionnaireLengthMode")?.value) missing.push({ label: "问卷模式", selector: "#aiQuestionnaireLengthMode" });
+  if(document.querySelector('#aiQuestionnaireTemplateMode')?.value!=='none' && !aiQuestionnaireTemplates.some(t=>t.id===document.querySelector('#aiQuestionnaireTemplateSelect')?.value))missing.push({label:'有效问卷模板（请重新导入，或关闭模板参考）',selector:'#aiQuestionnaireTemplateMode'});
   if (missing.length) {
     result.innerHTML = `<div class="empty-state"><strong>请先填写必填项</strong><span>还缺少：${missing.map((item) => escapeHtml(item.label)).join("、")}</span></div>`;
     document.querySelector(missing[0].selector)?.focus();
@@ -10803,7 +10864,7 @@ async function renderAiBrief() {
           taskTier: "fast",
           timeoutMs: design.config.lengthMode === "long" ? 600000 : 360000,
           stream: true,
-          onProgress: ({ contentLength, reasoningLength }) => renderAiProgress(
+          onProgress: ({ contentLength, reasoningLength }) => operationProject===aiQuestionnaireSession.status().projectId && renderAiProgress(
             result,
             steps,
             2,
@@ -10822,6 +10883,7 @@ async function renderAiBrief() {
       source = "本地规则（设置未通过校验）";
     }
   }
+  if(operationProject!==aiQuestionnaireSession.status().projectId)return;
   renderAiProgress(result, steps, 3);
   output = finalizeAiQuestionnaire(output, design.config);
   renderAiProgress(result, steps, 4);
@@ -11204,229 +11266,6 @@ function pptLineShape(id, name, x1, y1, x2, y2, color = "CBD5E1") {
   const w = Math.abs(x2 - x1) || 1;
   const h = Math.abs(y2 - y1) || 1;
   return `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${xmlEscape(name)}"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="12700"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:ln></p:spPr><p:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="0"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="tx1"/></a:fontRef></p:style></p:cxnSp>`;
-}
-
-function extractReportChartItems(markdown, maxItems = 8) {
-  const items = [];
-  const seen = new Set();
-  String(markdown || "").split(/\r?\n/).forEach((rawLine) => {
-    if (items.length >= maxItems) return;
-    const line = rawLine.replace(/\*\*/g, "").replace(/[|]/g, " ").trim();
-    const match = line.match(/(.{2,36}?)(?:：|:|\s)(-?\d+(?:\.\d+)?)\s*%/);
-    if (!match) return;
-    const label = match[1]
-      .replace(/^[-*\d.\s]+/, "")
-      .replace(/^(选项|指标|维度|发现|其中)\s*/, "")
-      .slice(-18)
-      .trim();
-    const value = Number(match[2]);
-    if (!label || Number.isNaN(value)) return;
-    const key = `${label}_${value}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    items.push({ label, value: Math.max(0, Math.min(100, value)) });
-  });
-  return items;
-}
-
-function parseChartPercentValue(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw || /^[-—]+$/.test(raw)) return null;
-  const hasPercent = raw.includes("%");
-  const num = Number(raw.replace(/,/g, "").replace(/[^\d.-]/g, ""));
-  if (!Number.isFinite(num)) return null;
-  const percent = !hasPercent && Math.abs(num) <= 1 ? num * 100 : num;
-  if (!Number.isFinite(percent) || percent <= 0 || percent >= 99.5) return null;
-  return percent;
-}
-
-function cleanChartLabel(label) {
-  return String(label || "")
-    .replace(/\[[^\]]+\]/g, "")
-    .replace(/^(CAPTION|PART)\s*[:：]?\s*/i, "")
-    .replace(/^[-*\d.\s]+/, "")
-    .replace(/^(选项|指标|维度|发现|其中|最高|最低|合计|总计|BASE|样本)\s*[:：=]?\s*/i, "")
-    .replace(/[|]/g, " ")
-    .trim()
-    .slice(0, 28);
-}
-
-function shouldSkipChartLabel(label) {
-  return !label || /^(合计|总计|总体|Total|BASE|样本|N)$/i.test(label) || /最高=|最低=|^l最高|^l最低/i.test(label);
-}
-
-function findTotalColumnIndex(headers = []) {
-  const exactIndex = headers.findIndex((header) => /^(Total|总体|总计|合计)$/i.test(String(header || "").trim()));
-  if (exactIndex >= 0) return exactIndex;
-  const fuzzyIndex = headers.findIndex((header) => /Total|总体|总计|合计/i.test(String(header || "")));
-  return fuzzyIndex >= 0 ? fuzzyIndex : 0;
-}
-
-function extractCrosstabChartItems(dataContext, maxItems = 8) {
-  if (!dataContext?.isCrosstab || !dataContext.crosstabText) return [];
-  const sections = parseCrosstabToStructured(dataContext.crosstabText);
-  const items = [];
-  const seen = new Set();
-
-  for (const section of sections) {
-    const totalIndex = findTotalColumnIndex(section.headers || []);
-    for (const question of section.questions || []) {
-      for (const option of question.options || []) {
-        if (items.length >= maxItems) return items;
-        const optionLabel = cleanChartLabel(option.name);
-        if (shouldSkipChartLabel(optionLabel)) continue;
-        const value = parseChartPercentValue(option.values?.[totalIndex] ?? option.values?.[0]);
-        if (value == null) continue;
-        const questionLabel = cleanChartLabel(question.caption).replace(/^Q\d+\.?\s*/i, "");
-        const label = questionLabel && questionLabel !== optionLabel
-          ? `${questionLabel.slice(0, 10)}-${optionLabel}`
-          : optionLabel;
-        const key = `${label}_${value.toFixed(2)}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        items.push({ label, value: Number(value.toFixed(1)) });
-      }
-    }
-  }
-
-  return items.length >= 2 ? items : extractCrosstabChartItemsFromText(dataContext.crosstabText, maxItems);
-}
-
-function extractCrosstabChartItemsFromText(crosstabText, maxItems = 8) {
-  const items = [];
-  const seen = new Set();
-  let headers = [];
-  let totalIndex = 0;
-  let currentQuestion = "";
-  let inOptions = false;
-  const lines = String(crosstabText || "").split(/\r?\n/);
-
-  for (const rawLine of lines) {
-    if (items.length >= maxItems) break;
-    const line = rawLine.trim();
-    if (!line) continue;
-
-    const headerMatch = line.match(/^\[(?:表头|琛ㄥご)\]\s*(.*)$/);
-    if (headerMatch) {
-      headers = headerMatch[1].split("|").map((cell) => cell.trim()).filter(Boolean);
-      totalIndex = findTotalColumnIndex(headers);
-      inOptions = false;
-      continue;
-    }
-
-    const questionMatch = line.match(/^\[(?:题目|棰樼洰)\]\s*(.*)$/);
-    if (questionMatch) {
-      currentQuestion = questionMatch[1].trim();
-      inOptions = false;
-      continue;
-    }
-
-    if (/^\[(?:选项数据|閫夐」鏁版嵁)\]/.test(line)) {
-      inOptions = true;
-      continue;
-    }
-
-    if (line.startsWith("[")) {
-      inOptions = false;
-      continue;
-    }
-
-    if (!inOptions) continue;
-    const cells = line.split("|").map((cell) => cell.trim());
-    if (cells.length < 2) continue;
-    const optionLabel = cleanChartLabel(cells[0]);
-    if (shouldSkipChartLabel(optionLabel)) continue;
-    const value = parseChartPercentValue(cells[totalIndex + 1] ?? cells[1]);
-    if (value == null) continue;
-    const questionLabel = cleanChartLabel(currentQuestion).replace(/^Q\d+\.?\s*/i, "");
-    const label = questionLabel && questionLabel !== optionLabel
-      ? `${questionLabel.slice(0, 10)}-${optionLabel}`
-      : optionLabel;
-    const key = `${label}_${value.toFixed(2)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    items.push({ label, value: Number(value.toFixed(1)) });
-  }
-
-  return items;
-}
-
-function getAiReportChartItems(markdown, dataContext, maxItems = 8) {
-  const fromData = extractCrosstabChartItems(dataContext, maxItems);
-  if (fromData.length >= 2) return fromData;
-  return extractReportChartItems(markdown, maxItems)
-    .filter((item) => item.value > 0 && item.value < 99.5 && !shouldSkipChartLabel(item.label))
-    .slice(0, maxItems);
-}
-
-function normalizePptChartItems(items, maxItems = 8) {
-  const seen = new Set();
-  return (items || [])
-    .map((item) => ({
-      label: cleanChartLabel(item?.label || item?.name || ""),
-      value: Number(item?.value)
-    }))
-    .filter((item) => {
-      if (!item.label || shouldSkipChartLabel(item.label)) return false;
-      if (!Number.isFinite(item.value) || item.value <= 0 || item.value >= 99.5) return false;
-      const key = `${item.label}_${item.value.toFixed(1)}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, maxItems)
-    .map((item) => ({ label: item.label.slice(0, 20), value: Number(item.value.toFixed(1)) }));
-}
-
-function normalizePptChartGroups(groups, maxGroups = 10, maxItemsPerGroup = 8) {
-  const seenTitles = new Set();
-  return (groups || [])
-    .map((group, index) => {
-      const items = normalizePptChartItems(group?.items, maxItemsPerGroup);
-      const rawTitle = cleanChartLabel(group?.title || `关键指标图表 ${index + 1}`) || `关键指标图表 ${index + 1}`;
-      const title = rawTitle.endsWith("图表") ? rawTitle : `${rawTitle.slice(0, 18)}图表`;
-      return { title, items };
-    })
-    .filter((group) => {
-      if (group.items.length < 2) return false;
-      if (seenTitles.has(group.title)) return false;
-      seenTitles.add(group.title);
-      return true;
-    })
-    .slice(0, maxGroups);
-}
-
-function extractCrosstabChartGroups(dataContext, maxGroups = 10, maxItemsPerGroup = 8) {
-  if (!dataContext?.isCrosstab || !dataContext.crosstabText) return [];
-  const sections = parseCrosstabToStructured(dataContext.crosstabText);
-  const groups = [];
-  const seenTitles = new Set();
-
-  for (const section of sections) {
-    const totalIndex = findTotalColumnIndex(section.headers || []);
-    for (const question of section.questions || []) {
-      if (groups.length >= maxGroups) return groups;
-      const title = cleanChartLabel(question.caption || section.title || "关键指标");
-      if (!title || seenTitles.has(title)) continue;
-      const items = [];
-      const seenItems = new Set();
-      for (const option of question.options || []) {
-        const label = cleanChartLabel(option.name);
-        if (shouldSkipChartLabel(label) || seenItems.has(label)) continue;
-        const value = parseChartPercentValue(option.values?.[totalIndex] ?? option.values?.[0]);
-        if (value == null) continue;
-        seenItems.add(label);
-        items.push({ label, value: Number(value.toFixed(1)) });
-        if (items.length >= maxItemsPerGroup) break;
-      }
-      if (items.length >= 2) {
-        seenTitles.add(title);
-        groups.push({ title: `${title.slice(0, 18)}图表`, items });
-      }
-    }
-  }
-
-  return groups;
 }
 
 function xlsxCellRef(colIndex, rowIndex) {
@@ -11898,445 +11737,6 @@ function exportAiWorkbenchWord() {
   downloadBlob("AI助手建议.docx", createDocxBlob(lastAiWorkbenchOutput));
 }
 
-/**
- * 本地解析交叉表文本，提取结构化数据，避免直接把原始文本传给AI造成Token浪费。
- * 支持两种格式：
- *   A) 标准交叉表：[表头] + [样本基数/BASE] + [题目] + [选项数据]
- *   B) 指标/满意度清单表：[表头] + [表标题] + [指标数据]
- */
-function parseCrosstabToStructured(crosstabText) {
-  const sections = [];
-  const rawSections = crosstabText.split(/(?=^=== .+? ===$)/m);
-
-  for (const rawSection of rawSections) {
-    const trimmed = rawSection.trim();
-    if (!trimmed) continue;
-
-    const nameMatch = trimmed.match(/^=== (.+?) ===/);
-    const section = {
-      name: nameMatch ? nameMatch[1] : "数据表",
-      headers: [],
-      base: {},
-      questions: [],
-      indicators: [],
-      title: "",
-      type: "crosstab"
-    };
-
-    const lines = trimmed.split("\n");
-    let currentQuestion = null;
-    let inIndicatorMode = false;
-    let inOptionMode = false;
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith("===")) continue;
-
-      if (line.startsWith("[表头]")) {
-        section.headers = line.slice(4).split("|").map(h => h.trim()).filter(Boolean);
-      } else if (line.startsWith("[样本基数/BASE]")) {
-        const baseText = line.slice("[样本基数/BASE]".length).trim();
-        const pairs = baseText.split("|").map(p => p.trim()).filter(Boolean);
-        for (const pair of pairs) {
-          const eqIdx = pair.indexOf("=");
-          if (eqIdx > 0) {
-            section.base[pair.slice(0, eqIdx).trim()] = pair.slice(eqIdx + 1).trim();
-          }
-        }
-      } else if (line.startsWith("[题目]")) {
-        if (currentQuestion) section.questions.push(currentQuestion);
-        currentQuestion = { caption: line.slice(4).trim(), options: [], base: { ...section.base } };
-        inOptionMode = false;
-        inIndicatorMode = false;
-      } else if (line.startsWith("[选项数据]")) {
-        inOptionMode = true;
-        inIndicatorMode = false;
-      } else if (line.startsWith("[指标数据]")) {
-        inIndicatorMode = true;
-        inOptionMode = false;
-        section.type = "indicator";
-      } else if (line.startsWith("[表标题]")) {
-        section.title = line.slice(5).trim();
-        section.type = "indicator";
-      } else if (line.startsWith("[说明]")) {
-        // 跳过说明行
-      } else {
-        const cells = line.split("|").map(c => c.trim());
-        if (inIndicatorMode && cells.length >= 2) {
-          section.indicators.push(cells);
-        } else if (inOptionMode && currentQuestion && cells.length >= 2) {
-          currentQuestion.options.push({ name: cells[0], values: cells.slice(1) });
-        }
-      }
-    }
-    if (currentQuestion) section.questions.push(currentQuestion);
-    sections.push(section);
-  }
-
-  return sections;
-}
-
-/**
- * 将本地解析后的结构化交叉表数据转为精简统计摘要。
- * 采用紧凑格式（非Markdown表格），去掉冗余标记和%符号，大幅减少Token消耗。
- * 为每道题自动标注总体列最高/最低值，帮助AI快速提取关键洞察。
- */
-function buildStructuredCrosstabSummary(sections, dataContext) {
-  const lines = [];
-  lines.push("## 数据说明（已由系统本地解析，无需自行解析格式）");
-  lines.push("- 数据格式：交叉表（已聚合的频数/百分比表，非原始问卷数据）");
-  lines.push("- 数值单位：百分比(%)或频数(#)，以下数据已省略%符号");
-  if (dataContext.totalN) {
-    lines.push("- 总样本基数（BASE）：" + dataContext.totalN);
-  }
-
-  let totalQuestions = 0;
-  let totalIndicators = 0;
-  for (const section of sections) {
-    totalQuestions += section.questions.length;
-    totalIndicators += section.indicators.length;
-  }
-  lines.push("- 题目数量：" + (totalQuestions || dataContext.questionCount || "未知"));
-  if (totalIndicators) lines.push("- 指标表数量：" + totalIndicators);
-
-  // Stage1 质量诊断：小样本预警
-  const diagnostics = [];
-  for (const section of sections) {
-    const baseKeys = Object.keys(section.base);
-    for (const key of baseKeys) {
-      const n = parseInt(String(section.base[key]).replace(/[^\d]/g, ""));
-      if (n && n < 30 && key !== "总体" && key !== "Total") {
-        diagnostics.push("- 小样本预警：「" + key + "」BASE=" + n + "，相关交叉分析仅供参考");
-      }
-    }
-  }
-  if (diagnostics.length) {
-    lines.push("");
-    lines.push("### 数据质量诊断");
-    lines.push(...diagnostics.slice(0, 10));
-  }
-
-  // Stage1 反常点扫描：检测各题中总体列最高/最低值与常理矛盾的情况
-  const anomalies = [];
-  for (const section of sections) {
-    for (const q of section.questions) {
-      if (q.options.length < 2 || !section.headers.length) continue;
-      // 检测是否有选项的值异常高（>80%）或异常低（<2%）
-      for (const opt of q.options) {
-        const num = parseFloat(String(opt.values[0]).replace(/[^\d.-]/g, ""));
-        if (!isNaN(num)) {
-          if (num > 80) {
-            anomalies.push("- 「" + q.caption + "」选项「" + opt.name + "」占比" + num + "%，集中度过高");
-          } else if (num < 2 && num > 0) {
-            anomalies.push("- 「" + q.caption + "」选项「" + opt.name + "」占比仅" + num + "%，可能为小众选项");
-          }
-        }
-      }
-    }
-  }
-  if (anomalies.length) {
-    lines.push("");
-    lines.push("### 反常点扫描（系统自动检测）");
-    lines.push(...anomalies.slice(0, 10));
-    if (anomalies.length > 10) lines.push("... 其余" + (anomalies.length - 10) + "条省略");
-  }
-
-  lines.push("");
-
-  let globalBasePrinted = false;
-
-  for (const section of sections) {
-    lines.push("### " + section.name);
-
-    // 表头和BASE只输出一次
-    if (section.headers.length) {
-      lines.push("列分群（按顺序）：" + section.headers.join(" | "));
-    }
-
-    const baseKeys = Object.keys(section.base);
-    if (baseKeys.length && !globalBasePrinted) {
-      lines.push("BASE：" + baseKeys.map(k => `${k}=${section.base[k]}`).join(" | "));
-      globalBasePrinted = true;
-    } else if (baseKeys.length && globalBasePrinted) {
-      const sameAsGlobal = sections[0] && sections[0].base &&
-        baseKeys.every(k => sections[0].base[k] === section.base[k]);
-      if (!sameAsGlobal) {
-        lines.push("BASE（本表）：" + baseKeys.map(k => `${k}=${section.base[k]}`).join(" | "));
-      }
-    }
-
-    // 指标/满意度清单表（紧凑格式）
-    if (section.indicators.length) {
-      if (section.title) lines.push("表标题：" + section.title);
-      lines.push("");
-      for (const row of section.indicators) {
-        lines.push("  " + row.join(" | "));
-      }
-      lines.push("");
-    }
-
-    // 题目选项数据（紧凑格式，不重复表头）
-    // 智能压缩：题目多时限制每题选项数，但不限制题目总数（让AI看到所有数据）
-    const MAX_OPTIONS_WHEN_MANY = 8;
-    let qIndex = 0;
-    for (const q of section.questions) {
-      qIndex++;
-      lines.push(q.caption);
-      // 当题目很多时，限制每题显示的选项数
-      const optLimit = totalQuestions > 50 ? Math.min(q.options.length, MAX_OPTIONS_WHEN_MANY) : q.options.length;
-      for (let oi = 0; oi < optLimit; oi++) {
-        const opt = q.options[oi];
-        // 去掉值中的%符号以节省Token
-        const cleanValues = opt.values.map(v => String(v).replace(/%/g, "").trim());
-        lines.push("  " + opt.name + ": " + cleanValues.join(" | "));
-      }
-      if (optLimit < q.options.length) {
-        lines.push(`  ... 其余${q.options.length - optLimit}项省略`);
-      }
-
-      // 只标注第一列（通常是总体）的最高/最低值
-      if (q.options.length && section.headers.length) {
-        const firstColName = section.headers[0];
-        let maxVal = -Infinity, maxOpt = "", minVal = Infinity, minOpt = "";
-        for (const opt of q.options) {
-          const num = parseFloat(String(opt.values[0]).replace(/[^\d.-]/g, ""));
-          if (isNaN(num)) continue;
-          if (num > maxVal) { maxVal = num; maxOpt = opt.name; }
-          if (num < minVal) { minVal = num; minOpt = opt.name; }
-        }
-        if (maxOpt && minOpt && maxVal !== minVal) {
-          lines.push("  [差异] " + firstColName + "最高=" + maxOpt + "(" + maxVal + ")，最低=" + minOpt + "(" + minVal + ")");
-        }
-      }
-    }
-    lines.push("");
-  }
-
-  return lines.join("\n");
-}
-
-function summarizeCrosstabForAiReport(dataContext) {
-  if (!dataContext) return null;
-
-  // --- Crosstab mode: local parse → structured summary (reduces Token usage) ---
-  if (dataContext.isCrosstab && dataContext.crosstabText) {
-    const sections = parseCrosstabToStructured(dataContext.crosstabText);
-    if (!sections.length) {
-      // 解析失败时回退到原文（兜底）
-      return "## 交叉表数据\n（解析失败，附原文）\n\n" + dataContext.crosstabText.slice(0, 8000);
-    }
-    return buildStructuredCrosstabSummary(sections, dataContext);
-  }
-
-  if (!dataContext.headerInfos || !dataContext.rawRows || !dataContext.rawRows.length) {
-    return null;
-  }
-  const { headerInfos, rawRows, displayHeaders } = dataContext;
-  const totalN = rawRows.length;
-  const lines = [];
-  lines.push(`## 数据概览`);
-  lines.push(`- 有效样本量：${totalN}`);
-  lines.push(`- 分析字段数：${headerInfos.filter(h => h.type === "question").length}`);
-  lines.push(`- 分群/背景字段数：${headerInfos.filter(h => h.type === "group").length}`);
-  lines.push("");
-
-  // 单题频率分布（取前8题，避免过长）
-  const questionHeaders = headerInfos.filter(h => h.type === "question").slice(0, 12);
-  if (questionHeaders.length) {
-    lines.push(`## 各题频率分布（前${Math.min(questionHeaders.length, 12)}题）`);
-    for (const h of questionHeaders) {
-      const idx = h.index;
-      const values = rawRows.map(r => r[idx]).filter(v => v !== "" && v != null);
-      const freq = {};
-      for (const v of values) {
-        const key = String(v).trim();
-        freq[key] = (freq[key] || 0) + 1;
-      }
-      const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
-      lines.push(`### ${displayHeaders[idx] || h.header}`);
-      lines.push(`基数：${values.length}（${(values.length / totalN * 100).toFixed(1)}%）`);
-      for (const [k, c] of sorted.slice(0, 8)) {
-        lines.push(`- ${k}：${c}人（${(c / values.length * 100).toFixed(1)}%）`);
-      }
-      if (sorted.length > 8) lines.push(`- … 其他${sorted.length - 8}项省略`);
-      lines.push("");
-    }
-  }
-
-  // 分群字段分布
-  const groupHeaders = headerInfos.filter(h => h.type === "group");
-  if (groupHeaders.length) {
-    lines.push(`## 分群/背景变量分布`);
-    for (const h of groupHeaders) {
-      const idx = h.index;
-      const values = rawRows.map(r => r[idx]).filter(v => v !== "" && v != null);
-      const freq = {};
-      for (const v of values) {
-        const key = String(v).trim();
-        freq[key] = (freq[key] || 0) + 1;
-      }
-      const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
-      lines.push(`### ${displayHeaders[idx] || h.header}`);
-      for (const [k, c] of sorted) {
-        lines.push(`- ${k}：${c}人（${(c / values.length * 100).toFixed(1)}%）`);
-      }
-      lines.push("");
-    }
-  }
-
-  // 简单交叉洞察：取第一个分群字段与第一个题目做交叉
-  if (groupHeaders.length && questionHeaders.length) {
-    const g = groupHeaders[0];
-    const q = questionHeaders[0];
-    const gIdx = g.index;
-    const qIdx = q.index;
-    const groups = {};
-    for (const r of rawRows) {
-      const gVal = String(r[gIdx] || "未填").trim();
-      const qVal = String(r[qIdx] || "未填").trim();
-      if (!groups[gVal]) groups[gVal] = {};
-      groups[gVal][qVal] = (groups[gVal][qVal] || 0) + 1;
-    }
-    lines.push(`## 交叉洞察示例（${displayHeaders[gIdx] || g.header} × ${displayHeaders[qIdx] || q.header}）`);
-    for (const [gVal, qFreq] of Object.entries(groups)) {
-      const total = Object.values(qFreq).reduce((a, b) => a + b, 0);
-      lines.push(`### ${gVal}（n=${total}）`);
-      const sorted = Object.entries(qFreq).sort((a, b) => b[1] - a[1]);
-      for (const [k, c] of sorted.slice(0, 5)) {
-        lines.push(`- ${k}：${(c / total * 100).toFixed(1)}%`);
-      }
-      lines.push("");
-    }
-  }
-
-  return lines.join("\n");
-}
-
-function readAiReportContext() {
-  const value = (selector) => document.querySelector(selector)?.value.trim() || "";
-  // 读取多选项目类型
-  const projectTypeCheckboxes = document.querySelectorAll("#aiReportProjectType input[type='checkbox']:checked");
-  const projectTypes = Array.from(projectTypeCheckboxes).map(cb => cb.value);
-  return {
-    projectName: value("#aiReportProjectName"),
-    projectType: projectTypes.length ? projectTypes : ["general"],
-    objective: value("#aiReportObjective"),
-    hypothesis: value("#aiReportHypothesis"),
-    targetAudience: value("#aiReportTargetAudience"),
-    dataPeriod: value("#aiReportDataPeriod"),
-    categoryContext: value("#aiReportCategoryContext"),
-    audienceType: value("#aiReportAudienceType"),
-    weightingStatus: value("#aiReportWeightingStatus")
-  };
-}
-
-function formatAiReportContext(context) {
-  const projectTypeLabels = {
-    general: "通用定量研究",
-    ua: "U&A 使用与态度研究",
-    concept: "概念测试",
-    nps: "满意度 / NPS",
-    brand: "品牌健康度",
-    launch: "新品上市复盘",
-    ad: "广告测试",
-    mystery: "神秘客"
-  };
-  const typeLabels = Array.isArray(context.projectType)
-    ? context.projectType.map(t => projectTypeLabels[t] || t).join(" + ")
-    : projectTypeLabels[context.projectType] || "通用定量研究";
-  const required = [
-    ["项目名称", context.projectName || "未填写"],
-    ["项目类型", typeLabels],
-    ["研究目标", context.objective || "未填写，请先基于数据提炼最可能的3个研究假设，再展开分析"]
-  ];
-  const optional = [
-    ["核心假设/待验证命题", context.hypothesis],
-    ["目标人群定义", context.targetAudience],
-    ["数据时间范围", context.dataPeriod],
-    ["行业/品类背景", context.categoryContext],
-    ["报告受众", context.audienceType],
-    ["数据加权状态", context.weightingStatus]
-  ].filter(([, value]) => value);
-  return [
-    "【项目背景信息】",
-    ...required.map(([key, value]) => `- ${key}：${value}`),
-    ...(optional.length ? ["", "【补充背景】", ...optional.map(([key, value]) => `- ${key}：${value}`)] : [])
-  ].join("\n");
-}
-
-function buildAiReportVariableNotes(dataContext) {
-  if (!dataContext?.headerInfos?.length) return "未识别到关键变量说明。";
-  const groups = dataContext.headerInfos.filter((h) => h.type === "group").map((h) => h.header).slice(0, 20);
-  const questions = dataContext.headerInfos.filter((h) => h.type === "question").map((h) => h.header).slice(0, 30);
-  return [
-    "【关键变量说明】",
-    `- 行/题目变量：${questions.length ? questions.join("、") : "未识别到明显题目字段"}`,
-    `- 列/分群变量：${groups.length ? groups.join("、") : "未识别到明显分群字段"}`,
-    "- 变量类型由系统按字段名和数据结构自动识别，报告中需结合变量含义谨慎解读。"
-  ].join("\n");
-}
-
-/**
- * 根据项目类型返回报告框架指引。
- * 采用三段式大框架（项目概述-主要研究发现-结论与建议），具体内容在主要发现中自由展开。
- * 项目类型多选时，融合各类型分析要点作为提示，不限制固定章节。
- */
-function getProjectTypeGuidance(projectType) {
-  // 兼容单选字符串和多选数组
-  const types = Array.isArray(projectType) ? projectType : [projectType];
-
-  const typeHints = {
-    general: "通用定量分析：根据数据内容自行选择最有分析价值的维度展开。",
-    ua: "U&A分析要点：品类认知与渗透、使用场景与行为、购买决策路径、品牌态度与忠诚度、需求痛点与未满足需求。",
-    concept: "概念测试分析要点：概念理解度与传达效果、购买吸引力与转化意愿、卖点偏好排序、价格接受度、概念弱点与改进方向。",
-    nps: "满意度/NPS分析要点：NPS得分与人群分布、满意度维度矩阵、驱动因素拆解（重要性×表现）、体验短板与贬损者痛点、改进优先级。",
-    brand: "品牌健康度分析要点：品牌认知度（提示前/后）、品牌漏斗（认知→考虑→购买→推荐）、品牌形象感知地图、品牌流失与转换、品牌竞争力。",
-    launch: "新品上市复盘分析要点：上市KPI达成率、认知-试用-复购漏斗、消费者体验评价、复购意愿与流失原因、渠道与价格表现。",
-    ad: "广告测试分析要点：广告回忆度与关键元素记忆、信息理解度与品牌关联、情感反应与喜好度、购买意愿影响、人群差异与媒介优化。",
-    mystery: "神秘客分析要点：整体体验评分与达标率、各环节体验拆解、服务标准执行率、问题定位与典型案例、竞品对比。"
-  };
-
-  const typeLabels = {
-    general: "通用定量研究",
-    ua: "U&A",
-    concept: "概念测试",
-    nps: "满意度/NPS",
-    brand: "品牌健康度",
-    launch: "新品上市复盘",
-    ad: "广告测试",
-    mystery: "神秘客"
-  };
-
-  // 融合所有选中类型的分析要点
-  const hints = types.map(t => typeHints[t] || typeHints.general).filter(h => h);
-  const typeLabel = types.map(t => typeLabels[t] || t).join(" + ");
-
-  return {
-    role: "你是一位拥有15年经验的资深市场研究总监，擅长将定量数据转化为商业洞察。",
-    structure: [
-      "报告采用三段式大框架，具体章节和内容根据数据自由展开：",
-      "",
-      "一、项目概述",
-      "  核心结论（1-2句话直接回答研究目标）+ 关键发现亮点（3-5条）+ 研究说明（样本量、结构、局限性，1段带过）。",
-      "",
-      "二、主要研究发现",
-      "  这是报告主体，根据数据内容和你选中的项目类型分析要点自行组织章节。",
-      "  每个发现遵循金字塔结构：一句话结论（加粗）→ 1组关键证据锚点 → 原因或机制解释 → 业务解读。图表已承载完整数字，正文不要逐项复述。",
-      "  反常发现自然融入相关发现中，格式如「发现X：与预期相反，[现象]，[可能解释]」，不单独成章。",
-      "  人群差异只写有显著差异且对业务有意义的维度，无差异时诚实写「各群体表现趋同」。",
-      "  尽可能覆盖数据中有分析价值的题目，不要只挑3-5题就结束。",
-      "",
-      "三、结论与建议",
-      "  直接回答研究目标是否成立，给出分人群/分场景策略建议和优先级排序。",
-      "  每个建议必须对应前面的具体发现；引用对应发现即可，除非必要不要重复正文中的整组数字。",
-      "",
-      "【本次项目类型：" + typeLabel + "】",
-      "分析要点参考（根据数据情况灵活选择，不必全部覆盖）：",
-      ...hints.map(h => "  - " + h)
-    ].join("\n")
-  };
-}
-
 function buildDataBusModelNotes() {
   const parts = [];
   const psm = projectDataBus.get("modelResults.psm");
@@ -12367,271 +11767,6 @@ function buildDataBusModelNotes() {
   return ["【已有模型分析结果（可在报告中引用）】", ...parts].join("\n");
 }
 
-function buildAiReportPrompt(context, summary, dataContext) {
-  const contextText = formatAiReportContext(context);
-  const variableNotes = buildAiReportVariableNotes(dataContext);
-  const guidance = getProjectTypeGuidance(context.projectType);
-  const modelNotes = buildDataBusModelNotes();
-  return [
-    {
-      role: "system",
-      content: [
-        guidance.role,
-        "",
-        "【六阶段报告生成流程】你的报告生成严格遵循以下六阶段方法论（阶段1已由系统在本地完成，你负责阶段2-5）：",
-        "",
-        "阶段1（已完成）：系统已在本地完成统计摘要+质量诊断，数据已结构化为紧凑格式传入。",
-        "阶段2 洞察挖掘：在正式撰写前，先内部完成洞察挖掘——关键发现（3-5个对业务决策最有影响的发现，按业务影响力×数据确定性排序）、人群差异（排除差异<5pp或样本<30的对比）、反常与矛盾（至少找到1个与常识矛盾的数据点，给出A/B两个可能解释）、弱信号（单项不显著但趋势一致的苗头）。",
-        "阶段3 自适应框架：基于项目类型专属结构组织报告，但可根据洞察优先级调整顺序和详略；某章节无值得写的内容时允许精简或合并，不要硬凑。",
-        "阶段4 分段撰写：每个发现遵循金字塔结构——一句话结论（加粗）→1组最关键的数据证据→原因/机制解释→业务含义与行动。回答 So What：正文重点写「为什么」「意味着什么」「该怎么办」，不要把图表数字换成句子再说一遍。",
-        "阶段5 整合审查：确保执行摘要的结论在正文都有展开、建议都对应前面具体发现、无突然出现的数据。统一百分比精度（1位小数）和基数标注格式。",
-        "",
-        "【核心写作原则】",
-        "- 数据必须准确，但只作为证据锚点：每个核心发现最多引用1组最有解释力的数据、最多2个数字，保留1位小数并在必要时标注基数；其余篇幅用于判断、解释和业务含义。",
-        "- 每个发现的第一段必须先写一个不含百分比的判断或机制解释；数据证据单独压缩为一句。建议和业务含义不得重复百分比。若正文删掉数字后没有剩余观点，说明它仍是数据白描，必须重写。",
-        "- 洞察标题使用『四字标签+一句话解读』格式，例如『认知断层：品牌知名度未能有效转化为购买意愿』；除非数字本身构成关键反差，标题不堆百分比。",
-        "- 反常点不单独成章，作为核心发现中的「反常发现」自然融入，格式：「发现X：与预期相反，[数据现象]，[可能解释]」。",
-        "- 样本质量信息只在执行摘要或开篇「研究说明」中1段带过，不单独成章。",
-        "- 如存在样本量<30的细分单元格，必须标注「小样本，谨慎解读」。",
-        "- 未达显著差异的数据，表述为「略高于」「与...接近」，禁止说「显著高于」。",
-        "- 如果用户未填写核心假设，先基于数据提炼最可能的3个假设再展开分析。",
-        "- 禁止白描式复述：不要逐个罗列选项、百分比和人群数值，不要让标题、执行摘要与正文重复同一组数字；图表已展示的数据只提炼关键差距或转折。",
-        "- 正文建议保持‘判断/解释/行动约70%，数据证据约30%’；无法由数据直接证明的原因使用‘提示’‘反映’‘可能与…有关’，不要写成确定事实。",
-        "- 禁止使用「总体来看」「不难发现」「综上所述」等模板化过渡语。",
-        "- 所有建议必须与研究目标和关键业务决策直接挂钩，不要输出免责套话。",
-        "",
-        "【输出纪律】直接输出报告正文，从第一行开始就是报告标题或正文内容。严禁输出『好的』『我已收到』『我来分析』『以下是』等对话过渡语。",
-        "",
-        "【数据说明】数据已由系统在本地解析为结构化格式。BASE行的值是各列样本基数，不要把表格行数当作样本量。数据摘要中已为每道题标注关键差异，可直接引用。交叉表的列是品牌/人群分群，行是题目选项。",
-      ].join("\n")
-    },
-    {
-      role: "user",
-      content: [
-        contextText,
-        "",
-        variableNotes,
-        "",
-        modelNotes,
-        "",
-        "【数据摘要】",
-        summary,
-        "",
-        "【报告结构】",
-        "请按照以下三段式框架组织报告，主要发现部分根据数据内容和项目类型分析要点自由展开：",
-        "",
-        guidance.structure,
-        "",
-        "---",
-        "",
-        "## PPT 可视化脚本（必选）",
-        "",
-        "PPT脚本至少15-25页：封面页→目录页→核心发现总览（1-2页）→各分析模块图表页（每模块2-3页）→反常发现页→结论与建议（1-2页）→附录。",
-        "每页含：页面标题（不超过15字）、图表类型建议、数据呈现要点、页面洞察话术（30-50字）。",
-        "用Markdown表格输出：| 页码 | 页面标题 | 图表类型建议 | 数据呈现要点 | 页面洞察话术 |",
-        ""
-      ].join("\n")
-    }
-  ];
-}
-
-// === AI 报告图表内嵌：SVG 图表生成 ===
-function svgBarChart(title, labels, values, opts = {}) {
-  const w = opts.width || 480, h = opts.height || 260;
-  const pad = { top: 30, right: 20, bottom: 50, left: 50 };
-  const chartW = w - pad.left - pad.right;
-  const chartH = h - pad.top - pad.bottom;
-  const maxVal = Math.max(...values, 1);
-  const barW = Math.min(40, chartW / labels.length * 0.7);
-  const gap = chartW / labels.length;
-  const color = opts.color || "#4285f4";
-  let bars = "";
-  labels.forEach((label, i) => {
-    const barH = (values[i] / maxVal) * chartH;
-    const x = pad.left + i * gap + (gap - barW) / 2;
-    const y = pad.top + chartH - barH;
-    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${color}" rx="2"/>`;
-    bars += `<text x="${(x + barW / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="#333">${values[i].toFixed(1)}%</text>`;
-    const lbl = label.length > 6 ? label.slice(0, 6) + "…" : label;
-    bars += `<text x="${(x + barW / 2).toFixed(1)}" y="${(pad.top + chartH + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="#666">${lbl}</text>`;
-  });
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#222">${title}</text><line x1="${pad.left}" y1="${pad.top + chartH}" x2="${pad.left + chartW}" y2="${pad.top + chartH}" stroke="#ddd"/>${bars}</svg>`;
-}
-
-function svgPieChart(title, labels, values, opts = {}) {
-  const w = opts.width || 360, h = opts.height || 280;
-  const cx = w * 0.38, cy = h * 0.55, r = Math.min(w, h) * 0.32;
-  const total = values.reduce((s, v) => s + v, 0) || 1;
-  const colors = ["#4285f4", "#ea4335", "#fbbc04", "#34a853", "#ff6d01", "#46bdc6", "#7baaf7", "#ee675c"];
-  let paths = "", legend = "", angle = -Math.PI / 2;
-  labels.forEach((label, i) => {
-    const slice = (values[i] / total) * 2 * Math.PI;
-    const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
-    const x2 = cx + r * Math.cos(angle + slice), y2 = cy + r * Math.sin(angle + slice);
-    const large = slice > Math.PI ? 1 : 0;
-    paths += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${colors[i % colors.length]}"/>`;
-    const pct = ((values[i] / total) * 100).toFixed(1);
-    legend += `<rect x="${w * 0.72}" y="${30 + i * 18}" width="10" height="10" fill="${colors[i % colors.length]}"/><text x="${w * 0.72 + 14}" y="${39 + i * 18}" font-size="9" fill="#333">${(label.length > 8 ? label.slice(0, 8) + "…" : label)} ${pct}%</text>`;
-    angle += slice;
-  });
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#222">${title}</text>${paths}${legend}</svg>`;
-}
-
-function svgStackedBarChart(title, categories, seriesNames, seriesData, opts = {}) {
-  const w = opts.width || 500, h = opts.height || 280;
-  const pad = { top: 30, right: 20, bottom: 50, left: 50 };
-  const chartW = w - pad.left - pad.right;
-  const chartH = h - pad.top - pad.bottom;
-  const colors = ["#4285f4", "#ea4335", "#fbbc04", "#34a853", "#ff6d01", "#46bdc6"];
-  const barW = Math.min(36, chartW / categories.length * 0.6);
-  const gap = chartW / categories.length;
-  let bars = "";
-  categories.forEach((cat, ci) => {
-    let cumH = 0;
-    seriesNames.forEach((sn, si) => {
-      const val = seriesData[si]?.[ci] || 0;
-      const segH = (val / 100) * chartH;
-      const x = pad.left + ci * gap + (gap - barW) / 2;
-      const y = pad.top + chartH - cumH - segH;
-      bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${segH.toFixed(1)}" fill="${colors[si % colors.length]}"/>`;
-      cumH += segH;
-    });
-    const lbl = cat.length > 6 ? cat.slice(0, 6) + "…" : cat;
-    bars += `<text x="${(pad.left + ci * gap + gap / 2).toFixed(1)}" y="${(pad.top + chartH + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="#666">${lbl}</text>`;
-  });
-  let legend = seriesNames.map((sn, i) => `<rect x="${pad.left + i * 90}" y="${h - 14}" width="10" height="10" fill="${colors[i % colors.length]}"/><text x="${pad.left + i * 90 + 14}" y="${h - 5}" font-size="9" fill="#333">${sn.length > 8 ? sn.slice(0, 8) + "…" : sn}</text>`).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#222">${title}</text><line x1="${pad.left}" y1="${pad.top + chartH}" x2="${pad.left + chartW}" y2="${pad.top + chartH}" stroke="#ddd"/>${bars}${legend}</svg>`;
-}
-
-function buildCrosstabChartSvg(dataContext) {
-  if (!dataContext || !dataContext.headerInfos || !dataContext.rawRows?.length) return "";
-  const { headerInfos, rawRows, displayHeaders } = dataContext;
-  const questionHeaders = headerInfos.filter((h) => h.type === "question").slice(0, 3);
-  if (!questionHeaders.length) return "";
-  const charts = [];
-  for (const h of questionHeaders) {
-    const idx = h.index;
-    const values = rawRows.map((r) => r[idx]).filter((v) => v !== "" && v != null);
-    const freq = {};
-    for (const v of values) { const key = String(v).trim(); freq[key] = (freq[key] || 0) + 1; }
-    const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8);
-    if (!sorted.length) continue;
-    const labels = sorted.map(([k]) => k);
-    const pcts = sorted.map(([, c]) => (c / values.length) * 100);
-    const title = displayHeaders[idx] || h.header;
-    if (sorted.length <= 5) {
-      charts.push(svgPieChart(title, labels, sorted.map(([, c]) => c)));
-    } else {
-      charts.push(svgBarChart(title, labels, pcts));
-    }
-  }
-  if (!charts.length) return "";
-  return `\n\n## 数据图表\n\n` + charts.map((svg) => `<div style="margin:12px 0">${svg}</div>`).join("\n");
-}
-
-async function generateAiReport() {
-  const context = readAiReportContext();
-  const result = document.querySelector("#aiReportResults");
-  const genButton = document.querySelector("#generateAiReport");
-  const copyButton = document.querySelector("#copyAiReport");
-  const mdButton = document.querySelector("#exportAiReportMd");
-  const wordButton = document.querySelector("#exportAiReportWord");
-  const pptButton = document.querySelector("#exportAiReportPpt");
-  const settings = loadAiSettings();
-  const setExportButtons = (enabled) => {
-    copyButton.disabled = !enabled;
-    mdButton.disabled = !enabled;
-    wordButton.disabled = !enabled;
-    if (pptButton) pptButton.disabled = !enabled;
-  };
-
-  const hasCrosstabData = lastCrosstabDataContext && (
-    (lastCrosstabDataContext.isCrosstab && lastCrosstabDataContext.crosstabText) ||
-    (Array.isArray(lastCrosstabDataContext.rawRows) && lastCrosstabDataContext.rawRows.length)
-  );
-  if (!hasCrosstabData) {
-    result.innerHTML = `
-      <div class="empty-state">
-        <strong>缺少数据</strong>
-        <span>请先在交叉表分析中导入并确认数据，再生成报告。</span>
-      </div>
-    `;
-    return;
-  }
-
-  const modelSourceText = settings.provider === "custom" && settings.apiKey
-    ? "正在调用自定义/本地大模型..."
-    : settings.mode === "local" || !settings.apiKey
-      ? "正在通过后端代理调用平台内置模型..."
-      : `正在调用 ${aiProviderPresets[settings.provider]?.name || "大模型"}...`;
-  result.innerHTML = `<div class="empty-state"><strong>正在生成定量报告</strong><span>${escapeHtml(modelSourceText)}</span></div>`;
-  setButtonLoading(genButton, true, "正在生成报告");
-  setExportButtons(false);
-
-  try {
-    const summary = summarizeCrosstabForAiReport(lastCrosstabDataContext);
-    if (!summary) {
-      result.innerHTML = `
-        <div class="empty-state">
-          <strong>数据摘要失败</strong>
-          <span>无法从当前数据生成有效统计摘要，请检查数据格式。</span>
-        </div>
-      `;
-      return;
-    }
-
-    let output = summary;
-    let source = "本地统计摘要";
-
-    if (settings.mode !== "local") {
-      const errors = validateAiSettings(settings);
-      if (!errors.length) {
-        try {
-          const prompt = buildAiReportPrompt(context, summary, lastCrosstabDataContext);
-          output = await callAiChatCompletion(settings, prompt, {
-            maxTokens: 8000,
-            taskTier: "quality",
-            timeoutMs: 180000
-          });
-          source = aiProviderPresets[settings.provider]?.name || "大模型";
-        } catch (error) {
-          output = `## 数据摘要（本地生成）\n\n${summary}\n\n---\n\n> 大模型调用失败，已回退为本地统计摘要。错误信息：${error.message}`;
-          source = "本地统计摘要（模型调用失败）";
-        }
-      } else {
-        output = `## 数据摘要（本地生成）\n\n${summary}\n\n---\n\n> 大模型设置未通过校验，已回退为本地统计摘要：${errors.join("；")}`;
-        source = "本地统计摘要（设置未通过校验）";
-      }
-    }
-
-    lastAiReport = output;
-    lastAiReportMode = "markdown";
-    markWorkspaceStatus("ai_report");
-
-    const html = renderMarkdownPreview(output);
-    const chartSvg = buildCrosstabChartSvg(lastCrosstabDataContext);
-    result.innerHTML = `
-      <article class="audit-issue">
-        <div class="issue-head">
-          <strong>AI 定量报告</strong>
-          <span class="issue-tag low">${escapeHtml(source)}</span>
-        </div>
-        <div class="markdown-body">${html}${chartSvg}</div>
-      </article>
-    `;
-    setExportButtons(true);
-  } catch (error) {
-    result.innerHTML = `
-      <div class="empty-state">
-        <strong>生成失败</strong>
-        <span>${escapeHtml(error.message || "生成过程中发生未知错误，请重新识别数据后再试。")}</span>
-      </div>
-    `;
-  } finally {
-    setButtonLoading(genButton, false);
-  }
-}
-
 async function copyAiReport() {
   if (!lastAiReport) return;
   try {
@@ -12659,81 +11794,6 @@ function sanitizeDownloadName(name, fallback = "导出文件") {
   return safe || fallback;
 }
 
-function createAiReportPptMarkdown(markdown, context = {}) {
-  const projectName = context.projectName || "AI定量研究报告";
-  const projectType = Array.isArray(context.projectType)
-    ? context.projectType.join(" / ")
-    : context.projectType || "定量研究";
-  const objective = context.objective || "基于导入数据输出核心发现、分群差异与行动建议。";
-  const audience = context.targetAudience || "目标样本";
-  const dataPeriod = context.dataPeriod || "未填写";
-  const cleanMarkdown = String(markdown || "")
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/^好的[，,][\s\S]{0,220}?---\s*/m, "")
-    .trim();
-
-  return [
-    `# ${projectName}`,
-    "",
-    "## 报告信息",
-    `- 项目类型：${projectType}`,
-    `- 研究目标：${objective}`,
-    `- 目标人群：${audience}`,
-    `- 数据周期：${dataPeriod}`,
-    "",
-    "## 核心输出",
-    "- 数据结构与样本概况",
-    "- 总体结果与关键指标",
-    "- 主要分群差异",
-    "- 业务解释与行动建议",
-    "",
-    cleanMarkdown
-  ].join("\n");
-}
-
-function createAiReportPptxBlob(markdown, context = {}) {
-  const title = context.projectName || "AI定量研究报告";
-  const slides = markdownToPptSlides(createAiReportPptMarkdown(markdown, context), title);
-  const chartGroups = normalizePptChartGroups(extractCrosstabChartGroups(lastCrosstabDataContext, 10, 8), 10, 8);
-  const chartItems = chartGroups.length ? [] : normalizePptChartItems(getAiReportChartItems(markdown, lastCrosstabDataContext), 8);
-  if (chartGroups.length) {
-    slides.splice(Math.min(2, slides.length), 0, ...chartGroups.map((group, index) => ({
-      title: group.title || `关键指标图表 ${index + 1}`,
-      bullets: ["从交叉表总样本列抽取真实百分比，生成可编辑 PPT 图表。"],
-      chartItems: group.items
-    })));
-  } else if (chartItems.length >= 2) {
-    slides.splice(Math.min(2, slides.length), 0, {
-      title: "关键指标图表",
-      bullets: ["从报告中的百分比指标自动抽取，生成可编辑横向柱状图。"],
-      chartItems
-    });
-  }
-  return createPptxPackage(slides, title, "AI 定量研究报告");
-}
-
-function exportAiReportPpt() {
-  if (!lastAiReport) return;
-  const context = readAiReportContext();
-  const title = context.projectName || "AI定量研究报告";
-  try {
-    downloadBlob(
-      `${sanitizeDownloadName(title, "AI定量研究报告")}.pptx`,
-      createAiReportPptxBlob(lastAiReport, context)
-    );
-  } catch (error) {
-    const result = document.querySelector("#aiReportResults");
-    if (result) {
-      result.insertAdjacentHTML("afterbegin", `
-        <div class="empty-state warning">
-          <strong>PPT 导出失败</strong>
-          <span>${escapeHtml(error.message || "导出过程中发生未知错误，请先导出 Word 或 Markdown。")}</span>
-        </div>
-      `);
-    }
-  }
-}
-
 function buildAiRevisionPrompt(instruction, currentDraft) {
   const config = { ...(lastAiQuestionnaireConfig || getAiDesignerConfig()), revisionInstruction: [lastAiQuestionnaireConfig?.revisionInstruction, instruction].filter(Boolean).join("\n") };
   return [
@@ -12759,6 +11819,7 @@ function buildAiRevisionPrompt(instruction, currentDraft) {
 }
 
 async function reviseAiQuestionnaire() {
+  const operationProject=aiQuestionnaireSession.status().projectId;
   const field = document.querySelector("#aiReviseInput");
   const instruction = field.value.trim();
   const result = document.querySelector("#aiResults");
@@ -12779,14 +11840,17 @@ async function reviseAiQuestionnaire() {
     if (settings.mode === "local" || errors.length) throw new Error(errors.join("；") || "当前生成方式不能执行AI修订。");
     renderAiProgress(result, [{title: local ? "修订指定题目" : "修订完整问卷", detail: local ? "仅替换指定题块；其他正文与编程规则保持原样。" : "根据修改要求生成完整新版。"}, {title:"重检并记录版本",detail:"重新核对规则，保留旧稿和差异。"}],0);
     const response = await callAiChatCompletion(settings, messages, { maxTokens: 32000, timeoutMs: 600000, stream: true, taskTier: "fast" });
+    if(operationProject!==aiQuestionnaireSession.status().projectId)return;
     if (!String(response || '').trim()) throw new Error("模型未返回内容。");
     if (aiQuestionnaireSession.current().id !== current.id) throw new Error("当前版本已变化，请重新提交修订。");
     const output = local ? window.QuestionnaireWorkflow.applyPatch(current.text, selection, response) : response;
     finalizeAiQuestionnaire(output, revisionConfig, local ? `局部修订 ${selection}` : "整卷修订");
     result.innerHTML = renderAiQuestionnaireHtml({ config: revisionConfig, questionnaireText: lastAiQuestionnaireText, source: local ? "AI局部修订" : "AI整卷修订" });
     field.value = "";
-    status.textContent = `已保存为 V${aiQuestionnaireSession.current().id}，可查看版本差异。`;
+    saveQuestionnaireDraft();
+    status.textContent = aiQuestionnaireSession.status().state==='saved'?`已保存为 V${aiQuestionnaireSession.current().id}，可查看版本差异。`:`已记录为 V${aiQuestionnaireSession.current().id}，保存失败，仅本次会话。`;
   } catch (error) {
+    if(operationProject!==aiQuestionnaireSession.status().projectId)return;
     result.innerHTML = renderAiQuestionnaireHtml({ config: current.config, questionnaireText: current.text, source: "保留修订前版本" });
     status.textContent = `修改未应用：${error.message} 原版本和修改要求已保留。`;
   }
@@ -12836,10 +11900,12 @@ function openAiInlineAssistant(button) {
 function applyAiQuestionnaireToWorkspace() {
   if (!lastAiQuestionnaireText) return;
   const workspaceField = document.querySelector("#workspaceQuestionnaire");
+  const archive=aiQuestionnaireSession.export();
   const clientText = window.QuestionnaireDelivery.clientText(lastAiQuestionnaireText);
   if (workspaceField) workspaceField.value = clientText;
   syncQuestionnaireToWorkspace(clientText);
   markWorkspaceStatus("questionnaire");
+  if(archive.projectId!==aiQuestionnaireSession.status().projectId){aiQuestionnaireSession.import(archive);restoreQuestionnaireSession();}
   const button = document.querySelector("#applyAiQuestionnaire");
   if (button) showButtonSaved(button, "已同步");
 }
@@ -13705,185 +12771,13 @@ document.querySelector("#useCleanedDataForWeighting")?.addEventListener("click",
   showToast(`已填充清洗后数据（${cleaned.rows.length} 行），请设置目标结构后点击计算权重。`, "info", 4000);
 });
 
-// AI 报告生成页面（独立入口）
-function handleAiReportImport(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async () => {
-    try {
-      assertSupportedImportFile(file, ["sav", "xlsx", "csv", "txt"]);
-      if (reader.error) throw new Error("文件读取失败，请重新选择文件。");
-      const raw = reader.result;
-      const text = /\.sav$/i.test(file.name)
-        ? savToDelimitedTableText(raw)
-        : /\.xlsx$/i.test(file.name)
-          ? await xlsxToDelimitedTableText(raw)
-          : String(raw || "");
-      if (!normalizeImportedText(text)) throw new Error("未识别到有效数据。");
-      renderAiReportImportState(text, file.name);
-      showButtonSaved(document.querySelector("#importAiReportData"), "已导入");
-    } catch (error) {
-      document.querySelector("#aiReportDataPreview").innerHTML = `
-        <div class="empty-state">
-          <strong>导入失败</strong>
-          <span>${escapeHtml(error.message || "文件解析失败，请尝试另存为 CSV 后导入。")}</span>
-        </div>
-      `;
-      showButtonSaved(document.querySelector("#importAiReportData"), "导入失败");
-    }
-  };
-  reader.onerror = reader.onload;
-  if (/\.(xlsx|sav)$/i.test(file.name)) {
-    reader.readAsArrayBuffer(file);
-  } else {
-    reader.readAsText(file, "utf-8");
-  }
-}
-
-function renderAiReportImportState(text, filename) {
-  const dataField = document.querySelector("#aiReportData");
-  dataField.value = normalizeImportedText(text);
-  detectAiReportFields();
-  document.querySelector("#aiReportDataPreview").innerHTML = `
-    <div class="empty-state">
-      <strong>${escapeHtml(filename)}</strong>
-      <span>已导入并识别交叉表数据，可点击“AI 生成定量研究报告”生成分析报告。</span>
-    </div>
-  `;
-}
-
-function detectAiReportFields() {
-  const rawText = document.querySelector("#aiReportData").value;
-
-  // --- Crosstab format detection ---
-  if (rawText.startsWith("[CROSSTAB]")) {
-    const crosstabText = rawText.slice("[CROSSTAB]".length).trim();
-    const baseMatches = [...crosstabText.matchAll(/\[(?:样本基数|鏍锋湰鍩烘暟)\/BASE\]\s*(.*)/g)];
-    let baseInfo = "";
-    let totalN = 0;
-    if (baseMatches.length) {
-      const firstBase = baseMatches[0][1];
-      const pairs = firstBase.split("|").map((p) => p.trim()).filter(Boolean);
-      const totalPair = pairs.find((p) => /总计|合计|全部|total/i.test(p));
-      if (totalPair) {
-        const m = totalPair.match(/=([\d.]+)/);
-        if (m) totalN = Number(m[1]);
-      }
-      baseInfo = pairs.join("；");
-    }
-    const captionSet = new Set();
-    const captionRe = /\[(?:题目|棰樼洰)\]\s*(.*)/g;
-    let cm;
-    while ((cm = captionRe.exec(crosstabText)) !== null) {
-      captionSet.add(cm[1]);
-    }
-    lastCrosstabDataContext = {
-      isCrosstab: true,
-      crosstabText,
-      rawHeaders: [],
-      displayHeaders: [],
-      headerInfos: [],
-      rawRows: [],
-      displayRows: [],
-      totalN,
-      questionCount: captionSet.size
-    };
-    const chartGroupCount = normalizePptChartGroups(
-      extractCrosstabChartGroups(lastCrosstabDataContext, 10, 8),
-      10,
-      8
-    ).length;
-    document.querySelector("#aiReportFieldInfo").innerHTML = `
-      <strong>交叉表格式已识别</strong>：检测到 ${captionSet.size} 个题目，${baseInfo ? "样本基数：" + baseInfo : "未提取到 BASE 行"}；可生成 ${chartGroupCount} 页可编辑图表。
-    `;
-    document.querySelector("#generateAiReport").disabled = false;
-    return { headers: [], rows: [], isCrosstab: true };
-  }
-
-  // --- Original raw data format ---
-  const parsed = parseDelimitedTable(rawText);
-  if (!parsed.headers.length) {
-    document.querySelector("#aiReportFieldInfo").textContent = "未识别到有效字段，请检查数据格式。";
-    document.querySelector("#generateAiReport").disabled = true;
-    window.setTimeout(syncCoreWorkflowUx, 0);
-    return parsed;
-  }
-  const headerInfos = parsed.headers.map((header, index) => {
-    const values = parsed.rows.map((row) => row[header]).filter((v) => v !== "" && v != null);
-    const isLikelyGroup = /性别|年龄|城市|级别|收入|学历|职业|地区|类型|用户|人群|样本|受访者|背景|分群|banner|group|demographic|segment|region|city|gender|age|education|income/i.test(header);
-    const type = isLikelyGroup ? "group" : "question";
-    return {
-      index,
-      header,
-      title: header,
-      sourceHeader: header,
-      type,
-      uniqueValues: [...new Set(values)].length,
-      totalValues: values.length
-    };
-  });
-  const groupHeaders = headerInfos.filter((h) => h.type === "group");
-  const questionHeaders = headerInfos.filter((h) => h.type === "question");
-  lastCrosstabDataContext = {
-    isCrosstab: false,
-    rawHeaders: parsed.headers,
-    displayHeaders: parsed.headers,
-    headerInfos,
-    rawRows: parsed.rows.map((row) => parsed.headers.map((h) => row[h] || "")),
-    displayRows: parsed.rows.map((row) => parsed.headers.map((h) => row[h] || ""))
-  };
-  document.querySelector("#aiReportFieldInfo").innerHTML = `
-    已识别 ${parsed.headers.length} 个字段：${questionHeaders.length} 个题目字段，${groupHeaders.length} 个分群/背景字段。
-    ${groupHeaders.length > 0 ? "分群变量：" + groupHeaders.map((h) => h.header).join("、") : "未识别到明显分群变量，AI 将按全部字段生成报告。"}
-  `;
-  document.querySelector("#generateAiReport").disabled = false;
-  return parsed;
-}
-
-const exampleAiReportData = `性别,年龄段,城市级别,是否购买,满意度,推荐意愿
-男,18-29,一线城市,是,满意,9
-男,18-29,二线城市,否,一般,6
-男,30-39,一线城市,是,满意,10
-男,30-39,三线城市,否,不满意,4
-女,18-29,一线城市,是,满意,8
-女,18-29,二线城市,是,一般,7
-女,30-39,一线城市,否,一般,5
-女,30-39,三线城市,否,不满意,3
-男,40-50,一线城市,是,满意,9
-女,40-50,二线城市,否,一般,6
-男,18-29,三线城市,是,满意,8
-女,30-39,二线城市,是,满意,9`;
-
-document.querySelector("#importAiReportData").addEventListener("click", () => {
-  const input = document.querySelector("#aiReportImportFile");
-  input.value = "";
-  input.click();
-});
-document.querySelector("#aiReportImportFile").addEventListener("change", (event) => {
-  handleAiReportImport(event.target.files?.[0]);
-});
-document.querySelector("#detectAiReportFields")?.addEventListener("click", detectAiReportFields);
-document.querySelector("#loadAiReportExample")?.addEventListener("click", () => {
-  document.querySelector("#aiReportData").value = exampleAiReportData;
-  detectAiReportFields();
-});
-document.querySelector("#clearAiReportData")?.addEventListener("click", () => {
-  document.querySelector("#aiReportData").value = "";
-  document.querySelector("#aiReportFieldInfo").textContent = "粘贴数据后点击\"识别字段\"，将自动区分题目字段与分群/背景字段。";
-  document.querySelector("#aiReportDataPreview").innerHTML = `
-    <div class="empty-state">
-      <strong>等待数据</strong>
-      <span>粘贴或导入数据后，这里会显示字段识别结果与数据预览。</span>
-    </div>
-  `;
-  document.querySelector("#generateAiReport").disabled = true;
-  ["#copyAiReport", "#exportAiReportMd", "#exportAiReportWord", "#exportAiReportPpt"].forEach((selector) => {
-    const button = document.querySelector(selector);
-    if (button) button.disabled = true;
-  });
-  lastAiReport = "";
-  lastCrosstabDataContext = null;
-  window.setTimeout(syncCoreWorkflowUx, 0);
+// Legacy report recovery only; new briefs are created in Researcher / PPT workflows.
+document.querySelector("#legacyReportFile")?.addEventListener("change", async event => {
+  const file=event.target.files?.[0];if(!file)return;
+  if(file.size>2_000_000){showToast("历史报告超过 2MB，请使用原编辑器打开。");return;}
+  lastAiReport=await file.text();
+  document.querySelector("#aiReportResults").innerHTML=renderMarkdownPreview(lastAiReport);
+  ["#copyAiReport","#exportAiReportMd","#exportAiReportWord"].forEach(id=>{document.querySelector(id).disabled=!lastAiReport;});
 });
 
 // ═════════════════ PPT 报告生成页 ═══════════════
@@ -14018,6 +12912,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     let moveQuestionContext = null;
     let pendingReportNarrative = null;
     let lastPptxInsightContext = null;
+    let lastParsedQuestionCount = null;
     let lastPptxSlideBriefStats = null;
     let dimensionCopySyncTimer = null;
     const pendingDimensionCopySyncIds = new Set();
@@ -15162,6 +14057,7 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         const data = await resp.json();
         const segs = data.segments || [];
         const questionCount = Number(data.questions) || 0;
+        lastParsedQuestionCount = questionCount;
         if (!segs.length || questionCount <= 0) {
           const formatLabel = selectedFileInspection?.format_label || "当前文件";
           throw new Error(
@@ -16637,6 +15533,35 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
       if (!coefficientClaims.every((match) => supportsValue(match[1]))) return false;
       return true;
     }
+
+    const briefButton = document.createElement("button");
+    briefButton.type = "button"; briefButton.id = "pptxAnalysisBrief";
+    briefButton.className = "secondary-btn"; briefButton.textContent = "生成文字简报（Word / Markdown）";
+    previewPanel?.appendChild(briefButton);
+    briefButton.addEventListener("click", async () => {
+      if (!selectedFile || !editedPagePlan?.pages?.length) return;
+      briefButton.disabled = true;
+      const sourceFile = selectedFile, planSignature = JSON.stringify(compactPptxPageConfig(editedPagePlan));
+      try {
+        const context = await requestPptxInsightContext();
+        if (sourceFile !== selectedFile || planSignature !== JSON.stringify(compactPptxPageConfig(editedPagePlan))) throw new Error("来源或报告结构已变化，请重新生成简报。");
+        const sourceVersion = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await sourceFile.arrayBuffer())),b=>b.toString(16).padStart(2,"0")).join("");
+        const brief = window.SurveyKitAnalysisBrief.buildCrosstabBrief(context, {sourceVersion,questionCatalog:editedPagePlan.question_catalog || pagePlan?.question_catalog || [],title:(titleInput.value || "交叉表分析报告")+" · 分析简报",source:selectedFile.name,totalQuestions:lastParsedQuestionCount});
+        document.querySelector("#pptxBriefDialog")?.remove();
+        const dialog = document.createElement("dialog"); dialog.id = "pptxBriefDialog";
+        dialog.style.cssText = "width:min(850px,92vw);max-height:85vh;overflow:auto;padding:24px";
+        const heading = document.createElement("h3");heading.textContent = brief.title;
+        const preview = document.createElement("pre");preview.style.cssText = "white-space:pre-wrap;max-height:55vh;overflow:auto";preview.textContent = brief.content;
+        const actions = document.createElement("div");actions.className = "button-row";
+        for (const [label, action] of [
+          ["导出 Markdown", () => downloadTextFile(`${sanitizeDownloadName(brief.title)}.md`, brief.content, "text/markdown;charset=utf-8")],
+          ["导出 Word", () => downloadBlob(`${sanitizeDownloadName(brief.title)}.docx`, createDocxBlob(brief.content))],
+          ["关闭", () => dialog.close()]
+        ]) { const button = document.createElement("button");button.type="button";button.className="secondary-btn";button.textContent=label;button.onclick=action;actions.append(button); }
+        dialog.append(heading,preview,actions);document.body.append(dialog);dialog.showModal();
+      } catch(error) { showToast(error.message || "简报生成失败，请重试。"); }
+      finally { briefButton.disabled = false; }
+    });
 
     async function requestPptxInsightContext() {
       const buffer = await selectedFile.arrayBuffer();
@@ -18943,7 +17868,7 @@ document.querySelector("#aiPlanStudyType")?.addEventListener("change", syncAiPla
 syncAiPlanAdditionalModules();
 
 // AI 报告按钮（交叉表页面和独立页面共用）
-document.querySelectorAll("#generateAiReport").forEach((btn) => btn.addEventListener("click", generateAiReport));
+
 document.querySelectorAll("#copyAiReport").forEach((btn) => btn.addEventListener("click", copyAiReport));
 document.querySelectorAll("#exportAiReportMd").forEach((btn) => btn.addEventListener("click", exportAiReportMd));
 document.querySelectorAll("#exportAiReportWord").forEach((btn) => btn.addEventListener("click", exportAiReportWord));
@@ -19842,6 +18767,28 @@ document.querySelector("#exportAiWord").addEventListener("click", exportAiWord);
 document.querySelector("#exportAiPlatformFormat")?.addEventListener("click", exportAiPlatformFormat);
 document.querySelector("#applyAiQuestionnaire").addEventListener("click", applyAiQuestionnaireToWorkspace);
 document.querySelector("#reviseAiQuestionnaire").addEventListener("click", () => runAiQuestionnaireOperation(reviseAiQuestionnaire));
+document.querySelector('#ai-assistant').addEventListener('input', event=>{if(questionnaireDraftFields.includes(event.target.id))saveQuestionnaireDraft();});
+document.querySelector('#ai-assistant').addEventListener('change', event=>{if(questionnaireDraftFields.includes(event.target.id)||event.target.closest('#aiStudyType'))saveQuestionnaireDraft();});
+document.querySelector('#questionnaireRetrySave').addEventListener('click',()=>{persistWorkspaceLibrary();aiQuestionnaireSession.retrySave();});
+document.querySelector('#questionnaireArchiveExport').addEventListener('click',()=>downloadBlob('问卷版本与试访档案.json',new Blob([JSON.stringify(aiQuestionnaireSession.export(),null,2)],{type:'application/json;charset=utf-8'})));
+document.querySelector('#questionnaireArchiveImport').addEventListener('change',async event=>{
+  const file=event.target.files?.[0];if(!file)return;
+  const projectId=aiQuestionnaireSession.status().projectId;
+  try {
+    if(aiQuestionnaireBusy)throw new Error('请等待当前问卷操作结束后再导入。');
+    if(file.size>8_000_000)throw new Error('档案超过 8MB，未导入。');
+    const text=await file.text();if(projectId!==aiQuestionnaireSession.status().projectId)throw new Error('项目已切换，请重新选择档案。');
+    const result=aiQuestionnaireSession.import(JSON.parse(text));restoreQuestionnaireSession();
+    document.querySelector("#questionnaireArchiveMessage").textContent=`已追加 ${result.versions} 个版本、${result.pilots} 条试访记录。`;
+    showToast(`已追加 ${result.versions} 个版本、${result.pilots} 条试访记录；${aiQuestionnaireSession.status().message}`);
+  }catch(error){document.querySelector('#questionnaireArchiveMessage').textContent=`导入失败：${error.message}`;}
+  finally{event.target.value='';}
+});
+document.querySelector('#questionnaireReload').addEventListener('click',()=>{
+  if(aiQuestionnaireBusy)return;
+  if(aiQuestionnaireSession.status().state!=='saved'&&!window.confirm('重新读取会替换本次未保存的内容，请先下载档案。是否继续？'))return;
+  aiQuestionnaireSession.reload();restoreQuestionnaireSession();
+});
 window.QuestionnaireReviewUI.bind(document.querySelector("#aiResults"), {
   session: aiQuestionnaireSession,
   busy: () => aiQuestionnaireBusy,
@@ -19856,6 +18803,7 @@ window.QuestionnaireReviewUI.bind(document.querySelector("#aiResults"), {
     document.querySelector("#aiReviseInput").value = `试访 V${record.version}，路径 ${record.route}${record.question ? `，题号 ${record.question}` : ""}：${record.feedback}\n请核实并改善上述问题，保留已有研究目标。`;
     document.querySelector("#aiRevisionMode").value = record.question ? "selected" : "full";
     document.querySelector("#aiRevisionTargets").value = record.question;
+    saveQuestionnaireDraft();
     document.querySelector("#aiReviseInput").focus();
   },
   download: (archive) => downloadBlob("问卷版本与试访档案.json", new Blob([JSON.stringify(archive,null,2)], { type: "application/json;charset=utf-8" }))
@@ -19881,6 +18829,7 @@ document.querySelector("#loadAiExample").addEventListener("click", () => {
   document.querySelector("#aiAudience").value = "18-40岁，近3个月购买过即饮咖啡或咖啡相关产品的用户";
   document.querySelector("#aiSampleSize").value = 400;
   document.querySelector("#aiQuestionnaireLengthMode").value = "long";
+  saveQuestionnaireDraft();
 });
 document.querySelector("#generateAiWorkbench").addEventListener("click", generateAiWorkbench);
 document.querySelector("#loadAiWorkbenchProject").addEventListener("click", loadAiWorkbenchProject);
@@ -19933,6 +18882,8 @@ if ("serviceWorker" in navigator) {
 
 workspaceProject = loadWorkspaceProject();
 if (workspaceProject) fillWorkspaceProject(workspaceProject);
+restoreQuestionnaireSession();
+questionnaireBindingsReady = true;
 renderWorkspaceProjectLibrary();
 renderWorkspaceProject();
 fillAiSettingsForm();
@@ -20263,23 +19214,6 @@ function syncCoreWorkflowUx() {
       const stateLabel = configureStage.querySelector(".workflow-state-label");
       if (stateLabel) stateLabel.textContent = hasResult ? "已生成结果" : hasFields ? "可以开始分析" : "等待字段识别";
     }
-  }
-
-  const aiReportView = document.querySelector("#ai-report");
-  if (aiReportView) {
-    const briefReady = Boolean(document.querySelector("#aiReportProjectName")?.value.trim())
-      && Boolean(document.querySelector("#aiReportObjective")?.value.trim());
-    const hasData = Boolean(document.querySelector("#aiReportData")?.value.trim())
-      && !document.querySelector("#generateAiReport")?.disabled;
-    const hasResult = Boolean(lastAiReport) && !document.querySelector("#copyAiReport")?.disabled;
-    aiReportView.classList.toggle("workflow-has-data", hasData);
-    aiReportView.classList.toggle("workflow-has-result", hasResult);
-    setTaskFlowIndicator(aiReportView, "brief", briefReady ? "completed" : "active", briefReady ? "研究目标已填写" : "明确目标与受众");
-    setTaskFlowIndicator(aiReportView, "data", hasData ? "completed" : "active", hasData ? "数据识别完成" : "导入并识别数据");
-    setTaskFlowIndicator(aiReportView, "generate", hasResult ? "completed" : hasData ? "active" : "locked", hasResult ? "报告可以导出" : hasData ? "可以生成报告" : "等待数据识别");
-    const generateStep = aiReportView.querySelector('[data-flow-step="generate"]');
-    if (generateStep) generateStep.dataset.state = hasResult ? "completed" : hasData ? "ready" : "locked";
-    document.querySelector("#aiReportOutputPanel")?.classList.toggle("is-dormant", !hasData);
   }
 
   const aiPlanView = document.querySelector("#ai-plan");

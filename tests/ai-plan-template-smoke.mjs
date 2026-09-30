@@ -99,6 +99,7 @@ assert.match(html, /混合模式：结构 \+ 风格 \+ 颗粒度复刻/);
 assert.doesNotMatch(html, /data-view="models"|id="models"/);
 assert.match(html, /data-nav-phase="after"[\s\S]*?<span>调研后<\/span>[\s\S]*?<div class="nav-group-items">[\s\S]*?data-view="pptx-report"/);
 const postResearchNav = html.slice(html.indexOf("<span>调研后</span>"), html.indexOf("</nav>"));
-assert.ok(postResearchNav.indexOf('data-view="pptx-report"') < postResearchNav.indexOf('data-view="ai-report"'));
+assert.ok(postResearchNav.includes('data-view="pptx-report"'));
+assert.doesNotMatch(postResearchNav, /data-view="ai-report"/, 'Retired AI report is available only by its legacy URL');
 assert.doesNotMatch(source, /jump: "models"/);
 console.log("AI plan template smoke test passed.");

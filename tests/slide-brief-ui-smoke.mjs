@@ -157,8 +157,8 @@ assert.doesNotMatch(quickFlow, /fallbackEvidence/);
 assert.doesNotMatch(quickFlow, /stream: true/);
 assert.match(quickFlow, /evidence_fact_ids/);
 assert.match(quickFlow, /await doGeneratePptx\(\)/);
-assert.match(app, /判断\/解释\/行动约70%/);
-assert.match(app, /禁止白描式复述/);
+// Legacy AI-report generation prompts were removed in S1; the PPT quality gate remains covered above.
+assert.doesNotMatch(app, /async function generateAiReport\(/);
 assert.match(app, /SLIDE_BRIEF_SYSTEM_PROMPT[\s\S]{0,800}taskTier: "fast"/);
 assert.match(app, /function evidenceNumericValues/);
 assert.match(app, /sampleClaims/);

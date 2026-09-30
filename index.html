@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#102a56" />
     <title>调研工具箱</title>
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=20260827-2" />
+    <link rel="stylesheet" href="./styles.css?v=20260930-s4-2" />
   </head>
   <body>
     <div class="app-loading-overlay" id="appLoading">
@@ -79,7 +79,7 @@
             </button>
             <div class="nav-group-items">
               <button class="nav-item" data-view="pptx-report">PPT 报告生成</button>
-              <button class="nav-item" data-view="ai-report">AI 报告生成</button>
+
               <button class="nav-item" data-view="ai-workbench" style="display:none">AI 辅助面板</button>
               <button class="nav-item" data-view="research-models">研究模型</button>
               <button class="nav-item" data-view="psm" style="display:none">PSM 分析</button>
@@ -492,6 +492,7 @@
                     <button type="button" id="researchProfileDataset">检查数据结构</button>
                     <button type="button" id="researchWeightDataset">评估加权</button>
                     <button type="button" id="researchAnalyzeDataset">用 AI 分析</button>
+                    <button type="button" id="researchGenerateBrief" disabled>生成分析简报</button>
                     <button type="button" id="researchExportCrosstabs">导出交叉表</button>
                   </div>
                 </div>
@@ -1330,176 +1331,14 @@
           <button class="secondary-btn guide-back" type="button" data-jump="crosstab-analysis">返回交叉表分析</button>
         </section>
         <section class="view" id="ai-report">
-          <div class="page-title">
-            <div>
-              <p class="eyebrow">AI 报告</p>
-              <h2 class="title-with-help">
-                <span>AI 定量报告生成</span>
-              </h2>
-            </div>
-          </div>
-
-          <ol class="task-flow" aria-label="AI 定量报告生成步骤">
-            <li data-flow-indicator="brief" data-state="active"><span>1</span><strong>研究背景</strong><small>明确目标与受众</small></li>
-            <li data-flow-indicator="data" data-state="ready"><span>2</span><strong>导入数据</strong><small>识别题目和人群</small></li>
-            <li data-flow-indicator="generate" data-state="locked"><span>3</span><strong>生成报告</strong><small>预览并导出</small></li>
-          </ol>
-
-          <div class="ai-report-workspace">
-            <div class="ai-report-config panel">
-              <div class="ai-report-step" data-flow-step="brief">
-                <div class="step-badge">1</div>
-                <div class="step-body">
-                  <h3>项目背景</h3>
-                  <p class="panel-note">只需填写最关键的两项，其他背景信息可在下方选填。</p>
-                  <div class="form-grid two ai-report-form">
-                    <label class="span-row field">
-                      <span class="field-heading">项目名称 <span class="field-badge required">必填</span></span>
-                      <input id="aiReportProjectName" type="text" placeholder="例如：电商 NPS 体验研究" />
-                    </label>
-                    <label class="span-row field">
-                      <span class="field-heading">项目类型 <span class="field-badge optional">选填</span><small>可多选，融合多个研究类型的报告结构</small></span>
-                      <div class="multiselect-dropdown" id="aiReportProjectType">
-                        <div class="multiselect-trigger" tabindex="0">
-                          <span class="multiselect-text">通用定量</span>
-                          <svg class="multiselect-arrow" width="12" height="12" viewBox="0 0 12 12"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
-                        </div>
-                        <div class="multiselect-panel">
-                          <label class="multiselect-option"><input type="checkbox" value="general" checked> <span>通用定量研究</span></label>
-                          <label class="multiselect-option"><input type="checkbox" value="ua"> <span>U&A 使用与态度研究</span></label>
-                          <label class="multiselect-option"><input type="checkbox" value="concept"> <span>概念测试</span></label>
-                          <label class="multiselect-option"><input type="checkbox" value="nps"> <span>满意度 / NPS</span></label>
-                          <label class="multiselect-option"><input type="checkbox" value="brand"> <span>品牌健康度</span></label>
-                          <label class="multiselect-option"><input type="checkbox" value="launch"> <span>新品上市复盘</span></label>
-                          <label class="multiselect-option"><input type="checkbox" value="ad"> <span>广告测试</span></label>
-                          <label class="multiselect-option"><input type="checkbox" value="mystery"> <span>神秘客</span></label>
-                        </div>
-                      </div>
-                    </label>
-                    <label class="span-row field">
-                      <span class="field-heading">研究目标 <span class="field-badge required">必填</span><small>1-3 句话描述核心商业问题</small></span>
-                      <textarea id="aiReportObjective" class="compact-textarea" placeholder="例如：识别影响平台推荐意愿的关键体验短板，并为后续体验优化提供优先级建议。"></textarea>
-                    </label>
-                    <label class="span-row field">
-                      <span class="field-heading">核心假设 / 待验证命题 <span class="field-badge optional">选填</span></span>
-                      <textarea id="aiReportHypothesis" class="compact-textarea" placeholder="例如：高频购买用户对售后体验更敏感；促销体验会显著影响推荐意愿。不填时 AI 会从数据中自动提炼假设。"></textarea>
-                    </label>
-                    <label class="field">
-                      <span class="field-heading">目标人群定义 <span class="field-badge optional">选填</span></span>
-                      <input id="aiReportTargetAudience" type="text" placeholder="例如：近三个月在电商平台浏览或购买电子产品的用户" />
-                    </label>
-                    <label class="field">
-                      <span class="field-heading">行业 / 品类背景 <span class="field-badge optional">选填</span></span>
-                      <input id="aiReportCategoryContext" type="text" placeholder="例如：电商、手机、耐消、快消、金融等" />
-                    </label>
-                  </div>
-
-                  <div class="ai-report-advanced">
-                    <button class="ai-report-advanced-toggle" type="button" aria-expanded="false">
-                      <span>更多背景（可选）</span>
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </button>
-                    <div class="ai-report-advanced-body form-grid two ai-report-form">
-                      <label class="field">
-                        <span class="field-heading">数据时间范围 <span class="field-badge optional">选填</span></span>
-                        <input id="aiReportDataPeriod" type="text" placeholder="例如：2026年6月" />
-                      </label>
-                      <label class="field">
-                        <span class="field-heading">报告受众 <span class="field-badge optional">选填</span></span>
-                        <select id="aiReportAudienceType">
-                          <option value="">未指定</option>
-                          <option value="内部产品团队">内部产品团队</option>
-                          <option value="客户高层">客户高层</option>
-                          <option value="市场部门">市场部门</option>
-                          <option value="研究团队">研究团队</option>
-                        </select>
-                      </label>
-                      <label class="field">
-                        <span class="field-heading">数据加权状态 <span class="field-badge optional">选填</span></span>
-                        <select id="aiReportWeightingStatus">
-                          <option value="">未指定</option>
-                          <option value="未加权">未加权</option>
-                          <option value="RIM 加权">RIM 加权</option>
-                          <option value="Cell 加权">Cell 加权</option>
-                          <option value="其他加权方式">其他加权方式</option>
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="ai-report-step" data-flow-step="data">
-                <div class="step-badge">2</div>
-                <div class="step-body">
-                  <h3>导入数据</h3>
-                  <input class="hidden" id="aiReportImportFile" type="file" accept=".sav,.xlsx,.csv,.txt" />
-                  <div class="ai-report-import-box">
-                    <div>
-                      <span class="section-pill">数据表</span>
-                      <h4>导入交叉表数据</h4>
-                      <p>支持 CSV、TXT、Excel（XLSX/XLS）和 SAV 数据文件。</p>
-                    </div>
-                    <button class="secondary-btn" id="importAiReportData" type="button">导入数据</button>
-                  </div>
-                  <textarea class="hidden" id="aiReportData" aria-hidden="true"></textarea>
-                  <div id="aiReportFieldInfo" class="panel-note">导入数据后，系统会自动识别字段并准备生成报告。</div>
-                  <div class="ai-report-data-actions">
-                    <button class="ghost-btn" id="detectAiReportFields" type="button">重新识别字段</button>
-                    <button class="ghost-btn" id="loadAiReportExample" type="button">加载示例数据</button>
-                    <button class="ghost-btn" id="clearAiReportData" type="button">清空数据</button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="ai-report-step flow-step-content" data-flow-step="generate" data-state="locked">
-                <div class="step-badge">3</div>
-                <div class="step-body">
-                  <h3>生成报告</h3>
-                  <div class="button-row">
-                    <button class="primary-btn" id="generateAiReport" type="button" disabled>AI生成定量报告</button>
-                    <button class="secondary-btn report-secondary-action" id="copyAiReport" type="button" disabled>复制报告</button>
-                    <button class="secondary-btn report-secondary-action" id="exportAiReportMd" type="button" disabled>导出 Markdown</button>
-                    <button class="secondary-btn report-secondary-action" id="exportAiReportWord" type="button" disabled>导出 Word</button>
-                  </div>
-                  <p class="flow-step-locked-note">完成数据识别后即可生成报告。</p>
-                </div>
-              </div>
-            </div>
-
-            <div class="ai-report-output panel is-dormant" id="aiReportOutputPanel">
-              <div class="section-heading compact">
-                <div>
-                  <h3>结果预览</h3>
-                  <p>数据识别结果与 AI 生成的报告将在这里展示。</p>
-                </div>
-              </div>
-
-              <div class="flow-pending-summary">
-                <strong>结果将在完成数据识别后显示</strong>
-                <span>先填写研究背景并导入数据，系统会在这里展示识别结果和报告内容。</span>
-              </div>
-
-              <div class="ai-report-result-section">
-                <h4>数据识别</h4>
-                <div class="audit-results" id="aiReportDataPreview" aria-live="polite">
-                  <div class="empty-state">
-                    <strong>等待数据</strong>
-                    <span>导入数据后，这里会显示字段识别结果与数据预览。</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="ai-report-result-section">
-                <h4>报告内容</h4>
-                <div class="audit-results" id="aiReportResults" aria-live="polite">
-                  <div class="empty-state">
-                    <strong>等待生成</strong>
-                    <span>导入并识别交叉表数据后，点击“AI生成定量报告”即可生成 Markdown 报告，并可导出 Word 或可编辑 PPT。</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <h2 class="page-title">历史 AI 报告</h2>
+          <div class="panel">
+            <p>新报告已合并到现有流程：原始样本在 AI 研究员生成分析简报；外部交叉表在 PPT 报告中生成文字简报。两处均支持 Word / Markdown 导出。</p>
+            <div class="button-row"><button class="primary-btn" data-jump="research">前往 AI 研究员</button><button class="secondary-btn" data-jump="pptx-report">前往 PPT 报告</button></div>
+            <p>已下载的旧报告继续保留。可在这里打开 Markdown / TXT 文本并导出；旧版未保存的会话结果无法在刷新后恢复。</p>
+            <label>打开历史报告 <input id="legacyReportFile" type="file" accept=".md,.txt"></label>
+            <div class="button-row"><button id="copyAiReport" disabled>复制报告</button><button id="exportAiReportMd" disabled>导出 Markdown</button><button id="exportAiReportWord" disabled>导出 Word</button></div>
+            <div id="aiReportResults" class="markdown-body"></div>
           </div>
         </section>
 
@@ -3367,6 +3206,14 @@
               <p class="panel-note">生成结果适合作为 V1.0 问卷初稿，正式上线前建议继续用“上线质检、时长估算、数据清洗、表头设计”做复核。</p>
             </div>
 
+            <div class="panel questionnaire-persistence">
+              <strong id="questionnaireProjectScope">问卷档案</strong>
+              <p id="questionnaireSaveStatus" role="status"></p>
+              <p class="panel-note">按工作台当前项目保存到此浏览器；清除浏览器数据会移除本地档案。导入会追加版本并重映射试访归属，不覆盖已有版本。</p>
+              <div class="button-row"><button type="button" id="questionnaireRetrySave">重试保存</button><button type="button" id="questionnaireReload">重新读取本地档案</button><button type="button" id="questionnaireArchiveExport">下载档案备份</button></div>
+              <label>导入版本与试访档案 <input type="file" id="questionnaireArchiveImport" accept=".json,application/json"></label>
+              <p id="questionnaireArchiveMessage" role="status"></p>
+            </div>
             <div class="audit-results" id="aiResults" aria-live="polite">
               <article class="audit-issue">
                 <div class="issue-head">
@@ -3540,20 +3387,20 @@
     <script src="./ai-plan-quality.js?v=20260823-1"></script>
     <script src="./questionnaire-quality.js?v=20260930-5"></script>
     <script src="./questionnaire-delivery.js?v=20260930-1"></script>
-    <script src="./questionnaire-workflow.js?v=20260930-3"></script>
-    <script src="./questionnaire-review-ui.js?v=20260930-3"></script>
+    <script src="./questionnaire-workflow.js?v=20260930-s2-1"></script>
+    <script src="./questionnaire-review-ui.js?v=20260930-s2-1"></script>
     <script src="./ppt-report-ai.js?v=20260823-3"></script>
     <script src="./crosstab-net.js?v=20260909-1"></script>
     <script src="./crosstab-models.js?v=20260910-1"></script>
     <script src="./crosstab-model-ui.js?v=20260908-1"></script>
     <script src="./indicator-weighting.js?v=20260929-1"></script>
-    <script src="./app.js?v=20260930-questionnaire-client1"></script>
+    <script src="./app.js?v=20260930-s2-1"></script>
     <script src="./indicator-weighting-ui.js?v=20260929-2"></script>
     <script src="./proposal-deck.js?v=20260719-2"></script>
     <script src="./cluster-core.js?v=20260908-2"></script>
     <script src="./cluster-analysis.js?v=20260908-2"></script>
     <!-- Vite 模块化入口（Phase 1 过渡期：共享模块已提取，功能模块渐进迁移） -->
-    <script type="module" src="./src/main.js?v=20260827-3"></script>
+    <script type="module" src="./src/main.js?v=20260930-s4-2"></script>
     <!-- MaxDiff 模块桥接：在 legacy 服务器（无 Vite）下也能加载阶段三/四的校验与 MNL/HB 模型 -->
     <script type="module">
       import * as maxdiff from "./src/modules/maxdiff/index.js?v=20260827-2";
