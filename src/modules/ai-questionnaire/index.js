@@ -3,6 +3,7 @@
  * 提取自 app.js — 问卷生成核心逻辑
  */
 import "../../../questionnaire-quality.js";
+import "../../../questionnaire-delivery.js";
 import { state } from "../../shared/store.js";
 import { loadAiSettings, validateAiSettings, callAiChatCompletion, aiProviderPresets } from "../../shared/ai-client.js";
 
@@ -216,8 +217,8 @@ export async function generateAiQuestionnaire(config, options = {}) {
     }
   }
 
-  const finalized = globalThis.QuestionnaireQuality.finalize(sanitizeAiQuestionnaireOutput(output), config);
-  output = finalized.output;
-  state.lastAiQuestionnaireText = output;
-  return { output, source, qualityAudit: finalized.audit };
+  const finalized = globalThis.QuestionnaireQuality.finalize(globalThis.QuestionnaireDelivery.prepare(sanitizeAiQuestionnaireOutput(output)), config);
+  output = globalThis.QuestionnaireDelivery.clientText(finalized.output);
+  state.lastAiQuestionnaireText = finalized.output;
+  return { output, internalOutput: finalized.output, source, qualityAudit: finalized.audit };
 }

@@ -21,7 +21,7 @@ async function setup(page, responses) {
   return requests;
 }
 
-test('generation displays concrete findings and Word/Markdown retain the audit', async ({ page }) => {
+test('generation displays internal findings but Word/Markdown contain only client content', async ({ page }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   const requests = await setup(page, [fixtures.badDraft]);
   await page.locator('#generateAiBrief').click();
@@ -37,15 +37,20 @@ test('generation displays concrete findings and Word/Markdown retain the audit',
   const markdownDownload = page.waitForEvent('download');
   await page.locator('#exportAiPrompt').click();
   const markdown = fs.readFileSync(await (await markdownDownload).path(), 'utf8');
-  expect(markdown).toContain('系统规则检查');
-  expect(markdown).toContain('D2｜时机题与多少量表不匹配');
+  expect(markdown).not.toContain('系统规则检查');
+  expect(markdown).not.toContain('questionnaire-rules');
+  expect(markdown).not.toContain('QC1.');
+  expect(markdown).not.toContain('注意力检测');
+  expect(markdown).toContain('D2.');
   const wordDownload = page.waitForEvent('download');
   await page.locator('#exportAiWord').click();
   const wordFile = await wordDownload;
   expect(wordFile.suggestedFilename()).toMatch(/\.docx$/);
   const xml = await page.evaluate(async (bytes) => readZipText(new Uint8Array(bytes).buffer, 'word/document.xml'), [...fs.readFileSync(await wordFile.path())]);
-  expect(xml).toContain('系统规则检查');
-  expect(xml).toContain('时机题与多少量表不匹配');
+  expect(xml).not.toContain('系统规则检查');
+  expect(xml).not.toContain('questionnaire-rules');
+  expect(xml).not.toContain('注意力检测');
+  expect(xml).toContain('D2.');
   await page.locator('#aiResults').screenshot({ path: 'test-results/questionnaire-quality-desktop.png' });
   expect(errors).toEqual([]);
 });
@@ -65,7 +70,7 @@ test('revision rechecks and uses saved original sources, not edited form fields'
   expect(secondPrompt).not.toContain('未提交的新目标人群');
   expect(secondPrompt).toContain('SCALE_TIME_MISMATCH');
   const output = await page.locator('#aiResults textarea.prompt-box').inputValue();
-  expect((output.match(/<!-- questionnaire-quality:start -->/g) || []).length).toBe(1);
+  expect((output.match(/<!-- questionnaire-quality:start -->/g) || []).length).toBe(0);
   await page.locator('[data-questionnaire-quality] summary').filter({ hasText: '样本条件与原文依据' }).click();
   await expect(page.locator('[data-questionnaire-quality]')).toContainText(fixtures.audience);
   const platformDownload = page.waitForEvent('download');
@@ -83,7 +88,7 @@ test('model failure keeps fallback explicitly unverified on mobile', async ({ pa
   const card = page.locator('[data-questionnaire-quality]');
   await expect(card).toContainText('入组条件尚未确认');
   const output = await page.locator('#aiResults textarea.prompt-box').inputValue();
-  expect(output).toContain('本地备用骨架');
+  expect(output).not.toContain('本地备用骨架');
   expect(output).toContain('曾经进行，现在已停止');
   expect(output).not.toContain('通常终止');
   expect(output).not.toContain('✅');
@@ -103,7 +108,8 @@ test('modular entry shares prompt and audit rules', async ({ page }) => {
   expect(JSON.stringify(result.prompt)).toContain('questionnaire-rules');
   expect(result.audit.summary.errors).toBe(0);
   expect(result.audit.status).toBe('待人工复核');
-  expect(result.output).toContain('系统规则检查');
+  expect(result.output).not.toContain('系统规则检查');
+  expect(result.output).not.toContain('questionnaire-rules');
 });
 const measurement = { id: 'M_UI', source: { field: 'brief', quote: fixtures.brief }, metric: '行为强度核对', population: '全部合格者', role: 'segmentation', questionIds: ['S3'], analysis: '比较行为天数' };
 test('measurement map remains visible in UI and refreshed exports', async ({ page }) => {
@@ -119,6 +125,22 @@ test('measurement map remains visible in UI and refreshed exports', async ({ pag
   const download = page.waitForEvent('download');
   await page.locator('#exportAiPrompt').click();
   const markdown = fs.readFileSync(await (await download).path(), 'utf8');
-  expect(markdown).toContain('行为强度核对｜待语义复核');
+  expect(markdown).not.toContain('行为强度核对｜待语义复核');
   expect(markdown).not.toContain('行为强度核对｜完整覆盖');
+});
+test('copy and project sync use the same clean client version while internal audit remains', async ({page}) => {
+  const annotated=fixtures.goodDraft.replace('S2. 您减少', '> 设计思路：此处是内部解释。\n\nS2. 您减少');
+  await setup(page,[annotated]);
+  await page.locator('#generateAiBrief').click();
+  const output=await page.locator('#aiResults textarea.prompt-box').inputValue();
+  expect(output).not.toMatch(/设计思路|questionnaire-rules|系统规则检查|QC1\./);
+  await page.evaluate(()=>{navigator.clipboard.writeText=async text=>{window.__clientClipboard=text;};});
+  await page.locator('#copyAiPrompt').click();
+  expect(await page.evaluate(()=>window.__clientClipboard)).toBe(output);
+  await page.locator('#applyAiQuestionnaire').click();
+  expect(await page.locator('#workspaceQuestionnaire').inputValue()).toBe(output);
+  const internal=await page.evaluate(()=>lastAiQuestionnaireText);
+  expect(internal).toContain('questionnaire-rules');
+  expect(internal).toContain('系统规则检查');
+  expect(internal).not.toContain('QC1.');
 });

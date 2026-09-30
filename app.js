@@ -9909,7 +9909,7 @@ function buildAiQuestionnaireDesign() {
   const baseBody = bodyAiQuestions(config);
   const backgroundPool = backgroundAiQuestions();
   const optional = optionalAiQuestions(config);
-  const reservedCount = screener.length + 1;
+  const reservedCount = screener.length;
   const backgroundCount = target.target <= 10 ? 2 : 3;
   const bodyTarget = Math.max(2, target.target - reservedCount - backgroundCount);
   const body = recodeAiBodyQuestions([...baseBody, ...optional].slice(0, bodyTarget));
@@ -9923,7 +9923,6 @@ function buildAiQuestionnaireDesign() {
     `- 目标人群：${config.audience}`,
     `- 目标样本量：N=${config.sampleSize}`,
     "- 本地备用骨架：尚未完成项目化题目和资格定义，必须复核后再编程上线。",
-    "- 质量控件：建议保留1道注意力检测题，并记录答题时长用于清洗。",
     "",
     "二、问卷正文",
     "",
@@ -9935,17 +9934,6 @@ function buildAiQuestionnaireDesign() {
     "模块B：问卷主体",
     "",
     ...body.map(renderAiQuestionTable),
-    "",
-    "QC1. 本题是注意力检测，请选择比较同意。",
-    "题型：单选题",
-    "",
-    "| 编码 | 选项内容 | 逻辑与备注 |",
-    "|---|---|---|",
-    "| 1 | 非常同意 |  |",
-    "| 2 | 比较同意 | 正确答案 |",
-    "| 3 | 一般 |  |",
-    "| 4 | 不太同意 |  |",
-    "> 设计思路：请在题干中明确“本题是注意力检测，请选择比较同意”，仅标记复核，结合时长与多项独立信号判断，不因单题失败直接判无效。",
     "",
     "模块C：背景信息",
     "",
@@ -9968,9 +9956,9 @@ function buildAiQuestionnaireDesign() {
 
 function finalizeAiQuestionnaire(output, config, label = "生成初稿") {
   lastAiQuestionnaireConfig = { ...config };
-  const finalized = window.QuestionnaireQuality.finalize(sanitizeAiQuestionnaireOutput(output), lastAiQuestionnaireConfig);
+  const finalized = window.QuestionnaireQuality.finalize(window.QuestionnaireDelivery.prepare(sanitizeAiQuestionnaireOutput(output)), lastAiQuestionnaireConfig);
   lastAiQuestionnaireAudit = finalized.audit;
-  lastAiPrompt = finalized.output;
+  lastAiPrompt = window.QuestionnaireDelivery.clientText(finalized.output);
   lastAiQuestionnaireText = finalized.output;
   aiQuestionnaireSession.record(finalized.output, lastAiQuestionnaireConfig, label);
   const platformButton = document.querySelector("#exportAiPlatformFormat");
@@ -9991,7 +9979,7 @@ function renderAiQuestionnaireQuality(audit) {
     ${findings ? `<ul class="ai-risk-list questionnaire-quality-list">${findings}</ul>` : '<p>未发现本轮规则命中，仍需人工复核和试访。</p>'}
     <details data-questionnaire-coverage><summary>需求—指标—题号核对（${(audit.coverage || []).length}项）</summary><p class="panel-note">候选题匹配不等于完整覆盖；逐项复核测量口径和人群适用性。</p><ul class="ai-risk-list questionnaire-quality-list">${(audit.coverage || []).map(item => `<li><strong>${escapeHtml(item.metric)} · ${escapeHtml(item.status)}</strong><span>${escapeHtml(item.questionIds.join("、") || "尚无题目")}；${escapeHtml(item.population || "适用范围待复核")}</span><small>依据：${escapeHtml(item.evidence)}；分析：${escapeHtml(item.analysis)}；缺口：${escapeHtml(item.gaps.join("、") || "结构证据齐备，含义和适用性待人工复核")}</small></li>`).join("")}</ul></details>
     <details><summary>样本条件与原文依据（${audit.rules.length}条）</summary>${sources ? `<ul class="ai-risk-list questionnaire-quality-list">${sources}</ul>` : '<p>尚无可核对的条件记录。</p>'}</details>
-    <p class="panel-note">复制、Word与Markdown保留本次检查结果。需修改或待确认项解决后启用平台格式导出。</p>
+    <p class="panel-note">内部检查仅在本页显示；复制、Word、Markdown及同步项目稿使用客户版。需修改或待确认项解决后启用平台格式导出。</p>
   </article>`;
 }
 
@@ -10014,10 +10002,10 @@ function renderAiQuestionnaireHtml(result) {
     ${window.QuestionnaireReviewUI.render(aiQuestionnaireSession)}
     <article class="audit-issue">
       <div class="issue-head">
-        <strong>可复制问卷 Markdown</strong>
+        <strong>客户交付版问卷</strong>
         <span class="issue-tag low">V${aiQuestionnaireSession.current()?.id || 1}</span>
       </div>
-      <textarea class="prompt-box" readonly>${escapeHtml(result.questionnaireText)}</textarea>
+      <textarea class="prompt-box" readonly>${escapeHtml(window.QuestionnaireDelivery.clientText(result.questionnaireText))}</textarea>
     </article>
     ${modelNote}
   `;
@@ -10906,13 +10894,13 @@ async function copyAiPrompt() {
       document.querySelector("#copyAiPrompt").textContent = "复制问卷";
     }, 1200);
   } catch {
-    downloadTextFile("AI问卷设计初稿.md", lastAiPrompt, "text/markdown;charset=utf-8");
+    downloadTextFile("客户版问卷.md", lastAiPrompt, "text/markdown;charset=utf-8");
   }
 }
 
 function exportAiPrompt() {
   if (!lastAiPrompt) return;
-  downloadTextFile("AI问卷设计初稿.md", lastAiPrompt, "text/markdown;charset=utf-8");
+  downloadTextFile("客户版问卷.md", lastAiPrompt, "text/markdown;charset=utf-8");
 }
 
 function markdownToWordHtml(text) {
@@ -11721,7 +11709,7 @@ function createPptxBlob(markdown, title = "AI调研方案", footerLabel = "AI �
 
 function exportAiWord() {
   if (!lastAiPrompt) return;
-  downloadBlob("AI问卷设计初稿.docx", createDocxBlob(lastAiPrompt));
+  downloadBlob("客户版问卷.docx", createDocxBlob(lastAiPrompt));
 }
 
 function exportAiPlatformFormat() {
@@ -12848,8 +12836,9 @@ function openAiInlineAssistant(button) {
 function applyAiQuestionnaireToWorkspace() {
   if (!lastAiQuestionnaireText) return;
   const workspaceField = document.querySelector("#workspaceQuestionnaire");
-  if (workspaceField) workspaceField.value = lastAiQuestionnaireText;
-  syncQuestionnaireToWorkspace(lastAiQuestionnaireText);
+  const clientText = window.QuestionnaireDelivery.clientText(lastAiQuestionnaireText);
+  if (workspaceField) workspaceField.value = clientText;
+  syncQuestionnaireToWorkspace(clientText);
   markWorkspaceStatus("questionnaire");
   const button = document.querySelector("#applyAiQuestionnaire");
   if (button) showButtonSaved(button, "已同步");

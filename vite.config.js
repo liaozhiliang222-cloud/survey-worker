@@ -17,6 +17,7 @@ const runtimeFiles = [
   "research-theme.js",
   "ai-plan-quality.js",
   "questionnaire-quality.js",
+  "questionnaire-delivery.js",
   "questionnaire-workflow.js",
   "questionnaire-review-ui.js",
   "app.js",
