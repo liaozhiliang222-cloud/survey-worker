@@ -16,7 +16,7 @@
       "甄别采用实际行为→行为目的→时间/频次/持续情况→本人或家庭角色的证据链。当人群定义包含特定管理目的时，看标签、看广告、使用通用设备、表示关注/想改善均不能单独证明该目的；若研究本身针对标签阅读者或设备使用者，应遵循其真实入组定义。例如使用空气炸锅不等于为了控脂，购买无糖饮料不等于为了控糖；不要把想法当实际行为。",
       "先以中性开场询问日常行为，不提前强调期望的健康态度或筛选答案。行为选项提供真实且合理的不同做法及以上均无；不设置虚假诱饵。行为发生与主要目的分别问，记录时间范围，频次门槛未经客户明确不得用于排除。",
       "现有、曾经使用/放弃、潜在、购买者、使用者、家庭代办者分别记录。是否纳入由研究范围决定，未明确则待确认。不买专用设备、不亲自做饭、不了解术语，不得自动判为无效或不合格；制作细节仅向实际参与制作的人显示。",
-      "多类人群分别判断资格并保留全部标签；主要关注仅为分析变量。仅在受访者已符合资格且配额可用的路径内分配，不能凭最关注或随机把不合格者分进某路径。每条路径写明入组规则ID、入口、出口和返回公共模块的题号。没有合格路径与配额已满须区分。",
+      "多类人群分别判断资格并保留全部标签；主要关注仅为分析变量。仅在受访者已符合资格且配额可用的路径内分配，不能凭最关注或随机把不合格者分进某路径。每条路径写明入组规则ID、入口、出口和返回公共模块的题号。entry必须为该分支专属模块的第一道题，不能填公共甄别题S3；不同分支题目范围不可重叠。entry/exit/next每项只能是一个实际题号，不能写斜杠拼接或备选题号。潜在人群不能直接复用现有者资格；定义未确认时保持待确认，不编造路径。整体样本量或组间重叠等quota规则可使用空questionIds，其余规则必须关联实际题号。没有合格路径与配额已满须区分。",
       "一道题只测一个维度。科学性与有效性、信息来源与购买渠道分别测。加盐时机使用烹饪中/出锅前/餐桌上等时点选项，不得套用多少量表；用量、频次和时机不得混在同一矩阵响应量表。",
       "量表行与端点逐行匹配，补齐不知道/不适用并置底；不把不知道并入中间分。单选选项互斥；多选的以上均无、没有评估、拒答等与实质选项排他。实际采取的行为先完整记录，再另问最常用/最重要，不用限选替代发生率。",
       "客观认知先于解释与概念展示，不问受访者是否混淆来代替理解测量。未经客户提供依据，不得宣称产品有效降低指标、已有报告/认证或无负担；假设概念明确标注假设，不添加虚构证据和价格。",
@@ -50,7 +50,7 @@
       ['共同分群维度', /细分|分群/, [ /动机|原因|目的/, /过去.{0,12}(周|月|天)|频次/, /停止|间歇|持续/, /障碍|困难|痛点/, /家庭|家人|角色/, /取舍|权衡/ ]],
       ['阶段与放弃', /阶段|放弃|失败尝试/, [/停止|放弃|间歇/, /原因|重启/]],
       ['真实烹饪场景', /烹饪|食谱|食材/, [/最近一次/, /菜品|食材/, /设备|工具/, /步骤|过程/, /分钟/]],
-      ['标签认知链', /标签|标识/, [/听说|知晓/, /以下.{0,15}(含义|说法)|您认为.{0,15}是指/, /信任|可信/, /选择|购买/]],
+      ['标签认知链', /标签|标识/, [/听说|知晓/, /以下.{0,15}(含义|说法)|您认为.{0,30}(是指|同一个意思|区别)/, /信任|可信/, /选择|购买/]],
       ['高鲜感官标准', /高鲜/, [/鲜味|鲜香/, /描述|标准|什么样/]],
       ['时间基线与取舍', /时间.{0,15}(缩短|增加|接受)|最长时间|最短时间|相对比例/, [/目前|通常|当前/, /分钟/, /最长|最短|最多|最少/]],
       ['概念比较', /概念|技术.{0,10}接受|方案.{0,10}接受/, [/概念描述|假设产品/, /规格|容量|产品形态/, /使用场景|适用/, /限制|代价/, /可信|信任/, /独特/, /购买意向|购买可能|购买.{0,6}意愿/]],
@@ -78,7 +78,7 @@
       }[metric];
       const eligible = questions.filter(q => !scope || scope.test(textOf(q)));
       const satisfies = (q, re, index) => {
-        if (metric === '高鲜感官标准' && index === 1) return /描述|标准|什么样|怎样|哪些感受/.test(q.title);
+        if (metric === '高鲜感官标准' && index === 1) return /描述|标准|定义|什么样|怎样|哪些感受/.test(q.title);
         if (metric === '阶段与放弃' && index === 1) return /停止|放弃|重启|失败/.test(textOf(q)) && /原因|为什么|条件/.test(q.title);
         return re.test(textOf(q));
       };
@@ -250,7 +250,7 @@
     if (parsed.value) {
       const ruleIds = new Set();
       for (const rule of parsed.value.rules) {
-        if (!rule || typeof rule !== "object" || typeof rule.id !== "string" || !/^[A-Za-z][\w-]*$/.test(rule.id) || !["eligibility", "quota", "segment", "quality"].includes(rule.kind) || !["confirmed", "proposed", "pending"].includes(rule.status) || !Array.isArray(rule.questionIds) || !rule.questionIds.length || !clean(rule.condition)) {
+        if (!rule || typeof rule !== "object" || typeof rule.id !== "string" || !/^[A-Za-z][\w-]*$/.test(rule.id) || !["eligibility", "quota", "segment", "quality"].includes(rule.kind) || !["confirmed", "proposed", "pending"].includes(rule.status) || !Array.isArray(rule.questionIds) || (!rule.questionIds.length && rule.kind !== "quota") || !clean(rule.condition)) {
           add("RULE_SCHEMA", "error", null, "样本条件记录不完整", JSON.stringify(rule), "补齐规则ID、用途、状态、条件和关联题号。"); continue;
         }
         if (ruleIds.has(rule.id)) add("DUPLICATE_RULE", "error", null, "规则ID重复", rule.id, "规则ID必须唯一。");
@@ -261,6 +261,7 @@
         rules.push(normalized);
         if (rule.status === "confirmed" && !sourceVerified) add("UNSUPPORTED_RULE", "error", normalized.questionIds.join("、"), "已确认条件找不到真实原文依据", rule.condition, "引用需求/目标人群/用户修改要求中的原文，或降为待确认，取消硬性终止。");
         if (rule.status !== "confirmed" && rule.kind === "eligibility") add("PENDING_ELIGIBILITY", "pending", normalized.questionIds.join("、"), "入组条件尚未确认", rule.condition, "明确是否纳入、排除及对应门槛；确认前不执行硬筛选。");
+        if (rule.kind === "quota" && rule.status !== "confirmed") add("QUOTA_PENDING", "pending", normalized.questionIds.join("、"), "配额规则尚未确认", rule.condition, "确认配额或组间重叠口径后再启用配额控制。");
         for (const id of normalized.questionIds) if (!ids.has(id)) add("RULE_QUESTION_MISSING", "error", id, "条件引用的题目不存在", rule.id, "修正规则关联题号。");
       }
       const routeIds = new Set();
@@ -279,6 +280,16 @@
         }
       }
       if (!rules.some((r) => r.kind === "eligibility")) add("ELIGIBILITY_MISSING", "pending", null, "未记录研究对象的入组定义", config.audience, "将研究对象定义拆成可核实条件，并标注来源；未明确的部分保持待确认。");
+    }
+    for (let i = 0; i < routes.length; i++) {
+      const a = routes[i];
+      const start = questions.findIndex(q => q.id === clean(a.entry).toUpperCase());
+      const end = questions.findIndex(q => q.id === clean(a.exit).toUpperCase());
+      for (const b of routes.slice(i + 1)) {
+        const otherStart = questions.findIndex(q => q.id === clean(b.entry).toUpperCase());
+        const otherEnd = questions.findIndex(q => q.id === clean(b.exit).toUpperCase());
+        if (start >= 0 && end >= start && otherStart >= 0 && otherEnd >= otherStart && start <= otherEnd && otherStart <= end) add("ROUTE_OVERLAP", "error", a.entry, "分支题目范围重叠", `${a.id}: ${a.entry}—${a.exit}；${b.id}: ${b.entry}—${b.exit}`, "入口应为各分支专属题，公共甄别题不能作为分支入口；共享同一题段的规则应合并为一条路径。");
+      }
     }
     for (const route of routes) {
       const nextIndex = questions.findIndex((q) => q.id === clean(route.next).toUpperCase());

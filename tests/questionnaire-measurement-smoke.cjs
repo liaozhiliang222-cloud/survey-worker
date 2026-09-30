@@ -54,3 +54,8 @@ test('generic motivation and concept prose cannot fill abandonment and sensory g
   assert.ok(result.coverage.find(x => x.metric === '阶段与放弃').gaps.includes('放弃或重启原因'));
   assert.ok(result.coverage.find(x => x.metric === '高鲜感官标准').gaps.includes('受访者描述或标准'));
 });
+test('natural objective label and sensory definition wording are recognized', () => {
+  const result=quality.audit('C1. 您认为控盐和无盐是同一个意思吗？\n单选题\nC2. 您对高鲜的具体定义是什么？\n鲜味自然、鲜而不咸', {brief:'标签认知与高鲜感官标准'});
+  assert.ok(!result.coverage.find(x=>x.metric==='标签认知链').gaps.includes('客观理解题'));
+  assert.ok(!result.coverage.find(x=>x.metric==='高鲜感官标准').gaps.includes('受访者描述或标准'));
+});

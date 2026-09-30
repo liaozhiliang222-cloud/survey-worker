@@ -122,3 +122,17 @@ test('self-rated confusion and failed revisions remain actionable', () => {
   assert.ok(codes(result).has('SELF_RATED_KNOWLEDGE'));
   assert.ok(codes(result).has('REVISION_NOT_APPLIED'));
 });
+test('global quotas may omit question IDs, while unresolved quotas remain pending', () => {
+  const contract = structuredClone(fixtures.contract);
+  contract.rules.push({id:'Q_TOTAL',kind:'quota',status:'confirmed',condition:'研究总配额',questionIds:[],source:{field:'brief',quote:fixtures.brief}});
+  let result=quality.audit(fixtures.withContract(undefined,contract),config);
+  assert.ok(!result.issues.some(x=>x.code==='RULE_SCHEMA'));
+  contract.rules[1].status='pending';
+  result=quality.audit(fixtures.withContract(undefined,contract),config);
+  assert.ok(result.issues.some(x=>x.code==='QUOTA_PENDING'));
+});
+test('shared screener entries are flagged as overlapping branch ranges', () => {
+  const contract=structuredClone(fixtures.contract);
+  contract.routes=[{id:'A',ruleIds:['R_SALT'],entry:'S1',exit:'D1',next:'E1'},{id:'B',ruleIds:['R_SALT'],entry:'S1',exit:'D2',next:'E1'}];
+  assert.ok(quality.audit(fixtures.withContract(undefined,contract),config).issues.some(x=>x.code==='ROUTE_OVERLAP'));
+});
