@@ -25,4 +25,7 @@ for (const tag of html.matchAll(/<script\b[^>]*>/g)) {
   }
 }
 assert.ok(count >= 2, "Expected classic app export and parser imports");
+for (const relative of ['driver-core.js', 'driver-analysis-ui.js', 'driver-lmg.js', 'driver-lmg-worker.js', 'driver-lmg-ui.js', 'src/shared/driver-import.mjs', 'src/shared/vendor/spss-reader.mjs']) {
+  assert.equal(fs.readFileSync(path.join(root, 'dist', relative), 'utf8'), fs.readFileSync(path.join(root, relative), 'utf8'), `Driver runtime asset must remain source-hosting compatible: ${relative}`);
+}
 console.log(`Production build runtime modules passed: ${count} imports retain their exact URLs`);

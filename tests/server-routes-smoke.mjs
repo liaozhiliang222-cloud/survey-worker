@@ -90,6 +90,11 @@ const child = spawn(process.execPath, ["server.js"], {
 
 try {
   await waitForReady(child);
+  for (const asset of ['src/shared/driver-import.mjs', 'src/shared/vendor/spss-reader.mjs']) {
+    const response = await fetch(`http://127.0.0.1:${appPort}/${asset}`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type'), /javascript/);
+  }
 
   const appHealth = await fetch(`http://127.0.0.1:${appPort}/healthz`);
   assert.equal(appHealth.status, 200);

@@ -781,6 +781,7 @@ function activateWorkspaceProject(projectId) {
 }
 
 function resetWorkspaceRuntimeState() {
+  window.DriverAnalysisUI?.reset();
   bindQuestionnaireProject(workspaceProject?.id);
   lastCrosstabDataContext = null;
   lastWeightingResult = null;
@@ -2193,11 +2194,22 @@ function savToDelimitedTableText(arrayBuffer) {
         encodedText.push({ bytes: bytes.slice(offset, offset + labelLength), recordIndex: records.length });
         offset += labelLength + savPad(labelLength, 4);
       }
+      let missing = { kind: "none" };
+      if (missingCount && variableType >= 0) {
+        const values = Array.from({ length: Math.abs(missingCount) }, (_, i) => variableType === 0
+          ? view.getFloat64(offset + i * 8, littleEndian)
+          : decodeSavText(bytes.slice(offset + i * 8, offset + (i + 1) * 8)).trim());
+        missing = variableType > 0 ? { kind: "strings", values }
+          : missingCount > 0 ? { kind: "discrete", values }
+          : missingCount === -2 ? { kind: "range", lo: values[0], hi: values[1] }
+          : { kind: "range+discrete", lo: values[0], hi: values[1], value: values[2] };
+      }
       offset += Math.abs(missingCount) * 8;
       records.push({
         type: variableType,
         name,
         label,
+        missing,
         valueLabels: new Map()
       });
     } else if (recordType === 3) {
@@ -2312,6 +2324,8 @@ function savToDelimitedTableText(arrayBuffer) {
       sourceHeader: variable.name,
       longName: longVariableNames.get(variable.name.toLowerCase()) || variable.name,
       variableLabel: resolvedLabel,
+      missing: variable.missing,
+      type: variable.type === 0 ? "numeric" : "string",
       source: variable.name,
       title,
       parentTitle,
@@ -6619,6 +6633,7 @@ async function exportQuestionPivot(onProgress) {
 }
 
 function detectCrosstabFields() {
+  window.DriverAnalysisUI?.markProjectSamples();
   const parsed = parseDelimitedTable(document.querySelector("#crosstabData").value);
   fillSelectOptions("#crosstabRowVar", parsed.headers);
   fillSelectOptions("#crosstabColVar", parsed.headers);
@@ -6982,13 +6997,17 @@ async function exportResearchModelPptx(modelType, data, filename, button) {
       throw new Error(message);
     }
     const blob = await response.blob();
+    if (modelType === "driver" && data !== lastDriverAnalysis) {
+      showToast("分析设置已变更，本次导出已取消，请重新分析后导出。", "warning");
+      return;
+    }
     downloadBlob(filename, blob);
     showToast("已导出单页可编辑图表 PPT。");
   } catch (error) {
     showToast(error.message || "研究模型 PPTX 导出失败", "warning");
   } finally {
     if (button) {
-      button.disabled = false;
+      button.disabled = modelType === "driver" && (!lastDriverAnalysis?.hasWeights || window.DriverLMGUI?.isRunning());
       button.textContent = originalText;
     }
   }
@@ -18019,10 +18038,8 @@ async function handleResearchModelExcelImport(file, model) {
     runPsmAnalysis();
     detail = `${values.length} 行 PSM 数据`;
   } else if (model === "driver") {
-    const rows = (worksheetByName(sheets, /^data$|数据/i) || sheets[0]).rows;
-    document.querySelector("#driverData").value = rowsToCsvText(rows);
-    renderDriverAnalysis();
-    detail = `${Math.max(0, rows.length - 1)} 行驱动分析数据`;
+    window.DriverAnalysisUI?.loadWorkbook(sheets.map(s => ({ name: s.name, headers: s.rows[0], rows: s.rows.slice(1) })), file.name);
+    detail = "驱动分析数据，请确认分析变量";
   } else if (model === "turf") {
     const rows = (worksheetByName(sheets, /^data$|数据/i) || sheets[0]).rows;
     document.querySelector("#turfData").value = rowsToCsvText(rows);
@@ -18134,106 +18151,28 @@ document.querySelector("#loadMaxDiffResponsesExample").addEventListener("click",
 // ═════════════ 关键驱动分析 (Key Driver Analysis) ═════════════
 let lastDriverAnalysis = null;
 
-function parseDriverData(text) {
-  const lines = text.trim().split(/\n/).filter((l) => l.trim());
-  if (lines.length < 3) return null;
-  const sep = lines[0].includes("\t") ? "\t" : ",";
-  const headers = lines[0].split(sep).map((h) => h.trim());
-  const rows = lines.slice(1).map((line) => line.split(sep).map((v) => parseFloat(v.trim())));
-  const valid = rows.filter((row) => row.length === headers.length && row.every((v) => Number.isFinite(v)));
-  if (valid.length < 3) return null;
-  return { headers, rows: valid, dvIndex: headers.length - 1 };
+function invalidateDriverAnalysis(message = "数据或设置已变更，请重新分析。") {
+  window.DriverLMGUI?.cancel();
+  lastDriverAnalysis = null;
+  projectDataBus.set("modelResults.driver", null);
+  document.querySelector("#exportDriverExcel").disabled = true;
+  document.querySelector("#exportDriverPptx").disabled = true;
+  document.querySelector("#driverResults").innerHTML = `<div class="empty-state"><strong>等待分析</strong><span>${escapeHtml(message)}</span></div>`;
 }
 
 function computeDriverAnalysis(data) {
-  const { headers, rows, dvIndex } = data;
-  const ivNames = headers.filter((_, i) => i !== dvIndex);
-  const dvName = headers[dvIndex];
-  const n = rows.length;
-  const k = ivNames.length;
-  // 提取矩阵
-  const X = rows.map((row) => row.filter((_, i) => i !== dvIndex));
-  const y = rows.map((row) => row[dvIndex]);
-  // 标准化
-  const meanX = Array.from({ length: k }, (_, j) => X.reduce((s, r) => s + r[j], 0) / n);
-  const sdX = Array.from({ length: k }, (_, j) => Math.sqrt(X.reduce((s, r) => s + (r[j] - meanX[j]) ** 2, 0) / (n - 1)));
-  const meanY = y.reduce((s, v) => s + v, 0) / n;
-  const sdY = Math.sqrt(y.reduce((s, v) => s + (v - meanY) ** 2, 0) / (n - 1));
-  const Zx = X.map((row) => row.map((v, j) => sdX[j] ? (v - meanX[j]) / sdX[j] : 0));
-  const Zy = y.map((v) => sdY ? (v - meanY) / sdY : 0);
-  // OLS: beta = (X'X)^-1 X'y
-  const XtX = Array.from({ length: k }, () => Array(k).fill(0));
-  const Xty = Array(k).fill(0);
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < k; j++) {
-      Xty[j] += Zx[i][j] * Zy[i];
-      for (let m = 0; m < k; m++) XtX[j][m] += Zx[i][j] * Zx[i][m];
-    }
-  }
-  // Gauss-Jordan 求逆
-  const aug = XtX.map((row, i) => [...row, ...Array.from({ length: k }, (_, m) => (i === m ? 1 : 0))]);
-  for (let col = 0; col < k; col++) {
-    let maxRow = col;
-    for (let row = col + 1; row < k; row++) if (Math.abs(aug[row][col]) > Math.abs(aug[maxRow][col])) maxRow = row;
-    [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
-    const pivot = aug[col][col] || 1e-10;
-    for (let j = 0; j < 2 * k; j++) aug[col][j] /= pivot;
-    for (let row = 0; row < k; row++) {
-      if (row === col) continue;
-      const factor = aug[row][col];
-      for (let j = 0; j < 2 * k; j++) aug[row][j] -= factor * aug[col][j];
-    }
-  }
-  const inv = aug.map((row) => row.slice(k));
-  const beta = inv.map((row) => row.reduce((s, v, j) => s + v * Xty[j], 0));
-  // R²
-  const yHat = Zx.map((row) => row.reduce((s, v, j) => s + v * beta[j], 0));
-  const ssRes = Zy.reduce((s, v, i) => s + (v - yHat[i]) ** 2, 0);
-  const ssTot = Zy.reduce((s, v) => s + v * v, 0);
-  const r2 = ssTot ? 1 - ssRes / ssTot : 0;
-  // 相对重要性（标准化系数的绝对值占比）
-  const absBeta = beta.map((b) => Math.abs(b));
-  const totalAbs = absBeta.reduce((s, v) => s + v, 0) || 1;
-  const importance = absBeta.map((v) => v / totalAbs);
-  // 均值（原始尺度）
-  const ivMeans = meanX;
-  const results = ivNames.map((name, i) => ({
-    name, beta: beta[i], importance: importance[i], mean: ivMeans[i]
-  })).sort((a, b) => b.importance - a.importance);
-  return { results, r2, n, k, dvName, ivMeans };
+  return window.DriverCore.analyze(data);
 }
 
 function renderDriverAnalysis() {
-  const text = document.querySelector("#driverData").value;
-  const result = document.querySelector("#driverResults");
-  const data = parseDriverData(text);
-  if (!data) {
-    result.innerHTML = `<div class="empty-state"><strong>数据格式错误</strong><span>请确保至少 3 行数据，最后一列为因变量。</span></div>`;
-    return;
-  }
-  const analysis = computeDriverAnalysis(data);
+  window.DriverLMGUI?.run();
+}
+
+function publishDriverLmgResult(analysis, running = false) {
   lastDriverAnalysis = analysis;
-  projectDataBus.set("modelResults.driver", analysis, { type: "关键驱动", factors: analysis.k, r2: analysis.r2 });
-  document.querySelector("#exportDriverExcel").disabled = false;
-  document.querySelector("#exportDriverPptx").disabled = false;
-  const maxImp = Math.max(...analysis.results.map((r) => r.importance));
-  const barChart = analysis.results.map((r) => {
-    const pct = (r.importance * 100).toFixed(1);
-    const barW = Math.round((r.importance / maxImp) * 200);
-    return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="width:100px;text-align:right;font-size:12px">${escapeHtml(r.name)}</span><div style="height:18px;width:${barW}px;background:var(--accent);border-radius:3px"></div><span style="font-size:12px;color:var(--muted)">${pct}%</span></div>`;
-  }).join("");
-  const tableRows = analysis.results.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.name)}</td><td>${r.beta.toFixed(3)}</td><td>${(r.importance * 100).toFixed(1)}%</td><td>${r.mean.toFixed(2)}</td></tr>`).join("");
-  result.innerHTML = `
-    <article class="audit-issue">
-      <div class="issue-head"><strong>关键驱动分析结果</strong><span class="issue-tag low">R²=${analysis.r2.toFixed(3)} · N=${analysis.n} · 因变量: ${escapeHtml(analysis.dvName)}</span></div>
-      <div style="margin:12px 0">${barChart}</div>
-      <table style="width:100%;font-size:13px;border-collapse:collapse">
-        <thead><tr><th>#</th><th>维度</th><th>标准化系数</th><th>相对重要性</th><th>均值</th></tr></thead>
-        <tbody>${tableRows}</tbody>
-      </table>
-      <p style="font-size:12px;color:var(--muted);margin-top:8px">解读：重要性表示该维度对「${escapeHtml(analysis.dvName)}」的相对贡献；均值为当前表现。重要性高且均值低的维度是优先改进方向。</p>
-    </article>`;
-  markWorkspaceStatus("models");
+  projectDataBus.set("modelResults.driver", analysis, { type: analysis.method, factors: analysis.k, r2: analysis.r2 });
+  document.querySelector("#exportDriverExcel").disabled = running;
+  document.querySelector("#exportDriverPptx").disabled = running || !analysis.hasWeights;
 }
 
 const exampleDriverData = `产品质量,价格合理性,售后服务,品牌形象,购买便利,总体满意度
@@ -18256,16 +18195,14 @@ const exampleDriverData = `产品质量,价格合理性,售后服务,品牌形�
 document.querySelector("#runDriverAnalysis").addEventListener("click", renderDriverAnalysis);
 document.querySelector("#loadDriverExample").addEventListener("click", () => {
   document.querySelector("#driverData").value = exampleDriverData;
-  renderDriverAnalysis();
+  window.DriverAnalysisUI?.loadText(exampleDriverData, "示例数据");
 });
 document.querySelector("#exportDriverExcel").addEventListener("click", () => {
-  if (!lastDriverAnalysis) return;
-  const rows = [["关键驱动分析"], ["R²", lastDriverAnalysis.r2.toFixed(4)], ["N", lastDriverAnalysis.n], ["因变量", lastDriverAnalysis.dvName], [], ["#", "维度", "标准化系数", "相对重要性", "均值"]];
-  lastDriverAnalysis.results.forEach((r, i) => rows.push([i + 1, r.name, r.beta.toFixed(4), (r.importance * 100).toFixed(1) + "%", r.mean.toFixed(2)]));
-  downloadExcelFromRows("关键驱动分析.xlsx", rows);
+  window.DriverLMGUI?.exportExcel();
 });
 document.querySelector("#exportDriverPptx").addEventListener("click", (event) => {
-  exportResearchModelPptx("driver", lastDriverAnalysis, "关键驱动分析.pptx", event.currentTarget);
+  if (!lastDriverAnalysis?.hasWeights) return;
+  exportResearchModelPptx("driver", lastDriverAnalysis, lastDriverAnalysis.exploratory ? "关键驱动分析_探索性结果.pptx" : "关键驱动分析.pptx", event.currentTarget);
 });
 
 // ═════════════ TURF 分析 ═════════════

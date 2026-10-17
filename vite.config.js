@@ -14,6 +14,9 @@ const runtimeFiles = [
   "src/shared/export.js",
   "src/shared/excel-export-worker.js",
   "src/shared/file-parser.js",
+  "src/shared/driver-import.mjs",
+  "src/shared/vendor/spss-reader.mjs",
+  "src/shared/vendor/datareader-spss-LICENSE",
   "research-theme.js",
   "ai-plan-quality.js",
   "questionnaire-quality.js",
@@ -29,6 +32,11 @@ const runtimeFiles = [
   "crosstab-model-ui.js",
   "indicator-weighting.js",
   "indicator-weighting-ui.js",
+  "driver-core.js",
+  "driver-analysis-ui.js",
+  "driver-lmg.js",
+  "driver-lmg-ui.js",
+  "driver-lmg-worker.js",
   "cluster-core.js",
   "cluster-worker.js",
   "cluster-analysis.js",
@@ -129,6 +137,7 @@ export default defineConfig(({ mode }) => {
   },
   server: {
     port: 4281,
+    watch: { ignored: ['**/.data/**', '**/test-results/**', '**/playwright-report/**', '**/*.crdownload'] },
     proxy: {
       "/pptx-api": {
         target: "http://127.0.0.1:8000",

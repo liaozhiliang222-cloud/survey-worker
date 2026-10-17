@@ -15,6 +15,10 @@
     raw.fields = raw.headers.map((h, i) => ({ id: h, label: infos.find(x => x.sourceHeader === h)?.optionLabel || infos.find(x => x.sourceHeader === h)?.parentTitle || d.headers[i] || h }));
     return raw;
   }
+  function modelData() {
+    const driver=root.DriverAnalysisUI;
+    return driver?.getDataset() || (driver && !driver.hasProjectSamples() ? {headers:[],rows:[],fields:[]} : data());
+  }
   function persist() {
     localStorage.setItem(`${KEY}:${projectKey()}`, JSON.stringify(state));
     projectDataBus.set(KEY, clone(state), { schemes: state.schemes.length });
@@ -250,28 +254,37 @@
     }catch(error){notice(error.message,true);}
   }
   function renderModels() {
-    const host=el('indicatorDriverPanel');if(!host)return;const d=data();
+    const host=el('indicatorDriverPanel');if(!host)return;const d=modelData();
     const settings=Object.fromEntries(Array.from(host.querySelectorAll('[id^=iwModel]')).filter(n=>n.matches('input,select')).map(n=>[n.id,n.value]));
-    host.innerHTML=`<h3>满意度分层加权</h3><p class="panel-note">复用交叉分析中导入的原始样本。每维度独立选择总体题Y和下属题X，使用非标准化B归一化；也可以直接在交叉分析导入现成权重。</p>
-      <p>当前数据：${d.rows.length}行、${d.headers.length}个字段。</p><div class="button-row"><button type="button" class="secondary-btn" data-jump="crosstab-analysis">前往交叉分析导入样本</button><button type="button" class="secondary-btn" id="iwAddModel">添加二级维度</button><button type="button" class="secondary-btn" id="iwModelsFromScheme">从当前权重方案建立维度</button></div>
+    host.innerHTML=`<h3>满意度分层加权</h3><p class="panel-note">使用本页导入的样本，或项目交叉分析中的样本。先添加维度，再选择该维度的总体题Y和下属题X，按非标准化B生成计分权重。</p>
+      <p>当前数据：${d.rows.length}行、${d.headers.length}个字段。</p><div class="button-row"><button type="button" class="secondary-btn" id="iwDriverUpload">在本页上传样本</button><button type="button" class="secondary-btn" id="iwAddModel">添加二级维度</button><button type="button" class="secondary-btn" id="iwModelsFromScheme">从当前权重方案建立维度</button></div>
       <div id="iwModelRows">${models.map((m,i)=>`<div class="iw-model" data-model-index="${i}"><label>二级指标名称<input data-model-prop="name" value="${esc(m.name)}"></label><label>本维度总体题Y<select data-model-prop="y">${selectOptions(d.fields,m.y,'请选择总体题')}</select></label><label>三级题X（可多选）<select multiple size="6" data-model-prop="xs">${d.fields.map(f=>`<option value="${esc(f.id)}" ${m.items.some(x=>x.field===f.id)?'selected':''}>${esc(f.id+' · '+f.label)}</option>`).join('')}</select></label><button type="button" class="secondary-btn mini" data-model-remove="${i}">移除此维度</button><details style="grid-column:1/-1"><summary>题目方向（默认高分更满意）</summary><label class="iw-choice"><input type="checkbox" data-model-prop="reverseY" ${m.yOptions?.reverse?'checked':''}>总体题Y反向计分</label><label>反向计分的三级题（可多选，只对已选X生效）<select multiple size="3" data-model-prop="reverseXs">${d.fields.map(f=>`<option value="${esc(f.id)}" ${m.items.some(x=>x.field===f.id&&x.reverse)?'selected':''}>${esc(f.id+' · '+f.label)}</option>`).join('')}</select></label></details></div>`).join('')}</div>
-      <div class="iw-grid"><label>建模筛选<input id="iwModelFilter" placeholder="例如Q6=1"></label><label>回归样本权重<select id="iwModelWeight">${selectOptions(d.fields)}</select></label><label>方案名称<input id="iwModelName" value="满意度回归权重"></label></div>
-      ${scaleControls('iwModel')}<p class="panel-note">量表、方向与缺失规则用于原始评分回归；表现方式和阈值用于后续交叉统计。质控题请勿选入X。</p>
+      <div class="button-row">${models.map((m,i)=>`<button type="button" class="secondary-btn mini" data-model-choose="${i}">弹窗选择 · ${esc(m.name)}</button>`).join('')}</div>
+      <details class="driver-advanced"><summary>高级设置：筛选、样本权重、量表与缺失值</summary><div class="iw-grid"><label>建模筛选<input id="iwModelFilter" placeholder="例如Q6=1"></label><label>回归样本权重<select id="iwModelWeight">${selectOptions(d.fields)}</select></label><label>方案名称<input id="iwModelName" value="满意度回归权重"></label></div>
+      ${scaleControls('iwModel')}<p class="panel-note">默认量表为 0–10 分。运行前请核对各题量表；范围不是根据样本最大最小值自动推断。表现方式和阈值用于后续交叉统计。</p></details>
       <div class="button-row"><button type="button" id="iwFitModels" class="primary-btn">计算各维度回归</button><button type="button" id="iwApplyModels" class="secondary-btn" disabled>保存权重并应用到交叉分析</button></div><div id="iwModelResults" aria-live="polite"></div>`;
     for(const [id,value] of Object.entries(settings))if(el(id))el(id).value=value;
   }
-  function readModels(){models=Array.from(el('iwModelRows').children).map(row=>{const i=Number(row.dataset.modelIndex);return {...models[i],name:row.querySelector('[data-model-prop="name"]').value.trim(),y:row.querySelector('[data-model-prop="y"]').value,yOptions:{...(models[i]?.yOptions||{}),reverse:row.querySelector('[data-model-prop="reverseY"]').checked},items:Array.from(row.querySelector('[data-model-prop="xs"]').selectedOptions).map(o=>({...(models[i]?.items.find(x=>x.field===o.value)||{}),field:o.value,reverse:Array.from(row.querySelector('[data-model-prop="reverseXs"]').selectedOptions).some(v=>v.value===o.value),label:data().fields.find(f=>f.id===o.value)?.label||o.value}))};});}
+  function readModels(){models=Array.from(el('iwModelRows')?.children||[]).map(row=>{const i=Number(row.dataset.modelIndex);return {...models[i],name:row.querySelector('[data-model-prop="name"]').value.trim(),y:row.querySelector('[data-model-prop="y"]').value,yOptions:{...(models[i]?.yOptions||{}),reverse:row.querySelector('[data-model-prop="reverseY"]').checked},items:Array.from(row.querySelector('[data-model-prop="xs"]').selectedOptions).map(o=>({...(models[i]?.items.find(x=>x.field===o.value)||{}),field:o.value,reverse:Array.from(row.querySelector('[data-model-prop="reverseXs"]').selectedOptions).some(v=>v.value===o.value),label:modelData().fields.find(f=>f.id===o.value)?.label||o.value}))};});}
+  function setModelVariables(selection,index=0) {
+    readModels();
+    const model=models[index]||{name:`维度${index+1}`,items:[]};
+    models[index]={...model,y:selection.y,items:selection.xs.map(field=>({...model.items.find(x=>x.field===field),field,label:modelData().fields.find(f=>f.id===field)?.label||field}))};
+    revision++;fitted=[];renderModels();
+  }
   async function modelClick(event){
     const b=event.target.closest('button');if(!b||busy)return;
     try{
       readModels();
+      if(b.id==='iwDriverUpload'){el('driverUpload')?.click();return;}
+      if(b.dataset.modelChoose!==undefined){const i=Number(b.dataset.modelChoose),m=models[i];root.DriverAnalysisUI.openVariables({y:m.y,xs:m.items.map(x=>x.field),onSave:s=>setModelVariables(s,i)});return;}
       if(b.id==='iwAddModel'){models.push({name:`维度${models.length+1}`,y:'',items:[]});renderModels();return;}
       if(b.dataset.modelRemove!==undefined){models.splice(Number(b.dataset.modelRemove),1);renderModels();return;}
       if(b.id==='iwModelsFromScheme'){const s=state.schemes.find(s=>s.id===state.active);if(!s)throw Error('请先在交叉分析选择方案。');models=clone(s.dimensions);renderModels();return;}
       if(b.id==='iwFitModels'){
         if(!models.length)throw Error('请先添加二级维度。');busy=true;b.disabled=true;fitted=[];el('iwApplyModels').disabled=true;
         const startedScope=projectKey(), startedRevision=revision, training={filter:el('iwModelFilter').value,weight:el('iwModelWeight').value,name:el('iwModelName').value,scope:projectKey()};
-        const d=data(),scale=readScale('iwModel'),rows=filterData(d,el('iwModelFilter').value),w=el('iwModelWeight').value;
+        const d=modelData(),scale=readScale('iwModel'),rows=filterData(d,el('iwModelFilter').value),w=el('iwModelWeight').value;
         el('iwModelResults').textContent='正在拟合各维度…';
         for(const model of models){try{const result=C.regress(rows,{...model,scale},w);result.dimension.diagnostics={...result,dimension:undefined};fitted.push({name:model.name,result});}catch(error){fitted.push({name:model.name,error:error.message});}await nextUiTick();if(startedScope!==projectKey()||startedRevision!==revision){fitted=[];throw Error('数据或建模设置已变更，请重新拟合。');}}
         el('iwModelResults').innerHTML=fitted.map((f,i)=>f.error?`<p class="iw-error">${esc(f.name)}：${esc(f.error)}</p>`:`<details open><summary><label><input type="checkbox" data-fit-index="${i}" ${f.result.usable?'checked':'disabled'}> ${esc(f.name)}</label> N=${f.result.n}，R²=${num(f.result.r2)}，排除${f.result.excluded}人</summary><p class="iw-error">${esc(f.result.warnings.join(' '))}</p><div class="table-wrap"><table><thead><tr><th>变量</th><th>B</th><th>Beta</th><th>标准误</th><th>t</th><th>p</th><th>VIF</th></tr></thead><tbody>${f.result.coefficients.map(c=>`<tr><td>${esc(c.field)}</td>${['B','beta','se','t','p','vif'].map(k=>`<td>${num(c[k])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>`).join('');
@@ -283,6 +296,13 @@
         const selected=Array.from(el('iwModelResults').querySelectorAll('input:checked')).map(i=>fitted[Number(i.dataset.fitIndex)]).filter(f=>f.result?.usable);
         if(!selected.length)throw Error('请勾选至少一个可用模型。');
         if(selected.some(f=>f.training.scope!==projectKey()))throw Error('项目已切换，请重新拟合。');
+        const imported=root.DriverAnalysisUI?.getDataset();
+        if(imported){
+          el('crosstabData').value=rowsToCsvText([imported.headers,...imported.rows.map(r=>imported.headers.map(h=>r[h]??''))]);
+          lastCrosstabDataContext={rawHeaders:imported.headers,displayHeaders:imported.headers,rawRows:imported.rows,displayRows:imported.rows,headerInfos:imported.fields.map(f=>({sourceHeader:f.id,title:f.label||f.id,variableLabel:f.label,options:Object.fromEntries(f.valueLabels.map(l=>[l.value,l.label]))}))};
+          crosstabSourceFilename=imported.fileName;
+          root.DriverAnalysisUI.markProjectSamples();
+        }
         addScheme({name:selected[0].training.name||'回归权重方案',dimensions:selected.map(f=>({...f.result.dimension,source:{...f.result.dimension.source,filter:f.training.filter}})),filter:selected[0].training.filter,sampleWeight:'',trainingWeight:selected[0].training.weight});
         document.querySelector('[data-view="crosstab-analysis"]')?.click();location.hash='crosstab-analysis';
       }
@@ -291,10 +311,13 @@
   el('indicatorWeightPanel')?.addEventListener('click',click);
   el('indicatorWeightPanel')?.addEventListener('change',change);
   el('indicatorDriverPanel')?.addEventListener('click',modelClick);
-  el('indicatorDriverPanel')?.addEventListener('change',event=>{if(!event.target.matches('[data-fit-index]')){revision++;el('iwApplyModels').disabled=true;}});
+  const invalidateModels=event=>{if(!event.target.matches('[data-fit-index]')){revision++;el('iwApplyModels').disabled=true;el('iwModelResults').textContent='建模设置已修改，请重新计算各维度回归。';}};
+  el('indicatorDriverPanel')?.addEventListener('change',invalidateModels);
+  el('indicatorDriverPanel')?.addEventListener('input',invalidateModels);
+  document.addEventListener('driverdatachange',()=>{revision++;models=[];fitted=[];if(el('indicatorDriverPanel'))el('indicatorDriverPanel').innerHTML='';renderModels();});
   projectDataBus.onChange(k=>{if(k==='__project__')restore(true);else if(k===KEY&&!localStorage.getItem(`${KEY}:${projectKey()}`)){const saved=projectDataBus.get(KEY);if(saved?.schemes){state=clone(saved);invalidate();render();}}});
   el('crosstabData')?.addEventListener('input',()=>{lastCrosstabDataContext=null;invalidate('样本数据已修改，请重新识别字段并计算。');el('iwApplyModels').disabled=true;});
-  root.IndicatorWeightUI={invalidate,sync(){restore();render();invalidate('样本数据已更新，请核对变量并重新计算。');renderModels();},getConfig:activeConfig,compute,workbookSheets,
+  root.IndicatorWeightUI={invalidate,setModelVariables,refreshModels(){readModels();renderModels();},sync(){restore();render();invalidate('样本数据已更新，请核对变量并重新计算。');renderModels();},getConfig:activeConfig,compute,workbookSheets,
     async buildSheets(plan){const result=await compute(plan);return workbookSheets(result);}};
   restore(true);
 })(window);

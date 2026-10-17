@@ -76,6 +76,7 @@ test('dimension regression saves B weights and invalidates after input edits',as
   await page.locator('[data-model-prop="xs"]').selectOption(['a','b']);
   await page.locator('#iwFitModels').click();await expect(page.locator('#iwApplyModels')).toBeEnabled();
   await expect(page.locator('#iwModelResults')).toContainText('N=30');
+  await page.locator('#indicatorDriverPanel .driver-advanced summary').click();
   await page.locator('#iwModelFilter').fill('a=1');await page.locator('#iwModelFilter').blur();
   await expect(page.locator('#iwApplyModels')).toBeDisabled();
   await page.locator('#iwModelFilter').fill('');await page.locator('#iwFitModels').click();
