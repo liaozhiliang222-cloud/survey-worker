@@ -2003,30 +2003,6 @@ label small {
   line-height: 1.6;
 }
 
-.cleaning-stepper {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
-.cleaning-stepper span {
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
-  background: #fff;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.cleaning-stepper span.active {
-  color: #075985;
-  border-color: #93c5fd;
-  background: #eaf3ff;
-}
-
 .cleaning-upload-zone {
   display: grid;
   place-items: center;
@@ -2166,7 +2142,6 @@ label small {
 }
 
 @media (max-width: 900px) {
-  .cleaning-stepper,
   .cleaning-kpi-grid,
   .cleaning-rule-controls {
     grid-template-columns: 1fr;
@@ -3852,6 +3827,10 @@ tbody tr.warn td {
     box-shadow: 4px 0 24px rgba(0,0,0,0.3);
   }
 
+  .sidebar .nav-item {
+    min-height: 44px;
+  }
+
   .sidebar-overlay {
     position: fixed;
     inset: 0;
@@ -4030,36 +4009,7 @@ tbody tr.warn td {
 }
 
 @media (max-width: 560px) {
-  .nav {
-    display: flex;
-    gap: 7px;
-  }
-
-  .nav-group {
-    display: flex;
-    gap: 7px;
-  }
-
-  .nav-group.collapsed .nav-group-items {
-    display: contents;
-  }
-
-  .nav-group-toggle {
-    display: none;
-  }
-
-  .nav-phase {
-    display: none;
-  }
-
-  .sidebar {
-    padding: 8px 10px 7px;
-  }
-
-  .brand {
-    margin-bottom: 7px;
-  }
-
+  /* 手机导航沿用 900px 以下的抽屉式竖向分组，这里不再覆盖 .nav / .nav-group / .nav-item。 */
   .content {
     padding: 16px 12px 22px;
   }
@@ -4080,12 +4030,6 @@ tbody tr.warn td {
 
   .ai-report-import-box .secondary-btn {
     width: 100%;
-  }
-
-  .nav-item {
-    min-height: 34px;
-    padding: 7px 11px;
-    font-size: 12px;
   }
 
   .workflow-grid {
@@ -7445,6 +7389,195 @@ tbody tr.warn td {
   #pptx-report .ai-report-workspace,
   #ai-report:not(.workflow-has-data) .ai-report-workspace {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 总览空项目：只显示项目库操作和“开始”区；点“新建项目”展开档案表单后恢复完整工作台（建议下一步、流程等）。 */
+.dashboard-workspace.is-blank:not(:has(.project-panel.form-expanded)) :is(.project-panel, .dashboard-focus-panel, .dashboard-sidebar, .dashboard-flow-panel, #workspaceDuplicateProject, #workspaceExportProject, #workspaceDeliveryPack, #workspaceDeleteProject) {
+  display: none;
+}
+
+/* 交叉表上传区：文件上传为主，粘贴为辅。 */
+.crosstab-dropzone {
+  margin-bottom: 14px;
+}
+
+.import-dropzone:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.45);
+  outline-offset: 2px;
+}
+
+.import-dropzone.has-file {
+  border-style: solid;
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.import-dropzone.has-file small {
+  color: #166534;
+}
+
+/* 长页面底部浮出的主操作栏，由 app.js 的 initStickyPageActions 生成。 */
+.page-action-bar {
+  position: fixed;
+  bottom: 16px;
+  box-sizing: border-box;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 10px 30px rgba(15, 42, 86, 0.14);
+  backdrop-filter: blur(6px);
+}
+
+.page-action-bar[hidden] {
+  display: none;
+}
+
+.page-action-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 560px) {
+  .page-action-bar {
+    bottom: 12px;
+  }
+
+  .page-action-bar .primary-btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* 右侧帮助说明抽屉，由 app.js 的 openHelpDrawer 生成。 */
+.help-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1090;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.help-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 92vw);
+  background: var(--soft);
+  box-shadow: -12px 0 36px rgba(15, 42, 86, 0.18);
+}
+
+.help-drawer[hidden],
+.help-drawer-overlay[hidden] {
+  display: none;
+}
+
+.help-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.help-drawer-head h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.help-drawer-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+}
+
+.help-drawer-body .guide-layout {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.help-drawer-body .guide-card {
+  padding: 16px;
+  box-shadow: none;
+}
+
+/* 不可用按钮的原因提示，由 app.js 的 syncDisabledReasonHints 生成。 */
+.disabled-reason-hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 手机工具页：顶栏已显示页面名，隐藏重复的面包屑并压缩标题卡；
+   步骤条只完整显示当前步骤，其余步骤保留编号，三步放在一行内。 */
+@media (max-width: 560px) {
+  .view > .module-context-bar {
+    display: none;
+  }
+
+  .view > .page-title {
+    margin-bottom: 12px;
+    padding: 10px 14px;
+  }
+
+  .view > .page-title .eyebrow {
+    display: none;
+  }
+
+  .view > .page-title h2 {
+    font-size: 20px;
+  }
+
+  .view > .page-title .title-with-help {
+    align-items: center;
+  }
+
+  .view > .page-title .title-with-help .model-help-btn {
+    margin-top: 0;
+    box-shadow: none;
+  }
+
+  .task-flow {
+    overflow: visible;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding: 6px;
+  }
+
+  .task-flow li {
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 6px;
+  }
+
+  .task-flow li > span {
+    width: 26px;
+    height: 26px;
+  }
+
+  .task-flow li:not([data-state="active"]) {
+    grid-template-columns: 26px;
+  }
+
+  .task-flow li:not([data-state="active"]) strong,
+  .task-flow li:not([data-state="active"]) small {
+    display: none;
+  }
+
+  .task-flow li[data-state="active"] {
+    flex: 1 1 auto;
+    grid-template-columns: 26px minmax(0, 1fr);
   }
 }
 

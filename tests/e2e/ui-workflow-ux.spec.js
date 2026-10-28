@@ -22,7 +22,7 @@ test("移动端历史报告保留恢复入口和新流程导航", async ({ page 
 test("交叉表区分识别、批量生成和当前变量分析", async ({ page }) => {
   await openView(page, "crosstab-analysis");
   await expect(page.locator("#crosstabConfigureStage")).toHaveAttribute("data-state", "locked");
-  await expect(page.locator("#runQuestionPivot")).toHaveText("生成全部题目表");
+  await expect(page.locator("#runQuestionPivot")).toHaveText("生成并下载全部题目表");
   await expect(page.locator("#runCrosstab")).toHaveText("生成当前两变量表");
   await expect(page.locator("#runQuestionPivot")).toHaveClass(/primary-btn/);
   await expect(page.locator("#runCrosstab")).toHaveClass(/secondary-btn/);

@@ -97,6 +97,19 @@ try {
   assert.match(await revisit.locator("#toastContainer").innerText(), /没有找到页面“#no-such-page”/);
   assert.equal(await activeView(), "overview");
   assert.match(await revisit.title(), /· SurveyKit 调研工具箱$/);
+
+  // 手机宽度：导航抽屉为竖向分组，菜单项不再被挤成逐字竖排的窄条。
+  await revisit.setViewportSize({ width: 375, height: 812 });
+  await revisit.click(".mobile-menu-btn");
+  await revisit.waitForFunction(() => document.querySelector(".sidebar")?.classList.contains("open"));
+  const drawer = await revisit.evaluate(() => {
+    const sidebar = document.querySelector(".sidebar");
+    const item = sidebar.querySelector('.nav-item[data-view="sample"]').getBoundingClientRect();
+    return { overflow: sidebar.scrollWidth - sidebar.clientWidth, itemWidth: item.width, itemHeight: item.height, phases: [...sidebar.querySelectorAll(".nav-phase")].filter((el) => el.offsetParent).length };
+  });
+  assert.ok(drawer.overflow <= 0, `drawer overflows by ${drawer.overflow}px`);
+  assert.ok(drawer.itemWidth >= 180 && drawer.itemHeight >= 44, `drawer item ${drawer.itemWidth}x${drawer.itemHeight}`);
+  assert.ok(drawer.phases >= 3, "drawer shows stage group titles");
   console.log(`first-load cache: repeat visit ${hits.length} network request(s), DOMContentLoaded ${dcl}ms with ${DELAY_MS}ms/request latency`);
 } finally {
   await browser.close();
