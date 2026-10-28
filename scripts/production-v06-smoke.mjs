@@ -1,10 +1,12 @@
+import { createResearchFetch } from "./lib/research-access.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 
 const base = String(process.env.SURVEYKIT_BASE_URL || "https://surveykit.cc").replace(/\/+$/, "");
+const researchFetch = createResearchFetch(base);
 
 async function jsonRequest(path, options = {}) {
-  const response = await fetch(base + path, options);
+  const response = await researchFetch(base + path, options);
   const text = await response.text();
   let payload = null;
   try { payload = text ? JSON.parse(text) : null; } catch { /* reported below */ }
@@ -92,7 +94,7 @@ try {
   assert.equal(response.payload.data.weighted, true);
   assert.ok(response.payload.data.excel_file_id);
 
-  const download = await fetch(`${base}${projectPath}/files/${encodeURIComponent(response.payload.data.excel_file_id)}/download`);
+  const download = await researchFetch(`${base}${projectPath}/files/${encodeURIComponent(response.payload.data.excel_file_id)}/download`);
   assert.equal(download.status, 200);
   const workbook = new Uint8Array(await download.arrayBuffer());
   assert.deepEqual([...workbook.slice(0, 2)], [0x50, 0x4b]);
@@ -104,7 +106,7 @@ try {
   console.log("excel_download=PASS");
 } finally {
   if (project) {
-    const cleanup = await fetch(`${base}/api/research/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" });
+    const cleanup = await researchFetch(`${base}/api/research/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" });
     console.log(`cleanup_status=${cleanup.status}`);
     if (cleanup.status !== 204) throw new Error(`production smoke cleanup failed with ${cleanup.status}`);
   }

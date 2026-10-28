@@ -91,6 +91,20 @@ const accessResolved = await resolveResearchIdentity(new Request("https://survey
 }), env, certFetch);
 assert.equal(accessResolved, "access-user-123");
 
+const serviceClaims = encode({
+  iss: "https://surveykit.cloudflareaccess.com", aud: ["surveykit-audience"],
+  sub: "", common_name: "smoke-client.access", exp: Math.floor(Date.now() / 1000) + 300,
+});
+const serviceUnsigned = `${header}.${serviceClaims}`;
+const serviceSignature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privateKey, new TextEncoder().encode(serviceUnsigned));
+const serviceToken = `${serviceUnsigned}.${Buffer.from(serviceSignature).toString("base64url")}`;
+assert.equal(await verifyAccessIdentity(new Request("https://surveykit.cc/api/research/projects", {
+  headers: { "Cf-Access-Jwt-Assertion": serviceToken },
+}), env, certFetch), "service:smoke-client.access");
+assert.equal(await verifyAccessIdentity(new Request("https://surveykit.cc/api/research/projects", {
+  headers: { "Cf-Access-Jwt-Assertion": serviceToken },
+}), { ...env, CLOUDFLARE_ACCESS_AUD: "wrong-audience" }, certFetch), "");
+
 const leaseExpression = source.match(/const\s+leaseMs\s*=\s*([^;]+);/)?.[1];
 assert.ok(leaseExpression, "project lock lease must be configured");
 assert.equal(

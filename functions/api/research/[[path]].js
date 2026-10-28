@@ -141,6 +141,9 @@ export async function verifyAccessClaims(request, env, fetchImpl = fetch) {
 export async function verifyAccessIdentity(request, env, fetchImpl = fetch) {
   const claims = await verifyAccessClaims(request, env, fetchImpl);
   if (!claims) return "";
+  // Access service-token JWTs have an empty sub and identify the client in common_name.
+  const serviceClient = clean(claims.common_name, 320);
+  if (serviceClient) return `service:${serviceClient}`;
   return clean(claims.sub, 320) || clean(claims.email, 320).toLowerCase();
 }
 // 登录入口由 Cloudflare Access 保护：能走到这里说明已登录，只需回到前端页面。仅接受站内 hash，避免开放重定向。

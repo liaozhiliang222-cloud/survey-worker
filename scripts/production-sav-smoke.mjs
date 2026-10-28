@@ -1,11 +1,13 @@
+import { createResearchFetch } from "./lib/research-access.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { SavWriter } from "savfilewriter";
 
 const base = String(process.env.SURVEYKIT_BASE_URL || "https://surveykit.cc").replace(/\/+$/, "");
+const researchFetch = createResearchFetch(base);
 
 async function jsonRequest(path, options = {}) {
-  const response = await fetch(base + path, options);
+  const response = await researchFetch(base + path, options);
   const text = await response.text();
   let payload = null;
   try { payload = text ? JSON.parse(text) : null; } catch { /* reported below */ }
@@ -121,7 +123,7 @@ try {
   console.log("raw_rows_in_ai_context=false");
 } finally {
   if (project) {
-    const cleanup = await fetch(`${base}/api/research/projects/${encodeURIComponent(project.id)}`, {
+    const cleanup = await researchFetch(`${base}/api/research/projects/${encodeURIComponent(project.id)}`, {
       method: "DELETE",
     });
     console.log(`cleanup_status=${cleanup.status}`);

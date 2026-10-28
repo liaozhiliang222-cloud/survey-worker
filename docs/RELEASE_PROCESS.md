@@ -59,6 +59,12 @@ sudo SURVEYKIT_RELEASE=<release-id> \
 npm run verify:production -- --release=<release-id>
 ```
 
+研究员接口的匿名检查必须返回 302，并跳转到 HTTPS 的 `*.cloudflareaccess.com` 登录页；直接返回项目 JSON 或返回其他错误均判为失败。检查器不会读取或输出匿名接口返回的项目内容。
+
+可同时设置 `CF_ACCESS_CLIENT_ID` 和 `CF_ACCESS_CLIENT_SECRET`，增加服务身份的 D1 检查；两者缺一会失败。先在 Access 应用中配置该凭据的 **Service Auth** 策略，不能使用 Bypass。`scripts/production-*-smoke.mjs` 同样支持这两个变量，且只向同源 `/api/research` 路径发送凭据，不跟随重定向。服务身份使用独立的 `service:<client-id>` 工作区。
+
+使用 `--revision=<完整 Git SHA>`（或 `SURVEYKIT_EXPECTED_REVISION`）同时核验 Web、AI、PPT 后端和代理的 revision。
+
 检查结果必须满足：
 
 - `/healthz` 返回 `surveykit-web`；

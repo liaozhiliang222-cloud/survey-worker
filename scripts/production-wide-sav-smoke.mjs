@@ -1,3 +1,4 @@
+import { createResearchFetch } from "./lib/research-access.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -5,11 +6,12 @@ import path from "node:path";
 import { readSseResponse } from "../src/modules/ai-researcher/stream.mjs";
 
 const base = String(process.env.SURVEYKIT_BASE_URL || "https://surveykit.cc").replace(/\/+$/, "");
+const researchFetch = createResearchFetch(base);
 const sourcePath = process.env.SURVEYKIT_SAV_FILE || process.argv[2];
 if (!sourcePath) throw new Error("Set SURVEYKIT_SAV_FILE or pass a real SAV path.");
 
 async function jsonRequest(route, options = {}, timeoutMs = 30_000) {
-  const response = await fetch(base + route, { ...options, signal: AbortSignal.timeout(timeoutMs) });
+  const response = await researchFetch(base + route, { ...options, signal: AbortSignal.timeout(timeoutMs) });
   const responseText = await response.text();
   let payload = null;
   try { payload = responseText ? JSON.parse(responseText) : null; } catch { /* reported below */ }
@@ -18,7 +20,7 @@ async function jsonRequest(route, options = {}, timeoutMs = 30_000) {
 }
 
 async function streamMessage(route, body) {
-  const response = await fetch(base + route, {
+  const response = await researchFetch(base + route, {
     method: "POST",
     headers: { Accept: "text/event-stream, application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -99,7 +101,7 @@ try {
   process.stdout.write(`${JSON.stringify({ production_wide_sav_smoke: "PASS", project_id: project.id, rows: dataset.row_count, columns: dataset.column_count, nps_field: "Q12__1", tool_calls: calls.map((item) => ({ tool_id: item.tool_id, status: item.status })), agent_result_count: agentResults.length, crosstab_result_id: crosstab.result.result_id, excel_file_id: crosstab.result.excel_file_id })}\n`);
 } finally {
   if (project) {
-    const cleanup = await fetch(`${base}/api/research/projects/${encodeURIComponent(project.id)}`, { method: "DELETE", signal: AbortSignal.timeout(30_000) });
+    const cleanup = await researchFetch(`${base}/api/research/projects/${encodeURIComponent(project.id)}`, { method: "DELETE", signal: AbortSignal.timeout(30_000) });
     process.stdout.write(`cleanup_status=${cleanup.status}\n`);
     if (cleanup.status !== 204) throw new Error(`production wide SAV smoke cleanup failed with ${cleanup.status}`);
   }

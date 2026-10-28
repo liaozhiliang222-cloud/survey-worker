@@ -1,11 +1,13 @@
+import { createResearchFetch } from "./lib/research-access.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { readSseResponse } from "../src/modules/ai-researcher/stream.mjs";
 
 const base = String(process.env.SURVEYKIT_BASE_URL || "https://surveykit.cc").replace(/\/+$/, "");
+const researchFetch = createResearchFetch(base);
 
 async function request(path, options = {}, timeoutMs = 30_000) {
-  const response = await fetch(base + path, { ...options, signal: AbortSignal.timeout(timeoutMs) });
+  const response = await researchFetch(base + path, { ...options, signal: AbortSignal.timeout(timeoutMs) });
   const text = await response.text();
   let payload = null;
   try { payload = text ? JSON.parse(text) : null; } catch { /* reported below */ }
@@ -14,7 +16,7 @@ async function request(path, options = {}, timeoutMs = 30_000) {
 }
 
 async function streamRequest(path, body, timeoutMs = 330_000) {
-  const response = await fetch(base + path, {
+  const response = await researchFetch(base + path, {
     method: "POST",
     headers: { Accept: "text/event-stream, application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -147,7 +149,7 @@ try {
   console.log("raw_transcript_chars_in_prompt=0");
 } finally {
   if (project) {
-    const cleanup = await fetch(`${base}/api/research/projects/${encodeURIComponent(project.id)}`, {
+    const cleanup = await researchFetch(`${base}/api/research/projects/${encodeURIComponent(project.id)}`, {
       method: "DELETE",
       signal: AbortSignal.timeout(30_000),
     });
