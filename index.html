@@ -23,6 +23,7 @@
       <header class="mobile-topbar">
         <button class="mobile-menu-btn" id="mobileMenuBtn" type="button" aria-label="打开菜单"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
         <strong>调研工具箱</strong>
+        <a class="mobile-topbar-project" id="mobileProjectChip" href="#overview" hidden></a>
       </header>
       <aside class="sidebar" id="appSidebar">
         <div class="brand">
@@ -31,13 +32,18 @@
             <h1>SurveyKit</h1>
             <p>调研工具箱</p>
           </div>
+          <button class="sidebar-close" id="sidebarClose" type="button" aria-label="关闭菜单"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </div>
 
         <nav class="nav" aria-label="工具导航">
           <div class="nav-utility" aria-label="工作区">
-            <button class="nav-item active" data-view="overview"><strong>总览</strong><small>项目与下一步</small></button>
-            <button class="nav-item" data-view="research"><strong>AI研究员</strong><small>项目协作与分析报告</small></button>
-            <button class="nav-item" data-view="settings"><strong>设置</strong><small>模型与系统配置</small></button>
+            <button class="nav-item active" data-view="overview"><strong>项目</strong><small id="navProjectName">项目工作台与下一步</small></button>
+            <button class="nav-item" data-view="research"><strong>AI 研究员</strong><small>项目协作 · 云端保存</small></button>
+          </div>
+          <div class="nav-library" role="search">
+            <label class="nav-library-label" for="navSearch">工具库</label>
+            <input class="nav-search" id="navSearch" type="search" placeholder="搜索工具，如 交叉表、KANO" autocomplete="off" />
+            <p class="nav-search-empty" hidden>没有匹配的工具</p>
           </div>
           <div class="nav-group" data-nav-phase="before">
             <button class="nav-group-toggle" type="button" aria-expanded="true">
@@ -49,12 +55,12 @@
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <div class="nav-group-items">
-              <button class="nav-item" data-view="sample">样本量计算</button>
-              <button class="nav-item" data-view="quota">配额设计</button>
-              <button class="nav-item" data-view="ai-plan">AI 方案设计</button>
-              <button class="nav-item" data-view="ai-assistant">AI 问卷设计</button>
-              <button class="nav-item" data-view="link-test">上线质检</button>
-              <button class="nav-item" data-view="time-estimate">时长估算</button>
+              <button class="nav-item" data-view="sample" data-keywords="样本 误差 置信">样本量计算</button>
+              <button class="nav-item" data-view="quota" data-keywords="配额 quota">配额设计</button>
+              <button class="nav-item" data-view="ai-plan" data-keywords="AI 方案 研究设计 免登录">AI 方案设计</button>
+              <button class="nav-item" data-view="ai-assistant" data-keywords="AI 问卷 题目 免登录">AI 问卷设计</button>
+              <button class="nav-item" data-view="link-test" data-keywords="质检 跳题 检查">上线质检</button>
+              <button class="nav-item" data-view="time-estimate" data-keywords="时长 答题时间">时长估算</button>
             </div>
           </div>
           <div class="nav-group collapsed" data-nav-phase="during">
@@ -67,10 +73,10 @@
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <div class="nav-group-items">
-              <button class="nav-item" data-view="cleaning-rules">数据清洗</button>
-              <button class="nav-item" data-view="data-weighting">数据加权</button>
-              <button class="nav-item" data-view="table-header">表头设计</button>
-              <button class="nav-item" data-view="crosstab-analysis">交叉表分析</button>
+              <button class="nav-item" data-view="cleaning-rules" data-keywords="清洗 剔除 质量">数据清洗</button>
+              <button class="nav-item" data-view="data-weighting" data-keywords="加权 权重 rim">数据加权</button>
+              <button class="nav-item" data-view="table-header" data-keywords="表头 banner">表头设计</button>
+              <button class="nav-item" data-view="crosstab-analysis" data-keywords="交叉表 crosstab 显著性 卡方">交叉表分析</button>
             </div>
           </div>
           <div class="nav-group collapsed" data-nav-phase="after">
@@ -83,10 +89,10 @@
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <div class="nav-group-items">
-              <button class="nav-item" data-view="pptx-report">PPT 报告生成</button>
+              <button class="nav-item" data-view="pptx-report" data-keywords="PPT 报告 图表">PPT 报告生成</button>
 
               <button class="nav-item" data-view="ai-workbench" style="display:none">AI 辅助面板</button>
-              <button class="nav-item" data-view="research-models">研究模型</button>
+              <button class="nav-item" data-view="research-models" data-keywords="研究模型 PSM 价格敏感度 KANO MaxDiff 关键驱动 TURF 联合分析 CBC 用户分群 聚类 ABC">研究模型</button>
               <button class="nav-item" data-view="psm" style="display:none">PSM 分析</button>
               <button class="nav-item" data-view="kano" style="display:none">KANO 分析</button>
               <button class="nav-item" data-view="maxdiff" style="display:none">MaxDiff</button>
@@ -97,18 +103,9 @@
               <button class="nav-item" data-view="cluster-analysis" style="display:none">用户分群分析</button>
             </div>
           </div>
-          <div class="nav-group collapsed" data-nav-phase="help">
-            <button class="nav-group-toggle" type="button" aria-expanded="false">
-              <span class="nav-phase">
-                <strong>?</strong>
-                <span>帮助</span>
-                <small>引导与常见问题</small>
-              </span>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-            <div class="nav-group-items">
-              <button class="nav-item" data-view="faq">常见问题 FAQ</button>
-            </div>
+          <div class="nav-utility nav-footer" aria-label="设置与帮助">
+            <button class="nav-item" data-view="settings"><strong>设置</strong><small>AI 模型接口</small></button>
+            <button class="nav-item" data-view="faq"><strong>常见问题</strong><small>使用帮助</small></button>
           </div>
         </nav>
       </aside>
@@ -118,7 +115,7 @@
         <section class="view active" id="overview">
           <div class="page-title">
             <div>
-             <p class="eyebrow">工作台</p>
+             <p class="eyebrow">项目</p>
               <h2>项目工作台</h2>
             </div>
             <button class="install-btn hidden" id="installButton">安装应用</button>
@@ -2899,6 +2896,7 @@
             <div>
               <p class="eyebrow">AI 增值 · 方案设计</p>
               <h2>AI 方案设计</h2>
+              <p class="page-title-note">免登录的快速工具，结果保存在当前浏览器。需要多轮协作、上传资料并在云端保存项目时，请使用 <a href="#research">AI 研究员</a>。</p>
             </div>
           </div>
 
@@ -3151,6 +3149,7 @@
             <div>
               <p class="eyebrow">AI 增值 · 问卷设计</p>
               <h2>AI 问卷设计</h2>
+              <p class="page-title-note">免登录的快速工具，结果保存在当前浏览器。需要多轮协作、上传资料并在云端保存项目时，请使用 <a href="#research">AI 研究员</a>。</p>
             </div>
           </div>
 

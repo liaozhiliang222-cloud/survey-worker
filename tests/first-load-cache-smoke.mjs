@@ -104,7 +104,8 @@ try {
   await revisit.waitForFunction(() => document.querySelector(".sidebar")?.classList.contains("open"));
   const drawer = await revisit.evaluate(() => {
     const sidebar = document.querySelector(".sidebar");
-    const item = sidebar.querySelector('.nav-item[data-view="sample"]').getBoundingClientRect();
+    // 抽屉只展开当前页面所在分组；这里在项目页，量一级入口“项目”。
+    const item = sidebar.querySelector('.nav-item[data-view="overview"]').getBoundingClientRect();
     return { overflow: sidebar.scrollWidth - sidebar.clientWidth, itemWidth: item.width, itemHeight: item.height, phases: [...sidebar.querySelectorAll(".nav-phase")].filter((el) => el.offsetParent).length };
   });
   assert.ok(drawer.overflow <= 0, `drawer overflows by ${drawer.overflow}px`);

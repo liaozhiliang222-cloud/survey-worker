@@ -473,11 +473,15 @@ function setNavigationGroupExpanded(group, expanded, persist = true) {
 
 function syncNavigationContext(targetId) {
   const activeItem = [...navItems].find((item) => item.dataset.view === targetId);
+  // PSM、KANO 等模型子页面的导航项是隐藏的，侧栏高亮它们的入口“研究模型”。
+  if (activeItem?.style.display === "none") {
+    [...navItems].find((item) => item.dataset.view === "research-models")?.classList.add("active");
+  }
   const activeGroup = activeItem?.closest(".nav-group");
   if (activeGroup) setNavigationGroupExpanded(activeGroup, true);
   const label = navigationItemLabel(activeItem) || "调研工具箱";
   const phase = activeGroup?.querySelector(".nav-phase > span")?.textContent?.trim()
-    || (targetId === "overview" ? "工作台" : "系统");
+    || (targetId === "overview" ? "项目" : "系统");
   const mobileTitle = document.querySelector(".mobile-topbar strong");
   if (mobileTitle) mobileTitle.textContent = label;
   document.title = `${label} · SurveyKit 调研工具箱`;
@@ -497,6 +501,69 @@ function syncNavigationContext(targetId) {
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${suffix}`);
   }
   return { label, phase };
+}
+
+// 当前项目名显示在侧栏“项目”、手机顶栏和各工具页的面包屑里，点击回到项目页切换。
+function syncCurrentProjectIndicators(projectName) {
+  const name = String(projectName || "").trim();
+  const navName = document.querySelector("#navProjectName");
+  if (navName) navName.textContent = name ? `当前：${name}` : "项目工作台与下一步";
+  const chip = document.querySelector("#mobileProjectChip");
+  if (chip) {
+    chip.hidden = !name;
+    chip.textContent = name;
+    chip.title = name ? `当前项目：${name}` : "";
+  }
+  document.querySelectorAll(".module-context-project").forEach((link) => {
+    link.hidden = !name;
+    link.textContent = name ? `当前项目：${name}` : "";
+  });
+}
+
+// 工具库搜索：按名称和 data-keywords 过滤，搜索时展开所有分组；回车打开第一个结果，Esc 清空。
+function initNavSearch() {
+  const input = document.querySelector("#navSearch");
+  const nav = input?.closest(".nav");
+  if (!input || !nav) return;
+  const empty = nav.querySelector(".nav-search-empty");
+  const groups = [...nav.querySelectorAll(".nav-group[data-nav-phase]")];
+  const apply = () => {
+    const query = input.value.trim().toLowerCase();
+    nav.classList.toggle("is-searching", Boolean(query));
+    let total = 0;
+    groups.forEach((group) => {
+      let count = 0;
+      group.querySelectorAll(".nav-group-items .nav-item").forEach((item) => {
+        if (item.style.display === "none") return;
+        const hit = !query || `${item.textContent} ${item.dataset.keywords || ""}`.toLowerCase().includes(query);
+        item.classList.toggle("search-miss", !hit);
+        if (hit) count += 1;
+      });
+      group.classList.toggle("search-miss", Boolean(query) && !count);
+      total += count;
+    });
+    if (empty) empty.hidden = !query || total > 0;
+  };
+  const clear = () => {
+    input.value = "";
+    apply();
+  };
+  input.addEventListener("input", apply);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && input.value) {
+      event.stopPropagation();
+      clear();
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const first = groups.flatMap((group) => [...group.querySelectorAll(".nav-group-items .nav-item")])
+        .find((item) => item.style.display !== "none" && !item.classList.contains("search-miss"));
+      if (!first || !input.value.trim()) return;
+      clear();
+      first.click();
+    }
+  });
+  nav.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", () => { if (input.value) clear(); }));
 }
 
 function initNavigationExperience() {
@@ -525,11 +592,12 @@ function initNavigationExperience() {
     bar.className = "module-context-bar";
     bar.innerHTML = `
       <button class="module-context-back" type="button" data-jump="overview" aria-label="返回项目工作台">
-        <span aria-hidden="true">←</span><span>工作台</span>
+        <span aria-hidden="true">←</span><span>项目</span>
       </button>
       <span class="module-context-separator" aria-hidden="true">/</span>
       <span class="module-context-stage">系统</span>
       <strong class="module-context-name">当前模块</strong>
+      <a class="module-context-project" href="#overview" hidden></a>
     `;
     view.insertBefore(bar, pageTitle);
   });
@@ -577,6 +645,7 @@ function handleUnknownViewHash(id) {
 }
 
 initNavigationExperience();
+initNavSearch();
 const initialViewFromHash = viewIdFromHash();
 if (isKnownView(initialViewFromHash)) {
   showView(initialViewFromHash);
@@ -602,12 +671,7 @@ function handleDashboardJumpAction(button) {
   const target = button.dataset.jump;
   if (action === "edit-project") {
     showView("overview");
-    const panel = document.querySelector(".project-panel");
-    panel?.classList.add("form-expanded");
-    const formToggle = document.querySelector("#toggleProjectForm");
-    formToggle?.setAttribute("aria-expanded", "true");
-    const toggleLabel = formToggle?.querySelector("span");
-    if (toggleLabel) toggleLabel.textContent = "收起项目档案";
+    const panel = expandProjectForm();
     window.setTimeout(() => {
       panel?.scrollIntoView({ block: "start", behavior: "smooth" });
       document.querySelector("#workspaceProjectName")?.focus({ preventScroll: true });
@@ -1187,6 +1251,7 @@ function renderWorkspaceProject() {
 
   // 空项目时只保留“开始”区，其余面板（档案、资产、流程等）由 CSS 隐藏，避免首屏堆满无内容的模块。
   document.querySelector(".dashboard-workspace")?.classList.toggle("is-blank", isBlankProject);
+  syncCurrentProjectIndicators(project.projectName);
   syncDisabledReasonHints();
   if (isBlankProject) {
     renderDashboardEmptyHero();
@@ -1322,6 +1387,25 @@ function markWorkspaceStatus(key, value = true) {
   renderWorkspaceProject();
 }
 
+function expandProjectForm() {
+  const panel = document.querySelector(".project-panel");
+  panel?.classList.add("form-expanded");
+  const formToggle = document.querySelector("#toggleProjectForm");
+  formToggle?.setAttribute("aria-expanded", "true");
+  const toggleLabel = formToggle?.querySelector("span");
+  if (toggleLabel) toggleLabel.textContent = "收起项目档案";
+  return panel;
+}
+
+// 空项目时项目档案区是收起的，从“开始”区导入问卷后要展开它，否则看不到预览和“确认导入”。
+function revealQuestionnaireImportPreview() {
+  const preview = document.querySelector("#questionnaireImportPreview");
+  if (!preview || preview.offsetParent) return;
+  expandProjectForm();
+  syncDisabledReasonHints();
+  preview.scrollIntoView({ block: "center" });
+}
+
 function createNewWorkspaceProject() {
   const project = normalizeWorkspaceProject({ projectName: "", studyType: "概念测试", stage: "调研前" });
   workspaceProject = upsertWorkspaceProject(project, "创建新项目");
@@ -1329,11 +1413,7 @@ function createNewWorkspaceProject() {
   fillWorkspaceProject(project);
   renderWorkspaceProject();
   showView("overview");
-  document.querySelector(".project-panel")?.classList.add("form-expanded");
-  const formToggle = document.querySelector("#toggleProjectForm");
-  formToggle?.setAttribute("aria-expanded", "true");
-  const toggleLabel = formToggle?.querySelector("span");
-  if (toggleLabel) toggleLabel.textContent = "收起项目档案";
+  expandProjectForm();
   syncDisabledReasonHints();
   document.querySelector("#workspaceProjectName")?.focus();
 }
@@ -2677,15 +2757,17 @@ function renderQuestionnaireImportPreview(text, filename = "已导入文件") {
   if (!pendingQuestionnaireImport) {
     applyButton.disabled = true;
     preview.innerHTML = `<strong>未识别到有效内容</strong><span>请检查文件内容是否为空，或是否为 DOCX / XLSX / Markdown / TXT / CSV 格式。</span>`;
+    revealQuestionnaireImportPreview();
     return;
   }
   const questions = parseQuestions(pendingQuestionnaireImport);
-  const optionLines = pendingQuestionnaireImport.split(/\r?\n/).filter((line) => /^[A-ZＡ-Ｚ]\s*[.．、]/i.test(line.trim())).length;
+  const optionCount = questions.reduce((total, question) => total + question.options.length, 0);
   applyButton.disabled = false;
   preview.innerHTML = `
     <strong>${escapeHtml(filename)}</strong>
-    <span>识别题量：${questions.length}；选项行：${optionLines}。预览：${escapeHtml(pendingQuestionnaireImport.slice(0, 120))}${pendingQuestionnaireImport.length > 120 ? "..." : ""}</span>
+    <span>识别题量：${questions.length}；选项：${optionCount} 个。预览：${escapeHtml(pendingQuestionnaireImport.slice(0, 120))}${pendingQuestionnaireImport.length > 120 ? "..." : ""}</span>
   `;
+  revealQuestionnaireImportPreview();
 }
 
 function renderDocumentImportStatus(targetId, message, failed = false) {
@@ -2770,6 +2852,7 @@ async function handleQuestionnaireImport(file, targetId = "") {
       <strong>导入失败</strong>
       <span>${escapeHtml(error.message || "文件解析失败，请尝试另存为 TXT 或 CSV 后导入。")}</span>
     `;
+    if (!targetId) revealQuestionnaireImportPreview();
     if (targetId) {
       renderDocumentImportStatus(targetId, `导入失败：${error.message || "文件读取失败，请重试。"}`, true);
       showButtonSaved(document.querySelector(`[data-import-target="${targetId}"]`), "导入失败");
@@ -14246,7 +14329,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     }
 
     async function readPptxApiError(resp, fallback) {
-      let msg = fallback || `请求失败（${resp.status}）`;
+      // 网关错误时服务本身没有返回说明，直接告诉用户是服务暂时连不上，而不是重复“解析失败”。
+      let msg = resp.status >= 502 ? `报告服务暂时连不上（${resp.status}），请稍后重试，已选的文件无需重新上传` : fallback || `请求失败（${resp.status}）`;
       try {
         const data = await resp.json();
         msg = data?.error?.message || data?.message || msg;
@@ -14373,7 +14457,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (previewBtn) previewBtn.disabled = segs.length === 0;
         if (previewPanel) { previewPanel.style.display = "none"; pagePlan = null; editedPagePlan = null; }
       } catch (err) {
-        parseStatus.textContent = "解析失败：" + err.message;
+        const message = err instanceof TypeError ? "网络连接中断，请检查网络后重试" : err.message;
+        parseStatus.textContent = "解析失败：" + message;
         parseBtn.disabled = false;
       }
     });
@@ -19350,6 +19435,10 @@ document.addEventListener("DOMContentLoaded", () => {
   menuBtn.setAttribute("aria-controls", "appSidebar");
   menuBtn.setAttribute("aria-expanded", "false");
   function openSidebar() {
+    // 手机抽屉只展开当前页面所在分组，其余收起，减少滚动；不写入桌面端保存的展开状态。
+    sidebar.querySelectorAll(".nav-group[data-nav-phase]").forEach((group) => {
+      setNavigationGroupExpanded(group, Boolean(group.querySelector(".nav-item.active")), false);
+    });
     sidebar.classList.add("open");
     overlay?.classList.add("active");
     document.body.classList.add("sidebar-open");
@@ -19365,6 +19454,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   menuBtn.addEventListener("click", () => sidebar.classList.contains("open") ? closeSidebar() : openSidebar());
   overlay?.addEventListener("click", closeSidebar);
+  document.querySelector("#sidebarClose")?.addEventListener("click", () => {
+    closeSidebar();
+    menuBtn.focus();
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && sidebar.classList.contains("open")) {
       closeSidebar();
