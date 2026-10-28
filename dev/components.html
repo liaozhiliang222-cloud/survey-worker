@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>组件样例 · SurveyKit</title>
+  <!-- 仅开发环境：npm run dev 后打开 /dev/components.html。构建只打包 index.html，本页不会上线。 -->
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    /* 本页自身的排版，不属于产品样式 */
+    .sample-page { max-width: 1080px; margin: 0 auto; padding: var(--space-6) var(--space-4); }
+    .sample-page > section { margin-bottom: var(--space-6); }
+    .sample-page h2 { margin: 0 0 var(--space-3); font-size: var(--text-xl); }
+    .sample-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+    .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--space-2); }
+    .swatch { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--white); font-size: var(--text-xs); }
+    .swatch i { display: block; height: 40px; }
+    .swatch span { display: block; padding: var(--space-1) var(--space-2); color: var(--gray-600); }
+    .type-scale p { margin: 0 0 var(--space-2); }
+    .sample-toasts .toast { position: static; opacity: 1; transform: none; margin-bottom: var(--space-2); }
+  </style>
+</head>
+<body>
+  <main class="sample-page">
+    <h1>组件样例</h1>
+    <p class="page-title-note">设计变量定义在 <code>styles.css</code> 顶部 <code>:root</code>。新样式只用变量，<code>npm run lint:css</code> 会拦截新增的写死颜色、字号和非标准圆角。</p>
+
+    <section>
+      <h2>颜色</h2>
+      <div class="swatches" id="swatches"></div>
+    </section>
+
+    <section class="type-scale">
+      <h2>字号（最小 12px）</h2>
+      <p style="font-size: var(--text-2xl)">28 · 页面标题</p>
+      <p style="font-size: var(--text-xl)">20 · 区块标题</p>
+      <p style="font-size: var(--text-lg)">16 · 卡片标题</p>
+      <p style="font-size: var(--text-md)">14 · 正文</p>
+      <p style="font-size: var(--text-sm)">13 · 表单与表格</p>
+      <p style="font-size: var(--text-xs)">12 · 辅助说明、标签</p>
+    </section>
+
+    <section>
+      <h2>按钮</h2>
+      <div class="sample-row">
+        <button class="primary-btn" type="button">主操作</button>
+        <button class="secondary-btn" type="button">次要操作</button>
+        <button class="primary-btn" type="button" disabled>不可用</button>
+      </div>
+      <p class="disabled-reason-hint">先导入数据</p>
+      <p class="page-title-note">每页一个主按钮；按 Tab 键可以看到焦点框（2px 品牌蓝）。</p>
+    </section>
+
+    <section>
+      <h2>表单</h2>
+      <div class="panel">
+        <label>
+          <span class="field-heading">项目名称 <span class="field-badge required">必填</span></span>
+          <input placeholder="例如：宠物饮水机调研" />
+        </label>
+        <label>
+          <span class="field-heading">客户 <span class="field-badge optional">选填</span></span>
+          <select><option>请选择</option></select>
+        </label>
+      </div>
+    </section>
+
+    <section>
+      <h2>导入区</h2>
+      <div class="import-dropzone" role="button" tabindex="0" aria-label="上传数据文件">
+        <div class="dropzone-inner">
+          <p>点击或拖拽数据文件到此处</p>
+          <small>支持 SAV、Excel（XLSX/XLS）、CSV、TXT</small>
+        </div>
+      </div>
+      <div class="import-dropzone has-file" role="button" tabindex="0" aria-label="更换数据文件">
+        <div class="dropzone-inner">
+          <p>点击或拖拽数据文件到此处</p>
+          <small>已导入《示例.csv》· 120 行 × 8 列</small>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>步骤条</h2>
+      <ol class="task-flow" aria-label="示例步骤">
+        <li data-state="completed"><span>1</span><strong>上传数据</strong><small>已导入 120 行</small></li>
+        <li data-state="active"><span>2</span><strong>生成规则</strong><small>进行中</small></li>
+        <li data-state="ready"><span>3</span><strong>调整阈值</strong><small>可以开始</small></li>
+        <li data-state="locked"><span>4</span><strong>执行清洗</strong><small>等待上一步</small></li>
+      </ol>
+    </section>
+
+    <section class="sample-toasts">
+      <h2>提示消息</h2>
+      <div class="toast toast-success"><span class="toast-icon">✓</span><span class="toast-message">已生成 3 题，已下载《交叉表.xlsx》</span></div>
+      <div class="toast toast-warning"><span class="toast-icon">!</span><span class="toast-message">有 2 列无法识别，已跳过</span></div>
+      <div class="toast toast-error"><span class="toast-icon">×</span><span class="toast-message">文件读取失败：请另存为 XLSX 后重试</span></div>
+      <div class="toast toast-info"><span class="toast-icon">i</span><span class="toast-message">数据只在本地浏览器中处理</span></div>
+    </section>
+  </main>
+  <script>
+    // 从样式表读取 :root 中的颜色变量生成色板，变量增删后本页自动同步。
+    const rootRule = [...document.styleSheets].flatMap((sheet) => { try { return [...sheet.cssRules]; } catch { return []; } })
+      .find((rule) => rule.selectorText === ":root");
+    const names = rootRule ? [...rootRule.style].filter((name) => /^--(brand|gray|white|success|warning|danger|info)/.test(name)) : [];
+    document.querySelector("#swatches").innerHTML = names.map((name) => {
+      const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return `<div class="swatch"><i style="background: var(${name})"></i><span>${name}<br>${value}</span></div>`;
+    }).join("");
+  </script>
+</body>
+</html>

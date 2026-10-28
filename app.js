@@ -473,14 +473,18 @@ function setNavigationGroupExpanded(group, expanded, persist = true) {
 
 function syncNavigationContext(targetId) {
   const activeItem = [...navItems].find((item) => item.dataset.view === targetId);
+  // PSM、KANO 等模型子页面的导航项是隐藏的，侧栏高亮它们的入口“研究模型”。
+  if (activeItem?.style.display === "none") {
+    [...navItems].find((item) => item.dataset.view === "research-models")?.classList.add("active");
+  }
   const activeGroup = activeItem?.closest(".nav-group");
   if (activeGroup) setNavigationGroupExpanded(activeGroup, true);
   const label = navigationItemLabel(activeItem) || "调研工具箱";
   const phase = activeGroup?.querySelector(".nav-phase > span")?.textContent?.trim()
-    || (targetId === "overview" ? "工作台" : "系统");
+    || (targetId === "overview" ? "项目" : "系统");
   const mobileTitle = document.querySelector(".mobile-topbar strong");
   if (mobileTitle) mobileTitle.textContent = label;
-  document.title = `${label} · 调研工具箱`;
+  document.title = `${label} · SurveyKit 调研工具箱`;
   document.querySelectorAll(".module-context-bar").forEach((bar) => {
     const view = bar.closest(".view");
     if (!view) return;
@@ -497,6 +501,69 @@ function syncNavigationContext(targetId) {
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${suffix}`);
   }
   return { label, phase };
+}
+
+// 当前项目名显示在侧栏“项目”、手机顶栏和各工具页的面包屑里，点击回到项目页切换。
+function syncCurrentProjectIndicators(projectName) {
+  const name = String(projectName || "").trim();
+  const navName = document.querySelector("#navProjectName");
+  if (navName) navName.textContent = name ? `当前：${name}` : "项目工作台与下一步";
+  const chip = document.querySelector("#mobileProjectChip");
+  if (chip) {
+    chip.hidden = !name;
+    chip.textContent = name;
+    chip.title = name ? `当前项目：${name}` : "";
+  }
+  document.querySelectorAll(".module-context-project").forEach((link) => {
+    link.hidden = !name;
+    link.textContent = name ? `当前项目：${name}` : "";
+  });
+}
+
+// 工具库搜索：按名称和 data-keywords 过滤，搜索时展开所有分组；回车打开第一个结果，Esc 清空。
+function initNavSearch() {
+  const input = document.querySelector("#navSearch");
+  const nav = input?.closest(".nav");
+  if (!input || !nav) return;
+  const empty = nav.querySelector(".nav-search-empty");
+  const groups = [...nav.querySelectorAll(".nav-group[data-nav-phase]")];
+  const apply = () => {
+    const query = input.value.trim().toLowerCase();
+    nav.classList.toggle("is-searching", Boolean(query));
+    let total = 0;
+    groups.forEach((group) => {
+      let count = 0;
+      group.querySelectorAll(".nav-group-items .nav-item").forEach((item) => {
+        if (item.style.display === "none") return;
+        const hit = !query || `${item.textContent} ${item.dataset.keywords || ""}`.toLowerCase().includes(query);
+        item.classList.toggle("search-miss", !hit);
+        if (hit) count += 1;
+      });
+      group.classList.toggle("search-miss", Boolean(query) && !count);
+      total += count;
+    });
+    if (empty) empty.hidden = !query || total > 0;
+  };
+  const clear = () => {
+    input.value = "";
+    apply();
+  };
+  input.addEventListener("input", apply);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && input.value) {
+      event.stopPropagation();
+      clear();
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const first = groups.flatMap((group) => [...group.querySelectorAll(".nav-group-items .nav-item")])
+        .find((item) => item.style.display !== "none" && !item.classList.contains("search-miss"));
+      if (!first || !input.value.trim()) return;
+      clear();
+      first.click();
+    }
+  });
+  nav.querySelectorAll(".nav-item").forEach((item) => item.addEventListener("click", () => { if (input.value) clear(); }));
 }
 
 function initNavigationExperience() {
@@ -525,11 +592,12 @@ function initNavigationExperience() {
     bar.className = "module-context-bar";
     bar.innerHTML = `
       <button class="module-context-back" type="button" data-jump="overview" aria-label="返回项目工作台">
-        <span aria-hidden="true">←</span><span>工作台</span>
+        <span aria-hidden="true">←</span><span>项目</span>
       </button>
       <span class="module-context-separator" aria-hidden="true">/</span>
       <span class="module-context-stage">系统</span>
       <strong class="module-context-name">当前模块</strong>
+      <a class="module-context-project" href="#overview" hidden></a>
     `;
     view.insertBefore(bar, pageTitle);
   });
@@ -558,25 +626,52 @@ navItems.forEach((item) => {
   });
 });
 
+function viewIdFromHash() {
+  let raw = window.location.hash.replace(/^#/, "");
+  try { raw = decodeURIComponent(raw); } catch (_) {}
+  return normalizeViewId(raw.trim());
+}
+
+function isKnownView(id) {
+  return Boolean(id && document.getElementById(id)?.classList.contains("view"));
+}
+
+// 地址栏里的 #页面 不存在时回到总览并提示；页面内锚点（存在但不是视图）不处理。
+function handleUnknownViewHash(id) {
+  if (!id || document.getElementById(id)) return false;
+  showView("overview");
+  showToast(`没有找到页面“#${id}”，已为你打开总览。`, "warning");
+  return true;
+}
+
 initNavigationExperience();
-const initialViewFromHash = normalizeViewId(window.location.hash.replace(/^#/, ""));
-if (initialViewFromHash && document.querySelector(`#${CSS.escape(initialViewFromHash)}`)) {
+initNavSearch();
+const initialViewFromHash = viewIdFromHash();
+if (isKnownView(initialViewFromHash)) {
   showView(initialViewFromHash);
-} else {
+} else if (!handleUnknownViewHash(initialViewFromHash)) {
   syncNavigationContext("overview");
 }
+
+// 前进/后退、站内 #链接、手动修改地址栏时同步切换视图。
+// 优先触发对应导航按钮，让各模块挂在导航点击上的加载逻辑照常运行。
+window.addEventListener("hashchange", () => {
+  const id = viewIdFromHash();
+  if (isKnownView(id)) {
+    const navigation = [...navItems].find((item) => item.dataset.view === id);
+    if (navigation) navigation.click();
+    else showView(id);
+    return;
+  }
+  handleUnknownViewHash(id);
+});
 
 function handleDashboardJumpAction(button) {
   const action = button.dataset.action;
   const target = button.dataset.jump;
   if (action === "edit-project") {
     showView("overview");
-    const panel = document.querySelector(".project-panel");
-    panel?.classList.add("form-expanded");
-    const formToggle = document.querySelector("#toggleProjectForm");
-    formToggle?.setAttribute("aria-expanded", "true");
-    const toggleLabel = formToggle?.querySelector("span");
-    if (toggleLabel) toggleLabel.textContent = "收起项目档案";
+    const panel = expandProjectForm();
     window.setTimeout(() => {
       panel?.scrollIntoView({ block: "start", behavior: "smooth" });
       document.querySelector("#workspaceProjectName")?.focus({ preventScroll: true });
@@ -642,6 +737,75 @@ document.addEventListener("click", (event) => {
   if (!button || !document.body.contains(button)) return;
   event.preventDefault();
   handleDashboardJumpAction(button);
+});
+
+// 帮助说明在右侧抽屉中打开，不再离开当前工具页。内容复制自对应的 *-guide 说明页（去掉 id 和“返回”按钮），
+// 说明页本身保留，直接访问 #xxx-guide 仍可打开。捕获阶段拦截，先于上面的通用跳转处理。
+let helpDrawerReturnFocus = null;
+
+function closeHelpDrawer() {
+  const drawer = document.querySelector("#helpDrawer");
+  if (!drawer || drawer.hidden) return;
+  drawer.hidden = true;
+  document.querySelector("#helpDrawerOverlay").hidden = true;
+  helpDrawerReturnFocus?.focus();
+  helpDrawerReturnFocus = null;
+}
+
+function ensureHelpDrawer() {
+  let drawer = document.querySelector("#helpDrawer");
+  if (drawer) return drawer;
+  const overlay = document.createElement("div");
+  overlay.className = "help-drawer-overlay";
+  overlay.id = "helpDrawerOverlay";
+  overlay.hidden = true;
+  overlay.addEventListener("click", closeHelpDrawer);
+  drawer = document.createElement("aside");
+  drawer.className = "help-drawer";
+  drawer.id = "helpDrawer";
+  drawer.hidden = true;
+  drawer.setAttribute("role", "dialog");
+  drawer.setAttribute("aria-modal", "true");
+  drawer.setAttribute("aria-labelledby", "helpDrawerTitle");
+  drawer.innerHTML = `
+    <div class="help-drawer-head">
+      <h3 id="helpDrawerTitle">使用说明</h3>
+      <button class="ghost-btn help-drawer-close" type="button" aria-label="关闭说明">关闭</button>
+    </div>
+    <div class="help-drawer-body"></div>
+  `;
+  drawer.querySelector(".help-drawer-close").addEventListener("click", closeHelpDrawer);
+  document.body.append(overlay, drawer);
+  return drawer;
+}
+
+function openHelpDrawer(guideId, trigger) {
+  const guide = document.getElementById(guideId);
+  if (!guide) return false;
+  const drawer = ensureHelpDrawer();
+  const body = drawer.querySelector(".help-drawer-body");
+  body.replaceChildren(...[...guide.children].filter((child) => !child.classList.contains("page-title") && !child.classList.contains("module-context-bar")).map((child) => child.cloneNode(true)));
+  body.querySelectorAll("[id]").forEach((element) => element.removeAttribute("id"));
+  body.querySelectorAll("[data-jump]").forEach((element) => element.remove());
+  drawer.querySelector("#helpDrawerTitle").textContent = guide.querySelector(".page-title h2")?.textContent.trim() || "使用说明";
+  helpDrawerReturnFocus = trigger;
+  document.querySelector("#helpDrawerOverlay").hidden = false;
+  drawer.hidden = false;
+  body.scrollTop = 0;
+  drawer.querySelector(".help-drawer-close").focus();
+  return true;
+}
+
+document.addEventListener("click", (event) => {
+  const trigger = event.target.closest('[data-jump$="-guide"]');
+  if (!trigger || !document.body.contains(trigger) || trigger.closest("#helpDrawer")) return;
+  if (!openHelpDrawer(trigger.dataset.jump, trigger)) return;
+  event.preventDefault();
+  event.stopPropagation();
+}, true);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeHelpDrawer();
 });
 
 function formatShortDate(value) {
@@ -1085,6 +1249,10 @@ function renderWorkspaceProject() {
   const formProjectName = (document.querySelector("#workspaceProjectName")?.value || "").trim();
   const isBlankProject = !formProjectName && !project.questionnaireText && !project.sampleTarget;
 
+  // 空项目时只保留“开始”区，其余面板（档案、资产、流程等）由 CSS 隐藏，避免首屏堆满无内容的模块。
+  document.querySelector(".dashboard-workspace")?.classList.toggle("is-blank", isBlankProject);
+  syncCurrentProjectIndicators(project.projectName);
+  syncDisabledReasonHints();
   if (isBlankProject) {
     renderDashboardEmptyHero();
   } else {
@@ -1219,6 +1387,25 @@ function markWorkspaceStatus(key, value = true) {
   renderWorkspaceProject();
 }
 
+function expandProjectForm() {
+  const panel = document.querySelector(".project-panel");
+  panel?.classList.add("form-expanded");
+  const formToggle = document.querySelector("#toggleProjectForm");
+  formToggle?.setAttribute("aria-expanded", "true");
+  const toggleLabel = formToggle?.querySelector("span");
+  if (toggleLabel) toggleLabel.textContent = "收起项目档案";
+  return panel;
+}
+
+// 空项目时项目档案区是收起的，从“开始”区导入问卷后要展开它，否则看不到预览和“确认导入”。
+function revealQuestionnaireImportPreview() {
+  const preview = document.querySelector("#questionnaireImportPreview");
+  if (!preview || preview.offsetParent) return;
+  expandProjectForm();
+  syncDisabledReasonHints();
+  preview.scrollIntoView({ block: "center" });
+}
+
 function createNewWorkspaceProject() {
   const project = normalizeWorkspaceProject({ projectName: "", studyType: "概念测试", stage: "调研前" });
   workspaceProject = upsertWorkspaceProject(project, "创建新项目");
@@ -1226,7 +1413,8 @@ function createNewWorkspaceProject() {
   fillWorkspaceProject(project);
   renderWorkspaceProject();
   showView("overview");
-  document.querySelector(".project-panel")?.classList.add("form-expanded");
+  expandProjectForm();
+  syncDisabledReasonHints();
   document.querySelector("#workspaceProjectName")?.focus();
 }
 
@@ -2569,15 +2757,17 @@ function renderQuestionnaireImportPreview(text, filename = "已导入文件") {
   if (!pendingQuestionnaireImport) {
     applyButton.disabled = true;
     preview.innerHTML = `<strong>未识别到有效内容</strong><span>请检查文件内容是否为空，或是否为 DOCX / XLSX / Markdown / TXT / CSV 格式。</span>`;
+    revealQuestionnaireImportPreview();
     return;
   }
   const questions = parseQuestions(pendingQuestionnaireImport);
-  const optionLines = pendingQuestionnaireImport.split(/\r?\n/).filter((line) => /^[A-ZＡ-Ｚ]\s*[.．、]/i.test(line.trim())).length;
+  const optionCount = questions.reduce((total, question) => total + question.options.length, 0);
   applyButton.disabled = false;
   preview.innerHTML = `
     <strong>${escapeHtml(filename)}</strong>
-    <span>识别题量：${questions.length}；选项行：${optionLines}。预览：${escapeHtml(pendingQuestionnaireImport.slice(0, 120))}${pendingQuestionnaireImport.length > 120 ? "..." : ""}</span>
+    <span>识别题量：${questions.length}；选项：${optionCount} 个。预览：${escapeHtml(pendingQuestionnaireImport.slice(0, 120))}${pendingQuestionnaireImport.length > 120 ? "..." : ""}</span>
   `;
+  revealQuestionnaireImportPreview();
 }
 
 function renderDocumentImportStatus(targetId, message, failed = false) {
@@ -2662,6 +2852,7 @@ async function handleQuestionnaireImport(file, targetId = "") {
       <strong>导入失败</strong>
       <span>${escapeHtml(error.message || "文件解析失败，请尝试另存为 TXT 或 CSV 后导入。")}</span>
     `;
+    if (!targetId) revealQuestionnaireImportPreview();
     if (targetId) {
       renderDocumentImportStatus(targetId, `导入失败：${error.message || "文件读取失败，请重试。"}`, true);
       showButtonSaved(document.querySelector(`[data-import-target="${targetId}"]`), "导入失败");
@@ -2880,6 +3071,28 @@ function crosstabExportFilename(suffix = "交叉表") {
   return stem ? `${stem}-${suffix}.xlsx` : (suffix === "交叉表" ? "全部交叉表.xlsx" : `${suffix}.xlsx`);
 }
 
+// 通用上传区：点击 / 回车 / 空格选择文件，拖入文件直接导入。各页面传入自己的选择与导入逻辑。
+function bindImportDropzone(zone, { onPick, onFile }) {
+  if (!zone) return;
+  zone.addEventListener("click", () => onPick());
+  zone.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onPick();
+  });
+  zone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    zone.classList.add("dragover");
+  });
+  zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+  zone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    zone.classList.remove("dragover");
+    const file = event.dataTransfer?.files?.[0];
+    if (file) onFile(file);
+  });
+}
+
 function renderCrosstabImportState(text, filename) {
   crosstabSourceFilename = filename || "";
   if (autoNetDataName && autoNetDataName !== filename) { autoNetSpec = {questions:{},warnings:[]}; autoNetBindings = {}; }
@@ -2891,6 +3104,9 @@ function renderCrosstabImportState(text, filename) {
   window.CrosstabModelUI?.reset();
   dataField.value = normalizeImportedText(text);
   const parsed = detectCrosstabFields();
+  const zoneFile = document.querySelector("#crosstabDropzoneFile");
+  if (zoneFile && filename) zoneFile.textContent = `已导入《${filename}》· ${parsed.rows.length} 行 × ${parsed.headers.length} 列，可重新上传替换`;
+  document.querySelector("#crosstabDropzone")?.classList.toggle("has-file", Boolean(filename));
   const result = document.querySelector("#crosstabResults");
   document.querySelector("#exportCrosstab").disabled = true;
   lastCrosstabAnalysis = null;
@@ -4096,7 +4312,20 @@ function generateCleaningCenterRules(parsed) {
   return [...rules, ...buildDemographicConflictRules(parsed)];
 }
 
+// 数据清洗四步：按 cleaningCenterState 的实际进度更新步骤条。
+function syncCleaningTaskFlow() {
+  const view = document.querySelector("#cleaning-rules");
+  const { parsed, rules, result } = cleaningCenterState;
+  const hasData = Boolean(parsed?.rows?.length);
+  const hasRules = hasData && Boolean(rules?.length);
+  setTaskFlowIndicator(view, "import", hasData ? "completed" : "active", hasData ? `${parsed.rows.length} 行 · ${parsed.headers.length} 列` : "选择数据文件");
+  setTaskFlowIndicator(view, "rules", hasRules ? "completed" : hasData ? "active" : "locked", hasRules ? `${rules.length} 条规则` : hasData ? "生成清洗规则" : "等待数据");
+  setTaskFlowIndicator(view, "threshold", result ? "completed" : hasRules ? "active" : "locked");
+  setTaskFlowIndicator(view, "execute", result ? "completed" : hasRules ? "ready" : "locked", result ? `保留 ${result.kept.length} · 剔除 ${result.removed.length}` : "");
+}
+
 function renderCleaningDataPreview() {
+  syncCleaningTaskFlow();
   const preview = document.querySelector("#cleaningDataPreview");
   const parsed = cleaningCenterState.parsed;
   if (!preview || !parsed) return;
@@ -4139,6 +4368,7 @@ function cleaningRuleFieldMapping(rule, parsed) {
 }
 
 function renderCleaningRules() {
+  syncCleaningTaskFlow();
   const target = document.querySelector("#cleaningResults");
   const parsed = cleaningCenterState.parsed;
   const rules = cleaningCenterState.rules;
@@ -4399,6 +4629,7 @@ function executeCleaningCenter() {
 }
 
 function renderCleaningExecutionResult() {
+  syncCleaningTaskFlow();
   const target = document.querySelector("#cleaningResults");
   const parsed = cleaningCenterState.parsed;
   const result = cleaningCenterState.result;
@@ -5931,21 +6162,42 @@ async function generateQuestionPivot() {
       return counts;
     }, {});
     const typeSummary = Object.entries(typeCounts).map(([type, count]) => `${type} ${count} 题`).join("，");
+    const filename = crosstabExportFilename();
     result.innerHTML = `
       <article class="audit-issue">
         <div class="issue-head"><strong>全部交叉表已生成</strong><span class="issue-tag high">${lastQuestionPivot.length} 题</span></div>
-        <p>已直接导出 Excel 文件，包含“目录、频数、百分比、显著性检验”${lastCrosstabModelSheetNames.length ? `，另含“${escapeHtml(lastCrosstabModelSheetNames.join("、"))}”专项工作表` : "四个工作表"}，页面不再展开全部结果，避免输出区过长。</p>
+        <p>已下载《${escapeHtml(filename)}》，包含“目录、频数、百分比、显著性检验”${lastCrosstabModelSheetNames.length ? `，另含“${escapeHtml(lastCrosstabModelSheetNames.join("、"))}”专项工作表` : "四个工作表"}，页面不再展开全部结果，避免输出区过长。</p>
         <div class="issue-evidence">${escapeHtml(`${typeSummary || "未识别到可统计题型"}${lastCrosstabHeaderPlan?.length ? `\n已按表头条件逐列筛选并计算：${lastCrosstabHeaderPlan.length} 列` : "\n未带入表头方案；如需顶部 Banner 表头，请先点击“导入表头”。"}\n多选拆列已按多重响应集输出选项提及，不再输出“选中/未选中”。矩阵量表已按子题拆分为独立量表题。`)}</div>
         ${excludedPivotItems.length ? `<div class="panel-note" style="margin-top:0.5rem;"><strong>已排除 ${excludedPivotItems.length} 个变量（开放题/填空题）：</strong> ${excludedPivotItems.slice(0, 20).map((e) => escapeHtml(e.title || e.headers[0])).join("、")}${excludedPivotItems.length > 20 ? ` 等共 ${excludedPivotItems.length} 个` : ""}</div>` : ""}
+        <div class="button-row"><button class="secondary-btn" type="button" data-crosstab-redownload>再次下载 Excel</button></div>
       </article>
     `;
+    result.querySelector("[data-crosstab-redownload]")?.addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      exportQuestionPivot()
+        .then(() => showToast(`已重新下载《${filename}》`, "success"))
+        .catch((error) => showToast(error.message || "重新下载失败，请重新生成。", "error"))
+        .finally(() => { button.disabled = false; });
+    });
+    showToast(`已生成 ${lastQuestionPivot.length} 题交叉表，并下载《${filename}》`, "success");
   } catch (error) {
     result.innerHTML = `<div class="empty-state"><strong>生成失败</strong><span>${escapeHtml(error.message || "导出全部交叉表时发生错误。")}</span></div>`;
+    showToast(`交叉表生成失败：${error.message || "导出时发生错误"}`, "error");
   }
+}
+
+// 结果与进度渲染在页面下方的 #crosstabResults；不在视口内时滚动过去，让点击后立即看到进度。
+function revealCrosstabResults() {
+  const result = document.querySelector("#crosstabResults");
+  if (!result) return;
+  const top = result.getBoundingClientRect().top;
+  if (top < 0 || top > window.innerHeight - 120) result.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderQuestionPivot() {
   renderCrosstabProgressCard("正在识别题型、计算频数并排除开放题，请稍候...", 3, "页面会分阶段刷新进度，导出完成后自动下载 Excel。");
+  revealCrosstabResults();
   void nextUiTick().then(generateQuestionPivot);
 }
 
@@ -12466,6 +12718,93 @@ document.addEventListener("click", (event) => {
 });
 
 // === P1-6: Toast notification system ===
+// 按钮带 data-disabled-reason 时，在不可用期间说明原因：同组按钮下方显示一行提示，悬停时也可见。
+// 按钮恢复可用后提示自动移除；禁用状态由各模块照常设置，这里只监听 disabled 属性。
+function syncDisabledReasonHints() {
+  const groups = new Map();
+  document.querySelectorAll("button[data-disabled-reason]").forEach((button) => {
+    const reason = button.dataset.disabledReason;
+    if (button.disabled) button.title = reason;
+    else if (button.title === reason) button.removeAttribute("title");
+    const group = button.parentElement;
+    if (!group) return;
+    if (!groups.has(group)) groups.set(group, new Set());
+    // 按钮自身被隐藏（如总览空项目时的“删除项目”）就不提示原因。
+    if (button.disabled && getComputedStyle(button).display !== "none") groups.get(group).add(reason);
+  });
+  groups.forEach((reasons, group) => {
+    let hint = group.nextElementSibling?.classList.contains("disabled-reason-hint") ? group.nextElementSibling : null;
+    if (!reasons.size) { hint?.remove(); return; }
+    if (!hint) {
+      hint = document.createElement("p");
+      hint.className = "disabled-reason-hint";
+      group.after(hint);
+    }
+    hint.textContent = [...reasons].join("；");
+  });
+}
+
+syncDisabledReasonHints();
+new MutationObserver(syncDisabledReasonHints).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["disabled"] });
+
+// 长页面的主操作：带 data-sticky-action 的按钮滚出视口时，在页面底部浮出同名按钮，点击即触发原按钮。
+// 浮出按钮同步原按钮的文字和可用状态；原按钮可见或未显示（如所在步骤未解锁）时隐藏浮条。
+// 浮条固定在视口底部，左右与当前页面对齐。
+function initStickyPageActions() {
+  const bars = [];
+  document.querySelectorAll("button[data-sticky-action]").forEach((button) => {
+    const view = button.closest(".view");
+    if (!view) return;
+    const bar = document.createElement("div");
+    bar.className = "page-action-bar";
+    bar.hidden = true;
+    const hint = document.createElement("span");
+    hint.className = "page-action-hint";
+    const proxy = document.createElement("button");
+    proxy.type = "button";
+    proxy.className = "primary-btn";
+    proxy.addEventListener("click", () => {
+      button.click();
+      button.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+    bar.append(hint, proxy);
+    view.append(bar);
+    let intersecting = false;
+    const update = () => {
+      proxy.textContent = button.textContent.trim();
+      proxy.disabled = button.disabled;
+      hint.textContent = button.disabled ? button.dataset.disabledReason || "" : "";
+      bar.hidden = intersecting || !button.getClientRects().length;
+      if (bar.hidden) return;
+      // .content 是 overflow 容器，sticky 无法相对视口生效，改用 fixed 并与当前页面左右对齐。
+      const rect = view.getBoundingClientRect();
+      bar.style.left = `${Math.max(rect.left, 0)}px`;
+      bar.style.width = `${Math.min(rect.width, window.innerWidth)}px`;
+    };
+    new MutationObserver(update).observe(button, { attributes: true, childList: true, characterData: true, subtree: true });
+    new IntersectionObserver(([entry]) => {
+      intersecting = entry.isIntersecting;
+      update();
+    }).observe(button);
+    bars.push(update);
+    update();
+  });
+  let frame = 0;
+  const refresh = () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      bars.forEach((update) => update());
+    });
+  };
+  window.addEventListener("scroll", refresh, { passive: true });
+  window.addEventListener("resize", refresh);
+  window.addEventListener("hashchange", refresh);
+  document.addEventListener("click", refresh);
+}
+
+initStickyPageActions();
+
 function dismissToast(toast) {
   if (!toast || toast.classList.contains("leaving")) return;
   window.clearTimeout(toast._dismissTimer);
@@ -12737,6 +13076,13 @@ document.querySelector("#importCrosstabData").addEventListener("click", () => {
 });
 document.querySelector("#crosstabImportFile").addEventListener("change", (event) => {
   handleCrosstabImport(event.target.files?.[0]);
+});
+bindImportDropzone(document.querySelector("#crosstabDropzone"), {
+  onPick: () => document.querySelector("#importCrosstabData").click(),
+  onFile: (file) => {
+    crosstabImportMode = "data";
+    handleCrosstabImport(file);
+  },
 });
 document.querySelector("#importCrosstabQuestionnaire").addEventListener("click", () => {
   const input = document.querySelector("#crosstabQuestionnaireImportFile");
@@ -13983,7 +14329,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
     }
 
     async function readPptxApiError(resp, fallback) {
-      let msg = fallback || `请求失败（${resp.status}）`;
+      // 网关错误时服务本身没有返回说明，直接告诉用户是服务暂时连不上，而不是重复“解析失败”。
+      let msg = resp.status >= 502 ? `报告服务暂时连不上（${resp.status}），请稍后重试，已选的文件无需重新上传` : fallback || `请求失败（${resp.status}）`;
       try {
         const data = await resp.json();
         msg = data?.error?.message || data?.message || msg;
@@ -14110,7 +14457,8 @@ function applyPptxChapterChartType(plan, chapterName, chartType, overwriteManual
         if (previewBtn) previewBtn.disabled = segs.length === 0;
         if (previewPanel) { previewPanel.style.display = "none"; pagePlan = null; editedPagePlan = null; }
       } catch (err) {
-        parseStatus.textContent = "解析失败：" + err.message;
+        const message = err instanceof TypeError ? "网络连接中断，请检查网络后重试" : err.message;
+        parseStatus.textContent = "解析失败：" + message;
         parseBtn.disabled = false;
       }
     });
@@ -19087,6 +19435,10 @@ document.addEventListener("DOMContentLoaded", () => {
   menuBtn.setAttribute("aria-controls", "appSidebar");
   menuBtn.setAttribute("aria-expanded", "false");
   function openSidebar() {
+    // 手机抽屉只展开当前页面所在分组，其余收起，减少滚动；不写入桌面端保存的展开状态。
+    sidebar.querySelectorAll(".nav-group[data-nav-phase]").forEach((group) => {
+      setNavigationGroupExpanded(group, Boolean(group.querySelector(".nav-item.active")), false);
+    });
     sidebar.classList.add("open");
     overlay?.classList.add("active");
     document.body.classList.add("sidebar-open");
@@ -19102,6 +19454,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   menuBtn.addEventListener("click", () => sidebar.classList.contains("open") ? closeSidebar() : openSidebar());
   overlay?.addEventListener("click", closeSidebar);
+  document.querySelector("#sidebarClose")?.addEventListener("click", () => {
+    closeSidebar();
+    menuBtn.focus();
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && sidebar.classList.contains("open")) {
       closeSidebar();
@@ -19240,36 +19596,22 @@ window.addEventListener("unhandledrejection", (event) => {
   const TOUR_KEY = "surveykit_tour_done";
   if (localStorage.getItem(TOUR_KEY)) return;
 
+  // 与首页“新建项目 / 导入问卷 / 导入数据”的推荐保持一致：先建项目，再看推荐，最后认识工具库。
   const steps = [
     {
-      selector: ".sidebar .nav-group:first-child .nav-item:first-of-type",
-      title: "👋 欢迎使用调研工具箱",
-      desc: "这里按调研阶段组织了所有工具。从「样本量计算」开始，逐步完成调研设计。",
+      selector: "#workspaceNewProject",
+      title: "从一个项目开始",
+      desc: "新建项目，或直接导入已有问卷、原始数据。项目保存在当前浏览器中，也可以导出文件发给同事。",
     },
     {
-      selector: "#workspaceProjectSelect",
-      title: "📁 项目管理",
-      desc: "所有分析数据都保存在项目里。新建项目后，数据会自动保存在浏览器中，也可以导出 .json 文件与团队分享。",
+      selector: ".dashboard-empty-state, .dashboard-focus-panel",
+      title: "跟着推荐往下走",
+      desc: "还没有项目时，从这里的三种方式开始；有了项目后，这里会推荐下一步该用哪个工具。",
     },
     {
-      selector: '[data-view="crosstab-analysis"]',
-      title: "📊 核心工作流",
-      desc: "导入交叉表数据 → 设计表头 → 生成 PPT 报告，这是最常用的工作流。表头决定了报告中如何拆分人群对比。",
-    },
-    {
-      selector: '[data-view="pptx-report"]',
-      title: "📄 一键生成报告",
-      desc: "上传数据文件、选择分析维度、预览报告结构，确认后即可生成可编辑的 PPT 报告。支持上传公司模板。",
-    },
-    {
-      selector: '[data-view="research-models"]',
-      title: "🔍 研究模型",
-      desc: "PSM、KANO、MaxDiff、关键驱动、TURF、联合分析等模型统一从这里进入，可直接粘贴数据计算。点击每个工具旁的 ? 按钮可以查看使用说明。",
-    },
-    {
-      selector: '[data-view="faq"]',
-      title: "❓ 需要帮助？",
-      desc: "常见问题都在这里。也可以点击每个工具旁的 ? 按钮查看模型说明。祝你使用愉快！",
+      selector: ".sidebar .nav-group",
+      title: "全部工具在左侧",
+      desc: "工具按调研前、调研中、调研后分组。每个工具标题旁的 ? 是使用说明，其他问题可以查看「常见问题」。",
     },
   ];
 

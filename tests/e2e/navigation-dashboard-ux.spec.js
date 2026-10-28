@@ -31,14 +31,21 @@ test("侧边导航按阶段折叠，并自动展开当前模块", async ({ page 
 test("工作台首屏突出下一步，并按需展开项目档案", async ({ page }) => {
   await openCleanApp(page);
 
-  await expect(page.locator("#dashboardFocusTitle")).toHaveText("项目档案");
-  await expect(page.locator("#dashboardFocusCount")).toContainText("0 / 18");
+  // 空项目：只显示“开始”区，建议下一步与流程收起。
+  await expect(page.locator(".dashboard-empty-state")).toBeVisible();
+  await expect(page.locator(".dashboard-focus-panel")).toBeHidden();
   await expect(page.locator(".project-panel")).not.toHaveClass(/form-expanded/);
   await expect(page.locator("#toggleProjectForm")).toHaveAttribute("aria-expanded", "false");
 
-  await page.locator("#dashboardContinueAction").click();
+  // 新建项目后展开档案表单，并恢复建议下一步与项目流程。
+  await page.locator("#workspaceNewProject").click();
   await expect(page.locator(".project-panel")).toHaveClass(/form-expanded/);
   await expect(page.locator("#toggleProjectForm")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".dashboard-focus-panel")).toBeVisible();
+  await expect(page.locator("#dashboardFocusTitle")).toHaveText("项目档案");
+  await expect(page.locator("#dashboardFocusCount")).toContainText("0 / 18");
+  await page.locator("#dashboardContinueAction").click();
+  await expect(page.locator(".project-panel")).toHaveClass(/form-expanded/);
 
   const stageBlocks = page.locator(".dashboard-stage-block");
   await expect(stageBlocks).toHaveCount(4);
