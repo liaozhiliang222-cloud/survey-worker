@@ -480,7 +480,7 @@ function syncNavigationContext(targetId) {
     || (targetId === "overview" ? "工作台" : "系统");
   const mobileTitle = document.querySelector(".mobile-topbar strong");
   if (mobileTitle) mobileTitle.textContent = label;
-  document.title = `${label} · 调研工具箱`;
+  document.title = `${label} · SurveyKit 调研工具箱`;
   document.querySelectorAll(".module-context-bar").forEach((bar) => {
     const view = bar.closest(".view");
     if (!view) return;
@@ -558,13 +558,44 @@ navItems.forEach((item) => {
   });
 });
 
+function viewIdFromHash() {
+  let raw = window.location.hash.replace(/^#/, "");
+  try { raw = decodeURIComponent(raw); } catch (_) {}
+  return normalizeViewId(raw.trim());
+}
+
+function isKnownView(id) {
+  return Boolean(id && document.getElementById(id)?.classList.contains("view"));
+}
+
+// 地址栏里的 #页面 不存在时回到总览并提示；页面内锚点（存在但不是视图）不处理。
+function handleUnknownViewHash(id) {
+  if (!id || document.getElementById(id)) return false;
+  showView("overview");
+  showToast(`没有找到页面“#${id}”，已为你打开总览。`, "warning");
+  return true;
+}
+
 initNavigationExperience();
-const initialViewFromHash = normalizeViewId(window.location.hash.replace(/^#/, ""));
-if (initialViewFromHash && document.querySelector(`#${CSS.escape(initialViewFromHash)}`)) {
+const initialViewFromHash = viewIdFromHash();
+if (isKnownView(initialViewFromHash)) {
   showView(initialViewFromHash);
-} else {
+} else if (!handleUnknownViewHash(initialViewFromHash)) {
   syncNavigationContext("overview");
 }
+
+// 前进/后退、站内 #链接、手动修改地址栏时同步切换视图。
+// 优先触发对应导航按钮，让各模块挂在导航点击上的加载逻辑照常运行。
+window.addEventListener("hashchange", () => {
+  const id = viewIdFromHash();
+  if (isKnownView(id)) {
+    const navigation = [...navItems].find((item) => item.dataset.view === id);
+    if (navigation) navigation.click();
+    else showView(id);
+    return;
+  }
+  handleUnknownViewHash(id);
+});
 
 function handleDashboardJumpAction(button) {
   const action = button.dataset.action;

@@ -1986,6 +1986,11 @@ label small {
   background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
 }
 
+.ai-template-box .secondary-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .ai-template-box h3 {
   margin: 8px 0 6px;
   color: var(--ink);
@@ -4355,8 +4360,10 @@ tbody tr.warn td {
 
 .workspace-archived-toggle {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 5px;
+  white-space: nowrap;
   cursor: pointer;
 }
 

@@ -1,7 +1,7 @@
 {
-  "name": "调研工具箱",
+  "name": "SurveyKit 调研工具箱",
   "short_name": "调研工具",
-  "description": "面向研究员的样本量、问卷测试和专项模型效率工具。",
+  "description": "面向市场调研研究员的样本量、问卷、数据分析与报告生成工具。",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f4f7f8",
