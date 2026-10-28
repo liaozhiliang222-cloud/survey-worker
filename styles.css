@@ -8126,12 +8126,12 @@ tbody tr.warn td {
   text-align: center;
 }
 
-.research-login-gate strong { color: var(--ink); font-size: 18px; }
+.research-login-gate strong { color: var(--ink); font-size: var(--text-xl); }
 .research-login-gate p { max-width: 460px; margin: 0; line-height: 1.7; }
 .research-login-gate .primary-btn,
 .research-feedback .primary-btn { text-decoration: none; }
 .research-feedback .primary-btn { margin-left: 12px; }
-.research-session-info { margin-top: 4px; font-size: 13px; }
+.research-session-info { margin-top: 4px; font-size: var(--text-sm); }
 .research-session-info a { color: inherit; text-decoration: underline; }
 
 .research-create { max-width: 720px; }
