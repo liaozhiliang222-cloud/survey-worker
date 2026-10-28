@@ -63,7 +63,7 @@
     "test:research-harness": "node tests/research-harness-smoke.mjs",
     "test:research-files-context": "node tests/research-files-context-smoke.mjs && node tests/research-message-order-smoke.mjs",
     "test:research-memory-v03": "node tests/research-memory-v03-smoke.mjs",
-    "test:research-access-auth": "node tests/research-access-auth-smoke.mjs",
+    "test:research-access-auth": "node tests/research-access-auth-smoke.mjs && node tests/research-login-smoke.mjs",
     "test:qualitative-excel": "node tests/qualitative-excel-smoke.mjs && node tests/qualitative-excel-handler-smoke.mjs && node tests/qualitative-excel-ui-smoke.mjs",
     "test:research-plan-workflow": "node tests/research-plan-workflow-smoke.mjs && node tests/research-plan-workflow-ui-smoke.mjs",
     "test:data-analysis-workflow": "node tests/data-analysis-workflow-smoke.mjs && node tests/data-regressions-smoke.mjs",

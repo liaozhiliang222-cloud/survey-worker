@@ -101,32 +101,32 @@ function accessToken(request) {
   const match = cookie.match(/(?:^|;\s*)CF_Authorization=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : "";
 }
-export async function verifyAccessIdentity(request, env, fetchImpl = fetch) {
-  if (String(env.RESEARCH_AUTH_MODE || "").toLowerCase() !== "access") return "";
+export async function verifyAccessClaims(request, env, fetchImpl = fetch) {
+  if (String(env.RESEARCH_AUTH_MODE || "").toLowerCase() !== "access") return null;
   const teamDomain = clean(env.CLOUDFLARE_ACCESS_TEAM_DOMAIN, 320).replace(/^https?:\/\//, "").replace(/\/+$/, "");
   const allowedAudiences = clean(env.CLOUDFLARE_ACCESS_AUD, 2_000).split(",").map((item) => item.trim()).filter(Boolean);
   const token = accessToken(request);
-  if (!teamDomain || !allowedAudiences.length || !token) return "";
+  if (!teamDomain || !allowedAudiences.length || !token) return null;
   const sections = token.split(".");
-  if (sections.length !== 3) return "";
+  if (sections.length !== 3) return null;
   let header;
   let claims;
   try {
     header = JSON.parse(new TextDecoder().decode(decodeBase64Url(sections[0])));
     claims = JSON.parse(new TextDecoder().decode(decodeBase64Url(sections[1])));
-  } catch { return ""; }
-  if (header.alg !== "RS256" || !header.kid) return "";
+  } catch { return null; }
+  if (header.alg !== "RS256" || !header.kid) return null;
   const nowSeconds = Math.floor(Date.now() / 1000);
   const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
   const expectedIssuer = `https://${teamDomain}`;
-  if (claims.iss !== expectedIssuer || !claims.exp || claims.exp <= nowSeconds || (claims.nbf && claims.nbf > nowSeconds + 30)) return "";
-  if (!audiences.some((audience) => allowedAudiences.includes(String(audience)))) return "";
+  if (claims.iss !== expectedIssuer || !claims.exp || claims.exp <= nowSeconds || (claims.nbf && claims.nbf > nowSeconds + 30)) return null;
+  if (!audiences.some((audience) => allowedAudiences.includes(String(audience)))) return null;
   try {
     const certResponse = await fetchImpl(`${expectedIssuer}/cdn-cgi/access/certs`);
-    if (!certResponse.ok) return "";
+    if (!certResponse.ok) return null;
     const certs = await certResponse.json();
     const jwk = certs?.keys?.find((key) => key.kid === header.kid);
-    if (!jwk) return "";
+    if (!jwk) return null;
     const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
     const valid = await crypto.subtle.verify(
       "RSASSA-PKCS1-v1_5",
@@ -134,9 +134,26 @@ export async function verifyAccessIdentity(request, env, fetchImpl = fetch) {
       decodeBase64Url(sections[2]),
       new TextEncoder().encode(`${sections[0]}.${sections[1]}`),
     );
-    if (!valid) return "";
-  } catch { return ""; }
+    if (!valid) return null;
+  } catch { return null; }
+  return claims;
+}
+export async function verifyAccessIdentity(request, env, fetchImpl = fetch) {
+  const claims = await verifyAccessClaims(request, env, fetchImpl);
+  if (!claims) return "";
   return clean(claims.sub, 320) || clean(claims.email, 320).toLowerCase();
+}
+// 登录入口由 Cloudflare Access 保护：能走到这里说明已登录，只需回到前端页面。仅接受站内 hash，避免开放重定向。
+export function researchLoginRedirect(request) {
+  const requested = new URL(request.url).searchParams.get("return") || "";
+  const target = /^#[a-z][a-z0-9-]{0,63}$/.test(requested) ? requested : "#research";
+  return new Response(null, { status: 302, headers: { Location: `/${target}`, "Cache-Control": "no-store" } });
+}
+export async function researchSession(request, env, uid, fetchImpl = fetch) {
+  const mode = clean(env.RESEARCH_AUTH_MODE || "anonymous", 32).toLowerCase();
+  if (mode !== "access") return { auth_mode: mode, user_id: uid, email: "", logout_url: "" };
+  const claims = await verifyAccessClaims(request, env, fetchImpl);
+  return { auth_mode: mode, user_id: uid, email: clean(claims?.email, 320).toLowerCase(), logout_url: "/cdn-cgi/access/logout" };
 }
 export async function resolveResearchIdentity(request, env, fetchImpl = fetch) {
   const mode = clean(env.RESEARCH_AUTH_MODE || "anonymous", 32).toLowerCase();
@@ -480,6 +497,9 @@ export async function onRequest(context) {
   if (authMode === "access" && !accessConfigured) return fail("AI 研究员登录验证尚未配置。", "auth_not_configured", rid, false, 503);
   const uid = await resolveResearchIdentity(request, env);
   if (!uid) return authMode === "access" ? fail("请先登录后再使用 AI 研究员。", "unauthorized", rid, false, 401) : fail("AI 研究员身份模式配置无效。", "auth_not_configured", rid, false, 503);
+  const authRoute = new URL(request.url).pathname.replace(/^\/api\/research\/?/, "").replace(/\/+$/, "");
+  if (authRoute === "login" && request.method === "GET") return researchLoginRedirect(request);
+  if (authRoute === "session" && request.method === "GET") return json({ session: await researchSession(request, env, uid) }, 200, rid);
   if (!env.RESEARCH_DB) return fail("AI 研究员数据库尚未配置。", "not_configured", rid, false, 503);
   const repo = store(env.RESEARCH_DB); const agent = harness(env); const transcriptSummaryEnv = transcriptSummaryHarnessEnv(env); const transcriptSummaryAgent = harness(transcriptSummaryEnv); const transcriptCorrectionEnv = transcriptCorrectionHarnessEnv(env); const transcriptCorrectionAgent = harness(transcriptCorrectionEnv);
   const executeProjectDataTool=async(project,toolId,args)=>{const executed=env.DATA_EXECUTOR_URL?await requestDataExecutor(env,{operation:"tool",userId:uid,projectId:project.id,toolId,args}):await createDataToolExecutor({store:repo,fileStorage:dataStorage(env)})({agentToolId:toolId,args,scope:{project,user_id:uid}});const saved=await repo.createToolResult(uid,project.id,executed.gatewayId,executed.input,executed.compact,{source:"user"});return {tool_result:{id:saved.id,project_id:saved.project_id,tool_id:saved.tool_id,input:parsedObject(saved.input),result:parsedObject(saved.result),source:saved.source,created_at:saved.created_at},data:executed.compact};};

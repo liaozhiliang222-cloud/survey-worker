@@ -20,12 +20,40 @@ function node(tag, className, text) { const element = document.createElement(tag
 function requestId() { return globalThis.crypto?.randomUUID?.() || `research_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`; }
 function formatBytes(value) { const bytes = Number(value || 0); if (bytes < 1024) return `${bytes} B`; if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`; return `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
 function friendlyError(status, payload) { if (status === 401 || status === 403) return "当前登录已失效，请重新登录后再试。"; if (status === 413) return payload?.error?.message || "文件或请求内容超过大小限制。"; if (status === 429) return "AI研究员请求过于频繁，请稍后再试。"; if (status === 504 || payload?.error?.type === "harness_timeout") return "AI研究员响应超时，请稍后重试。"; if ([502, 503].includes(status)) return payload?.error?.message || "AI研究员暂时无法连接，请稍后重试。"; return payload?.error?.message || payload?.message || "请求未完成，请稍后重试。"; }
-async function api(path, options = {}) { const headers = { Accept: "application/json", ...(options.headers || {}) }; if (typeof options.body === "string" && !headers["Content-Type"]) headers["Content-Type"] = "application/json"; const response = await fetch(`${API_ROOT}${path}`, { credentials: "same-origin", ...options, headers }); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) { const error = new Error(friendlyError(response.status, payload)); error.status = response.status; error.retryable = Boolean(payload?.error?.retryable || [429, 502, 503, 504].includes(response.status)); throw error; } return payload?.data && typeof payload.data === "object" ? payload.data : payload; }
+// Cloudflare Access 保护 /api/research：未登录时请求会被 302 到登录页，fetch 设为 manual 后表现为 opaqueredirect。
+const LOGIN_URL = `${API_ROOT}/login?return=%23research`;
+function isAuthRedirect(response) { return response.type === "opaqueredirect" || response.status === 401; }
+function authRequiredError() { requireLogin(); const error = new Error("请先登录后再使用 AI 研究员。"); error.status = 401; error.authRequired = true; error.retryable = false; return error; }
+function loginLink(text) { const link = node("a", "primary-btn", text); link.href = LOGIN_URL; return link; }
+function showLoginNotice() { const box = $("#researchFeedback"); if (!box) return; box.hidden = false; box.className = "research-feedback error"; box.replaceChildren(node("span", "", "登录已失效，请重新登录后继续。未发送的内容请先复制保存。"), loginLink("重新登录")); }
+function requireLogin() {
+  if (state.authRequired) return;
+  state.authRequired = true;
+  const refresh = $("#researchRefreshProjects"); if (refresh) refresh.hidden = true;
+  const session = $("#researchSessionInfo"); if (session) session.hidden = true;
+  if ($("#researchWorkspace") && !$("#researchWorkspace").hidden) { showLoginNotice(); return; }
+  clearNotice(); showMode("home"); renderProjects();
+}
+function renderLoginGate(list) {
+  const gate = node("div", "research-empty-state research-login-gate", "");
+  gate.append(node("strong", "", "登录后使用 AI 研究员"), node("p", "", "项目资料、对话和成果保存在云端，登录后只有你能看到自己的项目，换电脑也能继续。其他工具无需登录，可直接使用。"), loginLink("邮箱登录"));
+  list.appendChild(gate);
+}
+async function loadSession() {
+  const box = $("#researchSessionInfo"); if (!box) return;
+  try {
+    const { session } = await api("/session");
+    if (session?.auth_mode !== "access") { box.hidden = true; return; }
+    const logout = node("a", "", "退出登录"); logout.href = session.logout_url || "/cdn-cgi/access/logout";
+    box.replaceChildren(node("span", "", `已登录：${session.email || "当前账号"}`), document.createTextNode(" · "), logout); box.hidden = false;
+  } catch { box.hidden = true; }
+}
+async function api(path, options = {}) { const headers = { Accept: "application/json", ...(options.headers || {}) }; if (typeof options.body === "string" && !headers["Content-Type"]) headers["Content-Type"] = "application/json"; const response = await fetch(`${API_ROOT}${path}`, { credentials: "same-origin", redirect: "manual", ...options, headers }); if (isAuthRedirect(response)) throw authRequiredError(); const payload = response.status === 204 ? {} : await response.json().catch(() => ({})); if (!response.ok) { const error = new Error(friendlyError(response.status, payload)); error.status = response.status; error.retryable = Boolean(payload?.error?.retryable || [429, 502, 503, 504].includes(response.status)); throw error; } return payload?.data && typeof payload.data === "object" ? payload.data : payload; }
 const jsonBody = (value) => JSON.stringify(value);
-function notify(message, tone = "info", retry = null) { const box = $("#researchFeedback"); if (!box) return; box.hidden = false; box.className = `research-feedback ${tone}`; const text = node("span", "", message); box.replaceChildren(text); if (retry) { const button = node("button", "secondary-btn", "重试"); button.type = "button"; button.addEventListener("click", async () => { button.disabled = true; button.textContent = "重试中…"; box.className = "research-feedback info"; text.textContent = "正在重新连接 AI 研究员…"; try { await retry(); } catch (error) { notify(error?.message || "重试未完成，请稍后再试。", "error", retry); } }, { once: true }); box.appendChild(button); } }
+function notify(message, tone = "info", retry = null) { const box = $("#researchFeedback"); if (!box) return; if (state.authRequired && tone === "error") { if ($("#researchWorkspace")?.hidden) clearNotice(); else showLoginNotice(); return; } box.hidden = false; box.className = `research-feedback ${tone}`; const text = node("span", "", message); box.replaceChildren(text); if (retry) { const button = node("button", "secondary-btn", "重试"); button.type = "button"; button.addEventListener("click", async () => { button.disabled = true; button.textContent = "重试中…"; box.className = "research-feedback info"; text.textContent = "正在重新连接 AI 研究员…"; try { await retry(); } catch (error) { notify(error?.message || "重试未完成，请稍后再试。", "error", retry); } }, { once: true }); box.appendChild(button); } }
 function clearNotice() { const box = $("#researchFeedback"); if (box) box.hidden = true; }
 function setBusy(button, busy, label = "处理中…") { if (!button) return; button.dataset.idleLabel ||= button.textContent; button.disabled = busy; button.textContent = busy ? label : button.dataset.idleLabel; }
-function showMode(mode) { $("#researchHome").hidden = mode !== "home"; $("#researchCreate").hidden = mode !== "create"; $("#researchWorkspace").hidden = mode !== "workspace"; $("#researchNewProject").hidden = mode === "workspace"; }
+function showMode(mode) { $("#researchHome").hidden = mode !== "home"; $("#researchCreate").hidden = mode !== "create"; $("#researchWorkspace").hidden = mode !== "workspace"; $("#researchNewProject").hidden = mode === "workspace" || Boolean(state.authRequired); }
 
 function exportWord(content, title) {
   try {
@@ -50,8 +78,8 @@ function downloadResearchFile(file) {
 
 function updatedLabel(value) { if (!value) return "刚刚更新"; const date = new Date(value); return Number.isNaN(date.valueOf()) ? "最近更新" : `更新于 ${date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`; }
 
-function renderProjects() { const list = $("#researchProjectList"); list.replaceChildren(); if (!state.projects.length) { const empty = node("div", "research-empty-state", "还没有调研项目。创建一个项目，开始与 AI 研究员协作。"); const create = node("button", "primary-btn", "＋ 新建调研项目"); create.type = "button"; create.addEventListener("click", () => showMode("create")); empty.appendChild(create); list.appendChild(empty); return; } state.projects.forEach((project) => { const card = node("button", "research-project-card", ""); card.type = "button"; const head = node("span", "research-project-card-head", ""); head.append(node("strong", "", project.title || "未命名项目"), node("span", "", project.status || "进行中")); card.append(head, node("span", "research-project-client", project.client_name || "未填写客户"), node("p", "", project.research_goal || project.brief || "尚未填写研究目标"), node("small", "", updatedLabel(project.updated_at || project.updatedAt))); card.addEventListener("click", () => openProject(project.id)); list.appendChild(card); }); }
-async function loadProjects() { clearNotice(); try { const result = await api("/projects"); state.projects = result.projects || []; renderProjects(); } catch (error) { notify(error.message, "error", error.retryable ? loadProjects : null); } }
+function renderProjects() { const list = $("#researchProjectList"); list.replaceChildren(); if (state.authRequired) { renderLoginGate(list); return; } if (!state.projects.length) { const empty = node("div", "research-empty-state", "还没有调研项目。创建一个项目，开始与 AI 研究员协作。"); const create = node("button", "primary-btn", "＋ 新建调研项目"); create.type = "button"; create.addEventListener("click", () => showMode("create")); empty.appendChild(create); list.appendChild(empty); return; } state.projects.forEach((project) => { const card = node("button", "research-project-card", ""); card.type = "button"; const head = node("span", "research-project-card-head", ""); head.append(node("strong", "", project.title || "未命名项目"), node("span", "", project.status || "进行中")); card.append(head, node("span", "research-project-client", project.client_name || "未填写客户"), node("p", "", project.research_goal || project.brief || "尚未填写研究目标"), node("small", "", updatedLabel(project.updated_at || project.updatedAt))); card.addEventListener("click", () => openProject(project.id)); list.appendChild(card); }); }
+async function loadProjects() { clearNotice(); try { const result = await api("/projects"); state.authRequired = false; const refresh = $("#researchRefreshProjects"); if (refresh) refresh.hidden = false; state.projects = result.projects || []; renderProjects(); if (!$("#researchWorkspace")?.hidden) return; showMode("home"); loadSession(); } catch (error) { notify(error.message, "error", error.retryable ? loadProjects : null); } }
 function fillProject(project) { const constraints = project.constraints || {}; $("#researchWorkspaceTitle").textContent = project.title || "未命名项目"; $("#researchWorkspaceMeta").textContent = [project.client_name, project.status || "进行中"].filter(Boolean).join(" · ") || "AI Researcher 工作台"; $("#researchProjectTitle").value = project.title || ""; $("#researchProjectClient").value = project.client_name || ""; $("#researchProjectBrief").value = project.brief || ""; $("#researchProjectGoal").value = project.research_goal || ""; $("#researchProjectBudget").value = constraints.budget || ""; $("#researchProjectTimeline").value = constraints.timeline || ""; $("#researchProjectTargetSample").value = constraints.target_sample || ""; $("#researchProjectMethod").value = constraints.research_method_preference || ""; $("#researchProjectRegion").value = constraints.region_scope || ""; $("#researchProjectOtherConstraints").value = constraints.other_constraints || ""; }
 function isNearBottom(list) { return list.scrollHeight - list.scrollTop - list.clientHeight < 80; }
 function scrollMessagesToBottom(list) { list.scrollTop = list.scrollHeight; }
@@ -693,7 +721,7 @@ async function deleteFile() { if (!state.activeFileId || !window.confirm("删除
 async function saveTranscriptMetadata(event) { event.preventDefault(); if (!state.activeTranscript) return; let metadata; try { metadata = JSON.parse($("#researchTranscriptMetadata").value.trim() || "{}"); if (!metadata || Array.isArray(metadata) || typeof metadata !== "object") throw new Error(); } catch { notify("受访者 Metadata 必须是 JSON 对象。", "error"); return; } const button = $("#researchTranscriptSave"); setBusy(button, true, "保存中…"); try { const result = await api(`/projects/${encodeURIComponent(state.project.id)}/transcripts/${encodeURIComponent(state.activeTranscript.id)}`, { method: "PATCH", body: jsonBody({ interview_type: $("#researchTranscriptType").value, respondent_label: $("#researchTranscriptLabel").value.trim(), respondent_metadata: metadata }) }); state.activeTranscript = result.transcript; await loadTranscripts(); notify("访谈信息已保存。", "success"); } catch (error) { notify(error.message, "error"); } finally { setBusy(button, false); } }
 
 async function requestTranscriptSummary(transcript, force = false) {
-  const response = await fetch(`${API_ROOT}/projects/${encodeURIComponent(state.project.id)}/transcripts/${encodeURIComponent(transcript.id)}/summary`, { method: "POST", credentials: "same-origin", headers: { Accept: "text/event-stream, application/json", "Content-Type": "application/json" }, body: jsonBody({ force }) });
+  const response = await fetch(`${API_ROOT}/projects/${encodeURIComponent(state.project.id)}/transcripts/${encodeURIComponent(transcript.id)}/summary`, { method: "POST", credentials: "same-origin", redirect: "manual", headers: { Accept: "text/event-stream, application/json", "Content-Type": "application/json" }, body: jsonBody({ force }) });
   if (!response.ok) throw await responseError(response);
   if ((response.headers.get("content-type") || "").includes("text/event-stream")) return (await readSseResponse(response)).result;
   const payload = await response.json(); return payload?.data && typeof payload.data === "object" ? payload.data : payload;
@@ -716,7 +744,7 @@ function openTranscriptCorrectionDialog(preselectedTranscriptId = "") {
 }
 
 async function requestTranscriptCorrection(body, onWorkflowStatus) {
-  const response = await fetch(`${API_ROOT}/projects/${encodeURIComponent(state.project.id)}/transcript-corrections`, { method: "POST", credentials: "same-origin", headers: { Accept: "text/event-stream, application/json", "Content-Type": "application/json" }, body: jsonBody(body) });
+  const response = await fetch(`${API_ROOT}/projects/${encodeURIComponent(state.project.id)}/transcript-corrections`, { method: "POST", credentials: "same-origin", redirect: "manual", headers: { Accept: "text/event-stream, application/json", "Content-Type": "application/json" }, body: jsonBody(body) });
   if (!response.ok) throw await responseError(response);
   if ((response.headers.get("content-type") || "").includes("text/event-stream")) return (await readSseResponse(response, { onWorkflowStatus })).result;
   const payload = await response.json(); return payload?.data && typeof payload.data === "object" ? payload.data : payload;
@@ -773,6 +801,7 @@ async function refreshGeneratedOutputs(result) { const tasks = []; if (result?.t
 function artifactCreatedNotice(artifact) { return artifact?.type === "research_plan" ? `调研方案 V${artifact.version || 1} 已保存到项目成果。` : artifact?.type === "analysis" ? `数据分析 V${artifact.version || 1} 已保存，并保留结果证据引用。` : artifact?.type === "qualitative_analysis" ? `多访谈定性分析 V${artifact.version || 1} 已保存，原声证据可展开回查。` : artifact?.type === "report_outline" ? `报告大纲 V${artifact.version || 1} 已保存，可查看 Storyline、页面建议和 Evidence Coverage。` : artifact?.type === "ppt_script" ? `PPT 脚本 V${artifact.version || 1} 已保存，可逐页查看、排序、编辑或让 AI 优化单页。` : artifact?.type === "qualitative_summary" ? "定性小结已保存到项目成果。" : artifact?.type === "questionnaire" ? "问卷已自动保存为新版本。" : "成果已保存到项目。"; }
 function streamRunId(payload) { return String(payload?.run_id || payload?.runId || payload?.id || ""); }
 async function responseError(response) {
+  if (isAuthRedirect(response)) return authRequiredError();
   const payload = await response.json().catch(() => ({}));
   const error = new Error(friendlyError(response.status, payload));
   error.status = response.status;
@@ -780,7 +809,8 @@ async function responseError(response) {
   return error;
 }
 async function postMessage(body, { onDelta, onProgress, onToolStatus, onWorkflowStatus } = {}) {
-  const response = await fetch(`${API_ROOT}/projects/${encodeURIComponent(state.project.id)}/messages`, { method: "POST", credentials: "same-origin", headers: { Accept: "text/event-stream, application/json", "Content-Type": "application/json" }, body: jsonBody(body) });
+  const response = await fetch(`${API_ROOT}/projects/${encodeURIComponent(state.project.id)}/messages`, { method: "POST", credentials: "same-origin", redirect: "manual", headers: { Accept: "text/event-stream, application/json", "Content-Type": "application/json" }, body: jsonBody(body) });
+  if (isAuthRedirect(response)) throw authRequiredError();
   const contentType = response.headers.get("content-type") || "";
   if (contentType.includes("text/event-stream")) {
     if (!response.ok) throw await responseError(response);

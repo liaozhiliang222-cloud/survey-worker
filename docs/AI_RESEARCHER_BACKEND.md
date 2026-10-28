@@ -45,7 +45,33 @@ The production Pages project uses the Standard usage model with `limits.cpu_ms=3
 
 Anonymous mode is intentionally a deployment-wide shared workspace: every visitor can see and change the same projects. It avoids a login dependency, but it is appropriate only for a trusted/internal deployment or non-sensitive research content. Request headers and bodies cannot select another workspace or a Harness session.
 
-To add login and per-user isolation later, protect the site with Cloudflare Access and set `RESEARCH_AUTH_MODE=access`, `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, and `CLOUDFLARE_ACCESS_AUD` (the Access application audience). In Access mode, production identity is derived from a verified `Cf-Access-Jwt-Assertion`. SurveyKit validates the JWT signature against the Access JWKS endpoint, plus issuer, expiry and application audience; an email header alone is never trusted.
+To add login and per-user isolation, protect `/api/research` with Cloudflare Access and set `RESEARCH_AUTH_MODE=access`, `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, and `CLOUDFLARE_ACCESS_AUD` (the Access application audience). In Access mode, production identity is derived from a verified `Cf-Access-Jwt-Assertion`. SurveyKit validates the JWT signature against the Access JWKS endpoint, plus issuer, expiry and application audience; an email header alone is never trusted.
+
+### Login for AI Researcher only
+
+Only the AI Researcher needs an account. All other tools keep running in the browser without login, so the Access application covers the `/api/research` path, not the whole site.
+
+- `GET /api/research/login?return=%23research` is the login entry. Access intercepts it, runs the login flow, and the function then redirects back to the in-site hash (only `#name` values are accepted).
+- `GET /api/research/session` returns `auth_mode`, `user_id`, `email` and `logout_url`. The page shows the signed-in email and a logout link (`/cdn-cgi/access/logout`).
+- The frontend sends every research request with `redirect: "manual"`. An Access login redirect (`opaqueredirect`) or 401 shows a login card on the project list, or a re-login notice inside a project workspace that keeps the unsent input on the page.
+
+Rollout order (switching modes hides existing anonymous data until it is migrated):
+
+1. Zero Trust → Settings → Authentication: enable **One-time PIN**.
+2. Zero Trust → Access → Applications → **Self-hosted**: domain `surveykit.cc`, path `api/research`. Add a policy: **Allow** with an email list or email domain for an invite-only beta, or **Everyone** for open sign-up (counts against the Zero Trust seat limit). Copy the **Application Audience (AUD) tag**. The team domain is `<team>.cloudflareaccess.com`.
+3. In `wrangler.toml` production vars set `RESEARCH_AUTH_MODE = "access"`, `CLOUDFLARE_ACCESS_TEAM_DOMAIN` and `CLOUDFLARE_ACCESS_AUD`, then deploy. Without both Access values, access mode returns 503 instead of falling back to the shared workspace.
+4. Sign in on `https://surveykit.cc/#research`, open `/api/research/session`, and copy `user_id`.
+5. Back up D1 (`wrangler d1 export surveykit-research --remote --output backup.sql`), then move the old shared workspace to that account:
+
+   ```
+   node scripts/migrate-research-owner.mjs --to <user_id> --out migrate-owner.sql
+   wrangler d1 execute surveykit-research --remote --file migrate-owner.sql
+   ```
+
+   Use `--project id1,id2` to move only some projects. R2 objects are keyed by project and need no change.
+6. Verify: a fresh browser gets the login card and `/api/research/projects` no longer returns data without login; after login the migrated projects appear.
+
+Production smoke scripts that call `/api/research` directly need an Access service token (`CF-Access-Client-Id` / `CF-Access-Client-Secret`) once Access is enabled; add the service token to the Access policy as a **Service Auth** rule.
 
 The legacy DeepSeek Harness compatibility mode uses its RPC envelope over `POST /api/session.*`, protected by nginx Basic Auth. When `HARNESS_API_STYLE=dsh-rpc`, SurveyKit creates a session with `session.create`, selects the dedicated `surveykit-research` preset and configured model through `session.selectModel`, renames the session, and submits only the fields supported by DSH `session.prompt`. The preset composition mounts only the Cordis plugin that exposes `sample_size`, `quota_design`, `questionnaire_check`, `data_profile`, `data_clean`, `data_weight`, `crosstab`, `transcript_search`, and `transcript_read`; it contains no shell, file, web, interactive, or other model-facing tool rows. SurveyKit still observes calls defensively and cancels any disallowed call. General professional calls are capped by `HARNESS_MAX_TOOL_CALLS` (default 5); formal data-analysis turns use `HARNESS_MAX_DATA_TOOL_CALLS` (default 8); formal qualitative-analysis turns use `HARNESS_MAX_QUALITATIVE_TOOL_CALLS` (default 10).
 
