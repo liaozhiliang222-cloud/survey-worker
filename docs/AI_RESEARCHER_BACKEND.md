@@ -51,6 +51,8 @@ To add login and per-user isolation, protect `/api/research` with Cloudflare Acc
 
 Only the AI Researcher needs an account. All other tools keep running in the browser without login, so the Access application covers the `/api/research` path, not the whole site.
 
+The standalone Tool Gateway registry and calculations (`sample-size`, `quota`, `questionnaire-check`) remain public even with `RESEARCH_AUTH_MODE=access`; they use only the submitted input. Reading or saving project tool results still requires a verified research identity and project ownership. Internal `/api/tools/agent/:toolId` calls retain their separate server credential check.
+
 - `GET /api/research/login?return=%23research` is the login entry. Access intercepts it, runs the login flow, and the function then redirects back to the in-site hash (only `#name` values are accepted).
 - `GET /api/research/session` returns `auth_mode`, `user_id`, `email` and `logout_url`. The page shows the signed-in email and a logout link (`/cdn-cgi/access/logout`).
 - The frontend sends every research request with `redirect: "manual"`. An Access login redirect (`opaqueredirect`) or 401 shows a login card on the project list, or a re-login notice inside a project workspace that keeps the unsent input on the page.

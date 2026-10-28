@@ -35,10 +35,40 @@ let cloudflareResponse = await cloudflare.onRequest({
 assert.equal(cloudflareResponse.status, 200);
 assert.equal((await cloudflareResponse.json()).data.base, 385, "Cloudflare execution must not require D1 or Harness");
 
+const publicCases = [
+  ["sample-size", { z: 1.96, marginPercent: 5, population: 0, segments: 1, responseRatePercent: 80 }],
+  ["quota", { mode: "single", total_sample: 100, dimensions: [{ name: "分组", groups: [{ label: "A", share: 50 }, { label: "B", share: 50 }] }] }],
+  ["questionnaire-check", { text: "Q1. 是否使用？\nA. 是\nB. 否", scenario: "general" }],
+];
+const protectedEnv = { RESEARCH_AUTH_MODE: "access", RESEARCH_DB: { prepare() { throw new Error("anonymous tool must not touch project storage"); } } };
+for (const [tool, input] of publicCases) {
+  const response = await cloudflare.onRequest({ request: new Request(`https://surveykit.example/api/tools/${tool}`, json({ input })), env: protectedEnv });
+  assert.equal(response.status, 200, `${tool} must stay public when research uses Access`);
+  assert.equal((await response.json()).success, true);
+}
+assert.equal((await cloudflare.onRequest({ request: new Request("https://surveykit.example/api/tools"), env: protectedEnv })).status, 200);
+for (const [route, options] of [
+  ["/results?project_id=owned-project", {}],
+  ["/sample-size/results", json({ project_id: "owned-project", input: publicCases[0][1] })],
+  ["/agent/sample_size", json({ harness_session_id: "unknown", arguments: {} })],
+]) {
+  const response = await cloudflare.onRequest({ request: new Request(`https://surveykit.example/api/tools${route}`, options), env: protectedEnv });
+  assert.equal(response.status, 401, "project reads, writes and internal agent calls must remain protected");
+}
+const scopedResponse = await cloudflare.onRequest({ request: new Request("https://surveykit.example/api/tools/data-profile", json({ project_id: "owned-project" })), env: protectedEnv });
+assert.equal(scopedResponse.status, 400);
+assert.equal((await scopedResponse.json()).error.code, "TOOL_CONTEXT_REQUIRED");
+
 const anonymous = await start({});
 let result = await request(anonymous.base, "/api/tools");
+assert.equal(result.response.status, 200);
+assert.equal(result.payload.success, true);
+for (const [tool, input] of publicCases) {
+  result = await request(anonymous.base, `/api/tools/${tool}`, json({ input }));
+  assert.equal(result.response.status, 200);
+}
+result = await request(anonymous.base, "/api/tools/results?project_id=owned-project");
 assert.equal(result.response.status, 401);
-assert.equal(result.payload.success, false);
 assert.equal(result.payload.error.code, "UNAUTHORIZED");
 anonymous.server.close();
 

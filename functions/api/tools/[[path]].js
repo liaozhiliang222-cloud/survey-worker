@@ -60,9 +60,17 @@ export async function onRequest({ request, env }) {
       const executed = await executeAgentTool({ agentToolId: toolId, args: payload.arguments, harnessSessionId: payload.harness_session_id, callId: payload.call_id, requestId: id, store: createResearchStore(env.RESEARCH_DB), fileStorage: env.RESEARCH_FILES ? dataStorage(env) : null, dataJobExecutor: env.DATA_EXECUTOR_URL ? job => requestDataExecutor(env,{operation:"job",userId:job.user_id,projectId:job.project_id,jobId:job.id}) : undefined, logger: console });
       return json({ success: true, tool: toolId, data: executed.data, meta: { deterministic: true, uses_ai: false, project_saved: true, replayed: executed.replayed } }, 200, id);
     }
-    const userId = await resolveResearchIdentity(request, env);
-    if (!userId) return failure(toolId, "UNAUTHORIZED", "请先登录后再使用专业工具。", id, 401);
+    // Standalone calculations use only the submitted input. Project reads/writes below require identity.
     if (!segments.length && request.method === "GET") return json({ success: true, tool: "registry", data: { tools: listTools() }, meta: { deterministic_only: true } }, 200, id);
+    if (segments.length === 1 && segments[0] !== "results" && request.method === "POST") {
+      toolId = clean(segments[0], 64);
+      const payload = await readBody(request);
+      const input = payload.input && typeof payload.input === "object" ? payload.input : payload;
+      const executed = executeTool(toolId, input);
+      return json({ success: true, tool: toolId, data: executed.data, meta: executed.meta }, 200, id);
+    }
+    const userId = await resolveResearchIdentity(request, env);
+    if (!userId) return failure(toolId, "UNAUTHORIZED", "请先登录后再保存或查看项目成果。", id, 401);
     if (segments[0] === "results" && request.method === "GET") {
       if (!env.RESEARCH_DB) return failure("tool-results", "DATABASE_NOT_CONFIGURED", "专业工具项目存储尚未配置。", id, 503);
       const repository = createResearchStore(env.RESEARCH_DB);
@@ -72,12 +80,6 @@ export async function onRequest({ request, env }) {
       return json({ success: true, tool: "tool-results", data: { project_id: projectId, results: (await repository.listToolResults(projectId)).map(publicResult) }, meta: {} }, 200, id);
     }
     toolId = clean(segments[0], 64);
-    if (segments.length === 1 && request.method === "POST") {
-      const payload = await readBody(request);
-      const input = payload.input && typeof payload.input === "object" ? payload.input : payload;
-      const executed = executeTool(toolId, input);
-      return json({ success: true, tool: toolId, data: executed.data, meta: executed.meta }, 200, id);
-    }
     if (segments.length === 2 && segments[1] === "results" && request.method === "POST") {
       if (!env.RESEARCH_DB) return failure(toolId, "DATABASE_NOT_CONFIGURED", "专业工具项目存储尚未配置。", id, 503);
       const repository = createResearchStore(env.RESEARCH_DB);
