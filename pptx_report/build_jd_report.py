@@ -637,12 +637,19 @@ def parse_crosstab(path: str, sheet_name: str = None) -> list:
         )
         if (
             cur is not None
-            and len(row) > 2
+            and len(row) > 1
             and total_col is not None
-            and sum(
-                1 for i in range(total_col + 1, len(row))
-                if row[i] is not None and _norm(row[i]) != ""
-            ) >= 1
+            # Overall-only exports have no comparison column after Total.
+            # Require a blank label for that case so an option named Total
+            # is still read as data, while retaining legacy grouped headers.
+            and (
+                row[0] is None
+                or not _norm(row[0])
+                or sum(
+                    1 for i in range(total_col + 1, len(row))
+                    if row[i] is not None and _norm(row[i]) != ""
+                ) >= 1
+            )
         ):
             new_groups = _detect_dimension_groups(rows, ri)
 

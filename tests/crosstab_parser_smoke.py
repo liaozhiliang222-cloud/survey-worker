@@ -150,6 +150,31 @@ def main() -> None:
         assert exported_questions[0]["data"]["总体"] == [0.6]
         assert exported_questions[0]["data"]["高意向"] == [0.75]
 
+        # Tool-generated exports may contain only the overall column. A second
+        # population must not be required, with or without the blank spacer.
+        for spacer in (False, True):
+            overall_path = Path(temp_dir) / f"overall-only-{spacer}.xlsx"
+            overall_workbook = Workbook()
+            overall_sheet = overall_workbook.active
+            overall_sheet.title = "百分比"
+            prefix = [None] if spacer else []
+            for question_no in (1, 2):
+                overall_sheet.append([f"CAPTION:[Q{question_no}].仅总体题目"])
+                overall_sheet.append([None, *prefix, "总体"])
+                overall_sheet.append([None, *prefix, "百分比"])
+                overall_sheet.append(["BASE", *prefix, 200])
+                overall_sheet.append(["总体", *prefix, 0.2])
+                overall_sheet.append(["其他", *prefix, 0.8])
+            overall_workbook.save(overall_path)
+            overall_questions = parse_crosstab(str(overall_path))
+            assert len(overall_questions) == 2
+            for question in overall_questions:
+                assert question["segments"] == ["总体"]
+                assert question["base"] == {"总体": 200}
+                assert question["categories"] == ["总体", "其他"]
+                assert question["data"] == {"总体": [0.2, 0.8]}
+            assert _collect_segments(str(overall_path))["segments"] == ["Total"]
+
         adaptive_path = Path(temp_dir) / "adaptive-crosstab.xlsx"
         adaptive_workbook = Workbook()
         count_sheet = adaptive_workbook.active
