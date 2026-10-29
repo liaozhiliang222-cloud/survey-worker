@@ -306,7 +306,7 @@
               <div class="section-heading compact">
                 <div>
                   <h3>模型供应商</h3>
-                  <p>选择常用大模型并填写自己的 API Key（可选）。留空时使用后端 OpenCode Go（默认 DeepSeek V4.1 Flash，可切换 MiMo-V2.6-Flash）；配置自己的 Key 后可使用更高质量的大模型。</p>
+                  <p>默认使用平台内置模型。使用自己的 API Key 时，选择供应商并填写模型名称及接口地址。</p>
                 </div>
               </div>
               <div class="form-grid two">
@@ -323,23 +323,16 @@
                   </select>
                 </label>
                 <label>
-                  模型档位
-                  <select id="aiModelTier">
-                    <option value="deepseek-v4.1-flash">DeepSeek V4.1 Flash（默认）</option>
-                    <option value="mimo-v2.6-flash">MiMo-V2.6-Flash</option>
-                  </select>
-                </label>
-                <label>
                   模型名称
-                  <input id="aiModelName" type="text" placeholder="例如：deepseek-v4-flash / kimi-k2.6 / glm-4-flash / qwen3.7-max / gpt-5.5-instant" />
+                  <input id="aiModelName" type="text" placeholder="填写供应商控制台中的模型 ID" />
                 </label>
-                <label>
+                <label class="span-row">
                   接口地址
                   <input id="aiApiBaseUrl" type="url" placeholder="兼容 chat/completions 的接口地址" />
                 </label>
                 <label class="span-row">
                   API Key
-                  <input id="aiApiKey" type="password" autocomplete="off" placeholder="（可选）填入自己的 API Key，留空时使用后端 OpenCode Go（默认 DeepSeek V4.1 Flash，可切换 MiMo-V2.6-Flash）" />
+                  <input id="aiApiKey" type="password" autocomplete="off" placeholder="可选；留空时使用平台内置模型" />
                 </label>
               </div>
               <div class="button-row">
@@ -347,26 +340,21 @@
                 <button class="secondary-btn" id="testAiSettings" type="button">测试连接</button>
                 <button class="secondary-btn" id="clearAiSettings" type="button">清空设置</button>
               </div>
-              <p class="panel-note">注意：未配置 API Key 时使用后端 OpenCode Go（默认 DeepSeek V4.1 Flash，可切换 MiMo-V2.6-Flash）；配置自己的 Key 后可使用更高质量的大模型。内置 Key 仅保存在后端；手动填写的个人 Key 保存在浏览器本地。</p>
+              <p class="panel-note">内置 Key 仅保存在后端；手动填写的个人 Key 保存在浏览器本地。</p>
             </section>
 
             <section class="panel">
               <div class="section-heading compact">
                 <div>
                   <h3>接口校验</h3>
-                  <p>保存或测试时会检查供应商、接口地址、模型名和 Key 是否完整。</p>
+                  <p>保存时检查设置格式；测试连接会发送简短请求，确认模型是否可用。</p>
                 </div>
                 <span class="project-save-status" id="aiSettingsStatus">未配置</span>
               </div>
               <div class="import-preview" id="aiSettingsPreview">
                 <strong>等待设置</strong>
-                <span>选择供应商后会自动填入推荐接口和模型，也可以切换为自定义兼容接口。</span>
+                <span>选择供应商后会自动填入接口地址，模型名称请按供应商控制台填写。</span>
               </div>
-              <ul class="ai-risk-list">
-                <li><strong>DeepSeek</strong><span>默认 deepseek-v4-pro，优先使用高质量档位；如需更快响应可切换为 deepseek-v4-flash。</span></li>
-                <li><strong>Kimi</strong><span>默认 moonshot-v1-8k，支持 8K / 32K / 128K 上下文档位。</span></li>
-                <li><strong>智谱 / Qwen</strong><span>智谱默认 glm-5.1（2026年旗舰），可选 GLM-4.7-Flash（免费轻量）/ GLM-5.2（最新）；通义千问默认 qwen-plus，可选 Turbo / Max。</span></li>
-              </ul>
             </section>
           </div>
         </section>

@@ -380,65 +380,37 @@ const aiProviderPresets = {
   "opencode-go": {
     name: "OpenCode Go（后端内置）",
     model: "deepseek-v4.1-flash",
-    url: "https://opencode.ai/zen/go/v1/chat/completions",
-    tiers: [
-      { label: "DeepSeek V4.1 Flash（默认）", model: "deepseek-v4.1-flash" },
-      { label: "MiMo-V2.6-Flash", model: "mimo-v2.6-flash" }
-    ]
+    url: "https://opencode.ai/zen/go/v1/chat/completions"
   },
   deepseek: {
     name: "DeepSeek",
-    model: "deepseek-v4-pro",
-    url: "https://api.deepseek.com/v1/chat/completions",
-    tiers: [
-      { label: "V4 Pro（默认）", model: "deepseek-v4-pro" },
-      { label: "V4 Flash（快速/低成本）", model: "deepseek-v4-flash" }
-    ]
+    model: "",
+    url: "https://api.deepseek.com/v1/chat/completions"
   },
   kimi: {
     name: "Kimi（月之暗面）",
-    model: "moonshot-v1-8k",
-    url: "https://api.moonshot.cn/v1/chat/completions",
-    tiers: [
-      { label: "V1-8K", model: "moonshot-v1-8k" },
-      { label: "V1-32K", model: "moonshot-v1-32k" },
-      { label: "V1-128K", model: "moonshot-v1-128k" }
-    ]
+    model: "",
+    url: "https://api.moonshot.cn/v1/chat/completions"
   },
   zhipu: {
     name: "智谱 GLM",
-    model: "glm-5.1",
-    url: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-    tiers: [
-      { label: "GLM-4.7-Flash（免费）", model: "glm-4.7-flash" },
-      { label: "GLM-5.1（旗舰）", model: "glm-5.1" },
-      { label: "GLM-5.2（最新）", model: "glm-5.2" }
-    ]
+    model: "",
+    url: "https://open.bigmodel.cn/api/paas/v4/chat/completions"
   },
   qwen: {
     name: "Qwen / 通义千问",
-    model: "qwen3.7-max",
-    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-    tiers: [
-      { label: "Qwen3.7 Max（最新旗舰）", model: "qwen3.7-max" },
-      { label: "Qwen3.7 Plus", model: "qwen3.7-plus" },
-      { label: "Qwen3.6 Max Preview", model: "qwen3.6-max-preview" },
-      { label: "Qwen3.6 Plus", model: "qwen3.6-plus" },
-      { label: "Qwen3.6 Flash（免费）", model: "qwen3.6-flash" },
-      { label: "Qwen-Max（经典）", model: "qwen-max" },
-      { label: "Qwen-Plus（经典）", model: "qwen-plus" },
-      { label: "Qwen-Turbo（经典）", model: "qwen-turbo" }
-    ]
+    model: "",
+    url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
   },
   openai: {
     name: "OpenAI",
-    model: "gpt-4o",
-    url: "https://api.openai.com/v1/chat/completions",
-    tiers: [
-      { label: "GPT-4o", model: "gpt-4o" },
-      { label: "GPT-4o-mini", model: "gpt-4o-mini" },
-      { label: "GPT-4-Turbo", model: "gpt-4-turbo" }
-    ]
+    model: "",
+    url: "https://api.openai.com/v1/chat/completions"
+  },
+  custom: {
+    name: "自定义兼容接口",
+    model: "",
+    url: ""
   }
 };
 
@@ -10373,23 +10345,19 @@ function renderAiProgress(container, steps, activeIndex = 0, note = "", title = 
 
 function getDefaultAiSettings(provider = "opencode-go") {
   const preset = aiProviderPresets[provider] || aiProviderPresets["opencode-go"];
-  const tier = preset.tiers?.[0] || { model: preset.model };
   return {
     provider,
     mode: "api",
-    modelTier: tier.model,
-    model: tier.model || preset.model,
+    model: preset.model,
     url: preset.url,
     apiKey: ""
   };
 }
 
 function readAiSettingsFromForm() {
-  const modelTier = document.querySelector("#aiModelTier")?.value || "";
   return {
     provider: document.querySelector("#aiProvider")?.value || "opencode-go",
     mode: "api",
-    modelTier,
     model: document.querySelector("#aiModelName")?.value.trim() || "",
     url: document.querySelector("#aiApiBaseUrl")?.value.trim() || "",
     apiKey: document.querySelector("#aiApiKey")?.value.trim() || ""
@@ -10447,27 +10415,12 @@ function renderAiSettingsStatus(settings = loadAiSettings()) {
   }
 }
 
-function updateAiModelTierOptions(provider = "opencode-go", selectedModel = "") {
-  const tierSelect = document.querySelector("#aiModelTier");
-  if (!tierSelect) return;
-  const preset = aiProviderPresets[provider] || aiProviderPresets["opencode-go"];
-  const tiers = preset.tiers?.length ? preset.tiers : [{ label: preset.model || "默认模型", model: preset.model || "" }];
-  tierSelect.innerHTML = tiers.map((tier) => `<option value="${escapeHtml(tier.model)}">${escapeHtml(tier.label)}</option>`).join("");
-  const nextValue = tiers.some((tier) => tier.model === selectedModel) ? selectedModel : tiers[0].model;
-  tierSelect.value = nextValue;
-  const modelInput = document.querySelector("#aiModelName");
-  if (modelInput && provider !== "custom") modelInput.value = nextValue;
-}
-
 function fillAiSettingsForm(settings = loadAiSettings()) {
   const provider = document.querySelector("#aiProvider");
-  const tier = document.querySelector("#aiModelTier");
   const model = document.querySelector("#aiModelName");
   const url = document.querySelector("#aiApiBaseUrl");
   const key = document.querySelector("#aiApiKey");
   if (provider) provider.value = settings.provider;
-  updateAiModelTierOptions(settings.provider, settings.modelTier || settings.model);
-  if (tier) tier.value = settings.modelTier || settings.model || tier.value;
   if (model) model.value = settings.model;
   if (url) url.value = settings.url;
   if (key) key.value = settings.apiKey;
@@ -10477,7 +10430,11 @@ function fillAiSettingsForm(settings = loadAiSettings()) {
 function loadAiSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem("surveyAiSettings") || "null");
-    if (saved?.apiKey || saved?.provider === "opencode-go") return { ...getDefaultAiSettings(saved.provider || "opencode-go"), ...saved, mode: "api" };
+    if (saved?.apiKey || saved?.provider === "opencode-go") {
+      const { modelTier, ...settings } = saved;
+      const defaults = getDefaultAiSettings(settings.provider || "opencode-go");
+      return { ...defaults, ...settings, model: settings.model || modelTier || defaults.model, mode: "api" };
+    }
   } catch {}
   return getDefaultAiSettings("opencode-go");
 }
@@ -10503,12 +10460,8 @@ function applyAiProviderPreset() {
   const model = document.querySelector("#aiModelName");
   const url = document.querySelector("#aiApiBaseUrl");
   if (provider !== "custom") {
-    updateAiModelTierOptions(provider);
-    const tierModel = document.querySelector("#aiModelTier")?.value || preset.model;
-    if (model) model.value = tierModel;
+    if (model) model.value = preset.model;
     if (url) url.value = preset.url;
-  } else {
-    updateAiModelTierOptions(provider);
   }
   renderAiSettingsStatus(readAiSettingsFromForm());
 }
@@ -10713,11 +10666,13 @@ async function readAiJobApiError(response, fallback) {
 }
 
 function aiProxyPayload(settings, messages, options = {}) {
+  const openai = settings.provider === "openai" && Boolean(settings.apiKey);
   const requestBody = {
     model: settings.model,
     messages,
-    temperature: options.temperature ?? 0.35,
-    max_tokens: options.maxTokens ?? 3500,
+    ...(openai
+      ? { max_completion_tokens: options.maxTokens ?? 3500 }
+      : { temperature: options.temperature ?? 0.35, max_tokens: options.maxTokens ?? 3500 }),
   };
   if (options.responseFormat === "json_object") {
     requestBody.response_format = { type: "json_object" };
@@ -12202,7 +12157,7 @@ async function testAiSettings() {
     await callAiChatCompletion(settings, [
       { role: "system", content: "你是接口连通性测试助手。" },
       { role: "user", content: "请只回复：连接成功" }
-    ], { maxTokens: 20, temperature: 0, taskTier: "fast" });
+    ], { maxTokens: settings.provider === "openai" && settings.apiKey ? 1024 : 20, temperature: 0, taskTier: "fast" });
     localStorage.setItem("surveyAiSettings", JSON.stringify(settings));
     renderAiSettingsStatus(settings);
     if (preview) {
@@ -19100,12 +19055,6 @@ window.QuestionnaireReviewUI.bind(document.querySelector("#aiResults"), {
 });
 
 document.querySelector("#aiProvider").addEventListener("change", applyAiProviderPreset);
-document.querySelector("#aiModelTier").addEventListener("change", () => {
-  const tierModel = document.querySelector("#aiModelTier")?.value || "";
-  const modelInput = document.querySelector("#aiModelName");
-  if (modelInput && tierModel) modelInput.value = tierModel;
-  renderAiSettingsStatus(readAiSettingsFromForm());
-});
 document.querySelector("#aiModelName").addEventListener("input", () => renderAiSettingsStatus(readAiSettingsFromForm()));
 document.querySelector("#aiApiBaseUrl").addEventListener("input", () => renderAiSettingsStatus(readAiSettingsFromForm()));
 document.querySelector("#aiApiKey").addEventListener("input", () => renderAiSettingsStatus(readAiSettingsFromForm()));

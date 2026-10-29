@@ -169,4 +169,8 @@ test("saved MiMo choice and existing personal keys survive migration", () => {
   const personal = loadSettings({ provider: "deepseek", model: "deepseek-v4-pro", apiKey: "personal-key" });
   assert.equal(personal.provider, "deepseek");
   assert.equal(personal.apiKey, "personal-key");
+  assert.equal(loadSettings({ provider: "opencode-go", modelTier: GO_MODELS[1] }).model, GO_MODELS[1]);
+  const custom = loadSettings({ provider: "openai", model: "account-model-id", modelTier: "gpt-4o", apiKey: "personal-key" });
+  assert.equal(custom.model, "account-model-id");
+  assert.equal(custom.modelTier, undefined);
 });

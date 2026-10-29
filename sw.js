@@ -1,4 +1,4 @@
-const CACHE_NAME = "research-toolbox-v106";
+const CACHE_NAME = "research-toolbox-v107";
 // 内容哈希资源：URL 随内容变化，可安全缓存优先。名称不以 research-toolbox- 开头，版本升级时不被整体清空。
 const IMMUTABLE_CACHE = "surveykit-immutable-v1";
 const ASSETS = [
