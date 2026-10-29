@@ -10223,8 +10223,10 @@ function buildAiQuestionnaireDesign() {
 const questionnaireDraftFields = ['aiInput','aiContext','aiAudience','aiSampleSize','aiQuestionnaireLengthMode','aiQuestionnaireTemplateMode','aiQuestionnaireTemplateSelect','aiReviseInput','aiRevisionMode','aiRevisionTargets'];
 function updateQuestionnaireSaveStatus(status) {
   const node=document.querySelector('#questionnaireSaveStatus');
-  if(node){node.textContent=workspaceLibraryPersistenceFailed?'项目保存失败，请再次保存；也可先导出 Word 或在高级选项中备份。':status.message;node.dataset.state=workspaceLibraryPersistenceFailed?'failed':status.state;}
+  if(node){node.textContent=workspaceLibraryPersistenceFailed?'项目保存失败，请再次保存；也可先导出 Word。':status.message;node.dataset.state=workspaceLibraryPersistenceFailed?'failed':status.state;}
   const failed=workspaceLibraryPersistenceFailed||status.state==='failed';
+  const feedback=document.querySelector('#questionnaireSaveFeedback');
+  if(feedback)feedback.hidden=!failed;
   const retry=document.querySelector('#questionnaireRetrySave'),reload=document.querySelector('#questionnaireReload');
   if(retry)retry.hidden=!failed||status.reason==='read';
   if(reload){reload.hidden=!['conflict','read'].includes(status.reason);reload.textContent=status.reason==='conflict'?'载入最新内容':'载入已保存内容';}
@@ -10252,7 +10254,6 @@ function restoreQuestionnaireSession() {
   const platform=document.querySelector('#exportAiPlatformFormat');if(platform)platform.disabled=!current||Boolean(lastAiQuestionnaireAudit?.summary.errors||lastAiQuestionnaireAudit?.summary.pending);
   document.querySelector('#aiRevisionStatus').textContent='';
   updateQuestionnaireSaveStatus(aiQuestionnaireSession.status());
-  document.querySelector('#questionnaireProjectScope').textContent=aiQuestionnaireSession.status().projectId==='local-draft'?'当前问卷未绑定项目':`项目：${workspaceProject?.projectName || '未命名项目'}`;
 }
 function bindQuestionnaireProject(id) {
   const next=String(id || 'local-draft');if(aiQuestionnaireSession.status().projectId===next)return;
@@ -19015,23 +19016,9 @@ document.querySelector("#reviseAiQuestionnaire").addEventListener("click", () =>
 document.querySelector('#ai-assistant').addEventListener('input', event=>{if(questionnaireDraftFields.includes(event.target.id))saveQuestionnaireDraft();});
 document.querySelector('#ai-assistant').addEventListener('change', event=>{if(questionnaireDraftFields.includes(event.target.id)||event.target.closest('#aiStudyType'))saveQuestionnaireDraft();});
 document.querySelector('#questionnaireRetrySave').addEventListener('click',()=>{persistWorkspaceLibrary();aiQuestionnaireSession.retrySave();});
-document.querySelector('#questionnaireArchiveExport').addEventListener('click',()=>downloadBlob('问卷备份.json',new Blob([JSON.stringify(aiQuestionnaireSession.export(),null,2)],{type:'application/json;charset=utf-8'})));
-document.querySelector('#questionnaireArchiveImport').addEventListener('change',async event=>{
-  const file=event.target.files?.[0];if(!file)return;
-  const projectId=aiQuestionnaireSession.status().projectId;
-  try {
-    if(aiQuestionnaireBusy)throw new Error('请等待当前问卷操作结束后再导入。');
-    if(file.size>8_000_000)throw new Error('档案超过 8MB，未导入。');
-    const text=await file.text();if(projectId!==aiQuestionnaireSession.status().projectId)throw new Error('项目已切换，请重新选择档案。');
-    const result=aiQuestionnaireSession.import(JSON.parse(text));restoreQuestionnaireSession();
-    document.querySelector("#questionnaireArchiveMessage").textContent=`已追加 ${result.versions} 个版本、${result.pilots} 条试访记录。`;
-    showToast(`已追加 ${result.versions} 个版本、${result.pilots} 条试访记录；${aiQuestionnaireSession.status().message}`);
-  }catch(error){document.querySelector('#questionnaireArchiveMessage').textContent=`导入失败：${error.message}`;}
-  finally{event.target.value='';}
-});
 document.querySelector('#questionnaireReload').addEventListener('click',()=>{
   if(aiQuestionnaireBusy)return;
-  if(aiQuestionnaireSession.status().state!=='saved'&&!window.confirm('载入会替换当前未保存的修改，请先在高级选项中备份问卷。是否继续？'))return;
+  if(aiQuestionnaireSession.status().state!=='saved'&&!window.confirm('载入会替换当前未保存的修改，请先导出当前问卷。是否继续？'))return;
   aiQuestionnaireSession.reload();restoreQuestionnaireSession();
 });
 window.QuestionnaireReviewUI.bind(document.querySelector("#aiResults"), {

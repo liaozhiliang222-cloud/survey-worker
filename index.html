@@ -3247,23 +3247,11 @@
                 <button class="secondary-btn" id="reviseAiQuestionnaire" type="button" disabled data-disabled-reason="先生成或导入问卷">按要求修改问卷</button>
               </div>
               <p class="panel-note">生成结果适合作为 V1.0 问卷初稿，正式上线前建议继续用“上线质检、时长估算、数据清洗、表头设计”做复核。</p>
-            </div>
-
-            <div class="questionnaire-persistence" aria-label="问卷自动保存">
-              <div class="questionnaire-save-line">
+              <div class="questionnaire-save-line" id="questionnaireSaveFeedback" hidden>
                 <p id="questionnaireSaveStatus" role="status"></p>
                 <button type="button" class="secondary-btn" id="questionnaireRetrySave" hidden>再次保存</button>
                 <button type="button" class="secondary-btn" id="questionnaireReload" hidden>载入已保存内容</button>
               </div>
-              <details id="questionnaireStorageOptions">
-                <summary>高级选项</summary>
-                <p id="questionnaireProjectScope" class="panel-note"></p>
-                <p class="panel-note">通常导出 Word 即可。只有需要在其他浏览器接着编辑、保留修改历史时，才需要备份。自动保存仅在当前浏览器有效。</p>
-                <button type="button" class="secondary-btn" id="questionnaireArchiveExport">备份问卷</button>
-                <label>从备份恢复 <input type="file" id="questionnaireArchiveImport" accept=".json,application/json"></label>
-                <p class="panel-note">请选择之前备份的 JSON 文件，不是 Word 文档。恢复会添加备份中的版本及试填反馈，不覆盖已有内容。</p>
-                <p id="questionnaireArchiveMessage" role="status"></p>
-              </details>
             </div>
             <div class="audit-results" id="aiResults" aria-live="polite">
               <article class="audit-issue">

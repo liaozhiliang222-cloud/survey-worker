@@ -38,16 +38,6 @@ test('project switching isolates content and draft even after reload',async({pag
  await page.evaluate(id=>activateWorkspaceProject(id),ids.b);
  expect(await page.locator('#aiInput').inputValue()).toBe('项目B需求');
 });
-test('invalid import is atomic; v1 import appends and remaps',async({page})=>{
- await boot(page);await page.locator('#questionnaireStorageOptions summary').click();const before=await page.evaluate(()=>aiQuestionnaireSession.export());
- const upload=async obj=>page.locator('#questionnaireArchiveImport').setInputFiles({name:'archive.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(obj))});
- await upload({...before,pilots:[{id:1,version:99}]});
- await expect(page.locator('#questionnaireArchiveMessage')).toContainText('导入失败');
- expect(await page.evaluate(()=>aiQuestionnaireSession.export())).toEqual(before);
- await upload({...before,version:1});
- await expect(page.locator('#questionnaireArchiveMessage')).toContainText('已追加 1');
- expect(await page.evaluate(()=>aiQuestionnaireSession.versions().map(v=>v.id))).toEqual([1,2]);
-});
 test('quota failure remains exportable and retry persists',async({page})=>{
  await boot(page);
  await page.evaluate(()=>{window.originalStorageSet=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k.startsWith('surveykit_questionnaire_workflow_v2:'))throw new Error('quota');return window.originalStorageSet.call(this,k,v);};});
@@ -55,8 +45,7 @@ test('quota failure remains exportable and retry persists',async({page})=>{
  await expect(page.locator('#questionnaireSaveStatus')).toHaveAttribute('data-state','failed');
  expect(await page.evaluate(()=>aiQuestionnaireSession.export().draft.aiReviseInput)).toBe('额度失败也保留');
  await expect(page.locator('#questionnaireRetrySave')).toBeVisible();await expect(page.locator('#questionnaireReload')).toBeHidden();
- await page.locator('#questionnaireStorageOptions summary').click();
- const download=page.waitForEvent('download');await page.locator('#questionnaireArchiveExport').click();await download;
+ const download=page.waitForEvent('download');await page.locator('#exportAiWord').click();expect((await download).suggestedFilename()).toMatch(/\.docx$/);
  await page.evaluate(()=>Storage.prototype.setItem=window.originalStorageSet);
  await page.locator('#questionnaireRetrySave').click();await expect(page.locator('#questionnaireSaveStatus')).toHaveAttribute('data-state','saved');await expect(page.locator('#questionnaireRetrySave')).toBeHidden();
  await page.reload();await expect(page.locator('#aiReviseInput')).toHaveValue('额度失败也保留');
@@ -72,19 +61,23 @@ test('late AI response cannot write into another project',async({page})=>{
  expect(await page.evaluate(()=>lastAiQuestionnaireText)).toBe('');
 });
 
-test('normal questionnaire flow shows compact saving status and keeps recovery in advanced options',async({page})=>{
+test('results align with inputs while normal saving stays hidden and failures retain recovery',async({page})=>{
+ await page.setViewportSize({width:1440,height:1000});
  await boot(page);
- await expect(page.locator('#questionnaireSaveStatus')).toHaveText('已自动保存到当前浏览器');
- for(const id of ['questionnaireRetrySave','questionnaireReload','questionnaireArchiveExport','questionnaireArchiveImport'])await expect(page.locator('#'+id)).toBeHidden();
- await expect(page.locator('#questionnaireStorageOptions')).not.toHaveAttribute('open','');
+ await expect(page.locator('#questionnaireSaveFeedback')).toBeHidden();
+ for(const id of ['questionnaireStorageOptions','questionnaireArchiveExport','questionnaireArchiveImport'])await expect(page.locator('#'+id)).toHaveCount(0);
+ await page.evaluate(()=>window.scrollTo({top:0,behavior:'instant'}));
+ const input=await page.locator('#ai-assistant .link-tester > .panel').boundingBox(),results=await page.locator('#aiResults').boundingBox();
+ expect(results.x).toBeGreaterThanOrEqual(input.x+input.width);
+ expect(Math.abs(results.y-input.y)).toBeLessThan(2);
+ await page.screenshot({path:'.data/questionnaire-results-layout/desktop-candidate.png'});
  await expect(page.locator('#exportAiWord')).toBeEnabled();
  const download=page.waitForEvent('download');await page.locator('#exportAiWord').click();expect((await download).suggestedFilename()).toMatch(/\.docx$/);
- await page.locator('.questionnaire-persistence').screenshot({path:'.data/questionnaire-compact-save.png'});
  // A conflicting tab cannot be overwritten; recovery is surfaced only on failure.
  await page.evaluate(()=>{const session=aiQuestionnaireSession,key='surveykit_questionnaire_workflow_v2:'+encodeURIComponent(session.status().projectId),stored=JSON.parse(localStorage.getItem(key));stored.savedAt='other-tab';localStorage.setItem(key,JSON.stringify(stored));});
  await page.locator('#aiReviseInput').fill('需要保留的当前修改');
  await expect(page.locator('#questionnaireReload')).toBeVisible();await expect(page.locator('#questionnaireReload')).toHaveText('载入最新内容');
  await expect(page.locator('#questionnaireSaveStatus')).toContainText('另一个页面');
  page.once('dialog',dialog=>dialog.dismiss());await page.locator('#questionnaireReload').click();await expect(page.locator('#aiReviseInput')).toHaveValue('需要保留的当前修改');
- await page.locator('#questionnaireStorageOptions summary').click();await expect(page.getByRole('button',{name:'备份问卷',exact:true})).toBeVisible();
+ await expect(page.locator('#questionnaireSaveFeedback')).toBeVisible();
 });

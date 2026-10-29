@@ -8862,11 +8862,8 @@ tbody tr.warn td {
 .research-recipe-domain textarea { box-sizing: border-box; width: 100%; margin-top: 8px; padding: 8px; }
 .research-recipe-dialog [role=alert] { color: var(--danger-700); }
 
-.questionnaire-persistence { padding: 10px 0; color: var(--gray-500); font-size: var(--text-sm); }
-.questionnaire-save-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.questionnaire-save-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--gray-500); font-size: var(--text-sm); }
 .questionnaire-save-line p { margin: 0; }
+.questionnaire-save-line[hidden],
 .questionnaire-save-line [hidden] { display: none; }
 .questionnaire-save-line [data-state=failed] { color: var(--danger-700); }
-.questionnaire-persistence summary { cursor: pointer; margin-top: 8px; font-size: var(--text-xs); }
-.questionnaire-persistence details[open] { padding-bottom: 8px; }
-.questionnaire-persistence details > label { display: block; margin-top: 12px; }
